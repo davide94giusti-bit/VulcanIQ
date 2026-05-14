@@ -1,4 +1,4 @@
--- vulcanIQ free owner-managed booking and availability system
+-- vulcanIQ free owner-managed booking, availability, and fixed-excursion system
 -- Run this file in the Supabase SQL editor after creating the project.
 
 create extension if not exists pgcrypto;
@@ -61,6 +61,7 @@ create table if not exists public.booking_requests (
   updated_at timestamptz not null default now(),
 
   status text not null default 'pending',
+  request_type text not null default 'private',
 
   customer_name text,
   customer_email text,
@@ -76,6 +77,7 @@ create table if not exists public.booking_requests (
   children integer,
   children_under_3 boolean default false,
   private_experience boolean,
+  fixed_excursion_id uuid null,
   main_interest text,
   preferred_pace text,
   message text,
@@ -89,18 +91,49 @@ create table if not exists public.booking_requests (
   availability_block_id uuid null,
 
   constraint booking_requests_status_check check (status in ('pending', 'accepted', 'declined', 'cancelled', 'archived')),
+  constraint booking_requests_request_type_check check (request_type in ('private', 'fixed')),
   constraint booking_requests_preferred_contact_check check (preferred_contact is null or preferred_contact in ('whatsapp', 'phone', 'email', 'form', 'unknown')),
   constraint booking_requests_experience_id_check check (experience_id is null or experience_id in ('etna-premium', 'etna-learning', 'etna-live', 'etna-stories', 'unsure')),
   constraint booking_requests_language_check check (language is null or language in ('it', 'en')),
+  constraint booking_requests_party_type_check check (party_type is null or party_type in ('solo', 'couple', 'family', 'group', 'company', 'school', 'other')),
   constraint booking_requests_source_check check (source in ('website', 'whatsapp', 'phone', 'email', 'manual')),
   constraint booking_requests_adults_check check (adults is null or adults >= 0),
   constraint booking_requests_children_check check (children is null or children >= 0)
 );
 
+alter table public.booking_requests add column if not exists request_type text not null default 'private';
+alter table public.booking_requests add column if not exists fixed_excursion_id uuid null;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'booking_requests_request_type_check'
+      and conrelid = 'public.booking_requests'::regclass
+  ) then
+    alter table public.booking_requests
+      add constraint booking_requests_request_type_check
+      check (request_type in ('private', 'fixed'));
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'booking_requests_party_type_check'
+      and conrelid = 'public.booking_requests'::regclass
+  ) then
+    alter table public.booking_requests
+      add constraint booking_requests_party_type_check
+      check (party_type is null or party_type in ('solo', 'couple', 'family', 'group', 'company', 'school', 'other'));
+  end if;
+end;
+$$;
+
 create index if not exists booking_requests_status_idx on public.booking_requests(status);
 create index if not exists booking_requests_requested_date_idx on public.booking_requests(requested_date);
 create index if not exists booking_requests_created_at_idx on public.booking_requests(created_at desc);
 create index if not exists booking_requests_source_idx on public.booking_requests(source);
+create index if not exists booking_requests_request_type_idx on public.booking_requests(request_type);
+create index if not exists booking_requests_fixed_excursion_idx on public.booking_requests(fixed_excursion_id);
 
 drop trigger if exists booking_requests_set_updated_at on public.booking_requests;
 create trigger booking_requests_set_updated_at
@@ -108,7 +141,7 @@ before update on public.booking_requests
 for each row execute function public.set_updated_at();
 
 -- -----------------------------------------------------------------------------
--- Availability blocks
+-- Availability blocks for private/general availability
 -- -----------------------------------------------------------------------------
 create table if not exists public.availability_blocks (
   id uuid primary key default gen_random_uuid(),
@@ -133,6 +166,36 @@ create table if not exists public.availability_blocks (
   constraint availability_blocks_experience_id_check check (experience_id is null or experience_id in ('etna-premium', 'etna-learning', 'etna-live', 'etna-stories'))
 );
 
+-- -----------------------------------------------------------------------------
+-- Fixed excursions: owner-created dates with capacity, publicly visible safe data
+-- -----------------------------------------------------------------------------
+create table if not exists public.fixed_excursions (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  date date not null,
+  start_time time null,
+  experience_id text not null,
+  capacity integer not null default 12,
+  note_it text,
+  note_en text,
+  active boolean not null default true,
+  created_by uuid references auth.users(id),
+  updated_by uuid references auth.users(id),
+
+  constraint fixed_excursions_experience_id_check check (experience_id in ('etna-premium', 'etna-learning', 'etna-live', 'etna-stories')),
+  constraint fixed_excursions_capacity_check check (capacity > 0 and capacity <= 99)
+);
+
+drop trigger if exists fixed_excursions_set_updated_at on public.fixed_excursions;
+create trigger fixed_excursions_set_updated_at
+before update on public.fixed_excursions
+for each row execute function public.set_updated_at();
+
+create index if not exists fixed_excursions_date_idx on public.fixed_excursions(date);
+create index if not exists fixed_excursions_active_idx on public.fixed_excursions(active);
+create index if not exists fixed_excursions_experience_idx on public.fixed_excursions(experience_id);
+
 do $$
 begin
   if not exists (
@@ -144,6 +207,17 @@ begin
     alter table public.booking_requests
       add constraint booking_requests_availability_block_fk
       foreign key (availability_block_id) references public.availability_blocks(id);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'booking_requests_fixed_excursion_fk'
+      and conrelid = 'public.booking_requests'::regclass
+  ) then
+    alter table public.booking_requests
+      add constraint booking_requests_fixed_excursion_fk
+      foreign key (fixed_excursion_id) references public.fixed_excursions(id);
   end if;
 end;
 $$;
@@ -171,8 +245,7 @@ create table if not exists public.activity_log (
 );
 
 -- -----------------------------------------------------------------------------
--- Public-safe availability view
--- Public site reads this view, not the admin table.
+-- Public-safe views
 -- -----------------------------------------------------------------------------
 drop view if exists public.public_availability_blocks;
 create view public.public_availability_blocks as
@@ -187,12 +260,33 @@ select
 from public.availability_blocks
 where active = true;
 
+drop view if exists public.public_fixed_excursions;
+create view public.public_fixed_excursions as
+select
+  fe.id,
+  fe.date,
+  fe.start_time,
+  fe.experience_id,
+  fe.capacity,
+  fe.note_it,
+  fe.note_en,
+  fe.active,
+  coalesce(sum(coalesce(br.adults, 0) + coalesce(br.children, 0)) filter (where br.status = 'accepted'), 0)::integer as accepted_count,
+  greatest(fe.capacity - coalesce(sum(coalesce(br.adults, 0) + coalesce(br.children, 0)) filter (where br.status = 'accepted'), 0), 0)::integer as places_remaining
+from public.fixed_excursions fe
+left join public.booking_requests br
+  on br.fixed_excursion_id = fe.id
+  and br.request_type = 'fixed'
+where fe.active = true
+group by fe.id;
+
 -- -----------------------------------------------------------------------------
 -- RLS
 -- -----------------------------------------------------------------------------
 alter table public.admin_profiles enable row level security;
 alter table public.booking_requests enable row level security;
 alter table public.availability_blocks enable row level security;
+alter table public.fixed_excursions enable row level security;
 alter table public.activity_log enable row level security;
 
 -- admin_profiles: only active admins can read/administer profiles.
@@ -223,6 +317,7 @@ with check (
   and created_by_admin is null
   and decided_by is null
   and decided_at is null
+  and request_type in ('private', 'fixed')
 );
 
 drop policy if exists "Admins can read booking requests" on public.booking_requests;
@@ -270,6 +365,29 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+-- fixed_excursions: owners manage table. Public reads only the public_fixed_excursions view.
+drop policy if exists "Admins can read fixed excursions" on public.fixed_excursions;
+create policy "Admins can read fixed excursions"
+on public.fixed_excursions
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "Admins can insert fixed excursions" on public.fixed_excursions;
+create policy "Admins can insert fixed excursions"
+on public.fixed_excursions
+for insert
+to authenticated
+with check (public.is_admin());
+
+drop policy if exists "Admins can update fixed excursions" on public.fixed_excursions;
+create policy "Admins can update fixed excursions"
+on public.fixed_excursions
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
 -- activity_log: owner-only.
 drop policy if exists "Admins can read activity log" on public.activity_log;
 create policy "Admins can read activity log"
@@ -288,10 +406,12 @@ with check (public.is_admin());
 -- Grants for browser anon/authenticated clients.
 grant usage on schema public to anon, authenticated;
 grant select on public.public_availability_blocks to anon, authenticated;
+grant select on public.public_fixed_excursions to anon, authenticated;
 grant insert on public.booking_requests to anon, authenticated;
 grant select, insert, update on public.admin_profiles to authenticated;
 grant select, insert, update on public.booking_requests to authenticated;
 grant select, insert, update on public.availability_blocks to authenticated;
+grant select, insert, update on public.fixed_excursions to authenticated;
 grant select, insert on public.activity_log to authenticated;
 
 -- -----------------------------------------------------------------------------
@@ -303,4 +423,4 @@ grant select, insert on public.activity_log to authenticated;
 -- insert into public.admin_profiles (user_id, full_name, role, active)
 -- values
 --   ('00000000-0000-0000-0000-000000000000', 'Leonardo Chiavetta', 'owner', true),
---   ('11111111-1111-1111-1111-111111111111', 'Co-owner vulcanIQ', 'owner', true);
+--   ('11111111-1111-1111-1111-111111111111', 'Deborah', 'owner', true);

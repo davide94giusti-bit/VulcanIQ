@@ -1,67 +1,93 @@
-# vulcanIQ landing page + free owner booking admin
+# vulcanIQ website + two-owner booking admin
 
-Vite + React landing page for **vulcanIQ**, an Etna-based experiential tourism brand.
+Vite + React public website for **vulcanIQ**, a premium Mount Etna experiential tourism brand, with an optional free Supabase layer for owner-managed booking requests, private availability, and fixed excursions.
 
-The project is still a static Netlify site, now extended with an optional free Supabase layer for owner-managed booking requests and public availability.
+The site remains deployable on Netlify and does not add paid services, payments, SMS, WhatsApp Business API, customer accounts, invoices, Google Calendar sync, or analytics.
 
 ## What is included
 
-- Public bilingual Italian/English landing page
-- Availability calendar with Supabase-first loading and JSON/local fallback
-- Public contact/request form that can insert pending `booking_requests`
-- Owner-only admin area at `/admin`
-- Supabase Auth login at `/admin/login`
-- Protected owner routes for Today, Upcoming, and Availability
-- Manual booking requests for WhatsApp, phone, email, or in-person enquiries
-- Request approval/decline flow
-- Optional availability block creation during approval
-- Manual date blocking / limited / on-request availability
-- Generated WhatsApp/email/copy reply helpers
-- No paid services, payments, SMS, WhatsApp Business API, or customer accounts
+- Shorter bilingual Italian/English public website with visual cards, tabs, accordions, and restrained Apple-style scrolling.
+- New local media assets under `public/images/vulcaniq/` and `public/videos/vulcaniq/`.
+- Hero video block using `public/videos/vulcaniq/intro.mp4`.
+- Updated Etna Premium, Etna Stories, Etna Live, and Etna Learning cards with photography.
+- Leonardo and Deborah public profile section using only the provided biographies.
+- Public reviews/testimonials section.
+- Public request flow for:
+  - fixed excursions
+  - private excursions
+  - adults / children / children under 3
+  - solo traveler / couple / family / group / company / school / other
+  - group-over-12 guidance.
+- Owner-only admin at `/admin` with Supabase Auth and `admin_profiles` authorization.
+- Request approval/decline workflow where declined requests remain traceable in request history and recent decisions.
+- Private availability blocks: closed, limited, on-request.
+- Fixed excursions with date, optional start time, experience, capacity, notes, and active/inactive state.
 
-## Commands
+## Build commands
 
 ```bash
 npm install
 npm run build
+```
+
+Optional local preview/development:
+
+```bash
 npm run dev
+npm run preview
 ```
 
 Netlify settings:
 
 - Build command: `npm run build`
 - Publish directory: `dist`
+- Node version: any supported Node `>=18 <23`
 
 ## Environment variables
 
-The public site builds and renders without Supabase credentials. In that case:
+The public site builds and renders without Supabase credentials. Without Supabase:
 
-1. the public calendar uses `/public/availability.json`, then `src/data/availability.js`
-2. the public request form shows fallback instructions to contact via WhatsApp/email
-3. `/admin` shows a setup warning
+1. the public private-availability calendar uses `/public/availability.json`, then `src/data/availability.js`;
+2. fixed excursions are simply empty;
+3. the public request form shows fallback contact guidance;
+4. `/admin` shows a setup warning.
 
-To enable the free booking/admin system, add these variables locally and in Netlify:
-
-```bash
-VITE_SUPABASE_URL=
-VITE_SUPABASE_ANON_KEY=
-```
-
-Do **not** expose the Supabase service role key in browser JavaScript.
-
-A future Netlify Function may use this server-only variable if needed:
+To enable booking/admin features, add these browser-safe variables locally and in Netlify:
 
 ```bash
-SUPABASE_SERVICE_ROLE_KEY=
+VITE_SUPABASE_URL=your-project-url
+VITE_SUPABASE_ANON_KEY=your-anon-public-key
 ```
 
-## Admin URL
+Do **not** expose the Supabase service role key in frontend JavaScript.
+
+## Public media assets
+
+New assets are stored locally, with no external CDN dependency:
+
+```text
+public/images/vulcaniq/etna-premium.jpeg
+public/images/vulcaniq/etna-stories.jpeg
+public/images/vulcaniq/etna-live.jpeg
+public/images/vulcaniq/etna-learning.jpeg
+public/images/vulcaniq/leonardo-guide.jpeg
+public/images/vulcaniq/etna-live-safe.jpeg
+public/images/vulcaniq/landscape.jpeg
+public/images/vulcaniq/lava-rock.jpeg
+public/images/vulcaniq/guide.jpeg
+public/images/vulcaniq/natural-light.jpeg
+public/videos/vulcaniq/intro.mp4
+```
+
+Compatibility copies are also present for older image references such as `public/images/etna-eruption-hero.jpg`.
+
+## Admin URLs
 
 - Login: `/admin/login`
-- Main owner dashboard: `/admin` or `/admin/today`
+- Today dashboard: `/admin` or `/admin/today`
 - Upcoming accepted bookings: `/admin/upcoming`
-- Availability: `/admin/availability`
-- Optional full request filter page: `/admin/requests`
+- Request history and filters: `/admin/requests`
+- Availability and fixed excursions: `/admin/availability`
 
 Only authenticated users listed as active owners/managers in `admin_profiles` can access admin data.
 
@@ -75,73 +101,30 @@ Read:
 High-level flow:
 
 1. Create a free Supabase project.
-2. Copy URL and anon public key.
-3. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to Netlify.
-4. Run `supabase/schema.sql` in the Supabase SQL editor.
-5. Create the two Auth users for the sister and her boyfriend / co-owner.
-6. Insert both users into `admin_profiles` with `role = 'owner'` and `active = true`.
-7. Test `/admin/login`.
-8. Confirm public users can insert booking requests but cannot read them.
+2. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to Netlify.
+3. Run `supabase/schema.sql` in the Supabase SQL editor.
+4. Create the two owner Auth users.
+5. Insert both users into `admin_profiles` with `role = 'owner'` and `active = true`.
+6. Test `/admin/login`, public request insertion, request decline traceability, and fixed excursion creation.
 
-## Availability fallback order
+## Public-safe data model
 
-The public calendar loads availability in this order:
+The public website reads only safe views:
 
-1. Supabase `public_availability_blocks` view, if Supabase is configured and reachable
-2. `/availability.json`
-3. local `src/data/availability.js`
+- `public_availability_blocks`
+- `public_fixed_excursions`
 
-Public users read only the safe view fields:
+Public visitors can insert `booking_requests`; they cannot read customer requests. Owners can read/update requests and manage availability/fixed excursions through RLS-protected tables.
 
-- `id`
-- `date`
-- `status`
-- `experience_id`
-- `reason_it`
-- `reason_en`
-- `active`
+## Deployment checklist
 
-Internal notes and owner IDs are never selected by the public calendar UI.
-
-## Image slots
-
-Replace the placeholder slots with real documentary-style Etna photography:
-
-- `public/images/etna-eruption-hero.jpg`
-- `public/images/etna-live-pov.jpg`
-- `public/images/etna-safety-landscape.jpg`
-- `public/images/etna-gallery-01.jpg`
-- `public/images/etna-gallery-02.jpg`
-- `public/images/etna-gallery-03.jpg`
-- `public/images/co-owner.jpg`
-
-The uploaded co-owner portrait has already been saved as `public/images/co-owner.jpg`.
-
-## Contact data
-
-- Leonardo Chiavetta
-- Phone / WhatsApp: `+393349298246`
-- Email: `leo97ct@yahoo.it`
-- Instagram: `https://www.instagram.com/leonardo_chiavetta?igsh=bnhkNWQzbnF2aW5m`
-
-## Owner guide
-
-Read [`docs/OWNER_GUIDE.md`](docs/OWNER_GUIDE.md) for non-technical owner usage instructions.
-
-
-## Publishing checklist
-
-Recommended production flow:
-
-1. Put the unzipped project in a private GitHub repository, for example `vulcaniq-website`.
-2. Create a Netlify site from that GitHub repository.
-3. Set Netlify build command to `npm run build`.
-4. Set Netlify publish directory to `dist`.
-5. Create a Supabase project.
-6. Run `supabase/schema.sql` in the Supabase SQL editor.
-7. Create exactly the two owner Auth users.
-8. Add both Auth user IDs to `admin_profiles`.
-9. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Netlify environment variables.
-10. Deploy.
-11. Connect the custom domain.
-12. Test the public form, `/admin/login`, `/admin/today`, `/admin/upcoming`, request approval, and public calendar update from mobile.
+1. Run `npm install`.
+2. Run `npm run build`.
+3. Push the project to GitHub.
+4. Connect the repository to Netlify.
+5. Set build command `npm run build` and publish directory `dist`.
+6. Add Supabase env vars in Netlify.
+7. Run the Supabase schema.
+8. Add exactly the approved owner users to `admin_profiles`.
+9. Deploy.
+10. Test mobile public site, language switch, form, fixed/private request modes, admin login, approval, decline, and fixed excursion creation.

@@ -1,32 +1,29 @@
 # vulcanIQ owner guide
 
-This guide is for Leonardo and the co-owner. It explains how to use the free admin area without technical steps.
+This guide is for Leonardo and Deborah. It explains the admin area in non-technical terms.
 
 ## Log in
 
 1. Open `/admin`.
 2. Enter your owner email and password.
-3. If login is successful, you will see **Today**.
+3. The default page is **Today**.
 
-If you see an access denied message, your email may not be active in the owner list.
+If access is denied, the email is not active in `admin_profiles`.
 
-## Today page
+## Today
 
-The **Today** page is the main owner dashboard.
-
-It shows:
+The **Today** dashboard shows:
 
 - requests dated today
-- pending requests needing confirmation
-- pending total
+- all pending requests needing attention
 - accepted requests for today
-- availability issues for today
-- quick actions
+- near-term availability blocks
+- recent decisions, including declined requests
+- quick links for request history and availability
 
-Use this page first when checking daily operations. It is the default landing page after login.
+Use this page for daily operations.
 
-
-## Upcoming page
+## Upcoming
 
 Open **Upcoming** to see accepted future bookings grouped by:
 
@@ -35,151 +32,127 @@ Open **Upcoming** to see accepted future bookings grouped by:
 - next 7 days
 - later upcoming
 
-This page also shows upcoming closed, limited, and on-request dates. It is practical planning only; analytics and statistics are intentionally not included in this phase.
+This page is operational only. It is not an analytics dashboard.
+
+## Requests / history
+
+Open **Requests** to search and filter all requests by:
+
+- status: pending, accepted, declined, cancelled, archived
+- experience
+- source
+- date range
+- customer search
+
+Declined requests stay here. They do not disappear and are not deleted.
 
 ## Approve a request
 
-1. Go to `/admin`.
-2. Find the request under **Pending bookings**.
-3. Review:
-   - customer name
-   - phone/email
-   - preferred contact
-   - requested experience
-   - requested date
-   - group details
-   - children notes
-   - customer message
-4. Click **Approve**.
-5. Choose one option:
-   - **Accept request only**: confirms the request but does not change availability.
-   - **Accept and close this experience**: closes only that experience on that date.
-   - **Accept and close all experiences**: closes the date for every experience.
-   - **Accept and mark limited availability**: keeps the date requestable but marked as limited.
-6. Add a decision note if useful.
-7. Confirm.
+1. Open the pending request.
+2. Review customer contact, requested date, experience, group type, adults, children, and message.
+3. Click **Approve**.
+4. Choose one option:
+   - accept only
+   - accept and close this experience
+   - accept and close all experiences
+   - accept and mark limited availability
+5. Add a decision note if useful.
+6. Confirm.
 
-Approving a request does not automatically send a message. Use the generated WhatsApp, email, or copy buttons to reply manually.
+The app prepares reply text, but you still send it manually by WhatsApp, email, or copy.
 
 ## Decline a request
 
 1. Open the pending request.
 2. Click **Decline**.
-3. Choose a reason:
-   - unavailable
-   - unsafe conditions
-   - unsuitable route
-   - duplicate request
-   - customer cancelled
-   - other
+3. Choose a reason.
 4. Add a note if useful.
 5. Confirm.
 
-The request becomes declined. The calendar is not changed automatically.
-
-Use the generated reply buttons to contact the customer manually.
-
-## Reply to a customer
-
-Each request has reply helpers:
-
-- **WhatsApp** opens a normal `wa.me` link if the phone number is available.
-- **Email** opens email options.
-- **Copy message** copies the prepared message.
-
-If the phone number does not include a country code, check it before opening WhatsApp.
+The request status becomes `declined`. It remains visible in **Requests** and in **Recent decisions** on Today.
 
 ## Add a manual request
 
-Use this when a customer contacts you outside the website: WhatsApp, phone call, email, or direct conversation.
+Use this for requests received outside the website: WhatsApp, phone, email, or direct conversation.
 
-1. Go to `/admin`.
-2. Click **Add manual request**.
-3. Enter at least a name or contact method.
-4. Choose the source:
-   - WhatsApp
-   - phone
-   - email
-   - manual
-5. Add experience, date, group details, and notes if known.
-6. Save.
+1. Click **Add manual request**.
+2. Enter at least a name or contact method.
+3. Choose source, request type, group type, experience, date, adults, and children.
+4. Save.
 
-The request appears as pending and can be approved or declined like a website request.
+The request appears as pending and can be approved or declined.
 
-## Block a date
+## Fixed excursions
 
-1. Go to `/admin`.
-2. Open **Availability**.
-3. Choose the date.
-4. Choose the scope:
-   - all experiences
-   - Etna Premium
-   - Etna Learning
-   - Etna Live
-   - Etna Stories
-5. Choose **Closed**.
-6. Save.
+Fixed excursions are set dates that visitors can request to join.
 
-The public calendar updates automatically when Supabase is configured.
+1. Open `/admin/availability`.
+2. Select **Fixed excursions**.
+3. Add:
+   - date
+   - optional start time
+   - experience
+   - capacity, normally 12
+   - note IT
+   - note EN
+   - active/inactive
+4. Save.
 
-## Mark limited availability
+Public visitors can request a place. Requests remain pending until an owner accepts them.
 
-1. Go to `/admin/availability`.
-2. Choose the date.
-3. Choose all experiences or one experience.
-4. Select **Limited availability**.
-5. Save.
+Capacity counts accepted participants only. Pending requests do not automatically reduce public capacity.
 
-“Limited” means customers can still request the date, but availability is restricted.
+For groups larger than 12 people, ask the customer to contact the guide directly so the most suitable experience can be evaluated.
 
-## Mark a date as on request
+## Private availability blocks
 
-1. Go to `/admin/availability`.
-2. Choose the date.
-3. Choose all experiences or one experience.
-4. Select **On request**.
-5. Save.
+Private/general availability uses **Availability blocks**.
 
-“On request” means the date may be possible, but it needs direct confirmation.
+You can mark dates as:
 
-## Unblock or deactivate a date
-
-1. Go to `/admin/availability`.
-2. Find the existing block.
-3. Click **Deactivate / unblock**.
-
-The block is not deleted. It becomes inactive, and the public calendar ignores it.
-
-## Edit an availability block
-
-1. Go to `/admin/availability`.
-2. Find the block.
-3. Click **Edit**.
-4. Change status, public reasons, or internal note.
-5. Save.
-
-## What the status labels mean
-
-- **Closed**: customers cannot request that date directly.
+- **Closed**: customers cannot directly request the date.
 - **Limited**: customers can request, but availability is restricted.
-- **On request**: the date may be possible, but only after confirmation.
+- **On request**: the date may be possible, but needs direct confirmation.
 
-## Public calendar note
+To block a private date:
 
-Availability is indicative. Final confirmation still depends on:
+1. Open `/admin/availability`.
+2. Select **Availability blocks**.
+3. Choose date, scope, and status.
+4. Add public reasons if useful.
+5. Save.
 
-- weather
-- official regulations
-- volcanic conditions
-- guide assessment
-- group age, mobility, clothing, and expectations
+To unblock a date, deactivate the block. It is not deleted; it becomes inactive.
 
-## If something looks wrong
+## Public calendar behavior
 
-1. Refresh `/admin`.
-2. Check whether you are still logged in.
-3. Check `/admin/availability` for active blocks.
-4. If a request was accepted but the calendar did not update, manually block the date in **Availability**.
-5. If the public form fails, ask the customer to use WhatsApp or email.
+The public calendar has two modes:
 
-This system is intentionally simple. It is not a full commercial booking platform: no payments, invoices, SMS, WhatsApp Business API, Google Calendar sync, or customer accounts are included in this phase.
+- **Fixed excursion**: shows owner-created fixed dates.
+- **Private excursion**: shows availability based on closed, limited, and on-request blocks.
+
+The public calendar updates when Supabase is configured and the relevant admin data is saved.
+
+## Reply helpers
+
+Each request has tools for:
+
+- WhatsApp
+- Email
+- Copy message
+
+If a phone number lacks an international prefix, check it manually before using WhatsApp.
+
+## What is intentionally not included
+
+This phase does not include:
+
+- payments
+- invoices
+- SMS
+- WhatsApp Business API
+- customer accounts
+- Google Calendar sync
+- advanced analytics
+
+The system is intentionally simple and owner-controlled.

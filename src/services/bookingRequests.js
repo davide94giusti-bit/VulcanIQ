@@ -2,7 +2,7 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 import { createAvailabilityBlock } from './availabilityService.js';
 
 const requestFields = `
-  id, created_at, updated_at, status,
+  id, created_at, updated_at, status, request_type, fixed_excursion_id,
   customer_name, customer_email, customer_phone, preferred_contact,
   experience_id, requested_date, alternative_date, language,
   party_type, adults, children, children_under_3, private_experience,
@@ -33,6 +33,8 @@ export function normalizeRequestInput(input, defaults = {}) {
     alternative_date: textOrNull(input.alternative_date),
     language: textOrNull(input.language) || defaults.language || 'it',
     party_type: textOrNull(input.party_type),
+    request_type: textOrNull(input.request_type) || defaults.request_type || 'private',
+    fixed_excursion_id: textOrNull(input.fixed_excursion_id),
     adults: intOrNull(input.adults),
     children: intOrNull(input.children),
     children_under_3: Boolean(input.children_under_3),

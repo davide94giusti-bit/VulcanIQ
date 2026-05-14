@@ -1483,3 +1483,238 @@ blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cr
   font-size: 1rem;
   letter-spacing: -0.01em;
 }
+
+/* 2026 client feedback refresh: media-rich, shorter, tabbed public flow */
+.hero {
+  background:
+    linear-gradient(90deg, rgba(13,22,38,0.94), rgba(13,22,38,0.78) 48%, rgba(13,22,38,0.54)),
+    url('/images/vulcaniq/etna-premium.jpeg') center / cover no-repeat,
+    radial-gradient(circle at 72% 22%, rgba(240,107,79,0.38), transparent 32%),
+    linear-gradient(135deg, #101a28, #243850);
+}
+
+.video-slot {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 470px;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: var(--shadow);
+  background: #05080d;
+}
+
+.video-slot video {
+  width: 100%;
+  height: 100%;
+  min-height: 470px;
+  object-fit: cover;
+  display: block;
+}
+
+.video-slot figcaption {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 3;
+  padding: 8px 11px;
+  border-radius: 999px;
+  background: rgba(13,22,38,0.78);
+  color: #fff;
+  font-size: 0.88rem;
+  backdrop-filter: blur(10px);
+}
+
+.story-card h2 { max-width: 760px; }
+.story-text { display: grid; gap: 12px; }
+.story-text p { margin: 0; color: var(--basalt); }
+.visual-note { padding: 0; overflow: hidden; background: transparent; box-shadow: none; }
+.visual-note .image-slot { height: 100%; min-height: 100%; border-color: var(--line); }
+
+.experience-card {
+  background: linear-gradient(145deg, rgba(255,255,255,0.94), rgba(251,247,239,0.9));
+}
+
+.experience-card.open {
+  box-shadow: 0 26px 70px rgba(82, 43, 30, 0.16);
+}
+
+.experience-summary {
+  grid-template-columns: 138px minmax(220px, 1.05fr) minmax(160px, .8fr) minmax(140px, .5fr) auto;
+  padding: 14px;
+}
+
+.experience-image {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1.28;
+  border-radius: 22px;
+  background: var(--night);
+}
+
+.experience-image::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent, rgba(13, 22, 38, 0.18));
+}
+
+.experience-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .45s ease;
+}
+
+.experience-card.open .experience-image img,
+.experience-summary:hover .experience-image img { transform: scale(1.035); }
+
+.mode-toggle {
+  display: inline-flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.72);
+  box-shadow: var(--shadow-soft);
+}
+
+.mode-toggle button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 16px;
+  background: transparent;
+  color: var(--basalt);
+  font-weight: 900;
+}
+
+.mode-toggle button.active {
+  background: var(--night);
+  color: #fff;
+}
+
+.form-mode-toggle,
+.admin-tabs { margin-bottom: 12px; }
+
+.fixed-excursion-panel h3 { margin-top: 0; }
+.fixed-excursion-list { display: grid; gap: 12px; }
+.fixed-excursion-option {
+  width: 100%;
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: linear-gradient(145deg, #fff, #fbf7ef);
+  color: var(--night);
+  text-align: left;
+}
+
+.fixed-excursion-option.selected {
+  border-color: rgba(240,107,79,0.62);
+  box-shadow: inset 0 0 0 2px rgba(240,107,79,0.18);
+}
+
+.fixed-excursion-option small {
+  display: block;
+  margin-top: 4px;
+  color: var(--ash);
+  font-weight: 650;
+}
+
+.fixed-excursion-option b {
+  white-space: nowrap;
+  color: #b64c38;
+}
+
+.image-info-card { padding: 0; overflow: hidden; }
+.image-info-card .image-slot { border-radius: 0; box-shadow: none; border: 0; }
+.info-card-copy { padding: 22px; }
+.readable-safety-card {
+  background:
+    linear-gradient(145deg, rgba(13,22,38,0.96), rgba(31,45,64,0.96)),
+    url('/images/vulcaniq/lava-rock.jpeg') center / cover no-repeat;
+}
+.readable-safety-card p,
+.readable-safety-card li { color: rgba(255,255,255,0.88); }
+.gear-extra {
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--lava-soft);
+  color: var(--basalt);
+}
+.detail-gallery { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.reviews-panel {
+  display: grid;
+  grid-template-columns: minmax(280px, .72fr) minmax(0, 1.28fr);
+  gap: 24px;
+  align-items: start;
+}
+.testimonial-card {
+  padding: clamp(22px, 4vw, 38px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: #fff;
+  box-shadow: var(--shadow-soft);
+}
+.testimonial-card blockquote {
+  padding: 0;
+  background: transparent;
+  color: var(--night);
+  font-size: clamp(1.08rem, 2vw, 1.45rem);
+  line-height: 1.55;
+}
+.people-summary {
+  min-height: 48px;
+  display: grid;
+  align-content: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--cream);
+}
+.people-summary strong {
+  color: var(--ash);
+  font-size: 0.72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.people-summary span { color: var(--night); font-weight: 950; font-size: 1.25rem; }
+.inline-checkboxes { margin-top: 12px; }
+.form-status.warning {
+  color: #79532a;
+  background: rgba(241, 184, 107, 0.16);
+  border: 1px solid rgba(241, 184, 107, 0.35);
+}
+.decision-note {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(244,238,228,0.68);
+}
+
+@media (max-width: 1120px) {
+  .experience-summary { grid-template-columns: 120px 1fr; }
+  .experience-meta, .experience-summary .small-button { grid-column: 2; }
+  .detail-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 860px) {
+  .reviews-panel { grid-template-columns: 1fr; }
+  .fixed-excursion-option { grid-template-columns: 1fr; }
+  .video-slot, .video-slot video { min-height: 340px; }
+}
+
+@media (max-width: 560px) {
+  .video-slot, .video-slot video { min-height: 300px; }
+  .experience-summary { grid-template-columns: 1fr; }
+  .experience-image { aspect-ratio: 1.42; }
+  .experience-meta, .experience-summary .small-button { grid-column: auto; }
+  .mode-toggle { width: 100%; display: grid; grid-template-columns: 1fr; border-radius: 24px; }
+  .mode-toggle button { width: 100%; }
+  .detail-gallery { grid-template-columns: 1fr; }
+}
