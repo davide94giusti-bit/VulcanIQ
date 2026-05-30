@@ -4,11 +4,26 @@ This guide is for Leonardo and Deborah. It explains the admin area in non-techni
 
 ## Log in
 
-1. Open `/admin`.
+1. Open `/admin` or `/admin/login`.
 2. Enter your owner email and password.
 3. The default page is **Today**.
 
 If access is denied, the email is not active in `admin_profiles`.
+
+## Public site structure
+
+The public website is now organized as page-like sections from the header:
+
+- Home / Inizio
+- Experiences / Esperienze
+- Upcoming excursions / Prossime escursioni
+- Partnerships / Collaborazioni
+- About us / Chi siamo
+- Mission / Missione
+- Reviews / Recensioni
+- Contact / Contatti
+
+Visitors no longer need to scroll through one long landing page. Each header button opens the relevant content directly.
 
 ## Today
 
@@ -23,7 +38,7 @@ The **Today** dashboard shows:
 
 Use this page for daily operations.
 
-## Upcoming
+## Upcoming accepted bookings
 
 Open **Upcoming** to see accepted future bookings grouped by:
 
@@ -32,7 +47,7 @@ Open **Upcoming** to see accepted future bookings grouped by:
 - next 7 days
 - later upcoming
 
-This page is operational only. It is not an analytics dashboard.
+This admin page is operational only. It is separate from the public **Upcoming excursions** page.
 
 ## Requests / history
 
@@ -82,19 +97,23 @@ Use this for requests received outside the website: WhatsApp, phone, email, or d
 
 The request appears as pending and can be approved or declined.
 
-## Fixed excursions
+## Fixed excursions / public Upcoming excursions
 
-Fixed excursions are set dates that visitors can request to join.
+Fixed excursions are set dates that visitors can request to join. They appear publicly under **Upcoming excursions / Prossime escursioni**.
 
 1. Open `/admin/availability`.
 2. Select **Fixed excursions**.
 3. Add:
    - date
-   - optional start time
+   - start time
+   - optional end time
    - experience
+   - title IT and/or EN
+   - description IT and EN
+   - meeting point IT and EN
+   - difficulty IT and EN
+   - price note IT and EN
    - capacity, normally 12
-   - note IT
-   - note EN
    - active/inactive
 4. Save.
 
@@ -103,6 +122,23 @@ Public visitors can request a place. Requests remain pending until an owner acce
 Capacity counts accepted participants only. Pending requests do not automatically reduce public capacity.
 
 For groups larger than 12 people, ask the customer to contact the guide directly so the most suitable experience can be evaluated.
+
+## Partnerships / Collaborazioni
+
+Partnerships are public collaborations visible on the public **Partnerships / Collaborazioni** page.
+
+1. Open `/admin/partnerships`.
+2. Add:
+   - name
+   - category IT and EN
+   - description IT and EN
+   - optional website URL
+   - optional image URL
+   - display order
+   - active/inactive
+3. Save.
+
+Only active partnerships appear publicly. Use **display order** to control ordering. If no partnerships are active, the public page shows an empty-state message.
 
 ## Private availability blocks
 
@@ -124,14 +160,25 @@ To block a private date:
 
 To unblock a date, deactivate the block. It is not deleted; it becomes inactive.
 
-## Public calendar behavior
+## Public request behavior
 
-The public calendar has two modes:
+Visitors can request:
 
-- **Fixed excursion**: shows owner-created fixed dates.
-- **Private excursion**: shows availability based on closed, limited, and on-request blocks.
+- a fixed excursion from the public **Upcoming excursions** page;
+- a fixed excursion from the contact form selector;
+- a private excursion from the contact page.
 
-The public calendar updates when Supabase is configured and the relevant admin data is saved.
+Fixed excursion requests save as pending and include `fixed_excursion_id`.
+
+## Language content
+
+Keep Italian and English fields updated wherever both exist:
+
+- fixed excursion titles/descriptions/meeting points/difficulty/price notes
+- partnership categories/descriptions
+- public request copy when relevant
+
+If only one language is entered for a fixed excursion or partnership, the site falls back gracefully, but bilingual content is preferred.
 
 ## Reply helpers
 

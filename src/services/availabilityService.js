@@ -28,10 +28,21 @@ function normalizeFixedExcursion(row) {
     updated_at: row.updated_at,
     date: row.date,
     start_time: row.start_time || '',
+    end_time: row.end_time || '',
     experience_id: row.experience_id,
+    title_it: row.title_it || '',
+    title_en: row.title_en || '',
+    description_it: row.description_it || '',
+    description_en: row.description_en || '',
+    meeting_point_it: row.meeting_point_it || '',
+    meeting_point_en: row.meeting_point_en || '',
+    difficulty_it: row.difficulty_it || '',
+    difficulty_en: row.difficulty_en || '',
+    price_note_it: row.price_note_it || '',
+    price_note_en: row.price_note_en || '',
     capacity,
-    note_it: row.note_it || '',
-    note_en: row.note_en || '',
+    note_it: row.note_it || row.description_it || '',
+    note_en: row.note_en || row.description_en || '',
     active: row.active !== false,
     created_by: row.created_by || null,
     updated_by: row.updated_by || null,
@@ -75,7 +86,7 @@ export async function loadPublicFixedExcursions() {
     const today = new Date().toISOString().slice(0, 10);
     const { data, error } = await supabase
       .from('public_fixed_excursions')
-      .select('id, date, start_time, experience_id, capacity, note_it, note_en, active, accepted_count, places_remaining')
+      .select('id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, capacity, note_it, note_en, active, accepted_count, places_remaining')
       .eq('active', true)
       .gte('date', today)
       .order('date', { ascending: true })
@@ -164,7 +175,7 @@ export async function listFixedExcursions({ activeOnly = false, fromDate = null,
 
   let query = supabase
     .from('fixed_excursions')
-    .select('id, created_at, updated_at, date, start_time, experience_id, capacity, note_it, note_en, active, created_by, updated_by')
+    .select('id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, capacity, note_it, note_en, active, created_by, updated_by')
     .order('date', { ascending: true })
     .order('start_time', { ascending: true });
 
@@ -208,10 +219,21 @@ export async function createFixedExcursion(input) {
   const payload = {
     date: input.date,
     start_time: input.start_time || null,
+    end_time: input.end_time || null,
     experience_id: input.experience_id,
+    title_it: input.title_it || null,
+    title_en: input.title_en || null,
+    description_it: input.description_it || input.note_it || null,
+    description_en: input.description_en || input.note_en || null,
+    meeting_point_it: input.meeting_point_it || null,
+    meeting_point_en: input.meeting_point_en || null,
+    difficulty_it: input.difficulty_it || null,
+    difficulty_en: input.difficulty_en || null,
+    price_note_it: input.price_note_it || null,
+    price_note_en: input.price_note_en || null,
+    note_it: input.note_it || input.description_it || null,
+    note_en: input.note_en || input.description_en || null,
     capacity: Number.parseInt(input.capacity || 12, 10),
-    note_it: input.note_it || null,
-    note_en: input.note_en || null,
     active: input.active !== false,
     created_by: input.created_by || null,
     updated_by: input.updated_by || null
@@ -233,6 +255,9 @@ export async function updateFixedExcursion(id, input) {
   const payload = { ...input, updated_at: new Date().toISOString() };
   if (payload.capacity !== undefined) payload.capacity = Number.parseInt(payload.capacity || 12, 10);
   if (payload.start_time === '') payload.start_time = null;
+  if (payload.end_time === '') payload.end_time = null;
+  if (payload.description_it && !payload.note_it) payload.note_it = payload.description_it;
+  if (payload.description_en && !payload.note_en) payload.note_en = payload.description_en;
   Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key]);
 
   const { data, error } = await supabase

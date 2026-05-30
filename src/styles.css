@@ -1718,3 +1718,243 @@ blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cr
   .mode-toggle button { width: 100%; }
   .detail-gallery { grid-template-columns: 1fr; }
 }
+
+/* vulcanIQ page-navigation, logo, admin partnerships, and justified copy update */
+.public-page-shell {
+  min-height: calc(100svh - var(--header-height));
+}
+
+.brand-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.brand-logo-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: min(430px, 70vw);
+  border-radius: 24px;
+  overflow: hidden;
+  background: var(--night);
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.22);
+}
+
+.brand-logo-wrap.compact {
+  width: 170px;
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+.brand-logo {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+.hero .brand-logo-wrap {
+  margin-bottom: 22px;
+}
+
+.nav-links button:not(.language-toggle) {
+  min-height: 42px;
+  border: 1px solid transparent;
+  color: rgba(255,255,255,0.74);
+  border-radius: 999px;
+  background: transparent;
+  padding: 0 10px;
+  font-weight: 850;
+}
+
+.nav-links button:not(.language-toggle):hover,
+.nav-links button:not(.language-toggle).active {
+  color: #fff;
+  border-color: rgba(241,184,107,0.38);
+  background: rgba(255,255,255,0.08);
+}
+
+.page-section {
+  min-height: calc(100svh - var(--header-height) - 120px);
+}
+
+.mission-page-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+  gap: 20px;
+  align-items: stretch;
+}
+
+.mission-feature-card {
+  grid-row: span 2;
+}
+
+.vision-feature-card,
+.mission-image-card {
+  min-height: 260px;
+}
+
+.empty-state-card,
+.upcoming-card,
+.partnership-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.82);
+  box-shadow: var(--shadow-soft);
+}
+
+.empty-state-card {
+  padding: clamp(22px, 4vw, 34px);
+}
+
+.upcoming-grid,
+.partnership-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.upcoming-card,
+.partnership-card {
+  padding: clamp(20px, 3vw, 28px);
+}
+
+.upcoming-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  color: var(--basalt);
+  font-weight: 900;
+}
+
+.date-badge,
+.micro-label {
+  display: inline-flex;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--lava-soft);
+  color: #a94433;
+  font-size: 0.75rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.public-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.public-details-grid div {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(251,247,239,0.72);
+}
+
+.public-details-grid dt {
+  color: var(--ash);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.public-details-grid dd {
+  margin: 4px 0 0;
+  color: var(--night);
+  font-weight: 800;
+}
+
+.partnership-card {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.partnership-card img {
+  width: 150px;
+  height: 120px;
+  border-radius: 18px;
+  object-fit: cover;
+  background: var(--night);
+}
+
+.admin-page-label {
+  color: rgba(255,255,255,0.7);
+  font-size: 0.82rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.copy,
+.rich-text,
+.section-copy,
+.card-description,
+.experience-copy,
+.experience-body p,
+.experience-body dd,
+.about-copy,
+.mission-copy,
+.mission-page-grid p,
+.review-copy,
+.story-text p,
+.section-header p,
+.content-card p,
+.team-card p:not(.role),
+.testimonial-card blockquote,
+.upcoming-card p,
+.partnership-card p,
+.final-panel p,
+.contact-section-grid p,
+.footer p {
+  text-align: justify;
+  text-justify: inter-word;
+  hyphens: auto;
+}
+
+button,
+.button,
+.pill-action,
+.nav-links button,
+.kicker,
+.micro-label,
+.field-label,
+.public-details-grid dt,
+.public-details-grid dd,
+h1,
+h2,
+h3 {
+  text-align: initial;
+}
+
+@media (max-width: 1120px) {
+  .nav-links button, .nav-links a { justify-content: center; width: 100%; }
+  .brand-logo-wrap.compact { width: 150px; }
+}
+
+@media (max-width: 860px) {
+  .mission-page-grid,
+  .upcoming-grid,
+  .partnership-grid,
+  .partnership-card {
+    grid-template-columns: 1fr;
+  }
+  .mission-feature-card { grid-row: auto; }
+  .partnership-card img { width: 100%; height: 190px; }
+  .public-details-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .brand-logo-wrap.compact { width: 132px; }
+  .hero .brand-logo-wrap { width: 100%; }
+  .upcoming-card-head { align-items: flex-start; flex-direction: column; }
+}

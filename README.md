@@ -1,27 +1,21 @@
 # vulcanIQ website + two-owner booking admin
 
-Vite + React public website for **vulcanIQ**, a premium Mount Etna experiential tourism brand, with an optional free Supabase layer for owner-managed booking requests, private availability, and fixed excursions.
+Vite + React public website for **vulcanIQ**, a premium Mount Etna experiential tourism brand, with an optional free Supabase layer for owner-managed booking requests, private availability, fixed excursions, and public partnerships.
 
-The site remains deployable on Netlify and does not add paid services, payments, SMS, WhatsApp Business API, customer accounts, invoices, Google Calendar sync, or analytics.
+The site remains deployable on Netlify/Cloudflare-compatible static hosting and does not add paid services, payments, SMS, WhatsApp Business API, customer accounts, invoices, Google Calendar sync, or analytics.
 
-## What is included
+## What changed in this update
 
-- Shorter bilingual Italian/English public website with visual cards, tabs, accordions, and restrained Apple-style scrolling.
-- New local media assets under `public/images/vulcaniq/` and `public/videos/vulcaniq/`.
-- Hero video block using `public/videos/vulcaniq/intro.mp4`.
-- Updated Etna Premium, Etna Stories, Etna Live, and Etna Learning cards with photography.
-- Leonardo and Deborah public profile section using only the provided biographies.
-- Public reviews/testimonials section.
-- Public request flow for:
-  - fixed excursions
-  - private excursions
-  - adults / children / children under 3
-  - solo traveler / couple / family / group / company / school / other
-  - group-over-12 guidance.
-- Owner-only admin at `/admin` with Supabase Auth and `admin_profiles` authorization.
-- Request approval/decline workflow where declined requests remain traceable in request history and recent decisions.
-- Private availability blocks: closed, limited, on-request.
-- Fixed excursions with date, optional start time, experience, capacity, notes, and active/inactive state.
+- Reworked the public site into a page-like navigation model instead of one continuous long landing page.
+- Header buttons now switch directly between: Home, Experiences, Upcoming excursions, Partnerships, About us, Mission, Reviews, and Contact.
+- Restored the Mission and Vision content in Italian and English.
+- Removed decorative image captions/notes from the visible UI while keeping useful alt text.
+- Added the approved vulcanIQ logo package asset under `public/brand/vulcaniq/` and applied it to the header, hero, footer, admin login/header, favicon, and Open Graph image.
+- Added a public **Upcoming excursions** page driven by admin-created fixed excursions.
+- Expanded fixed excursions with title, description, meeting point, difficulty, price note, optional end time, capacity, and active state.
+- Added admin-created **Partnerships / Collaborazioni** with public display through a safe view.
+- Removed the unwanted reviews phrase from Italian and English.
+- Added justified alignment for paragraph and body-copy text while keeping buttons, headings, forms, and navigation clean.
 
 ## Build commands
 
@@ -47,10 +41,11 @@ Netlify settings:
 
 The public site builds and renders without Supabase credentials. Without Supabase:
 
-1. the public private-availability calendar uses `/public/availability.json`, then `src/data/availability.js`;
-2. fixed excursions are simply empty;
-3. the public request form shows fallback contact guidance;
-4. `/admin` shows a setup warning.
+1. private availability falls back to `/public/availability.json`, then `src/data/availability.js`;
+2. fixed excursions are empty;
+3. partnerships are empty;
+4. the public request form shows fallback contact guidance;
+5. `/admin` shows a setup warning.
 
 To enable booking/admin features, add these browser-safe variables locally and in Netlify:
 
@@ -61,25 +56,23 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key
 
 Do **not** expose the Supabase service role key in frontend JavaScript.
 
-## Public media assets
+## Public and brand assets
 
-New assets are stored locally, with no external CDN dependency:
+Brand assets:
 
 ```text
-public/images/vulcaniq/etna-premium.jpeg
-public/images/vulcaniq/etna-stories.jpeg
-public/images/vulcaniq/etna-live.jpeg
-public/images/vulcaniq/etna-learning.jpeg
-public/images/vulcaniq/leonardo-guide.jpeg
-public/images/vulcaniq/etna-live-safe.jpeg
-public/images/vulcaniq/landscape.jpeg
-public/images/vulcaniq/lava-rock.jpeg
-public/images/vulcaniq/guide.jpeg
-public/images/vulcaniq/natural-light.jpeg
+public/brand/vulcaniq/logo-blue-background.png
+public/brand/vulcaniq/og-image.png
+```
+
+Experience media remains local under:
+
+```text
+public/images/vulcaniq/
 public/videos/vulcaniq/intro.mp4
 ```
 
-Compatibility copies are also present for older image references such as `public/images/etna-eruption-hero.jpg`.
+Do not replace the Etna photos/videos with the logo. The logo is used only for brand identity areas.
 
 ## Admin URLs
 
@@ -88,6 +81,7 @@ Compatibility copies are also present for older image references such as `public
 - Upcoming accepted bookings: `/admin/upcoming`
 - Request history and filters: `/admin/requests`
 - Availability and fixed excursions: `/admin/availability`
+- Partnerships: `/admin/partnerships`
 
 Only authenticated users listed as active owners/managers in `admin_profiles` can access admin data.
 
@@ -103,9 +97,9 @@ High-level flow:
 1. Create a free Supabase project.
 2. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to Netlify.
 3. Run `supabase/schema.sql` in the Supabase SQL editor.
-4. Create the two owner Auth users.
+4. Create the owner Auth users.
 5. Insert both users into `admin_profiles` with `role = 'owner'` and `active = true`.
-6. Test `/admin/login`, public request insertion, request decline traceability, and fixed excursion creation.
+6. Test `/admin/login`, public request insertion, fixed excursion creation, partnership creation, and RLS access.
 
 ## Public-safe data model
 
@@ -113,8 +107,9 @@ The public website reads only safe views:
 
 - `public_availability_blocks`
 - `public_fixed_excursions`
+- `public_partnerships`
 
-Public visitors can insert `booking_requests`; they cannot read customer requests. Owners can read/update requests and manage availability/fixed excursions through RLS-protected tables.
+Public visitors can insert `booking_requests`; they cannot read customer requests. Owners can read/update requests and manage availability, fixed excursions, and partnerships through RLS-protected tables.
 
 ## Deployment checklist
 
@@ -125,6 +120,6 @@ Public visitors can insert `booking_requests`; they cannot read customer request
 5. Set build command `npm run build` and publish directory `dist`.
 6. Add Supabase env vars in Netlify.
 7. Run the Supabase schema.
-8. Add exactly the approved owner users to `admin_profiles`.
+8. Add the approved owner users to `admin_profiles`.
 9. Deploy.
-10. Test mobile public site, language switch, form, fixed/private request modes, admin login, approval, decline, and fixed excursion creation.
+10. Test public page switching, mobile navigation, language switch, fixed excursion requests, partnership display, form submission, admin login, approval/decline, and RLS.
