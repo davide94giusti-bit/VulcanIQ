@@ -3,6 +3,7 @@ import { createAvailabilityBlock } from './availabilityService.js';
 
 const requestFields = `
   id, created_at, updated_at, status, request_type, fixed_excursion_id,
+  booking_code, review_submitted, review_submitted_at, removed_at, removed_by,
   customer_name, customer_email, customer_phone, preferred_contact,
   experience_id, requested_date, alternative_date, language,
   party_type, adults, children, children_under_3, private_experience,
@@ -14,6 +15,16 @@ const requestFields = `
 function textOrNull(value) {
   const clean = typeof value === 'string' ? value.trim() : value;
   return clean === '' || clean === undefined ? null : clean;
+}
+
+function makeBookingCode(date) {
+  const year = String(date || new Date().toISOString()).slice(0, 4);
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let suffix = '';
+  for (let index = 0; index < 4; index += 1) {
+    suffix += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return `VQ-${year}-${suffix}`;
 }
 
 function intOrNull(value) {
@@ -132,6 +143,7 @@ export async function updateBookingRequest(id, payload) {
 export async function approveBookingRequest({ request, userId, mode = 'accept-only', decisionNote = '', limitedScope = 'experience' }) {
   const accepted = await updateBookingRequest(request.id, {
     status: 'accepted',
+    booking_code: request.booking_code || makeBookingCode(request.requested_date),
     decision_note: decisionNote || null,
     decided_at: new Date().toISOString(),
     decided_by: userId
@@ -198,5 +210,18 @@ export async function declineBookingRequest({ request, userId, decisionNote = ''
     decision_note: note || null,
     decided_at: new Date().toISOString(),
     decided_by: userId
+  });
+}
+
+
+export async function cancelBookingRequest({ request, userId, decisionNote = '' }) {
+  const note = ['removed/cancelled', decisionNote].filter(Boolean).join(' · ');
+  return updateBookingRequest(request.id, {
+    status: 'cancelled',
+    decision_note: note || null,
+    decided_at: new Date().toISOString(),
+    decided_by: userId,
+    removed_at: new Date().toISOString(),
+    removed_by: userId
   });
 }

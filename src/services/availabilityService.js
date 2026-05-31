@@ -1,6 +1,8 @@
 import { blockedDates } from '../data/availability.js';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 
+const FIXED_EXCURSION_FILE_BUCKET = 'vulcaniq-public-assets';
+
 function normalizeAvailabilityRow(row) {
   return {
     id: row.id,
@@ -40,6 +42,10 @@ function normalizeFixedExcursion(row) {
     difficulty_en: row.difficulty_en || '',
     price_note_it: row.price_note_it || '',
     price_note_en: row.price_note_en || '',
+    blocked_dates_file_url: row.blocked_dates_file_url || '',
+    blocked_dates_file_name: row.blocked_dates_file_name || '',
+    blocked_dates_file_type: row.blocked_dates_file_type || '',
+    blocked_dates_file_path: row.blocked_dates_file_path || '',
     capacity,
     note_it: row.note_it || row.description_it || '',
     note_en: row.note_en || row.description_en || '',
@@ -86,7 +92,7 @@ export async function loadPublicFixedExcursions() {
     const today = new Date().toISOString().slice(0, 10);
     const { data, error } = await supabase
       .from('public_fixed_excursions')
-      .select('id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, capacity, note_it, note_en, active, accepted_count, places_remaining')
+      .select('id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, capacity, note_it, note_en, active, accepted_count, places_remaining')
       .eq('active', true)
       .gte('date', today)
       .order('date', { ascending: true })
@@ -175,7 +181,7 @@ export async function listFixedExcursions({ activeOnly = false, fromDate = null,
 
   let query = supabase
     .from('fixed_excursions')
-    .select('id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, capacity, note_it, note_en, active, created_by, updated_by')
+    .select('id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, capacity, note_it, note_en, active, created_by, updated_by')
     .order('date', { ascending: true })
     .order('start_time', { ascending: true });
 
@@ -231,6 +237,10 @@ export async function createFixedExcursion(input) {
     difficulty_en: input.difficulty_en || null,
     price_note_it: input.price_note_it || null,
     price_note_en: input.price_note_en || null,
+    blocked_dates_file_url: input.blocked_dates_file_url || null,
+    blocked_dates_file_name: input.blocked_dates_file_name || null,
+    blocked_dates_file_type: input.blocked_dates_file_type || null,
+    blocked_dates_file_path: input.blocked_dates_file_path || null,
     note_it: input.note_it || input.description_it || null,
     note_en: input.note_en || input.description_en || null,
     capacity: Number.parseInt(input.capacity || 12, 10),
@@ -273,6 +283,48 @@ export async function updateFixedExcursion(id, input) {
 
 export async function deactivateFixedExcursion(id, userId) {
   return updateFixedExcursion(id, { active: false, updated_by: userId || null });
+}
+
+
+export function isAllowedBlockedDatesFile(file) {
+  if (!file) return false;
+  const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+  return allowed.includes(file.type);
+}
+
+export async function uploadBlockedDatesFile(file, userId) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  if (!isAllowedBlockedDatesFile(file)) {
+    throw new Error('Only PDF, JPEG, PNG, or WEBP files are allowed.');
+  }
+
+  const safeName = String(file.name || 'blocked-dates-file')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 90) || 'blocked-dates-file';
+  const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const path = `blocked-dates/${userId || 'admin'}/${unique}-${safeName}`;
+
+  const { error } = await supabase.storage
+    .from(FIXED_EXCURSION_FILE_BUCKET)
+    .upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type });
+
+  if (error) throw error;
+
+  const { data } = supabase.storage.from(FIXED_EXCURSION_FILE_BUCKET).getPublicUrl(path);
+  return {
+    blocked_dates_file_url: data?.publicUrl || '',
+    blocked_dates_file_name: file.name || safeName,
+    blocked_dates_file_type: file.type,
+    blocked_dates_file_path: path
+  };
+}
+
+export async function removeBlockedDatesFile(path) {
+  if (!isSupabaseConfigured || !path) return;
+  await supabase.storage.from(FIXED_EXCURSION_FILE_BUCKET).remove([path]);
 }
 
 export function defaultReason(status, lang) {

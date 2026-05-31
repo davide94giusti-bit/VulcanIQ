@@ -1,4 +1,4 @@
--- vulcanIQ free owner-managed booking, availability, fixed-excursion, and partnership system
+-- vulcanIQ free owner-managed booking, availability, fixed-excursion, partnership, and review system
 -- Run this file in the Supabase SQL editor after creating the project.
 
 create extension if not exists pgcrypto;
@@ -84,6 +84,11 @@ create table if not exists public.booking_requests (
   decided_by uuid references auth.users(id),
   created_by_admin uuid references auth.users(id),
   availability_block_id uuid null,
+  booking_code text unique,
+  review_submitted boolean not null default false,
+  review_submitted_at timestamptz null,
+  removed_at timestamptz null,
+  removed_by uuid references auth.users(id),
   constraint booking_requests_status_check check (status in ('pending', 'accepted', 'declined', 'cancelled', 'archived')),
   constraint booking_requests_request_type_check check (request_type in ('private', 'fixed')),
   constraint booking_requests_preferred_contact_check check (preferred_contact is null or preferred_contact in ('whatsapp', 'phone', 'email', 'form', 'unknown')),
@@ -98,6 +103,11 @@ create table if not exists public.booking_requests (
 alter table public.booking_requests add column if not exists request_type text not null default 'private';
 alter table public.booking_requests add column if not exists fixed_excursion_id uuid null;
 alter table public.booking_requests add column if not exists availability_block_id uuid null;
+alter table public.booking_requests add column if not exists booking_code text unique;
+alter table public.booking_requests add column if not exists review_submitted boolean not null default false;
+alter table public.booking_requests add column if not exists review_submitted_at timestamptz null;
+alter table public.booking_requests add column if not exists removed_at timestamptz null;
+alter table public.booking_requests add column if not exists removed_by uuid references auth.users(id);
 
 create index if not exists booking_requests_status_idx on public.booking_requests(status);
 create index if not exists booking_requests_requested_date_idx on public.booking_requests(requested_date);
@@ -105,6 +115,7 @@ create index if not exists booking_requests_created_at_idx on public.booking_req
 create index if not exists booking_requests_source_idx on public.booking_requests(source);
 create index if not exists booking_requests_request_type_idx on public.booking_requests(request_type);
 create index if not exists booking_requests_fixed_excursion_idx on public.booking_requests(fixed_excursion_id);
+create unique index if not exists booking_requests_booking_code_idx on public.booking_requests(booking_code) where booking_code is not null;
 
 drop trigger if exists booking_requests_set_updated_at on public.booking_requests;
 create trigger booking_requests_set_updated_at
@@ -162,6 +173,10 @@ create table if not exists public.fixed_excursions (
   difficulty_en text,
   price_note_it text,
   price_note_en text,
+  blocked_dates_file_url text,
+  blocked_dates_file_name text,
+  blocked_dates_file_type text,
+  blocked_dates_file_path text,
   capacity integer not null default 12,
   note_it text,
   note_en text,
@@ -183,6 +198,10 @@ alter table public.fixed_excursions add column if not exists difficulty_it text;
 alter table public.fixed_excursions add column if not exists difficulty_en text;
 alter table public.fixed_excursions add column if not exists price_note_it text;
 alter table public.fixed_excursions add column if not exists price_note_en text;
+alter table public.fixed_excursions add column if not exists blocked_dates_file_url text;
+alter table public.fixed_excursions add column if not exists blocked_dates_file_name text;
+alter table public.fixed_excursions add column if not exists blocked_dates_file_type text;
+alter table public.fixed_excursions add column if not exists blocked_dates_file_path text;
 alter table public.fixed_excursions add column if not exists note_it text;
 alter table public.fixed_excursions add column if not exists note_en text;
 
@@ -194,6 +213,113 @@ drop trigger if exists fixed_excursions_set_updated_at on public.fixed_excursion
 create trigger fixed_excursions_set_updated_at
 before update on public.fixed_excursions
 for each row execute function public.set_updated_at();
+
+-- -----------------------------------------------------------------------------
+-- Public reviews validated by unique booking code
+-- -----------------------------------------------------------------------------
+create table if not exists public.reviews (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  booking_request_id uuid references public.booking_requests(id),
+  booking_code text not null,
+  reviewer_name text,
+  review_text text not null,
+  rating integer null,
+  language text null,
+  approved boolean not null default true,
+  active boolean not null default true,
+  constraint reviews_rating_check check (rating is null or (rating >= 1 and rating <= 5)),
+  constraint reviews_language_check check (language is null or language in ('it', 'en'))
+);
+
+alter table public.reviews add column if not exists updated_at timestamptz not null default now();
+alter table public.reviews add column if not exists booking_request_id uuid references public.booking_requests(id);
+alter table public.reviews add column if not exists booking_code text;
+alter table public.reviews add column if not exists reviewer_name text;
+alter table public.reviews add column if not exists review_text text;
+alter table public.reviews add column if not exists rating integer null;
+alter table public.reviews add column if not exists language text null;
+alter table public.reviews add column if not exists approved boolean not null default true;
+alter table public.reviews add column if not exists active boolean not null default true;
+
+create unique index if not exists reviews_booking_code_unique_idx on public.reviews(booking_code);
+create index if not exists reviews_active_idx on public.reviews(active, approved);
+create index if not exists reviews_created_at_idx on public.reviews(created_at desc);
+
+drop trigger if exists reviews_set_updated_at on public.reviews;
+create trigger reviews_set_updated_at
+before update on public.reviews
+for each row execute function public.set_updated_at();
+
+create or replace function public.submit_public_review(
+  p_booking_code text,
+  p_reviewer_name text,
+  p_review_text text,
+  p_rating integer default null,
+  p_language text default null
+)
+returns public.reviews
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  matched_request public.booking_requests%rowtype;
+  inserted_review public.reviews%rowtype;
+  clean_code text := upper(trim(coalesce(p_booking_code, '')));
+begin
+  if clean_code = '' then
+    raise exception 'INVALID_BOOKING_CODE';
+  end if;
+
+  if trim(coalesce(p_review_text, '')) = '' then
+    raise exception 'REVIEW_TEXT_REQUIRED';
+  end if;
+
+  select * into matched_request
+  from public.booking_requests
+  where booking_code = clean_code
+    and status = 'accepted'
+  limit 1;
+
+  if not found then
+    raise exception 'INVALID_BOOKING_CODE';
+  end if;
+
+  if matched_request.review_submitted = true then
+    raise exception 'BOOKING_CODE_USED';
+  end if;
+
+  insert into public.reviews (
+    booking_request_id,
+    booking_code,
+    reviewer_name,
+    review_text,
+    rating,
+    language,
+    approved,
+    active
+  ) values (
+    matched_request.id,
+    clean_code,
+    nullif(trim(coalesce(p_reviewer_name, '')), ''),
+    trim(p_review_text),
+    case when p_rating between 1 and 5 then p_rating else null end,
+    case when p_language in ('it', 'en') then p_language else matched_request.language end,
+    true,
+    true
+  ) returning * into inserted_review;
+
+  update public.booking_requests
+  set review_submitted = true,
+      review_submitted_at = now(),
+      updated_at = now()
+  where id = matched_request.id;
+
+  return inserted_review;
+end;
+$$;
 
 -- -----------------------------------------------------------------------------
 -- Partnerships
@@ -299,6 +425,9 @@ select
   fe.difficulty_en,
   fe.price_note_it,
   fe.price_note_en,
+  fe.blocked_dates_file_url,
+  fe.blocked_dates_file_name,
+  fe.blocked_dates_file_type,
   fe.capacity,
   fe.note_it,
   fe.note_en,
@@ -328,6 +457,36 @@ select
 from public.partnerships
 where active = true;
 
+
+drop view if exists public.public_reviews;
+create view public.public_reviews as
+select
+  id,
+  created_at,
+  reviewer_name,
+  review_text,
+  rating,
+  language
+from public.reviews
+where active = true
+  and approved = true;
+
+-- -----------------------------------------------------------------------------
+-- Storage bucket for public blocked-date calendar assets
+-- -----------------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'vulcaniq-public-assets',
+  'vulcaniq-public-assets',
+  true,
+  10485760,
+  array['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
 -- -----------------------------------------------------------------------------
 -- RLS
 -- -----------------------------------------------------------------------------
@@ -336,6 +495,7 @@ alter table public.booking_requests enable row level security;
 alter table public.availability_blocks enable row level security;
 alter table public.fixed_excursions enable row level security;
 alter table public.partnerships enable row level security;
+alter table public.reviews enable row level security;
 alter table public.activity_log enable row level security;
 
 -- admin_profiles: only active admins can read/administer profiles.
@@ -460,6 +620,59 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+-- reviews: public submits through RPC only. Owners manage visibility. Public reads safe view.
+drop policy if exists "Admins can read reviews" on public.reviews;
+create policy "Admins can read reviews"
+on public.reviews
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "Admins can update reviews" on public.reviews;
+create policy "Admins can update reviews"
+on public.reviews
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "Admins can insert reviews" on public.reviews;
+create policy "Admins can insert reviews"
+on public.reviews
+for insert
+to authenticated
+with check (public.is_admin());
+
+-- storage.objects: public read for published assets; admins can manage files.
+drop policy if exists "Public can read vulcanIQ public assets" on storage.objects;
+create policy "Public can read vulcanIQ public assets"
+on storage.objects
+for select
+to anon, authenticated
+using (bucket_id = 'vulcaniq-public-assets');
+
+drop policy if exists "Admins can insert vulcanIQ public assets" on storage.objects;
+create policy "Admins can insert vulcanIQ public assets"
+on storage.objects
+for insert
+to authenticated
+with check (bucket_id = 'vulcaniq-public-assets' and public.is_admin());
+
+drop policy if exists "Admins can update vulcanIQ public assets" on storage.objects;
+create policy "Admins can update vulcanIQ public assets"
+on storage.objects
+for update
+to authenticated
+using (bucket_id = 'vulcaniq-public-assets' and public.is_admin())
+with check (bucket_id = 'vulcaniq-public-assets' and public.is_admin());
+
+drop policy if exists "Admins can delete vulcanIQ public assets" on storage.objects;
+create policy "Admins can delete vulcanIQ public assets"
+on storage.objects
+for delete
+to authenticated
+using (bucket_id = 'vulcaniq-public-assets' and public.is_admin());
+
 -- activity_log: owner-only.
 drop policy if exists "Admins can read activity log" on public.activity_log;
 create policy "Admins can read activity log"
@@ -480,12 +693,15 @@ grant usage on schema public to anon, authenticated;
 grant select on public.public_availability_blocks to anon, authenticated;
 grant select on public.public_fixed_excursions to anon, authenticated;
 grant select on public.public_partnerships to anon, authenticated;
+grant select on public.public_reviews to anon, authenticated;
+grant execute on function public.submit_public_review(text, text, text, integer, text) to anon, authenticated;
 grant insert on public.booking_requests to anon, authenticated;
 grant select, insert, update on public.admin_profiles to authenticated;
 grant select, insert, update on public.booking_requests to authenticated;
 grant select, insert, update on public.availability_blocks to authenticated;
 grant select, insert, update on public.fixed_excursions to authenticated;
 grant select, insert, update on public.partnerships to authenticated;
+grant select, insert, update on public.reviews to authenticated;
 grant select, insert on public.activity_log to authenticated;
 
 notify pgrst, 'reload schema';

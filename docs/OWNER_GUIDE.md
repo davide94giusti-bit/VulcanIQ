@@ -59,7 +59,7 @@ Open **Requests** to search and filter all requests by:
 - date range
 - customer search
 
-Declined requests stay here. They do not disappear and are not deleted.
+Request history is compressed into expandable groups. Pending is open by default; accepted, declined, cancelled, and archived groups are collapsed until opened. Declined and cancelled requests stay here. They do not disappear and are not deleted.
 
 ## Approve a request
 
@@ -74,7 +74,7 @@ Declined requests stay here. They do not disappear and are not deleted.
 5. Add a decision note if useful.
 6. Confirm.
 
-The app prepares reply text, but you still send it manually by WhatsApp, email, or copy.
+The app prepares reply text, but you still send it manually by WhatsApp, email, or copy. Once accepted, the request receives a unique booking code that can be shared with the customer for leaving a review after the experience.
 
 ## Decline a request
 
@@ -85,6 +85,19 @@ The app prepares reply text, but you still send it manually by WhatsApp, email, 
 5. Confirm.
 
 The request status becomes `declined`. It remains visible in **Requests** and in **Recent decisions** on Today.
+
+
+## Remove or cancel an accepted request
+
+Accepted requests can be removed without deleting the historical record.
+
+1. Open **Requests**.
+2. Expand **Approved / accepted**.
+3. Open the accepted request and click **Remove / cancel**.
+4. Add a note if useful.
+5. Confirm.
+
+The status becomes `cancelled`. If the request was linked to a fixed excursion, the accepted participant count decreases and remaining capacity is recalculated.
 
 ## Add a manual request
 
@@ -113,13 +126,14 @@ Fixed excursions are set dates that visitors can request to join. They appear pu
    - meeting point IT and EN
    - difficulty IT and EN
    - price note IT and EN
+   - optional blocked/occupied dates calendar file: PDF, JPEG, PNG, or WEBP
    - capacity, normally 12
    - active/inactive
 4. Save.
 
 Public visitors can request a place. Requests remain pending until an owner accepts them.
 
-Capacity counts accepted participants only. Pending requests do not automatically reduce public capacity.
+Capacity counts accepted participants only. Pending and cancelled requests do not reduce public capacity. If you upload a blocked-date file, public visitors see it with that fixed excursion under **Upcoming excursions**.
 
 For groups larger than 12 people, ask the customer to contact the guide directly so the most suitable experience can be evaluated.
 
@@ -169,6 +183,20 @@ Visitors can request:
 - a private excursion from the contact page.
 
 Fixed excursion requests save as pending and include `fixed_excursion_id`.
+
+
+## Public reviews
+
+Customers can leave a public review only with their unique booking code. The code is generated when a request is accepted.
+
+Review flow:
+
+1. Accept the booking request.
+2. Copy/send the prepared confirmation message, which includes the booking code when available.
+3. The customer opens **Reviews / Recensioni** and enters the booking code, name, rating, and review text.
+4. The code can be used only once.
+
+Admin review controls are in **Requests**, under **Public reviews / Recensioni pubbliche**. You can hide an inappropriate review or republish it later.
 
 ## Language content
 

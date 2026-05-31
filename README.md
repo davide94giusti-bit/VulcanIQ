@@ -1,6 +1,6 @@
 # vulcanIQ website + two-owner booking admin
 
-Vite + React public website for **vulcanIQ**, a premium Mount Etna experiential tourism brand, with an optional free Supabase layer for owner-managed booking requests, private availability, fixed excursions, and public partnerships.
+Vite + React public website for **vulcanIQ**, a premium Mount Etna experiential tourism brand, with an optional free Supabase layer for owner-managed booking requests, private availability, fixed excursions, blocked-date calendar files, public partnerships, and booking-code validated public reviews.
 
 The site remains deployable on Netlify/Cloudflare-compatible static hosting and does not add paid services, payments, SMS, WhatsApp Business API, customer accounts, invoices, Google Calendar sync, or analytics.
 
@@ -10,12 +10,16 @@ The site remains deployable on Netlify/Cloudflare-compatible static hosting and 
 - Header buttons now switch directly between: Home, Experiences, Upcoming excursions, Partnerships, About us, Mission, Reviews, and Contact.
 - Restored the Mission and Vision content in Italian and English.
 - Removed decorative image captions/notes from the visible UI while keeping useful alt text.
-- Added the approved vulcanIQ logo package asset under `public/brand/vulcaniq/` and applied it to the header, hero, footer, admin login/header, favicon, and Open Graph image.
+- Refined the logo treatment so the public logo is subtle, top-left only, with no oversized central hero/footer branding.
 - Added a public **Upcoming excursions** page driven by admin-created fixed excursions.
 - Expanded fixed excursions with title, description, meeting point, difficulty, price note, optional end time, capacity, and active state.
 - Added admin-created **Partnerships / Collaborazioni** with public display through a safe view.
 - Removed the unwanted reviews phrase from Italian and English.
 - Added justified alignment for paragraph and body-copy text while keeping buttons, headings, forms, and navigation clean.
+- Added optional blocked-date calendar uploads for fixed excursions: PDF, JPEG, PNG, or WEBP through Supabase Storage.
+- Added booking-code generation on accepted requests and public review submission validated by that unique code.
+- Accepted requests can now be cancelled/removed without hard-deleting, so fixed-excursion capacity recalculates correctly.
+- Approved, declined, cancelled, and archived request lists are now collapsible in admin request history.
 
 ## Build commands
 
@@ -44,7 +48,7 @@ The public site builds and renders without Supabase credentials. Without Supabas
 1. private availability falls back to `/public/availability.json`, then `src/data/availability.js`;
 2. fixed excursions are empty;
 3. partnerships are empty;
-4. the public request form shows fallback contact guidance;
+4. public review submission and admin database features remain disabled until Supabase is configured;
 5. `/admin` shows a setup warning.
 
 To enable booking/admin features, add these browser-safe variables locally and in Netlify:
@@ -108,8 +112,9 @@ The public website reads only safe views:
 - `public_availability_blocks`
 - `public_fixed_excursions`
 - `public_partnerships`
+- `public_reviews`
 
-Public visitors can insert `booking_requests`; they cannot read customer requests. Owners can read/update requests and manage availability, fixed excursions, and partnerships through RLS-protected tables.
+Public visitors can insert `booking_requests`; they cannot read customer requests. Owners can read/update requests, cancel accepted requests, manage availability, fixed excursions, partnerships, and reviews through RLS-protected tables. Public review submission is handled through a Supabase RPC that validates booking codes without exposing private booking data.
 
 ## Deployment checklist
 
@@ -122,4 +127,4 @@ Public visitors can insert `booking_requests`; they cannot read customer request
 7. Run the Supabase schema.
 8. Add the approved owner users to `admin_profiles`.
 9. Deploy.
-10. Test public page switching, mobile navigation, language switch, fixed excursion requests, partnership display, form submission, admin login, approval/decline, and RLS.
+10. Test public page switching, mobile dropdown navigation, language switch, fixed excursion requests, blocked-date file display, partnership display, form submission, review submission with a booking code, admin login, approval/decline/cancel, collapsible request lists, and RLS.

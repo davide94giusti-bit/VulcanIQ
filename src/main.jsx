@@ -3,9 +3,10 @@ import { createRoot } from 'react-dom/client';
 import { blockedDates, defaultExperienceAvailability } from './data/availability.js';
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
-import { createPublicBookingRequest, createManualBookingRequest, listBookingRequests, approveBookingRequest, declineBookingRequest } from './services/bookingRequests.js';
-import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, defaultReason } from './services/availabilityService.js';
+import { createPublicBookingRequest, createManualBookingRequest, listBookingRequests, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
+import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership } from './services/partnershipService.js';
+import { loadPublicReviews, submitPublicReview, listReviews, updateReviewVisibility } from './services/reviewsService.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import './styles.css';
 
@@ -40,7 +41,7 @@ const i18n = {
     switchLabel: 'EN',
     nav: ['Inizio', 'Esperienze', 'Prossime escursioni', 'Collaborazioni', 'Chi siamo', 'Missione', 'Recensioni', 'Contatti'],
     contact: 'Contatti',
-    heroKicker: 'Etna · lento · sicuro · umano',
+    heroKicker: '',
     heroTitle: "L'Etna non è solo uno scenario.",
     heroLead: 'Esperienze private e fisse sull’Etna per leggere il vulcano come territorio vivo: con conoscenza, sicurezza e relazione umana.',
     findExperience: "Trova l'esperienza giusta",
@@ -67,7 +68,7 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     hide: 'Riduci',
     experiencesKicker: 'Esperienze',
     experiencesTitle: 'Quattro modi per vivere l’Etna, senza format turistici standard.',
-    experiencesIntro: 'Apri una scheda alla volta: ogni esperienza include ritmo, valore, note pratiche e messaggio pronto da inviare.',
+    experiencesIntro: '',
     bestFor: 'Ideale per',
     starting: 'Indicazione',
     value: 'Valore',
@@ -129,9 +130,9 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     leonardoRole: 'Fondatore · guida ambientale e vulcanologica',
     leonardoBio: 'Fondatore e ideatore di vulcanIQ, è guida ambientale dal 2020 e guida vulcanologica dal 2024. Accompagna le persone alla scoperta dell’Etna attraverso racconti, natura e osservazione del territorio, con l’obiettivo di trasformare ogni esperienza in qualcosa di autentico, emozionale e profondamente umano.',
     coFounderName: 'Deborah',
-    coFounderRole: 'Qualità del servizio · scuole e aziende',
+    coFounderRole: 'Co-fondatrice · qualità del servizio, scuole e aziende',
     coFounderBio: 'Da oltre 8 anni nel mondo dell’insegnamento e con esperienza come analista aziendale, Deborah unisce empatia, organizzazione e attenzione ai dettagli per creare esperienze autentiche e di valore. In vulcanIQ si occupa della qualità del servizio e dello sviluppo di percorsi dedicati a scuole e aziende, progettando attività capaci di unire scoperta, coinvolgimento e crescita personale.',
-    coFounderAlt: 'Deborah, co-owner vulcanIQ',
+    coFounderAlt: 'Deborah, co-founder vulcanIQ',
     finalTitle: 'Parla con Leonardo prima di scegliere.',
     finalText: 'Racconta date, interessi e composizione del gruppo: riceverai una proposta realistica, non un pacchetto standard.',
     formKicker: 'Modulo contatto',
@@ -185,13 +186,28 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     peopleRequired: 'Inserisci almeno una persona nella richiesta.',
     fixedDateRequired: 'Seleziona un’escursione fissa disponibile.',
     reviewOriginalLabel: 'Recensione originale in inglese',
+    leaveReviewTitle: 'Lascia una recensione',
+    leaveReviewIntro: 'Inserisci il codice prenotazione ricevuto dopo la conferma per pubblicare una recensione.',
+    bookingCode: 'Codice prenotazione',
+    reviewerName: 'Nome',
+    rating: 'Valutazione',
+    reviewText: 'Recensione',
+    submitReview: 'Pubblica recensione',
+    reviewSent: 'Grazie. La recensione è stata pubblicata.',
+    invalidBookingCode: 'Codice prenotazione non valido.',
+    bookingCodeUsed: 'È già stata inviata una recensione per questo codice prenotazione.',
+    reviewTextRequired: 'Inserisci il testo della recensione.',
+    noPublicReviews: 'Non ci sono ancora recensioni pubblicate.',
+    blockedDatesCalendar: 'Calendario date occupate',
+    unavailableDates: 'Date non disponibili',
+    openCalendarFile: 'Apri calendario',
     gearExtra: 'In base al periodo e al tipo di escursione, vi verranno fornite ulteriori informazioni sull’attrezzatura necessaria.',
     message: 'Messaggio',
     sendWhatsapp: 'Invia su WhatsApp',
     sendEmail: 'Email',
     selectExperience: 'Seleziona esperienza',
     instagram: 'Seguici su Instagram',
-    footerText: 'Esperienze sull’Etna con conoscenza, sicurezza e relazione con il territorio.',
+    footerText: '',
     realPhotoPlaceholder: 'Real Etna photo placeholder',
     replaceWith: 'Replace with',
     heroAlt: 'Escursione guidata sull’Etna durante attività vulcanica osservata da distanza sicura',
@@ -208,7 +224,7 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     switchLabel: 'IT',
     nav: ['Home', 'Experiences', 'Upcoming excursions', 'Partnerships', 'About us', 'Mission', 'Reviews', 'Contact'],
     contact: 'Contact',
-    heroKicker: 'Etna · slow · safe · human',
+    heroKicker: '',
     heroTitle: 'Mount Etna is not just a backdrop.',
     heroLead: 'Private and fixed Mount Etna experiences that help guests read the volcano as a living territory: with knowledge, safety, and human connection.',
     findExperience: 'Find the right experience',
@@ -235,7 +251,7 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     hide: 'Collapse',
     experiencesKicker: 'Experiences',
     experiencesTitle: 'Four ways to experience Etna without standard tour formats.',
-    experiencesIntro: 'Open one card at a time: each experience includes pace, value, practical notes, and a ready-to-send message.',
+    experiencesIntro: '',
     bestFor: 'Best for',
     starting: 'Starting point',
     value: 'Value',
@@ -297,9 +313,9 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     leonardoRole: 'Founder · environmental and volcanological guide',
     leonardoBio: 'Founder and creator of vulcanIQ, Leonardo has been an environmental guide since 2020 and a volcanological guide since 2024. He accompanies people in discovering Mount Etna through stories, nature, and observation of the territory, with the aim of transforming every experience into something authentic, emotional, and deeply human.',
     coFounderName: 'Deborah',
-    coFounderRole: 'Service quality · schools and companies',
+    coFounderRole: 'Co-founder · service quality, schools and companies',
     coFounderBio: 'With more than 8 years in education and experience as a business analyst, Deborah combines empathy, organization, and attention to detail to create authentic and valuable experiences. At vulcanIQ, she focuses on service quality and the development of programs for schools and companies, designing activities that bring together discovery, engagement, and personal growth.',
-    coFounderAlt: 'Deborah, vulcanIQ co-owner',
+    coFounderAlt: 'Deborah, vulcanIQ co-founder',
     finalTitle: 'Talk to Leonardo before choosing.',
     finalText: 'Share dates, interests, and group composition: you will receive a realistic proposal, not a standard package.',
     formKicker: 'Contact form',
@@ -353,13 +369,28 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     peopleRequired: 'Enter at least one person in the request.',
     fixedDateRequired: 'Select an available fixed excursion.',
     reviewOriginalLabel: 'Original review in English',
+    leaveReviewTitle: 'Leave a review',
+    leaveReviewIntro: 'Enter the booking code you received after confirmation to publish a review.',
+    bookingCode: 'Booking code',
+    reviewerName: 'Name',
+    rating: 'Rating',
+    reviewText: 'Review',
+    submitReview: 'Publish review',
+    reviewSent: 'Thank you. Your review has been published.',
+    invalidBookingCode: 'Invalid booking code.',
+    bookingCodeUsed: 'A review has already been submitted for this booking code.',
+    reviewTextRequired: 'Enter your review text.',
+    noPublicReviews: 'There are no public reviews yet.',
+    blockedDatesCalendar: 'Blocked dates calendar',
+    unavailableDates: 'Unavailable dates',
+    openCalendarFile: 'Open calendar',
     gearExtra: 'Depending on the season and the type of excursion, you will receive further information about the necessary equipment.',
     message: 'Message',
     sendWhatsapp: 'Send on WhatsApp',
     sendEmail: 'Email',
     selectExperience: 'Select experience',
     instagram: 'Follow on Instagram',
-    footerText: 'Mount Etna experiences with knowledge, safety, and connection with the territory.',
+    footerText: '',
     realPhotoPlaceholder: 'Real Etna photo placeholder',
     replaceWith: 'Replace with',
     heroAlt: 'Guided Mount Etna excursion during volcanic activity observed from a safe distance',
@@ -751,8 +782,6 @@ function Hero({ lang, setActivePage, scrollToForm }) {
       <div className="hero-overlay" />
       <div className="container hero-grid">
         <div className="hero-copy">
-          <BrandLogo />
-          <span className="kicker light">{text(lang, 'heroKicker')}</span>
           <h1>{text(lang, 'heroTitle')}</h1>
           <p className="lead">{text(lang, 'heroLead')}</p>
           <div className="hero-ctas">
@@ -809,7 +838,6 @@ function MissionPage({ lang }) {
     <section className="section page-section" id="mission">
       <div className="container mission-page-grid">
         <article className="editorial-card mission-feature-card">
-          <span className="kicker">{text(lang, 'mission')}</span>
           <h2>{text(lang, 'mission')}</h2>
           <p>{text(lang, 'missionText')}</p>
         </article>
@@ -822,6 +850,32 @@ function MissionPage({ lang }) {
         </article>
       </div>
     </section>
+  );
+}
+
+
+function BlockedDatesAttachment({ item, lang }) {
+  const url = item?.blocked_dates_file_url;
+  if (!url) return null;
+
+  const type = item.blocked_dates_file_type || '';
+  const name = item.blocked_dates_file_name || text(lang, 'blockedDatesCalendar');
+  const isImage = type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(url);
+
+  return (
+    <div className="blocked-dates-attachment">
+      <div>
+        <strong>{text(lang, 'unavailableDates')}</strong>
+        <span>{name}</span>
+      </div>
+      {isImage ? (
+        <a href={url} target="_blank" rel="noopener noreferrer" aria-label={text(lang, 'openCalendarFile')}>
+          <img src={url} alt={text(lang, 'blockedDatesCalendar')} loading="lazy" decoding="async" />
+        </a>
+      ) : (
+        <a className="button secondary" href={url} target="_blank" rel="noopener noreferrer">{text(lang, 'openCalendarFile')}</a>
+      )}
+    </div>
   );
 }
 
@@ -855,7 +909,6 @@ function PublicUpcomingExcursions({ lang, fillForm }) {
     <section className="section page-section alt-section" id="upcoming">
       <div className="container">
         <div className="section-header">
-          <span className="kicker">{text(lang, 'upcomingExcursions')}</span>
           <h2>{text(lang, 'upcomingExcursions')}</h2>
           <p>{text(lang, 'availabilityIntro')}</p>
         </div>
@@ -884,6 +937,7 @@ function PublicUpcomingExcursions({ lang, fillForm }) {
                     {price && <div><dt>{text(lang, 'priceNote')}</dt><dd>{price}</dd></div>}
                     <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{item.places_remaining}/{item.capacity}</dd></div>
                   </dl>
+                  <BlockedDatesAttachment item={item} lang={lang} />
                   <button className="button primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestAvailability')}</button>
                 </article>
               );
@@ -913,7 +967,6 @@ function PartnershipsPage({ lang }) {
     <section className="section page-section" id="partnerships">
       <div className="container">
         <div className="section-header">
-          <span className="kicker">{text(lang, 'partnershipsTitle')}</span>
           <h2>{text(lang, 'partnershipsTitle')}</h2>
           <p>{text(lang, 'partnershipsSubtitle')}</p>
         </div>
@@ -944,23 +997,108 @@ function PartnershipsPage({ lang }) {
 }
 
 function ReviewsPage({ lang }) {
-  const review = lang === 'it'
+  const fallbackReview = lang === 'it'
     ? 'Bellissima esperienza grazie alla nostra guida Leonardo, che ha una vera passione per i vulcani. Ero preoccupato di non essere vestito abbastanza pesante perché la temperatura indicata in cima era sotto lo zero — era fine aprile — ma una felpa e una giacca leggera sono state sufficienti. L’escursione è moderatamente impegnativa, ma dura solo circa un’ora. Abbiamo avuto il tempo per fare un paio di belle pause durante la salita e, dopo l’escursione, per mangiare qualcosa.'
     : 'Had a great time thanks to our guide Leonardo, who has a real passion for volcanoes. I had been worried about being underdressed because the reported temperature at the top was below freezing — this was in late April — but a sweatshirt and light jacket were fine. The hike is moderately strenuous but only one hour. We had time for a couple of nice breaks on the way up and after our hike to have some food.';
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ bookingCode: '', reviewerName: '', rating: '5', reviewText: '' });
+  const [submitState, setSubmitState] = useState({ loading: false, error: '', success: '' });
+
+  async function refreshReviews() {
+    setLoading(true);
+    try {
+      const data = await loadPublicReviews();
+      setReviews(data || []);
+    } catch {
+      setReviews([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refreshReviews(); }, []);
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function reviewErrorMessage(error) {
+    const message = error?.message || '';
+    if (message.includes('BOOKING_CODE_USED')) return text(lang, 'bookingCodeUsed');
+    if (message.includes('REVIEW_TEXT_REQUIRED')) return text(lang, 'reviewTextRequired');
+    if (message.includes('INVALID_BOOKING_CODE')) return text(lang, 'invalidBookingCode');
+    return lang === 'it' ? 'Recensione non inviata. Controlla il codice e riprova.' : 'Review not submitted. Check the code and try again.';
+  }
+
+  async function submitReview(event) {
+    event.preventDefault();
+    setSubmitState({ loading: false, error: '', success: '' });
+    if (!form.reviewText.trim()) {
+      setSubmitState({ loading: false, error: text(lang, 'reviewTextRequired'), success: '' });
+      return;
+    }
+    setSubmitState({ loading: true, error: '', success: '' });
+    try {
+      await submitPublicReview({ ...form, language: lang });
+      setForm({ bookingCode: '', reviewerName: '', rating: '5', reviewText: '' });
+      setSubmitState({ loading: false, error: '', success: text(lang, 'reviewSent') });
+      refreshReviews();
+    } catch (error) {
+      setSubmitState({ loading: false, error: reviewErrorMessage(error), success: '' });
+    }
+  }
 
   return (
     <section className="section compact-section" id="reviews">
       <div className="container reviews-panel">
         <div className="section-header">
-          <span className="kicker">{text(lang, 'reviewsKicker')}</span>
           <h2>{text(lang, 'reviewsTitle')}</h2>
           <p>{text(lang, 'reviewsIntro')}</p>
         </div>
-        <article className="testimonial-card">
-          {lang === 'it' && <span className="micro-label">{text(lang, 'reviewOriginalLabel')}</span>}
-          <blockquote>{review}</blockquote>
-          <p className="small-note">Leonardo · Etna experience</p>
-        </article>
+        <div className="reviews-grid-public">
+          {(loading ? [] : reviews).map((item) => (
+            <article className="testimonial-card" key={item.id}>
+              <div className="review-stars" aria-label={`${item.rating || 5}/5`}>{'★'.repeat(item.rating || 5)}</div>
+              <blockquote>{item.review_text}</blockquote>
+              <p className="small-note">{item.reviewer_name || 'Guest'} · {item.language === 'en' ? 'EN' : 'IT'}</p>
+            </article>
+          ))}
+          {!loading && reviews.length === 0 && (
+            <article className="testimonial-card">
+              {lang === 'it' && <span className="micro-label">{text(lang, 'reviewOriginalLabel')}</span>}
+              <blockquote>{fallbackReview}</blockquote>
+              <p className="small-note">Leonardo · Etna experience</p>
+            </article>
+          )}
+        </div>
+        <form className="review-form" onSubmit={submitReview}>
+          <div className="section-header small-section-header">
+            <h3>{text(lang, 'leaveReviewTitle')}</h3>
+            <p>{text(lang, 'leaveReviewIntro')}</p>
+          </div>
+          <div className="form-two-cols three">
+            <div>
+              <label className="field-label" htmlFor="reviewCode">{text(lang, 'bookingCode')}</label>
+              <input id="reviewCode" value={form.bookingCode} onChange={(event) => update('bookingCode', event.target.value.toUpperCase())} placeholder="VQ-2026-AB12" />
+            </div>
+            <div>
+              <label className="field-label" htmlFor="reviewName">{text(lang, 'reviewerName')}</label>
+              <input id="reviewName" value={form.reviewerName} onChange={(event) => update('reviewerName', event.target.value)} />
+            </div>
+            <div>
+              <label className="field-label" htmlFor="reviewRating">{text(lang, 'rating')}</label>
+              <select id="reviewRating" value={form.rating} onChange={(event) => update('rating', event.target.value)}>
+                {[5, 4, 3, 2, 1].map((rating) => <option value={rating} key={rating}>{rating}/5</option>)}
+              </select>
+            </div>
+          </div>
+          <label className="field-label" htmlFor="reviewText">{text(lang, 'reviewText')}</label>
+          <textarea id="reviewText" value={form.reviewText} onChange={(event) => update('reviewText', event.target.value)} rows={5} />
+          {submitState.error && <p className="form-status error" role="alert">{submitState.error}</p>}
+          {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
+          <button className="button primary" type="submit" disabled={submitState.loading || !isSupabaseConfigured}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitReview')}</button>
+        </form>
       </div>
     </section>
   );
@@ -972,9 +1110,8 @@ function ExperienceAccordion({ lang, fillForm }) {
     <section className="section" id="experiences">
       <div className="container">
         <div className="section-header">
-          <span className="kicker">{text(lang, 'experiencesKicker')}</span>
           <h2>{text(lang, 'experiencesTitle')}</h2>
-          <p>{text(lang, 'experiencesIntro')}</p>
+          {text(lang, 'experiencesIntro') && <p>{text(lang, 'experiencesIntro')}</p>}
         </div>
         <div className="accordion-list">
           {experiences.map((experience) => {
@@ -1416,7 +1553,6 @@ function WearReviewsSafety({ lang }) {
       <section className="section compact-section" id="reviews">
         <div className="container reviews-panel">
           <div className="section-header">
-            <span className="kicker">{text(lang, 'reviewsKicker')}</span>
             <h2>{text(lang, 'reviewsTitle')}</h2>
             <p>{text(lang, 'reviewsIntro')}</p>
           </div>
@@ -1436,7 +1572,6 @@ function Team({ lang }) {
     <section className="section" id="team">
       <div className="container">
         <div className="section-header">
-          <span className="kicker">{text(lang, 'teamKicker')}</span>
           <h2>{text(lang, 'teamTitle')}</h2>
         </div>
         <div className="team-grid">
@@ -1683,11 +1818,9 @@ function ContactForm({ lang, formState, setFormState }) {
 
           <label className="field-label" htmlFor="contactMessage">{text(lang, 'message')}</label>
           <textarea id="contactMessage" value={message} onChange={(event) => update('message', event.target.value)} />
-          {selectedTitle && <p className="small-note">{text(lang, 'selectedExperience')}: {selectedTitle}</p>}
           {selectedFixed && <p className="small-note">{text(lang, 'fixedExcursion')}: {fixedExcursionLabel(selectedFixed, lang)}</p>}
           {submitState.error && <p className="form-status error" role="alert">{submitState.error}</p>}
           {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
-          {!isSupabaseConfigured && <p className="small-note">{lang === 'it' ? 'Il modulo può essere usato come traccia; se Supabase non è configurato, usa WhatsApp o email.' : 'The form can be used as a brief; if Supabase is not configured, use WhatsApp or email.'}</p>}
           <div className="cta-row">
             <button className="button primary" type="submit" disabled={submitState.loading}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitRequest')}</button>
             <a className="button secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(fullMessage)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
@@ -1718,10 +1851,6 @@ function Footer({ lang }) {
   return (
     <footer className="footer">
       <div className="container footer-grid">
-        <div>
-          <a className="brand footer-brand" href="/" aria-label="vulcanIQ home"><BrandLogo compact /></a>
-          <p>{text(lang, 'footerText')}</p>
-        </div>
         <div>
           <p><strong>Leonardo Chiavetta</strong><br />{PHONE_DISPLAY}<br /><a href={`mailto:${EMAIL}`}>{EMAIL}</a></p>
           <a className="inline-link" href={INSTAGRAM} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
@@ -1954,9 +2083,15 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
     <div className="admin-shell">
       <header className="admin-header">
         <button className="brand admin-brand-button" type="button" onClick={() => navigate('/admin/today')} aria-label="vulcanIQ admin home">
-          <BrandLogo compact />
           <span className="admin-page-label">{pageLabel}</span>
         </button>
+        <select className="admin-mobile-nav" value={normalizedPath.includes('/partnerships') ? '/admin/partnerships' : normalizedPath.includes('/upcoming') ? '/admin/upcoming' : normalizedPath.includes('/requests') ? '/admin/requests' : normalizedPath.includes('/availability') ? '/admin/availability' : '/admin/today'} onChange={(event) => navigate(event.target.value)} aria-label="Admin navigation">
+          <option value="/admin/today">{adminCopy(lang, 'Oggi', 'Today')}</option>
+          <option value="/admin/upcoming">{adminCopy(lang, 'Prossime', 'Upcoming')}</option>
+          <option value="/admin/requests">{adminCopy(lang, 'Richieste', 'Requests')}</option>
+          <option value="/admin/availability">{adminCopy(lang, 'Disponibilità', 'Availability')}</option>
+          <option value="/admin/partnerships">{adminCopy(lang, 'Collaborazioni', 'Partnerships')}</option>
+        </select>
         <nav className="admin-nav" aria-label="Admin navigation">
           <button type="button" className={normalizedPath.includes('/today') ? 'active' : ''} onClick={() => navigate('/admin/today')}>{adminCopy(lang, 'Oggi', 'Today')}</button>
           <button type="button" className={normalizedPath.includes('/upcoming') ? 'active' : ''} onClick={() => navigate('/admin/upcoming')}>{adminCopy(lang, 'Prossime', 'Upcoming')}</button>
@@ -2055,8 +2190,7 @@ function TodayDashboard({ lang, session, navigate }) {
     <section className="admin-page">
       <div className="admin-page-header">
         <div>
-          <span className="kicker">{adminCopy(lang, 'Dashboard owner', 'Owner dashboard')}</span>
-          <h1>{adminCopy(lang, 'Oggi', 'Today')}</h1>
+          <h1>{adminCopy(lang, 'Pannello operativo', 'Operations')}</h1>
           <p>{adminCopy(lang, 'Richieste in attesa, conferme vicine e disponibilità dei prossimi giorni.', 'Pending requests, upcoming accepted bookings, and near-term availability.')}</p>
         </div>
         <div className="admin-header-actions">
@@ -2246,7 +2380,7 @@ function AdminMiniList({ items, empty, render }) {
   return <ul className="admin-mini-list">{items.map((item) => <li key={item.id}>{render(item)}</li>)}</ul>;
 }
 
-function RequestCard({ request, lang, onApprove, onDecline, compact = false }) {
+function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = false }) {
   return (
     <article className={`request-card ${compact ? 'compact' : ''}`}>
       <div className="request-card-head">
@@ -2266,6 +2400,7 @@ function RequestCard({ request, lang, onApprove, onDecline, compact = false }) {
         <div><dt>{adminCopy(lang, 'Lingua', 'Language')}</dt><dd>{request.language || 'it'}</dd></div>
         <div><dt>{adminCopy(lang, 'Gruppo', 'Party')}</dt><dd>{[request.adults ? `${request.adults} adulti/adults` : '', request.children ? `${request.children} bambini/children` : ''].filter(Boolean).join(' · ') || request.party_type || '-'}</dd></div>
         <div><dt>{adminCopy(lang, 'Totale', 'Total')}</dt><dd>{Number(request.adults || 0) + Number(request.children || 0) || '-'}</dd></div>
+        {request.booking_code && <div><dt>{adminCopy(lang, 'Codice prenotazione', 'Booking code')}</dt><dd>{request.booking_code}</dd></div>}
         <div><dt>{adminCopy(lang, 'Privata', 'Private')}</dt><dd>{request.private_experience === true ? adminCopy(lang, 'Sì', 'Yes') : request.private_experience === false ? adminCopy(lang, 'No', 'No') : '-'}</dd></div>
         {request.fixed_excursion_id && <div><dt>{adminCopy(lang, 'Escursione fissa', 'Fixed excursion')}</dt><dd>{request.fixed_excursion_id}</dd></div>}
       </dl>
@@ -2280,6 +2415,11 @@ function RequestCard({ request, lang, onApprove, onDecline, compact = false }) {
         <div className="request-actions">
           <button className="button primary" type="button" onClick={onApprove}>{adminCopy(lang, 'Approva', 'Approve')}</button>
           <button className="button secondary" type="button" onClick={onDecline}>{adminCopy(lang, 'Rifiuta', 'Decline')}</button>
+        </div>
+      )}
+      {request.status === 'accepted' && onRemove && (
+        <div className="request-actions">
+          <button className="button secondary danger" type="button" onClick={onRemove}>{adminCopy(lang, 'Rimuovi / annulla', 'Remove / cancel')}</button>
         </div>
       )}
     </article>
@@ -2344,6 +2484,9 @@ function DecisionModal({ lang, session, decision, onClose, onDone }) {
           return;
         }
         onDone(adminCopy(lang, 'Richiesta accettata.', 'Request accepted.'));
+      } else if (decision.type === 'remove') {
+        await cancelBookingRequest({ request: decision.request, userId: session.user.id, decisionNote: note });
+        onDone(adminCopy(lang, 'Richiesta rimossa/annullata.', 'Request removed/cancelled.'));
       } else {
         await declineBookingRequest({ request: decision.request, userId: session.user.id, decisionNote: note, reasonCategory: reason });
         onDone(adminCopy(lang, 'Richiesta rifiutata.', 'Request declined.'));
@@ -2359,7 +2502,7 @@ function DecisionModal({ lang, session, decision, onClose, onDone }) {
     <div className="modal-backdrop" role="presentation">
       <section className="admin-modal" role="dialog" aria-modal="true" aria-labelledby="decisionTitle">
         <div className="admin-modal-header">
-          <h2 id="decisionTitle">{decision.type === 'approve' ? adminCopy(lang, 'Approva richiesta', 'Approve request') : adminCopy(lang, 'Rifiuta richiesta', 'Decline request')}</h2>
+          <h2 id="decisionTitle">{decision.type === 'approve' ? adminCopy(lang, 'Approva richiesta', 'Approve request') : decision.type === 'remove' ? adminCopy(lang, 'Rimuovi richiesta accettata', 'Remove accepted request') : adminCopy(lang, 'Rifiuta richiesta', 'Decline request')}</h2>
           <button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>×</button>
         </div>
         <p>{decision.request.customer_name || adminCopy(lang, 'Cliente senza nome', 'Unnamed customer')} · {adminExperienceLabel(decision.request.experience_id, lang)} · {formatDateForMessage(decision.request.requested_date, lang) || '-'}</p>
@@ -2382,6 +2525,8 @@ function DecisionModal({ lang, session, decision, onClose, onDone }) {
               </>
             )}
           </>
+        ) : decision.type === 'remove' ? (
+          <div className="admin-alert warning compact-alert">{adminCopy(lang, 'Questa azione annulla la richiesta accettata e libera i posti collegati.', 'This cancels the accepted request and frees its linked places.')}</div>
         ) : (
           <>
             <label className="field-label" htmlFor="declineReason">{adminCopy(lang, 'Motivo', 'Reason')}</label>
@@ -2486,6 +2631,94 @@ function AdminSelect({ label, value, onChange, options, formatter = (item) => it
   return <label className="admin-field" htmlFor={id}><span>{label}</span><select id={id} value={value || ''} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option} value={option}>{formatter(option)}</option>)}</select></label>;
 }
 
+
+function RequestStatusAccordions({ requests, lang, onApprove, onDecline, onRemove }) {
+  const groups = [
+    { status: 'pending', label: adminCopy(lang, 'In attesa', 'Pending'), defaultOpen: true },
+    { status: 'accepted', label: adminCopy(lang, 'Approvate / accettate', 'Approved / accepted'), defaultOpen: false },
+    { status: 'declined', label: adminCopy(lang, 'Rifiutate', 'Declined'), defaultOpen: false },
+    { status: 'cancelled', label: adminCopy(lang, 'Rimosse / annullate', 'Removed / cancelled'), defaultOpen: false },
+    { status: 'archived', label: adminCopy(lang, 'Archiviate', 'Archived'), defaultOpen: false }
+  ].map((group) => ({ ...group, items: requests.filter((request) => request.status === group.status) }))
+    .filter((group) => group.items.length || group.status === 'pending');
+
+  return (
+    <div className="request-accordion-stack">
+      {groups.map((group) => (
+        <details className="request-accordion" key={group.status} open={group.defaultOpen}>
+          <summary><span>{group.label}</span><strong>{group.items.length}</strong></summary>
+          {group.items.length === 0 ? <p className="small-note">{adminCopy(lang, 'Nessuna richiesta in questa sezione.', 'No requests in this section.')}</p> : (
+            <div className="request-card-list compact-list">
+              {group.items.map((request) => (
+                <RequestCard
+                  key={request.id}
+                  request={request}
+                  lang={lang}
+                  compact
+                  onApprove={() => onApprove(request)}
+                  onDecline={() => onDecline(request)}
+                  onRemove={() => onRemove(request)}
+                />
+              ))}
+            </div>
+          )}
+        </details>
+      ))}
+    </div>
+  );
+}
+
+function AdminReviewsPanel({ lang }) {
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    try {
+      setReviews(await listReviews());
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Recensioni non caricate.', 'Could not load reviews.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  async function setVisible(review, active) {
+    setError('');
+    try {
+      await updateReviewVisibility(review.id, { active, approved: active ? true : review.approved });
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Recensione non aggiornata.', 'Review not updated.'));
+    }
+  }
+
+  return (
+    <section className="admin-panel admin-reviews-panel">
+      <div className="admin-panel-header"><h2>{adminCopy(lang, 'Recensioni pubbliche', 'Public reviews')}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
+      {error && <div className="admin-alert error" role="alert">{error}</div>}
+      {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : reviews.length === 0 ? <p>{adminCopy(lang, 'Nessuna recensione ricevuta.', 'No reviews received.')}</p> : (
+        <div className="admin-review-list">
+          {reviews.map((review) => (
+            <article className={`admin-review-card ${review.active ? '' : 'inactive'}`} key={review.id}>
+              <div>
+                <strong>{review.reviewer_name || 'Guest'} · {review.rating || '-'}/5</strong>
+                <p>{review.review_text}</p>
+                <p className="small-note">{review.booking_code} · {review.language || '-'}</p>
+              </div>
+              <button className="button secondary" type="button" onClick={() => setVisible(review, !review.active)}>{review.active ? adminCopy(lang, 'Nascondi', 'Hide') : adminCopy(lang, 'Ripubblica', 'Republish')}</button>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function RequestsPage({ lang, session }) {
   const [filters, setFilters] = useState({ status: 'all', experience_id: 'all', source: 'all', search: '', fromDate: '', toDate: '', limit: 250 });
   const { requests, loading, error, refresh } = useAdminRequests(filters);
@@ -2525,11 +2758,16 @@ function RequestsPage({ lang, session }) {
       <section className="admin-panel">
         <div className="admin-panel-header"><h2>{adminCopy(lang, 'Risultati', 'Results')} · {requests.length}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
         {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : requests.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta trovata.', 'No requests found.')}</p> : (
-          <div className="request-card-list compact-list">
-            {requests.map((request) => <RequestCard key={request.id} request={request} lang={lang} compact onApprove={() => setDecision({ type: 'approve', request })} onDecline={() => setDecision({ type: 'decline', request })} />)}
-          </div>
+          <RequestStatusAccordions
+            requests={requests}
+            lang={lang}
+            onApprove={(request) => setDecision({ type: 'approve', request })}
+            onDecline={(request) => setDecision({ type: 'decline', request })}
+            onRemove={(request) => setDecision({ type: 'remove', request })}
+          />
         )}
       </section>
+      <AdminReviewsPanel lang={lang} />
       {decision && <DecisionModal lang={lang} session={session} decision={decision} onClose={() => setDecision(null)} onDone={(message) => { setDecision(null); refreshWithFeedback(message); }} />}
       {manualOpen && <ManualRequestModal lang={lang} session={session} onClose={() => setManualOpen(false)} onSaved={() => { setManualOpen(false); refreshWithFeedback(adminCopy(lang, 'Richiesta manuale creata.', 'Manual request created.')); }} />}
     </section>
@@ -2719,7 +2957,7 @@ function AvailabilityPage({ lang, session }) {
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [form, setForm] = useState({ date: '', experience_id: '', status: 'closed', reason_it: '', reason_en: '', internal_note: '' });
-  const [fixedForm, setFixedForm] = useState({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', capacity: '12', active: true });
+  const [fixedForm, setFixedForm] = useState({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
 
   async function refresh() {
     setLoading(true);
@@ -2783,8 +3021,9 @@ function AvailabilityPage({ lang, session }) {
       return;
     }
     try {
-      await createFixedExcursion({ ...fixedForm, created_by: session.user.id, updated_by: session.user.id });
-      setFixedForm({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', capacity: '12', active: true });
+      const filePayload = fixedForm.blockedDatesFile ? await uploadBlockedDatesFile(fixedForm.blockedDatesFile, session.user.id) : {};
+      await createFixedExcursion({ ...fixedForm, ...filePayload, created_by: session.user.id, updated_by: session.user.id });
+      setFixedForm({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
       setFeedback(adminCopy(lang, 'Escursione fissa creata.', 'Fixed excursion created.'));
       refresh();
     } catch (err) {
@@ -2852,6 +3091,8 @@ function AvailabilityPage({ lang, session }) {
               <AdminInput label="Difficulty EN" value={fixedForm.difficulty_en} onChange={(value) => updateFixed('difficulty_en', value)} />
               <AdminInput label="Price note IT" value={fixedForm.price_note_it} onChange={(value) => updateFixed('price_note_it', value)} />
               <AdminInput label="Price note EN" value={fixedForm.price_note_en} onChange={(value) => updateFixed('price_note_en', value)} />
+              <label className="admin-field full"><span>{adminCopy(lang, 'File calendario date occupate', 'Blocked dates calendar file')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => updateFixed('blockedDatesFile', event.target.files?.[0] || null)} /></label>
+              {fixedForm.blockedDatesFile && <p className="small-note full">{adminCopy(lang, 'File selezionato', 'Selected file')}: {fixedForm.blockedDatesFile.name}</p>}
               <label className="check-field"><input type="checkbox" checked={fixedForm.active} onChange={(event) => updateFixed('active', event.target.checked)} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
               <div className="modal-actions full"><button className="button primary" type="submit">{adminCopy(lang, 'Salva escursione fissa', 'Save fixed excursion')}</button></div>
             </form>
@@ -2887,6 +3128,12 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
     difficulty_en: item.difficulty_en || '',
     price_note_it: item.price_note_it || '',
     price_note_en: item.price_note_en || '',
+    blockedDatesFile: null,
+    blocked_dates_file_url: item.blocked_dates_file_url || '',
+    blocked_dates_file_name: item.blocked_dates_file_name || '',
+    blocked_dates_file_type: item.blocked_dates_file_type || '',
+    blocked_dates_file_path: item.blocked_dates_file_path || '',
+    removeBlockedDatesFile: false,
     capacity: String(item.capacity || 12),
     active: item.active !== false
   });
@@ -2903,7 +3150,16 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
       return;
     }
     try {
-      await updateFixedExcursion(item.id, { ...form, updated_by: userId });
+      let filePayload = {};
+      if (form.blockedDatesFile) {
+        filePayload = await uploadBlockedDatesFile(form.blockedDatesFile, userId);
+        if (item.blocked_dates_file_path) await removeBlockedDatesFile(item.blocked_dates_file_path);
+      } else if (form.removeBlockedDatesFile) {
+        if (item.blocked_dates_file_path) await removeBlockedDatesFile(item.blocked_dates_file_path);
+        filePayload = { blocked_dates_file_url: null, blocked_dates_file_name: null, blocked_dates_file_type: null, blocked_dates_file_path: null };
+      }
+      const { blockedDatesFile, removeBlockedDatesFile: removeFileFlag, ...fixedPayload } = form;
+      await updateFixedExcursion(item.id, { ...fixedPayload, ...filePayload, updated_by: userId });
       setEditing(false);
       onChanged(adminCopy(lang, 'Escursione fissa aggiornata.', 'Fixed excursion updated.'));
     } catch (err) {
@@ -2944,6 +3200,10 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
           <AdminInput label="Difficulty EN" value={form.difficulty_en} onChange={(value) => setForm((current) => ({ ...current, difficulty_en: value }))} />
           <AdminInput label="Price note IT" value={form.price_note_it} onChange={(value) => setForm((current) => ({ ...current, price_note_it: value }))} />
           <AdminInput label="Price note EN" value={form.price_note_en} onChange={(value) => setForm((current) => ({ ...current, price_note_en: value }))} />
+          <label className="admin-field full"><span>{adminCopy(lang, 'File calendario date occupate', 'Blocked dates calendar file')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => setForm((current) => ({ ...current, blockedDatesFile: event.target.files?.[0] || null, removeBlockedDatesFile: false }))} /></label>
+          {form.blocked_dates_file_url && !form.removeBlockedDatesFile && <p className="small-note full"><a href={form.blocked_dates_file_url} target="_blank" rel="noopener noreferrer">{form.blocked_dates_file_name || adminCopy(lang, 'File esistente', 'Existing file')}</a> <button type="button" className="inline-danger-button" onClick={() => setForm((current) => ({ ...current, removeBlockedDatesFile: true, blockedDatesFile: null }))}>{adminCopy(lang, 'Rimuovi file', 'Remove file')}</button></p>}
+          {form.blockedDatesFile && <p className="small-note full">{adminCopy(lang, 'Nuovo file', 'New file')}: {form.blockedDatesFile.name}</p>}
+          {form.removeBlockedDatesFile && <p className="small-note full">{adminCopy(lang, 'Il file verrà rimosso al salvataggio.', 'The file will be removed on save.')}</p>}
           <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
           {error && <div className="admin-alert error full">{error}</div>}
           <div className="modal-actions full"><button className="button primary" type="button" onClick={save}>{adminCopy(lang, 'Salva', 'Save')}</button><button className="button secondary" type="button" onClick={() => setEditing(false)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
@@ -2956,6 +3216,7 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
             <div><dt>{adminCopy(lang, 'Posti residui', 'Remaining')}</dt><dd>{item.places_remaining}</dd></div>
             <div><dt>{adminCopy(lang, 'Aggiornata', 'Updated')}</dt><dd>{formatDateForMessage(String(item.updated_at || item.created_at || '').slice(0, 10), lang) || '-'}</dd></div>
           </dl>
+          {item.blocked_dates_file_url && <BlockedDatesAttachment item={item} lang={lang} />}
           {(item.description_it || item.description_en || item.note_it || item.note_en) && <p>{fixedExcursionField(item, 'description', lang) || (lang === 'it' ? item.note_it || item.note_en : item.note_en || item.note_it)}</p>}
           {error && <div className="admin-alert error">{error}</div>}
           <div className="request-actions"><button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>{item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}</div>
