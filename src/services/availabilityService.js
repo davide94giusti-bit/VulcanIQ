@@ -46,6 +46,9 @@ function normalizeFixedExcursion(row) {
     blocked_dates_file_name: row.blocked_dates_file_name || '',
     blocked_dates_file_type: row.blocked_dates_file_type || '',
     blocked_dates_file_path: row.blocked_dates_file_path || '',
+    leaflet_id: row.leaflet_id || null,
+    status: row.status || 'available',
+    public_visibility: row.public_visibility !== false,
     capacity,
     note_it: row.note_it || row.description_it || '',
     note_en: row.note_en || row.description_en || '',
@@ -92,7 +95,7 @@ export async function loadPublicFixedExcursions() {
     const today = new Date().toISOString().slice(0, 10);
     const { data, error } = await supabase
       .from('public_fixed_excursions')
-      .select('id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, capacity, note_it, note_en, active, accepted_count, places_remaining')
+      .select('id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, accepted_count, places_remaining')
       .eq('active', true)
       .gte('date', today)
       .order('date', { ascending: true })
@@ -181,7 +184,7 @@ export async function listFixedExcursions({ activeOnly = false, fromDate = null,
 
   let query = supabase
     .from('fixed_excursions')
-    .select('id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, capacity, note_it, note_en, active, created_by, updated_by')
+    .select('id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, created_by, updated_by')
     .order('date', { ascending: true })
     .order('start_time', { ascending: true });
 
@@ -241,6 +244,9 @@ export async function createFixedExcursion(input) {
     blocked_dates_file_name: input.blocked_dates_file_name || null,
     blocked_dates_file_type: input.blocked_dates_file_type || null,
     blocked_dates_file_path: input.blocked_dates_file_path || null,
+    leaflet_id: input.leaflet_id || null,
+    status: input.status || 'available',
+    public_visibility: input.public_visibility !== false,
     note_it: input.note_it || input.description_it || null,
     note_en: input.note_en || input.description_en || null,
     capacity: Number.parseInt(input.capacity || 12, 10),
@@ -325,6 +331,91 @@ export async function uploadBlockedDatesFile(file, userId) {
 export async function removeBlockedDatesFile(path) {
   if (!isSupabaseConfigured || !path) return;
   await supabase.storage.from(FIXED_EXCURSION_FILE_BUCKET).remove([path]);
+}
+
+
+function normalizeMonthlyLeaflet(row) {
+  return {
+    id: row.id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    month: row.month,
+    year: row.year,
+    title_it: row.title_it || '',
+    title_en: row.title_en || '',
+    file_url: row.file_url || '',
+    file_path: row.file_path || '',
+    file_name: row.file_name || '',
+    file_type: row.file_type || '',
+    active: row.active !== false,
+    created_by: row.created_by || null,
+    updated_by: row.updated_by || null
+  };
+}
+
+export async function listMonthlyLeaflets({ activeOnly = false } = {}) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
+  let query = supabase
+    .from('monthly_availability_leaflets')
+    .select('id, created_at, updated_at, month, year, title_it, title_en, file_url, file_path, file_name, file_type, active, created_by, updated_by')
+    .order('year', { ascending: false })
+    .order('month', { ascending: false });
+
+  if (activeOnly) query = query.eq('active', true);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return Array.isArray(data) ? data.map(normalizeMonthlyLeaflet) : [];
+}
+
+export async function createMonthlyLeaflet(input) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const payload = {
+    month: Number.parseInt(input.month, 10),
+    year: Number.parseInt(input.year, 10),
+    title_it: input.title_it || null,
+    title_en: input.title_en || null,
+    file_url: input.file_url || null,
+    file_path: input.file_path || null,
+    file_name: input.file_name || null,
+    file_type: input.file_type || null,
+    active: input.active !== false,
+    created_by: input.created_by || null,
+    updated_by: input.updated_by || null
+  };
+  const { data, error } = await supabase.from('monthly_availability_leaflets').insert(payload).select('*').single();
+  if (error) throw error;
+  return normalizeMonthlyLeaflet(data);
+}
+
+export async function updateMonthlyLeaflet(id, input) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const payload = { ...input, updated_at: new Date().toISOString() };
+  if (payload.month !== undefined) payload.month = Number.parseInt(payload.month, 10);
+  if (payload.year !== undefined) payload.year = Number.parseInt(payload.year, 10);
+  Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key]);
+  const { data, error } = await supabase.from('monthly_availability_leaflets').update(payload).eq('id', id).select('*').single();
+  if (error) throw error;
+  return normalizeMonthlyLeaflet(data);
+}
+
+export async function deactivateMonthlyLeaflet(id, userId) {
+  return updateMonthlyLeaflet(id, { active: false, updated_by: userId || null });
+}
+
+export async function uploadMonthlyLeafletFile(file, userId) {
+  const uploaded = await uploadBlockedDatesFile(file, userId);
+  return {
+    file_url: uploaded.blocked_dates_file_url,
+    file_path: uploaded.blocked_dates_file_path,
+    file_name: uploaded.blocked_dates_file_name,
+    file_type: uploaded.blocked_dates_file_type
+  };
+}
+
+export async function removeMonthlyLeafletFile(path) {
+  return removeBlockedDatesFile(path);
 }
 
 export function defaultReason(status, lang) {

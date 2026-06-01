@@ -245,3 +245,87 @@ Replace the UUIDs with the real Supabase Auth user IDs. Do not add public signup
 15. Submit a public review with a valid booking code and confirm duplicate code reuse is rejected.
 16. Hide/republish a review from admin request management.
 17. Confirm unauthenticated users cannot read `booking_requests` directly.
+
+## 12. Media, monthly leaflets, and admin calendar additions
+
+This revision adds these schema objects and policies:
+
+- `monthly_availability_leaflets`: parent records for a month/year PDF or image leaflet.
+- `site_media`: admin-managed public media slots for hero images, video, mission/team images, and experience defaults.
+- `public_site_media`: safe public view exposing only active media with a file URL.
+- Extra `fixed_excursions` fields: `leaflet_id`, `status`, and `public_visibility`.
+- Extra `partnerships` fields: `image_path`, `image_name`, and `image_type`.
+
+The public site reads fixed excursion data through `public_fixed_excursions`. That view now exposes only active, public, available fixed excursions and includes file metadata needed for linked monthly files. The admin dashboard reads the protected tables directly after `is_admin()` checks.
+
+Storage bucket `vulcaniq-public-assets` now supports:
+
+```text
+application/pdf, image/jpeg, image/png, image/webp, video/mp4
+```
+
+Use this bucket for partnership images, monthly leaflet files, blocked-date files, and site media uploads. Public visitors can read bucket files; only active admins can insert, update, or delete objects.
+
+After running the schema, refresh the PostgREST cache if Supabase does not immediately expose new columns:
+
+```sql
+notify pgrst, 'reload schema';
+```
+
+## Latest schema additions: site content and finance
+
+Run the updated `supabase/schema.sql` in the Supabase SQL editor after deploying this version. The migration is additive and uses `create table if not exists` and `alter table add column if not exists` patterns.
+
+### New `site_content` table
+
+`site_content` stores admin-managed public website copy in Italian and English. Public users read only the `public_site_content` view. Active admins can select, insert, and update the table.
+
+Important fields:
+
+- `content_key`
+- `section`
+- `value_it`
+- `value_en`
+- `default_it`
+- `default_en`
+- `content_type`
+- `active`
+- `updated_by`
+
+### New `finance_entries` table
+
+`finance_entries` stores admin-only ledger entries for income and expenses.
+
+Important fields:
+
+- `entry_date`
+- `type` (`income` or `expense`)
+- `amount`
+- `currency`
+- `title`
+- `description`
+- `category`
+- `payment_method`
+- `booking_request_id`
+- `fixed_excursion_id`
+- `leaflet_id`
+- `archived_at`
+- `archived_by`
+- `archive_reason`
+- `active`
+
+RLS is admin-only. There is no public finance view.
+
+### Lifecycle columns
+
+The schema also adds optional lifecycle fields to booking requests, availability blocks, and fixed excursions where useful:
+
+- `archived_at`
+- `archived_by`
+- `archive_reason`
+- `cancelled_at`
+- `cancelled_by`
+- `completed_at`
+
+These fields support archive and historical views without deleting operational history.
+

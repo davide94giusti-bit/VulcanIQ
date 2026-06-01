@@ -11,15 +11,19 @@ The site remains deployable on Netlify/Cloudflare-compatible static hosting and 
 - Restored the Mission and Vision content in Italian and English.
 - Removed decorative image captions/notes from the visible UI while keeping useful alt text.
 - Refined the logo treatment so the public logo is subtle, top-left only, with no oversized central hero/footer branding.
-- Added a public **Upcoming excursions** page driven by admin-created fixed excursions.
+- Added a public **Upcoming excursions** page with a monthly calendar and green markers for admin-created fixed excursions.
 - Expanded fixed excursions with title, description, meeting point, difficulty, price note, optional end time, capacity, and active state.
-- Added admin-created **Partnerships / Collaborazioni** with public display through a safe view.
+- Added admin-created **Partnerships / Collaborazioni** with image upload support and public display through a safe view.
 - Removed the unwanted reviews phrase from Italian and English.
 - Added justified alignment for paragraph and body-copy text while keeping buttons, headings, forms, and navigation clean.
 - Added optional blocked-date calendar uploads for fixed excursions: PDF, JPEG, PNG, or WEBP through Supabase Storage.
 - Added booking-code generation on accepted requests and public review submission validated by that unique code.
 - Accepted requests can now be cancelled/removed without hard-deleting, so fixed-excursion capacity recalculates correctly.
 - Approved, declined, cancelled, and archived request lists are now collapsible in admin request history.
+- Added an admin operational calendar with green fixed-excursion markers, red accepted-booking markers, date-detail panels, and inline edit modals.
+- Added monthly leaflet uploads linked to multiple fixed excursion dates.
+- Added a site media manager for replacing public images and videos from the admin dashboard.
+- Redesigned reviews with a modal submission flow and booking-code validation.
 
 ## Build commands
 
@@ -86,6 +90,8 @@ Do not replace the Etna photos/videos with the logo. The logo is used only for b
 - Request history and filters: `/admin/requests`
 - Availability and fixed excursions: `/admin/availability`
 - Partnerships: `/admin/partnerships`
+- Calendar: `/admin/calendar`
+- Media manager: `/admin/media`
 
 Only authenticated users listed as active owners/managers in `admin_profiles` can access admin data.
 
@@ -113,8 +119,9 @@ The public website reads only safe views:
 - `public_fixed_excursions`
 - `public_partnerships`
 - `public_reviews`
+- `public_site_media`
 
-Public visitors can insert `booking_requests`; they cannot read customer requests. Owners can read/update requests, cancel accepted requests, manage availability, fixed excursions, partnerships, and reviews through RLS-protected tables. Public review submission is handled through a Supabase RPC that validates booking codes without exposing private booking data.
+Public visitors can insert `booking_requests`; they cannot read customer requests. Owners can read/update requests, cancel accepted requests, manage availability, fixed excursions, monthly leaflets, site media, partnerships, and reviews through RLS-protected tables. Public review submission is handled through a Supabase RPC that validates booking codes without exposing private booking data.
 
 ## Deployment checklist
 
@@ -127,4 +134,24 @@ Public visitors can insert `booking_requests`; they cannot read customer request
 7. Run the Supabase schema.
 8. Add the approved owner users to `admin_profiles`.
 9. Deploy.
-10. Test public page switching, mobile dropdown navigation, language switch, fixed excursion requests, blocked-date file display, partnership display, form submission, review submission with a booking code, admin login, approval/decline/cancel, collapsible request lists, and RLS.
+10. Test public page switching, mobile dropdown navigation, language switch, fixed excursion requests, public fixed-date calendar markers, monthly leaflet upload/linking, blocked-date file display, partnership image display, site media replacement, form submission, review modal submission with a booking code, admin login, approval/decline/cancel, admin calendar editing, collapsible request lists, and RLS.
+
+## Implementation review update
+
+This build includes the requested implementation-review changes:
+
+- Mission page layout refactored into balanced Mission/Vision, image, and principles sections.
+- Reviews page redesigned with visible non-overlapping publish button and sorting controls.
+- Admin calendar modal made opaque and updated with booked guest details for fixed excursions.
+- Admin navigation alignment improved, including `Sito pubblico` / `Public site`.
+- Admin archive and past-experience areas added across requests, availability, fixed excursions, and upcoming bookings.
+- New `Finanze / Finance` admin section for income, expenses, linked bookings/excursions, filters, and summary cards.
+- New `Contenuti / Content` admin section for bilingual public website copy with safe static fallbacks.
+- Supabase schema extended with `site_content`, `finance_entries`, lifecycle columns, public-safe views, grants, and RLS policies.
+
+Build verified with:
+
+```bash
+npm install
+npm run build
+```

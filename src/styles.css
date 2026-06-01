@@ -2183,3 +2183,918 @@ h3 {
     min-height: 300px;
   }
 }
+
+/* Implementation review pass: prompt-specific public/admin refinements */
+.refined-section-header {
+  max-width: 760px;
+  margin-bottom: clamp(22px, 4vw, 38px);
+}
+
+.refined-section-header h2,
+.experience-page-header h2 {
+  font-size: clamp(2.4rem, 5vw, 4.8rem);
+  max-width: 880px;
+}
+
+.experience-page-header p,
+.refined-section-header p {
+  max-width: 740px;
+  font-size: clamp(1rem, 1.6vw, 1.18rem);
+  line-height: 1.65;
+}
+
+.public-calendar-layout,
+.admin-calendar-layout,
+.mission-redesign-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.92fr) minmax(0, 1.08fr);
+  gap: clamp(18px, 3vw, 30px);
+  align-items: start;
+}
+
+.calendar-topline {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 46px;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.calendar-topline h2,
+.calendar-topline h3 {
+  margin: 6px 0 0;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.calendar-topline button {
+  width: 46px;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--cream);
+  color: var(--night);
+  font-size: 1.35rem;
+  font-weight: 900;
+}
+
+.calendar-legend,
+.compact-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin: 12px 0 14px;
+  color: var(--basalt);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.calendar-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.legend-dot,
+.date-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--ash);
+}
+
+.legend-dot.fixed,
+.date-dot.fixed,
+.green-circle { background: #3e8f58; }
+.legend-dot.booked,
+.date-dot.booked { background: #bd4538; }
+.legend-dot.blocked,
+.date-dot.blocked { background: #8d96a1; }
+
+.public-calendar-grid,
+.admin-calendar-grid {
+  gap: 8px;
+}
+
+.public-date-button,
+.admin-date-button {
+  position: relative;
+  min-height: 70px;
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(251,247,239,0.68);
+  color: var(--night);
+}
+
+.public-date-button.outside,
+.admin-date-button.outside { opacity: 0.42; }
+
+.public-date-button.selected,
+.admin-date-button.selected {
+  border-color: rgba(240,107,79,0.56);
+  background: var(--lava-soft);
+  box-shadow: 0 8px 22px rgba(240,107,79,0.12);
+}
+
+.public-date-button.has-fixed {
+  border-color: rgba(62,143,88,0.38);
+}
+
+.date-marker {
+  width: 17px;
+  height: 17px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px rgba(62,143,88,0.13);
+}
+
+.admin-date-markers {
+  display: inline-flex;
+  gap: 4px;
+  align-self: end;
+}
+
+.date-detail-panel,
+.admin-date-detail-panel {
+  position: sticky;
+  top: calc(var(--header-height) + 24px);
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(255,255,255,0.88);
+  box-shadow: var(--shadow-soft);
+}
+
+.selected-excursion-list,
+.media-admin-grid,
+.values-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.compact-upcoming-card {
+  box-shadow: none;
+  background: #fff;
+}
+
+.partnership-image-fallback {
+  width: 150px;
+  height: 120px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: linear-gradient(145deg, var(--night), #223650);
+  color: rgba(241,184,107,0.82);
+  font-size: 0.82rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.redesigned-reviews-panel {
+  display: grid;
+  gap: 22px;
+}
+
+.reviews-header-row {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.balanced-reviews-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.featured-review-card {
+  min-height: 100%;
+  padding: clamp(20px, 3vw, 30px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.88);
+  box-shadow: var(--shadow-soft);
+}
+
+.featured-review-card blockquote {
+  margin: 0 0 16px;
+  color: var(--night);
+  font-size: clamp(1.02rem, 1.4vw, 1.2rem);
+  line-height: 1.62;
+  text-align: left;
+}
+
+.public-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(13, 22, 38, 0.58);
+}
+
+.review-modal {
+  width: min(100%, 620px);
+  max-height: min(92svh, 880px);
+  overflow: auto;
+  padding: clamp(20px, 3vw, 30px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.modal-review-form {
+  display: grid;
+  gap: 14px;
+}
+
+.mission-redesign-grid {
+  grid-template-columns: minmax(0, 1.03fr) minmax(320px, 0.97fr);
+}
+
+.mission-hero-statement,
+.values-card {
+  padding: clamp(26px, 4vw, 46px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: #fff;
+  box-shadow: var(--shadow-soft);
+}
+
+.mission-hero-statement h2 {
+  font-size: clamp(2.25rem, 5vw, 4.9rem);
+}
+
+.mission-image-feature {
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  min-height: 340px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-soft);
+}
+
+.mission-image-feature .image-slot,
+.mission-image-feature img {
+  min-height: 340px;
+  height: 100%;
+}
+
+.mission-copy-card,
+.vision-copy-card {
+  min-height: 250px;
+}
+
+.values-card {
+  grid-column: 1 / -1;
+}
+
+.values-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.value-chip {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(251,247,239,0.78);
+  color: var(--night);
+  font-weight: 900;
+}
+
+.admin-calendar-layout {
+  grid-template-columns: minmax(360px, 1fr) minmax(320px, 0.72fr);
+}
+
+.calendar-detail-item {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(251,247,239,0.66);
+}
+
+.media-admin-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.media-admin-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #fff;
+  box-shadow: var(--shadow-soft);
+}
+
+.media-admin-card img,
+.media-admin-card video,
+.admin-card-preview-image {
+  width: 100%;
+  height: 170px;
+  object-fit: cover;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--cream);
+}
+
+.media-empty-preview {
+  height: 170px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 16px;
+  background: rgba(251,247,239,0.72);
+  color: var(--ash);
+  font-weight: 850;
+}
+
+.media-admin-card input[type="file"],
+.button input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.nav-shell {
+  width: min(100% - 30px, 1320px);
+  margin-inline: auto;
+}
+
+.nav-links {
+  gap: clamp(8px, 1.2vw, 18px);
+}
+
+.nav-links button:not(.language-toggle) {
+  min-width: max-content;
+  padding-inline: clamp(12px, 1.1vw, 18px);
+  line-height: 1.1;
+}
+
+@media (max-width: 980px) {
+  .public-calendar-layout,
+  .admin-calendar-layout,
+  .mission-redesign-grid,
+  .balanced-reviews-grid,
+  .media-admin-grid {
+    grid-template-columns: 1fr;
+  }
+  .date-detail-panel,
+  .admin-date-detail-panel { position: static; }
+  .values-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .public-date-button,
+  .admin-date-button {
+    min-height: 54px;
+    border-radius: 14px;
+    padding: 7px;
+  }
+  .calendar-topline { grid-template-columns: 40px minmax(0, 1fr) 40px; }
+  .calendar-topline button { width: 40px; min-height: 40px; }
+  .reviews-header-row { align-items: stretch; flex-direction: column; }
+  .values-grid { grid-template-columns: 1fr; }
+  .partnership-image-fallback { width: 100%; height: 190px; }
+}
+
+/* Implementation review update: mission, reviews, admin content, finance, and opaque modals */
+.admin-nav button,
+.admin-nav a,
+.admin-userbox button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.modal-backdrop,
+.public-modal-backdrop {
+  background: rgba(6, 12, 24, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.admin-modal,
+.review-modal {
+  background: #fffaf2;
+  opacity: 1;
+  color: var(--ink);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+}
+
+.mission-balanced-layout {
+  display: grid;
+  gap: clamp(18px, 3vw, 28px);
+}
+
+.mission-top-row,
+.mission-bottom-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(18px, 3vw, 28px);
+  align-items: stretch;
+}
+
+.balanced-mission-card {
+  min-height: 250px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(24px, 4vw, 40px);
+}
+
+.balanced-mission-card p {
+  margin-top: 14px;
+  max-width: 64ch;
+  font-size: clamp(1rem, 1.45vw, 1.18rem);
+  line-height: 1.68;
+}
+
+.centered-mission-image {
+  min-height: 360px;
+}
+
+.centered-mission-image .image-slot,
+.centered-mission-image img {
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  object-fit: cover;
+  object-position: center center;
+}
+
+.mission-values-card {
+  display: grid;
+  align-content: center;
+}
+
+.compact-values-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.reviews-header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  min-width: min(100%, 360px);
+}
+
+.review-sort-control {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.review-sort-control button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--basalt);
+  padding: 0 12px;
+  font-weight: 850;
+}
+
+.review-sort-control button.active,
+.review-sort-control button:hover {
+  background: var(--night);
+  border-color: var(--night);
+  color: #fff;
+}
+
+.featured-review-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.stars {
+  color: #9d6218;
+  letter-spacing: 0.12em;
+}
+
+.review-author {
+  margin-top: auto;
+  color: var(--ash);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.content-admin-grid,
+.finance-entry-list {
+  display: grid;
+  gap: 14px;
+}
+
+.content-admin-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.content-admin-card,
+.finance-entry-card {
+  display: grid;
+  gap: 14px;
+  padding: clamp(18px, 2.6vw, 26px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.88);
+  box-shadow: var(--shadow-soft);
+}
+
+.content-admin-card textarea,
+.content-admin-card input,
+.content-admin-card select {
+  width: 100%;
+}
+
+.finance-summary-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.finance-summary-grid .summary-card strong {
+  font-size: clamp(1.45rem, 2.4vw, 2.4rem);
+  letter-spacing: -0.04em;
+}
+
+.finance-layout {
+  grid-template-columns: minmax(360px, 0.78fr) minmax(0, 1.22fr);
+}
+
+.finance-amount {
+  font-size: 1.1rem;
+  letter-spacing: -0.02em;
+}
+
+.finance-amount.income {
+  color: #2f7a4a;
+}
+
+.finance-amount.expense {
+  color: #a63a2f;
+}
+
+.finance-entry-card.inactive,
+.content-admin-card.inactive {
+  opacity: 0.66;
+}
+
+.compact-check {
+  min-height: 48px;
+  align-items: center;
+  padding-inline: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.9);
+}
+
+.calendar-detail-item dl {
+  margin-top: 8px;
+}
+
+@media (max-width: 1080px) {
+  .finance-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .content-admin-grid,
+  .finance-layout,
+  .mission-top-row,
+  .mission-bottom-row {
+    grid-template-columns: 1fr;
+  }
+  .reviews-header-actions {
+    align-items: flex-start;
+  }
+  .review-sort-control {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 620px) {
+  .finance-summary-grid {
+    grid-template-columns: 1fr;
+  }
+  .reviews-header-row {
+    align-items: stretch;
+  }
+  .reviews-header-actions .button,
+  .review-sort-control,
+  .review-sort-control button {
+    width: 100%;
+  }
+  .review-sort-control {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .compact-values-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-archive-details {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(13, 22, 38, 0.04);
+  overflow: hidden;
+}
+
+.admin-archive-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  color: var(--night);
+  font-weight: 900;
+}
+
+.admin-archive-details > summary + * {
+  margin: 0 16px 16px;
+}
+
+.admin-archive-details .availability-block-card {
+  margin: 0 16px 16px;
+  box-shadow: none;
+}
+
+/* Follow-up fix: runtime calendar helpers, Mission/Reviews layout refinements */
+.redesigned-reviews-panel {
+  grid-template-columns: 1fr;
+  max-width: 1180px;
+}
+
+.reviews-header-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.reviews-header-row h2 {
+  max-width: 760px;
+  font-size: clamp(2.4rem, 5vw, 4.7rem);
+  line-height: 0.98;
+}
+
+.balanced-reviews-grid {
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  align-items: stretch;
+}
+
+.featured-review-card {
+  min-height: 0;
+}
+
+.featured-review-card blockquote {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  hyphens: none;
+  overflow-wrap: break-word;
+}
+
+.review-author {
+  margin-top: auto;
+}
+
+.mission-card-stack {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 14px;
+}
+
+.mission-card-stack h2,
+.vertical-principles-card h2 {
+  margin: 0;
+  color: var(--night);
+  font-size: clamp(2.1rem, 4vw, 4rem);
+  line-height: 0.96;
+}
+
+.mission-card-stack .mission-card {
+  height: 100%;
+}
+
+.titled-mission-row .balanced-mission-card {
+  justify-content: flex-start;
+  min-height: 230px;
+}
+
+.titled-mission-row .balanced-mission-card p {
+  margin-top: 0;
+}
+
+.mission-image-principles-row {
+  grid-template-columns: minmax(0, 1.12fr) minmax(280px, 0.88fr);
+}
+
+.mission-image-feature {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  line-height: 0;
+  background: #fff;
+}
+
+.mission-image-feature .image-slot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: inherit;
+  box-shadow: none;
+}
+
+.mission-image-feature .image-slot img,
+.mission-image-feature img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  object-fit: cover;
+  object-position: center center;
+}
+
+.vertical-principles-card {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+
+.vertical-values-grid,
+.compact-values-grid.vertical-values-grid {
+  grid-template-columns: 1fr;
+  margin-top: 0;
+}
+
+.vertical-values-grid .value-chip {
+  width: 100%;
+}
+
+.experience-actions {
+  margin-top: 18px;
+}
+
+.experience-summary .small-button {
+  pointer-events: none;
+}
+
+@media (max-width: 1080px) {
+  .mission-image-principles-row,
+  .reviews-header-row {
+    grid-template-columns: 1fr;
+  }
+
+  .reviews-header-actions {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 620px) {
+  .reviews-header-row h2,
+  .mission-card-stack h2,
+  .vertical-principles-card h2 {
+    font-size: clamp(2rem, 12vw, 3.2rem);
+  }
+
+  .balanced-reviews-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Follow-up layout fix: clearer descriptions, centered mission image, combined website admin area */
+.formatted-description {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 18px;
+  max-width: 72ch;
+}
+
+.formatted-description p {
+  margin: 0;
+  color: var(--ash);
+  font-size: 1rem;
+  line-height: 1.72;
+  letter-spacing: 0.01em;
+  text-align: left;
+}
+
+.upcoming-card .formatted-description {
+  padding: 14px 16px;
+  border: 1px solid rgba(13, 22, 38, 0.08);
+  border-radius: 18px;
+  background: rgba(244, 238, 228, 0.52);
+}
+
+.mission-image-only-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  grid-template-columns: none;
+}
+
+.mission-image-only-row .mission-image-feature {
+  width: min(100%, 860px);
+  min-height: 0;
+  aspect-ratio: 1.42;
+  margin-inline: auto;
+  display: block;
+  overflow: hidden;
+}
+
+.mission-image-only-row .image-slot {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: 1.42;
+  display: block;
+  margin-inline: auto;
+  border: 0;
+  box-shadow: none;
+}
+
+.mission-image-only-row .image-slot img,
+.mission-image-only-row img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: block;
+  object-fit: cover;
+  object-position: center center;
+}
+
+.redesigned-reviews-panel .reviews-header-row {
+  max-width: none;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.redesigned-reviews-panel .reviews-header-row h2 {
+  max-width: 1080px;
+  font-size: clamp(2.25rem, 4.2vw, 4rem);
+  line-height: 1.04;
+  text-wrap: balance;
+}
+
+.redesigned-reviews-panel .reviews-header-actions {
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.redesigned-reviews-panel .review-sort-control {
+  justify-content: flex-start;
+}
+
+.website-edit-tabs {
+  margin: 0 0 20px;
+}
+
+.admin-subpage {
+  padding: 0;
+}
+
+.admin-subpage-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 860px) {
+  .mission-image-only-row .mission-image-feature,
+  .mission-image-only-row .image-slot {
+    width: 100%;
+    aspect-ratio: 1.18;
+  }
+
+  .redesigned-reviews-panel .reviews-header-row h2 {
+    font-size: clamp(2.1rem, 11vw, 3.25rem);
+  }
+}

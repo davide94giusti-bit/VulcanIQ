@@ -21,7 +21,7 @@ The public website is now organized as page-like sections from the header:
 - About us / Chi siamo
 - Mission / Missione
 - Reviews / Recensioni
-- Contact / Contatti
+- Contact us / Contattaci
 
 Visitors no longer need to scroll through one long landing page. Each header button opens the relevant content directly.
 
@@ -147,12 +147,12 @@ Partnerships are public collaborations visible on the public **Partnerships / Co
    - category IT and EN
    - description IT and EN
    - optional website URL
-   - optional image URL
+   - image upload or optional image URL
    - display order
    - active/inactive
 3. Save.
 
-Only active partnerships appear publicly. Use **display order** to control ordering. If no partnerships are active, the public page shows an empty-state message.
+Only active partnerships appear publicly. Use **display order** to control ordering. If no partnerships are active, the public page shows an empty-state message. If no image is attached, the card uses a clean fallback.
 
 ## Private availability blocks
 
@@ -231,3 +231,136 @@ This phase does not include:
 - advanced analytics
 
 The system is intentionally simple and owner-controlled.
+
+## New admin calendar
+
+Open **Calendar / Calendario** from the admin header. It shows a monthly operational calendar:
+
+- green markers: fixed excursions;
+- red markers: accepted customer bookings;
+- grey markers: blocked or unavailable dates.
+
+Click a marked date to see every fixed excursion, accepted booking, and block for that day. Use **Edit / Modifica** to update booking status, confirmed date, guest counts, notes, fixed-excursion time, capacity, title, or active state.
+
+## Monthly leaflets
+
+Open `/admin/availability` and select **Monthly leaflets / Calendari mensili**.
+
+1. Choose month and year.
+2. Add an Italian and/or English title.
+3. Upload a PDF, JPG, PNG, or WEBP monthly calendar/leaflet.
+4. Save.
+5. Open **Fixed excursions / Escursioni fisse** and link individual fixed dates to that monthly leaflet using the linked leaflet field.
+
+Each fixed date can still have its own title, time, capacity, meeting point, difficulty, price note, and description. The public **Upcoming excursions** calendar marks available fixed dates with a green circle.
+
+## Site media manager
+
+Open **Media** from the admin header. You can replace public media slots without editing code, including:
+
+- home hero background;
+- home hero image/video;
+- mission image;
+- Leonardo and Deborah images;
+- default experience images;
+- review image slot.
+
+Uploaded media is stored in Supabase Storage. If no uploaded media exists, the site keeps using the static fallback asset.
+
+## Partnership images
+
+The partnership form now supports image upload, preview, replacement, and removal. Uploaded images appear on the public **Partnerships / Collaborazioni** page. If no image is attached, the public card shows a clean fallback instead of a broken image.
+
+## Latest admin update: archive, content, finance, reviews, and calendar details
+
+### Public Mission page
+
+The Mission page now uses a balanced editorial layout:
+
+- Mission and Vision appear as the top two primary cards.
+- The oversized mission hero statement has been removed.
+- The Mission image is centered using `object-fit: cover` and `object-position: center center`.
+- Principles are shown in a compact grid next to or under the image depending on screen size.
+
+### Public Reviews page
+
+The Reviews page now uses a horizontal page header with the review submission button separated from the review cards. The button is not absolutely positioned and should not overlap cards.
+
+Admins and public users can sort visible reviews by:
+
+- Più recenti / Most recent
+- Voto più alto / Highest score
+- Voto più basso / Lowest score
+
+Review submission still uses the booking-code modal. Booking-code validation remains handled by Supabase through the `submit_public_review` function.
+
+### Admin archive and past experiences
+
+Admin sections separate active items from historical ones:
+
+- Requests are grouped by status, with declined/cancelled/archived items collapsed by default.
+- Availability blocks have an Archive section.
+- Fixed excursions have an Esperienze passate / Archivio section.
+- Monthly leaflets have an Archive section.
+- Upcoming bookings include an Esperienze passate / Past experiences panel.
+
+Archived, inactive, declined, cancelled, and past items remain visible to admins for reference, but they are not mixed into active operational lists.
+
+### Admin calendar modal and guest details
+
+The admin calendar modal now has a fully opaque card and a darker blurred backdrop, so the calendar behind it no longer interferes with readability.
+
+When a fixed excursion has linked accepted bookings, the date detail panel shows booked guest information where available:
+
+- customer name
+- email
+- phone / WhatsApp
+- guest count
+- booking code
+
+If no guests are booked, the panel shows: `Nessun ospite prenotato per questa data.` / `No guests booked for this date yet.`
+
+### Finance / Finanze
+
+The admin dashboard includes a new `Finanze / Finance` section. This is an internal ledger only; it is not a payment processor.
+
+Admins can:
+
+- add income entries
+- add expense entries
+- edit entries
+- archive entries
+- filter by type, category, date range, and linked/unlinked status
+- link entries to booking requests
+- link entries to fixed excursions
+- link entries to monthly leaflets
+
+The summary cards calculate:
+
+- Entrate totali / Total earnings
+- Uscite totali / Total expenses
+- Utile netto / Net profit
+- Prenotazioni collegate / Linked bookings
+- Spese non collegate / Unlinked expenses
+
+Finance data is protected by admin-only RLS. Public visitors must never be able to read finance entries.
+
+### Content / Contenuti
+
+The admin dashboard includes a `Contenuti / Content` section for public copy. Admins can edit Italian and English text without changing code.
+
+Currently managed through this section:
+
+- Homepage hero title
+- Homepage hero subtitle
+- Homepage CTA labels
+- Mission title and body
+- Vision title and body
+- Principles labels
+- Reviews page title
+- Reviews intro
+- Publish review button label
+- Contact page title and intro entries for future extension
+
+Public pages load active admin-managed content first. If a field is empty or missing, the website falls back to the default static text so headings and cards do not break.
+

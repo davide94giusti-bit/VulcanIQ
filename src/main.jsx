@@ -3,10 +3,13 @@ import { createRoot } from 'react-dom/client';
 import { blockedDates, defaultExperienceAvailability } from './data/availability.js';
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
-import { createPublicBookingRequest, createManualBookingRequest, listBookingRequests, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
-import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
-import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership } from './services/partnershipService.js';
+import { createPublicBookingRequest, createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
+import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
+import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
 import { loadPublicReviews, submitPublicReview, listReviews, updateReviewVisibility } from './services/reviewsService.js';
+import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFile } from './services/siteMediaService.js';
+import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
+import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import './styles.css';
 
@@ -35,12 +38,40 @@ const MEDIA = {
   introVideo: '/videos/vulcaniq/intro.mp4'
 };
 
+
+function buildMediaMap(items = []) {
+  return (items || []).reduce((acc, item) => {
+    if (item?.media_key && item?.file_url) acc[item.media_key] = item;
+    return acc;
+  }, {});
+}
+
+function mediaUrl(siteMedia, key, fallback) {
+  return siteMedia?.[key]?.file_url || fallback;
+}
+
+function mediaAlt(siteMedia, key, lang, fallback) {
+  const item = siteMedia?.[key];
+  return (lang === 'it' ? item?.alt_it || item?.alt_en : item?.alt_en || item?.alt_it) || fallback;
+}
+
+function experienceMediaKey(id) {
+  const map = {
+    'etna-premium': 'default_experience_premium_image',
+    'etna-learning': 'default_experience_learning_image',
+    'etna-live': 'default_experience_live_image',
+    'etna-stories': 'default_experience_stories_image'
+  };
+  return map[id] || '';
+}
+
+
 const i18n = {
   it: {
     languageLabel: 'Italiano',
     switchLabel: 'EN',
-    nav: ['Inizio', 'Esperienze', 'Prossime escursioni', 'Collaborazioni', 'Chi siamo', 'Missione', 'Recensioni', 'Contatti'],
-    contact: 'Contatti',
+    nav: ['Inizio', 'Esperienze', 'Prossime escursioni', 'Collaborazioni', 'Chi siamo', 'Missione', 'Recensioni', 'Contattaci'],
+    contact: 'Contattaci',
     heroKicker: '',
     heroTitle: "L'Etna non è solo uno scenario.",
     heroLead: 'Esperienze private e fisse sull’Etna per leggere il vulcano come territorio vivo: con conoscenza, sicurezza e relazione umana.',
@@ -67,8 +98,8 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     readMore: 'Leggi di più',
     hide: 'Riduci',
     experiencesKicker: 'Esperienze',
-    experiencesTitle: 'Quattro modi per vivere l’Etna, senza format turistici standard.',
-    experiencesIntro: '',
+    experiencesTitle: 'Esperienze sull’Etna, pensate su misura.',
+    experiencesIntro: 'Scegli il modo più adatto per vivere il vulcano: esperienze private, formative o condivise, sempre guidate con attenzione, sicurezza e conoscenza del territorio.',
     bestFor: 'Ideale per',
     starting: 'Indicazione',
     value: 'Valore',
@@ -120,8 +151,8 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     wearTitle: 'Cosa indossare sull’Etna.',
     wearIntro: 'Indicazioni sintetiche: la conferma finale dipende da stagione, quota e condizioni del giorno.',
     reviewsKicker: 'Recensioni',
-    reviewsTitle: 'Voci di chi ha vissuto l’Etna con Leonardo.',
-    reviewsIntro: 'Testimonianze dirette da chi ha vissuto l’Etna con Leonardo.',
+    reviewsTitle: 'Recensioni di chi ha vissuto l’Etna con noi.',
+    reviewsIntro: '',
     safetyKicker: 'Sicurezza',
     safetyTitle: 'Condizioni, prudenza e valutazione reale.',
     safetyIntro: 'Ogni esperienza è confermata solo se meteo, accessibilità, ordinanze e attività vulcanica lo permettono.',
@@ -129,7 +160,7 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     teamTitle: 'Un progetto piccolo, curato e umano.',
     leonardoRole: 'Fondatore · guida ambientale e vulcanologica',
     leonardoBio: 'Fondatore e ideatore di vulcanIQ, è guida ambientale dal 2020 e guida vulcanologica dal 2024. Accompagna le persone alla scoperta dell’Etna attraverso racconti, natura e osservazione del territorio, con l’obiettivo di trasformare ogni esperienza in qualcosa di autentico, emozionale e profondamente umano.',
-    coFounderName: 'Deborah',
+    coFounderName: 'Deborah Giusti',
     coFounderRole: 'Co-fondatrice · qualità del servizio, scuole e aziende',
     coFounderBio: 'Da oltre 8 anni nel mondo dell’insegnamento e con esperienza come analista aziendale, Deborah unisce empatia, organizzazione e attenzione ai dettagli per creare esperienze autentiche e di valore. In vulcanIQ si occupa della qualità del servizio e dello sviluppo di percorsi dedicati a scuole e aziende, progettando attività capaci di unire scoperta, coinvolgimento e crescita personale.',
     coFounderAlt: 'Deborah, co-founder vulcanIQ',
@@ -170,7 +201,7 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     priceNote: 'Nota prezzo',
     requestAvailability: 'Richiedi disponibilità',
     partnershipsTitle: 'Collaborazioni',
-    partnershipsSubtitle: 'Partnership attive',
+    partnershipsSubtitle: '',
     partnershipsEmpty: 'Al momento non ci sono collaborazioni pubblicate.',
     visitWebsite: 'Visita il sito',
     activeCollaborations: 'Partnership attive',
@@ -186,13 +217,13 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     peopleRequired: 'Inserisci almeno una persona nella richiesta.',
     fixedDateRequired: 'Seleziona un’escursione fissa disponibile.',
     reviewOriginalLabel: 'Recensione originale in inglese',
-    leaveReviewTitle: 'Lascia una recensione',
+    leaveReviewTitle: 'Pubblica una recensione',
     leaveReviewIntro: 'Inserisci il codice prenotazione ricevuto dopo la conferma per pubblicare una recensione.',
     bookingCode: 'Codice prenotazione',
     reviewerName: 'Nome',
     rating: 'Valutazione',
     reviewText: 'Recensione',
-    submitReview: 'Pubblica recensione',
+    submitReview: 'Pubblica una recensione',
     reviewSent: 'Grazie. La recensione è stata pubblicata.',
     invalidBookingCode: 'Codice prenotazione non valido.',
     bookingCodeUsed: 'È già stata inviata una recensione per questo codice prenotazione.',
@@ -217,13 +248,23 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     gallery02Alt: 'Sentiero vulcanico etneo con guida a distanza sicura',
     gallery03Alt: 'Paesaggio dell’Etna con luce naturale e terreno lavico',
     emailSubject: 'Richiesta esperienza vulcanIQ sull’Etna',
-    defaultMessage: 'Ciao Leonardo,\nvorrei informazioni su un’esperienza vulcanIQ sull’Etna.\n\nVorrei sapere disponibilità, durata indicativa, prezzo e consigli sull’abbigliamento.\n\nGrazie.'
+    defaultMessage: 'Ciao Leonardo,\nvorrei informazioni su un’esperienza vulcanIQ sull’Etna.\n\nVorrei sapere disponibilità, durata indicativa, prezzo e consigli sull’abbigliamento.\n\nGrazie.',
+    excursionCalendar: 'Calendario escursioni',
+    availableDates: 'Date disponibili',
+    unavailableDatesLegend: 'Date non disponibili',
+    dateDetails: 'Dettagli della data',
+    noExcursionsOnDate: 'Nessuna escursione fissa in questa data.',
+    publishReview: 'Pubblica una recensione',
+    missionHero: 'Non accompagniamo solo persone sull’Etna. Creiamo un modo più attento di incontrarlo.',
+    missionShort: 'vulcanIQ nasce per trasformare l’escursione in un’esperienza di ascolto, conoscenza e relazione con il territorio.',
+    valuesTitle: 'Principi',
+    values: ['Ascolto del territorio', 'Sicurezza prima di tutto', 'Esperienze su misura', 'Cultura locale', 'Ritmo umano', 'Relazione autentica']
   },
   en: {
     languageLabel: 'English',
     switchLabel: 'IT',
-    nav: ['Home', 'Experiences', 'Upcoming excursions', 'Partnerships', 'About us', 'Mission', 'Reviews', 'Contact'],
-    contact: 'Contact',
+    nav: ['Home', 'Experiences', 'Upcoming excursions', 'Partnerships', 'About us', 'Mission', 'Reviews', 'Contact us'],
+    contact: 'Contact us',
     heroKicker: '',
     heroTitle: 'Mount Etna is not just a backdrop.',
     heroLead: 'Private and fixed Mount Etna experiences that help guests read the volcano as a living territory: with knowledge, safety, and human connection.',
@@ -250,8 +291,8 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     readMore: 'Read more',
     hide: 'Collapse',
     experiencesKicker: 'Experiences',
-    experiencesTitle: 'Four ways to experience Etna without standard tour formats.',
-    experiencesIntro: '',
+    experiencesTitle: 'Etna experiences, shaped around you.',
+    experiencesIntro: 'Choose the most suitable way to experience the volcano: private, educational or shared experiences, always guided with care, safety and local knowledge.',
     bestFor: 'Best for',
     starting: 'Starting point',
     value: 'Value',
@@ -303,8 +344,8 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     wearTitle: 'What to wear on Etna.',
     wearIntro: 'Concise guidance: final advice depends on season, altitude, and conditions on the day.',
     reviewsKicker: 'Reviews',
-    reviewsTitle: 'Voices from people who experienced Etna with Leonardo.',
-    reviewsIntro: 'Direct testimonials from guests who experienced Mount Etna with Leonardo.',
+    reviewsTitle: 'Reviews from people who experienced Etna with us.',
+    reviewsIntro: '',
     safetyKicker: 'Safety',
     safetyTitle: 'Conditions, prudence, and real assessment.',
     safetyIntro: 'Every experience is confirmed only if weather, access, regulations, and volcanic activity allow it.',
@@ -312,7 +353,7 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     teamTitle: 'A small, curated, human project.',
     leonardoRole: 'Founder · environmental and volcanological guide',
     leonardoBio: 'Founder and creator of vulcanIQ, Leonardo has been an environmental guide since 2020 and a volcanological guide since 2024. He accompanies people in discovering Mount Etna through stories, nature, and observation of the territory, with the aim of transforming every experience into something authentic, emotional, and deeply human.',
-    coFounderName: 'Deborah',
+    coFounderName: 'Deborah Giusti',
     coFounderRole: 'Co-founder · service quality, schools and companies',
     coFounderBio: 'With more than 8 years in education and experience as a business analyst, Deborah combines empathy, organization, and attention to detail to create authentic and valuable experiences. At vulcanIQ, she focuses on service quality and the development of programs for schools and companies, designing activities that bring together discovery, engagement, and personal growth.',
     coFounderAlt: 'Deborah, vulcanIQ co-founder',
@@ -353,7 +394,7 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     priceNote: 'Price note',
     requestAvailability: 'Request availability',
     partnershipsTitle: 'Partnerships',
-    partnershipsSubtitle: 'Active collaborations',
+    partnershipsSubtitle: '',
     partnershipsEmpty: 'There are currently no published partnerships.',
     visitWebsite: 'Visit website',
     activeCollaborations: 'Active collaborations',
@@ -369,13 +410,13 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     peopleRequired: 'Enter at least one person in the request.',
     fixedDateRequired: 'Select an available fixed excursion.',
     reviewOriginalLabel: 'Original review in English',
-    leaveReviewTitle: 'Leave a review',
+    leaveReviewTitle: 'Publish a review',
     leaveReviewIntro: 'Enter the booking code you received after confirmation to publish a review.',
     bookingCode: 'Booking code',
     reviewerName: 'Name',
     rating: 'Rating',
     reviewText: 'Review',
-    submitReview: 'Publish review',
+    submitReview: 'Publish a review',
     reviewSent: 'Thank you. Your review has been published.',
     invalidBookingCode: 'Invalid booking code.',
     bookingCodeUsed: 'A review has already been submitted for this booking code.',
@@ -400,7 +441,17 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     gallery02Alt: 'Etna volcanic trail with guide at a safe distance',
     gallery03Alt: 'Mount Etna landscape with natural light and lava terrain',
     emailSubject: 'vulcanIQ Mount Etna experience request',
-    defaultMessage: 'Hi Leonardo,\nI would like more information about a vulcanIQ experience on Mount Etna.\n\nI would like to know availability, approximate duration, price, and clothing recommendations.\n\nThank you.'
+    defaultMessage: 'Hi Leonardo,\nI would like more information about a vulcanIQ experience on Mount Etna.\n\nI would like to know availability, approximate duration, price, and clothing recommendations.\n\nThank you.',
+    excursionCalendar: 'Excursion calendar',
+    availableDates: 'Available dates',
+    unavailableDatesLegend: 'Unavailable dates',
+    dateDetails: 'Date details',
+    noExcursionsOnDate: 'No fixed excursion on this date.',
+    publishReview: 'Publish a review',
+    missionHero: 'We do not simply guide people on Etna. We create a more mindful way to encounter it.',
+    missionShort: 'vulcanIQ was created to transform an excursion into an experience of listening, knowledge and connection with the territory.',
+    valuesTitle: 'Principles',
+    values: ['Listening to the territory', 'Safety first', 'Tailored experiences', 'Local culture', 'Human pace', 'Authentic connection']
   }
 };
 
@@ -526,6 +577,21 @@ function encode(value) {
 
 function text(lang, key) {
   return i18n[lang][key];
+}
+
+function contentText(siteContent, key, lang, fallback = '') {
+  const item = siteContent?.[key];
+  if (!item || item.active === false) return fallback;
+  const primary = lang === 'it' ? item.value_it : item.value_en;
+  const secondary = lang === 'it' ? item.value_en : item.value_it;
+  return primary || secondary || fallback;
+}
+
+function buildSiteContentMap(items = []) {
+  return (items || []).reduce((acc, item) => {
+    if (item?.content_key) acc[item.content_key] = item;
+    return acc;
+  }, {});
 }
 
 function experienceById(id) {
@@ -776,31 +842,105 @@ function Header({ lang, setLang, activePage, setActivePage }) {
   );
 }
 
-function Hero({ lang, setActivePage, scrollToForm }) {
+function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent }) {
+  const heroBackground = mediaUrl(siteMedia, 'home_hero_background', '');
+  const heroStyle = heroBackground ? { backgroundImage: `linear-gradient(90deg, rgba(13,22,38,0.94), rgba(13,22,38,0.78) 48%, rgba(13,22,38,0.54)), url("${heroBackground}")` } : undefined;
   return (
-    <section className="hero" id="top">
+    <section className="hero" id="top" style={heroStyle}>
       <div className="hero-overlay" />
       <div className="container hero-grid">
         <div className="hero-copy">
-          <h1>{text(lang, 'heroTitle')}</h1>
-          <p className="lead">{text(lang, 'heroLead')}</p>
+          <h1>{contentText(siteContent, 'home.hero.title', lang, text(lang, 'heroTitle'))}</h1>
+          <p className="lead">{contentText(siteContent, 'home.hero.subtitle', lang, text(lang, 'heroLead'))}</p>
           <div className="hero-ctas">
-            <button className="button primary" type="button" onClick={() => setActivePage('experiences')}>{text(lang, 'findExperience')}</button>
-            <button className="button secondary dark" type="button" onClick={() => setActivePage('upcoming')}>{text(lang, 'viewAvailability')}</button>
+            <button className="button primary" type="button" onClick={() => setActivePage('experiences')}>{contentText(siteContent, 'home.hero.primary_cta', lang, text(lang, 'findExperience'))}</button>
+            <button className="button secondary dark" type="button" onClick={() => setActivePage('upcoming')}>{contentText(siteContent, 'home.hero.secondary_cta', lang, text(lang, 'viewAvailability'))}</button>
             <button className="button secondary dark" type="button" onClick={scrollToForm}>{text(lang, 'contact')}</button>
           </div>
-          <ContactActions lang={lang} compact onUseForm={scrollToForm} />
           <div className="trust-grid" aria-label="Trust points">
             {i18n[lang].trust.map((item) => <div className="trust-card" key={item}>✓ <span>{item}</span></div>)}
           </div>
         </div>
         <div className="hero-media" aria-hidden="false">
           <VideoSlot
-            src={MEDIA.introVideo}
-            poster={MEDIA.premium}
+            src={mediaUrl(siteMedia, 'home_hero_video', MEDIA.introVideo)}
+            poster={mediaUrl(siteMedia, 'home_hero_feature_image', MEDIA.premium)}
             label={lang === 'it' ? 'Video introduttivo vulcanIQ' : 'vulcanIQ introductory video'}
             lang={lang}
           />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ExperienceAccordion({ lang, fillForm, siteMedia }) {
+  const [openId, setOpenId] = useState(null);
+
+  function handleRequest(experience) {
+    fillForm({
+      experienceId: experience.id,
+      requestType: 'private',
+      message: buildExperienceMessage(experience, lang),
+      scroll: true
+    });
+  }
+
+  return (
+    <section className="section page-section" id="experiences">
+      <div className="container">
+        <div className="section-header refined-section-header experience-page-header">
+          <h2>{text(lang, 'experiencesTitle')}</h2>
+          <p>{text(lang, 'experiencesIntro')}</p>
+        </div>
+        <div className="accordion-list experience-accordion-list">
+          {experiences.map((experience) => {
+            const isOpen = openId === experience.id;
+            const imageUrl = mediaUrl(siteMedia, experienceMediaKey(experience.id), experience.image);
+            const imageAlt = mediaAlt(siteMedia, experienceMediaKey(experience.id), lang, `${experience.title} vulcanIQ`);
+            return (
+              <article className={`experience-card ${isOpen ? 'open' : ''}`} key={experience.id}>
+                <button
+                  type="button"
+                  className="experience-summary"
+                  aria-expanded={isOpen}
+                  aria-controls={`experience-${experience.id}`}
+                  onClick={() => setOpenId(isOpen ? null : experience.id)}
+                >
+                  <span className="experience-image" aria-hidden="true"><img src={imageUrl} alt="" loading="lazy" decoding="async" /></span>
+                  <span className="experience-main"><strong>{experience.title}</strong><small>{experience.summary[lang]}</small></span>
+                  <span className="experience-meta"><b>{text(lang, 'bestFor')}</b><br />{experience.bestFor[lang]}</span>
+                  <span className="experience-meta"><b>{text(lang, 'starting')}</b><br />{experience.starting[lang]}</span>
+                  <span className="small-button">{isOpen ? text(lang, 'hide') : text(lang, 'details')}</span>
+                </button>
+                {isOpen && (
+                  <div className="experience-body" id={`experience-${experience.id}`}>
+                    <div className="experience-copy-grid">
+                      <ImageSlot src={imageUrl} alt={imageAlt} lang={lang} ratio="wide" />
+                      <div className="experience-copy">
+                        <p>{experience.description[lang]}</p>
+                        <dl>
+                          <div><dt>{text(lang, 'value')}</dt><dd>{experience.value[lang]}</dd></div>
+                          <div><dt>{text(lang, 'practical')}</dt><dd>{experience.notes[lang]}</dd></div>
+                          <div><dt>{text(lang, 'safety')}</dt><dd>{experience.safety[lang]}</dd></div>
+                        </dl>
+                        <div className="cta-row experience-actions">
+                          <button className="button primary" type="button" onClick={() => handleRequest(experience)}>{text(lang, 'request')}</button>
+                          <ContactActions
+                            lang={lang}
+                            compact
+                            experienceId={experience.id}
+                            contextMessage={buildExperienceMessage(experience, lang)}
+                            onUseForm={() => handleRequest(experience)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </article>
+            );
+          })}
         </div>
       </div>
     </section>
@@ -821,7 +961,7 @@ function Philosophy({ lang }) {
         </div>
         <div className="mission-grid">
           <article className="mission-card visual-note">
-            <ImageSlot src={MEDIA.landscape} alt={text(lang, 'safetyAlt')} lang={lang} ratio="wide" />
+            <ImageSlot src={mediaUrl(siteMedia, 'mission_main_image', MEDIA.landscape)} alt={mediaAlt(siteMedia, 'mission_main_image', lang, text(lang, 'safetyAlt'))} lang={lang} ratio="wide" />
           </article>
           <article className="mission-card accent">
             <span>{text(lang, 'vision')}</span>
@@ -833,21 +973,34 @@ function Philosophy({ lang }) {
   );
 }
 
-function MissionPage({ lang }) {
+function MissionPage({ lang, siteMedia, siteContent }) {
+  const missionTitle = contentText(siteContent, 'mission.mission.title', lang, text(lang, 'mission'));
+  const visionTitle = contentText(siteContent, 'mission.vision.title', lang, text(lang, 'vision'));
+  const missionBody = contentText(siteContent, 'mission.mission.body', lang, text(lang, 'missionText'));
+  const visionBody = contentText(siteContent, 'mission.vision.body', lang, text(lang, 'visionText'));
+
   return (
-    <section className="section page-section" id="mission">
-      <div className="container mission-page-grid">
-        <article className="editorial-card mission-feature-card">
-          <h2>{text(lang, 'mission')}</h2>
-          <p>{text(lang, 'missionText')}</p>
-        </article>
-        <article className="mission-card accent vision-feature-card">
-          <span>{text(lang, 'vision')}</span>
-          <p>{text(lang, 'visionText')}</p>
-        </article>
-        <article className="mission-card visual-note mission-image-card">
-          <ImageSlot src={MEDIA.landscape} alt={text(lang, 'safetyAlt')} lang={lang} ratio="wide" />
-        </article>
+    <section className="section page-section mission-redesign" id="mission">
+      <div className="container mission-balanced-layout">
+        <div className="mission-top-row titled-mission-row">
+          <div className="mission-card-stack">
+            <h2>{missionTitle}</h2>
+            <article className="mission-card mission-copy-card balanced-mission-card">
+              <p>{missionBody}</p>
+            </article>
+          </div>
+          <div className="mission-card-stack">
+            <h2>{visionTitle}</h2>
+            <article className="mission-card accent vision-copy-card balanced-mission-card">
+              <p>{visionBody}</p>
+            </article>
+          </div>
+        </div>
+        <div className="mission-bottom-row mission-image-only-row">
+          <article className="mission-image-feature centered-mission-image">
+            <ImageSlot src={mediaUrl(siteMedia, 'mission_main_image', MEDIA.landscape)} alt={mediaAlt(siteMedia, 'mission_main_image', lang, text(lang, 'safetyAlt'))} lang={lang} ratio="wide" />
+          </article>
+        </div>
       </div>
     </section>
   );
@@ -879,19 +1032,108 @@ function BlockedDatesAttachment({ item, lang }) {
   );
 }
 
+function getItemsByDate(items) {
+  return items.reduce((acc, item) => {
+    if (!item.date) return acc;
+    acc[item.date] = acc[item.date] || [];
+    acc[item.date].push(item);
+    return acc;
+  }, {});
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function formattedDescriptionBlocks(rawText) {
+  const value = String(rawText || '').trim();
+  if (!value) return [];
+
+  const explicitBlocks = value.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  if (explicitBlocks.length > 1) return explicitBlocks;
+
+  const sectionMarkers = [
+    'Informazioni tecniche', 'Technical information',
+    'Cosa include', 'What is included',
+    'Partenza:', 'Departure:',
+    'Rientro previsto:', 'Expected return:',
+    'Distanza:', 'Distance:',
+    'Dislivello:', 'Elevation gain:',
+    'Durata:', 'Duration:',
+    'Difficoltà:', 'Difficulty:',
+    'Assicurazione', 'Insurance',
+    'Partecipazione', 'Participation',
+    'Quota:', 'Fee:',
+    'Età minima:', 'Minimum age:',
+    'Prenotazione', 'Booking',
+    'Note:', 'Notes:'
+  ];
+
+  let normalized = value.replace(/\s+/g, ' ');
+  sectionMarkers.forEach((marker) => {
+    const pattern = new RegExp(`\\s+(${escapeRegExp(marker)})`, 'gi');
+    normalized = normalized.replace(pattern, '\n\n$1');
+  });
+
+  const markedBlocks = normalized.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  if (markedBlocks.length > 1) return markedBlocks;
+
+  const sentences = value.match(/[^.!?]+[.!?]+[”’"']?|[^.!?]+$/g)?.map((sentence) => sentence.trim()).filter(Boolean) || [value];
+  const blocks = [];
+  let current = '';
+
+  sentences.forEach((sentence) => {
+    const next = current ? `${current} ${sentence}` : sentence;
+    if (current && (next.length > 260 || current.split(/(?<=[.!?])\s+/).length >= 2)) {
+      blocks.push(current);
+      current = sentence;
+    } else {
+      current = next;
+    }
+  });
+
+  if (current) blocks.push(current);
+  return blocks.length ? blocks : [value];
+}
+
+function FormattedDescription({ textValue }) {
+  const blocks = formattedDescriptionBlocks(textValue);
+  if (!blocks.length) return null;
+  return (
+    <div className="formatted-description">
+      {blocks.map((block, index) => <p key={`${index}-${block.slice(0, 24)}`}>{block}</p>)}
+    </div>
+  );
+}
+
 function PublicUpcomingExcursions({ lang, fillForm }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [monthDate, setMonthDate] = useState(startOfMonth(new Date()));
+  const [selectedDate, setSelectedDate] = useState(todayIso());
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     loadPublicFixedExcursions()
-      .then((data) => { if (active) setItems(data || []); })
+      .then((data) => {
+        if (!active) return;
+        const rows = data || [];
+        setItems(rows);
+        const first = rows.find((item) => item.date >= todayIso());
+        if (first) {
+          setSelectedDate(first.date);
+          setMonthDate(startOfMonth(new Date(`${first.date}T12:00:00`)));
+        }
+      })
       .catch(() => { if (active) setItems([]); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
+
+  const days = useMemo(() => getCalendarDays(monthDate), [monthDate]);
+  const byDate = useMemo(() => getItemsByDate(items), [items]);
+  const selectedItems = byDate[selectedDate] || [];
 
   function requestItem(item) {
     const message = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
@@ -905,43 +1147,92 @@ function PublicUpcomingExcursions({ lang, fillForm }) {
     });
   }
 
+  function changeMonth(delta) {
+    setMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1));
+  }
+
+  function renderDetails(item) {
+    const title = fixedExcursionTitle(item, lang);
+    const description = fixedExcursionField(item, 'description', lang) || item[`note_${lang}`] || item.note_it || item.note_en || '';
+    const meeting = fixedExcursionField(item, 'meeting_point', lang);
+    const difficulty = fixedExcursionField(item, 'difficulty', lang);
+    const price = fixedExcursionField(item, 'price_note', lang);
+    return (
+      <article className="upcoming-card compact-upcoming-card" key={item.id}>
+        <div className="upcoming-card-head">
+          <span className="date-badge">{formatDateForMessage(item.date, lang)}</span>
+          <span>{item.start_time ? `${String(item.start_time).slice(0, 5)}${item.end_time ? `-${String(item.end_time).slice(0, 5)}` : ''}` : text(lang, 'onRequest')}</span>
+        </div>
+        <h3>{title}</h3>
+        <FormattedDescription textValue={description || experienceById(item.experience_id).summary[lang]} />
+        <dl className="public-details-grid">
+          <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(item.experience_id, lang)}</dd></div>
+          {meeting && <div><dt>{text(lang, 'meetingPoint')}</dt><dd>{meeting}</dd></div>}
+          {difficulty && <div><dt>{text(lang, 'difficulty')}</dt><dd>{difficulty}</dd></div>}
+          {price && <div><dt>{text(lang, 'priceNote')}</dt><dd>{price}</dd></div>}
+          <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{item.places_remaining}/{item.capacity}</dd></div>
+        </dl>
+        <BlockedDatesAttachment item={item} lang={lang} />
+        <button className="button primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestAvailability')}</button>
+      </article>
+    );
+  }
+
   return (
     <section className="section page-section alt-section" id="upcoming">
       <div className="container">
-        <div className="section-header">
+        <div className="section-header refined-section-header">
           <h2>{text(lang, 'upcomingExcursions')}</h2>
           <p>{text(lang, 'availabilityIntro')}</p>
         </div>
-        {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : items.length === 0 ? (
-          <article className="empty-state-card"><p>{text(lang, 'upcomingEmpty')}</p><button className="button primary" type="button" onClick={() => fillForm({ requestType: 'private', scroll: true })}>{text(lang, 'contact')}</button></article>
-        ) : (
-          <div className="upcoming-grid">
-            {items.map((item) => {
-              const title = fixedExcursionTitle(item, lang);
-              const description = fixedExcursionField(item, 'description', lang) || item[`note_${lang}`] || item.note_it || item.note_en || '';
-              const meeting = fixedExcursionField(item, 'meeting_point', lang);
-              const difficulty = fixedExcursionField(item, 'difficulty', lang);
-              const price = fixedExcursionField(item, 'price_note', lang);
-              return (
-                <article className="upcoming-card" key={item.id}>
-                  <div className="upcoming-card-head">
-                    <span className="date-badge">{formatDateForMessage(item.date, lang)}</span>
-                    <span>{item.start_time ? `${String(item.start_time).slice(0, 5)}${item.end_time ? `–${String(item.end_time).slice(0, 5)}` : ''}` : text(lang, 'onRequest')}</span>
-                  </div>
-                  <h3>{title}</h3>
-                  <p>{description || experienceById(item.experience_id).summary[lang]}</p>
-                  <dl className="public-details-grid">
-                    <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(item.experience_id, lang)}</dd></div>
-                    {meeting && <div><dt>{text(lang, 'meetingPoint')}</dt><dd>{meeting}</dd></div>}
-                    {difficulty && <div><dt>{text(lang, 'difficulty')}</dt><dd>{difficulty}</dd></div>}
-                    {price && <div><dt>{text(lang, 'priceNote')}</dt><dd>{price}</dd></div>}
-                    <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{item.places_remaining}/{item.capacity}</dd></div>
-                  </dl>
-                  <BlockedDatesAttachment item={item} lang={lang} />
-                  <button className="button primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestAvailability')}</button>
-                </article>
-              );
-            })}
+        {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : (
+          <div className="public-calendar-layout">
+            <article className="calendar-card public-excursion-calendar">
+              <div className="calendar-topline">
+                <button type="button" onClick={() => changeMonth(-1)} aria-label={text(lang, 'previousMonth')}>‹</button>
+                <div>
+                  <span className="micro-label">{text(lang, 'excursionCalendar')}</span>
+                  <h3>{monthLabel(monthDate, lang)}</h3>
+                </div>
+                <button type="button" onClick={() => changeMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
+              </div>
+              <div className="calendar-legend compact-legend">
+                <span><i className="legend-dot fixed" />{text(lang, 'availableDates')}</span>
+                <span><i className="legend-dot blocked" />{text(lang, 'unavailableDatesLegend')}</span>
+              </div>
+              <div className="weekdays" aria-hidden="true">
+                {(lang === 'it' ? ['L', 'M', 'M', 'G', 'V', 'S', 'D'] : ['M', 'T', 'W', 'T', 'F', 'S', 'S']).map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
+              </div>
+              <div className="calendar-grid public-calendar-grid">
+                {days.map((date) => {
+                  const iso = dateToIso(date);
+                  const hasFixed = Boolean(byDate[iso]?.length);
+                  const outside = date.getMonth() !== monthDate.getMonth();
+                  return (
+                    <button
+                      type="button"
+                      key={iso}
+                      className={`date-button public-date-button ${outside ? 'outside' : ''} ${hasFixed ? 'has-fixed' : ''} ${selectedDate === iso ? 'selected' : ''}`}
+                      onClick={() => setSelectedDate(iso)}
+                    >
+                      <strong>{date.getDate()}</strong>
+                      {hasFixed && <span className="date-marker green-circle" aria-label={text(lang, 'availableDates')} />}
+                    </button>
+                  );
+                })}
+              </div>
+            </article>
+            <aside className="date-detail-panel">
+              <span className="micro-label">{text(lang, 'dateDetails')}</span>
+              <h3>{selectedDate ? formatDateForMessage(selectedDate, lang) : text(lang, 'dateDetails')}</h3>
+              {items.length === 0 ? (
+                <article className="empty-state-card"><p>{text(lang, 'upcomingEmpty')}</p><button className="button primary" type="button" onClick={() => fillForm({ requestType: 'private', scroll: true })}>{text(lang, 'contact')}</button></article>
+              ) : selectedItems.length === 0 ? (
+                <p>{text(lang, 'noExcursionsOnDate')}</p>
+              ) : (
+                <div className="selected-excursion-list">{selectedItems.map(renderDetails)}</div>
+              )}
+            </aside>
           </div>
         )}
       </div>
@@ -966,9 +1257,8 @@ function PartnershipsPage({ lang }) {
   return (
     <section className="section page-section" id="partnerships">
       <div className="container">
-        <div className="section-header">
+        <div className="section-header refined-section-header">
           <h2>{text(lang, 'partnershipsTitle')}</h2>
-          <p>{text(lang, 'partnershipsSubtitle')}</p>
         </div>
         {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : items.length === 0 ? (
           <article className="empty-state-card"><p>{text(lang, 'partnershipsEmpty')}</p></article>
@@ -979,7 +1269,7 @@ function PartnershipsPage({ lang }) {
               const category = item[`category_${lang}`] || item.category_it || item.category_en || '';
               return (
                 <article className="partnership-card" key={item.id}>
-                  {item.image_url && <img src={item.image_url} alt={item.name} loading="lazy" decoding="async" />}
+                  {item.image_url ? <img src={item.image_url} alt={item.name} loading="lazy" decoding="async" /> : <div className="partnership-image-fallback" aria-hidden="true">vulcanIQ</div>}
                   <div>
                     {category && <span className="micro-label">{category}</span>}
                     <h3>{item.name}</h3>
@@ -996,13 +1286,15 @@ function PartnershipsPage({ lang }) {
   );
 }
 
-function ReviewsPage({ lang }) {
+function ReviewsPage({ lang, siteContent }) {
   const fallbackReview = lang === 'it'
-    ? 'Bellissima esperienza grazie alla nostra guida Leonardo, che ha una vera passione per i vulcani. Ero preoccupato di non essere vestito abbastanza pesante perché la temperatura indicata in cima era sotto lo zero — era fine aprile — ma una felpa e una giacca leggera sono state sufficienti. L’escursione è moderatamente impegnativa, ma dura solo circa un’ora. Abbiamo avuto il tempo per fare un paio di belle pause durante la salita e, dopo l’escursione, per mangiare qualcosa.'
-    : 'Had a great time thanks to our guide Leonardo, who has a real passion for volcanoes. I had been worried about being underdressed because the reported temperature at the top was below freezing — this was in late April — but a sweatshirt and light jacket were fine. The hike is moderately strenuous but only one hour. We had time for a couple of nice breaks on the way up and after our hike to have some food.';
+    ? 'Bellissima esperienza grazie alla nostra guida Leonardo, che ha una vera passione per i vulcani. Percorso moderato, pause ben gestite e consigli pratici molto chiari.'
+    : 'Beautiful experience thanks to our guide Leonardo, who has a real passion for volcanoes. The route was moderate, breaks were well managed, and the practical advice was very clear.';
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ bookingCode: '', reviewerName: '', rating: '5', reviewText: '' });
+  const [modalOpen, setModalOpen] = useState(false);
+  const [sortMode, setSortMode] = useState('recent');
+  const [form, setForm] = useState({ booking_code: '', reviewer_name: '', review_text: '', rating: '5' });
   const [submitState, setSubmitState] = useState({ loading: false, error: '', success: '' });
 
   async function refreshReviews() {
@@ -1010,7 +1302,7 @@ function ReviewsPage({ lang }) {
     try {
       const data = await loadPublicReviews();
       setReviews(data || []);
-    } catch {
+    } catch (err) {
       setReviews([]);
     } finally {
       setLoading(false);
@@ -1023,482 +1315,84 @@ function ReviewsPage({ lang }) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  function reviewErrorMessage(error) {
+  function readableSubmitError(error) {
     const message = error?.message || '';
-    if (message.includes('BOOKING_CODE_USED')) return text(lang, 'bookingCodeUsed');
-    if (message.includes('REVIEW_TEXT_REQUIRED')) return text(lang, 'reviewTextRequired');
-    if (message.includes('INVALID_BOOKING_CODE')) return text(lang, 'invalidBookingCode');
+    if (message.includes('INVALID_BOOKING_CODE')) return lang === 'it' ? 'Codice non valido.' : 'Invalid code.';
+    if (message.includes('BOOKING_CODE_ALREADY_USED') || message.includes('duplicate key')) return lang === 'it' ? 'Questo codice è già stato usato.' : 'This code has already been used.';
+    if (message.includes('REVIEW_TEXT_REQUIRED')) return lang === 'it' ? 'Compila tutti i campi obbligatori.' : 'Please complete all required fields.';
     return lang === 'it' ? 'Recensione non inviata. Controlla il codice e riprova.' : 'Review not submitted. Check the code and try again.';
   }
 
   async function submitReview(event) {
     event.preventDefault();
-    setSubmitState({ loading: false, error: '', success: '' });
-    if (!form.reviewText.trim()) {
-      setSubmitState({ loading: false, error: text(lang, 'reviewTextRequired'), success: '' });
-      return;
-    }
     setSubmitState({ loading: true, error: '', success: '' });
     try {
       await submitPublicReview({ ...form, language: lang });
-      setForm({ bookingCode: '', reviewerName: '', rating: '5', reviewText: '' });
-      setSubmitState({ loading: false, error: '', success: text(lang, 'reviewSent') });
+      setForm({ booking_code: '', reviewer_name: '', review_text: '', rating: '5' });
+      setSubmitState({ loading: false, error: '', success: lang === 'it' ? 'Recensione pubblicata. Grazie.' : 'Review published. Thank you.' });
       refreshReviews();
-    } catch (error) {
-      setSubmitState({ loading: false, error: reviewErrorMessage(error), success: '' });
+      window.setTimeout(() => setModalOpen(false), 1200);
+    } catch (err) {
+      setSubmitState({ loading: false, error: readableSubmitError(err), success: '' });
     }
   }
+
+  const visibleReviews = loading ? [] : reviews;
+  const cards = visibleReviews.length ? visibleReviews : [{ id: 'fallback', created_at: '2025-01-01', review_text: fallbackReview, reviewer_name: 'Leonardo', rating: 5, language: 'en' }];
+  const sortedCards = [...cards].sort((a, b) => {
+    if (sortMode === 'highest') return Number(b.rating || -1) - Number(a.rating || -1) || String(b.created_at || '').localeCompare(String(a.created_at || ''));
+    if (sortMode === 'lowest') return Number(a.rating || 999) - Number(b.rating || 999) || String(b.created_at || '').localeCompare(String(a.created_at || ''));
+    return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+  });
 
   return (
     <section className="section compact-section" id="reviews">
-      <div className="container reviews-panel">
-        <div className="section-header">
-          <h2>{text(lang, 'reviewsTitle')}</h2>
-          <p>{text(lang, 'reviewsIntro')}</p>
+      <div className="container reviews-panel redesigned-reviews-panel">
+        <div className="section-header refined-section-header reviews-header-row">
+          <div>
+            <h2>{contentText(siteContent, 'reviews.page.title', lang, text(lang, 'reviewsTitle'))}</h2>
+            <p>{contentText(siteContent, 'reviews.page.intro', lang, text(lang, 'reviewsIntro'))}</p>
+          </div>
+          <div className="reviews-header-actions">
+            <button className="button primary" type="button" onClick={() => { setSubmitState({ loading: false, error: '', success: '' }); setModalOpen(true); }}>{contentText(siteContent, 'reviews.publish_button', lang, text(lang, 'publishReview'))}</button>
+            <div className="review-sort-control" role="group" aria-label={lang === 'it' ? 'Ordina recensioni' : 'Sort reviews'}>
+              <button type="button" className={sortMode === 'recent' ? 'active' : ''} onClick={() => setSortMode('recent')}>{adminCopy(lang, 'Più recenti', 'Most recent')}</button>
+              <button type="button" className={sortMode === 'highest' ? 'active' : ''} onClick={() => setSortMode('highest')}>{adminCopy(lang, 'Voto più alto', 'Highest score')}</button>
+              <button type="button" className={sortMode === 'lowest' ? 'active' : ''} onClick={() => setSortMode('lowest')}>{adminCopy(lang, 'Voto più basso', 'Lowest score')}</button>
+            </div>
+          </div>
         </div>
-        <div className="reviews-grid-public">
-          {(loading ? [] : reviews).map((item) => (
-            <article className="testimonial-card" key={item.id}>
-              <div className="review-stars" aria-label={`${item.rating || 5}/5`}>{'★'.repeat(item.rating || 5)}</div>
-              <blockquote>{item.review_text}</blockquote>
-              <p className="small-note">{item.reviewer_name || 'Guest'} · {item.language === 'en' ? 'EN' : 'IT'}</p>
+        <div className="reviews-grid-public balanced-reviews-grid">
+          {sortedCards.map((review) => (
+            <article className="review-card featured-review-card" key={review.id}>
+              <div className="stars" aria-label={`${review.rating || 0}/5`}>{'★'.repeat(review.rating || 5)}</div>
+              <blockquote>{review.review_text}</blockquote>
+              <p className="review-author">{review.reviewer_name || 'Guest'} · {review.language || lang}{review.created_at ? ` · ${formatDateForMessage(String(review.created_at).slice(0, 10), lang)}` : ''}</p>
             </article>
           ))}
-          {!loading && reviews.length === 0 && (
-            <article className="testimonial-card">
-              {lang === 'it' && <span className="micro-label">{text(lang, 'reviewOriginalLabel')}</span>}
-              <blockquote>{fallbackReview}</blockquote>
-              <p className="small-note">Leonardo · Etna experience</p>
-            </article>
-          )}
         </div>
-        <form className="review-form" onSubmit={submitReview}>
-          <div className="section-header small-section-header">
-            <h3>{text(lang, 'leaveReviewTitle')}</h3>
-            <p>{text(lang, 'leaveReviewIntro')}</p>
-          </div>
-          <div className="form-two-cols three">
-            <div>
-              <label className="field-label" htmlFor="reviewCode">{text(lang, 'bookingCode')}</label>
-              <input id="reviewCode" value={form.bookingCode} onChange={(event) => update('bookingCode', event.target.value.toUpperCase())} placeholder="VQ-2026-AB12" />
-            </div>
-            <div>
-              <label className="field-label" htmlFor="reviewName">{text(lang, 'reviewerName')}</label>
-              <input id="reviewName" value={form.reviewerName} onChange={(event) => update('reviewerName', event.target.value)} />
-            </div>
-            <div>
-              <label className="field-label" htmlFor="reviewRating">{text(lang, 'rating')}</label>
-              <select id="reviewRating" value={form.rating} onChange={(event) => update('rating', event.target.value)}>
-                {[5, 4, 3, 2, 1].map((rating) => <option value={rating} key={rating}>{rating}/5</option>)}
-              </select>
+        {loading && <p className="small-note">{lang === 'it' ? 'Caricamento recensioni...' : 'Loading reviews...'}</p>}
+        {modalOpen && (
+          <div className="public-modal-backdrop" role="presentation" onClick={() => setModalOpen(false)}>
+            <div className="admin-modal review-modal" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle" onClick={(event) => event.stopPropagation()}>
+              <div className="admin-modal-header">
+                <div>
+                  <h2 id="reviewModalTitle">{text(lang, 'leaveReviewTitle')}</h2>
+                  <p>{text(lang, 'leaveReviewIntro')}</p>
+                </div>
+                <button className="round-button" type="button" onClick={() => setModalOpen(false)}>{text(lang, 'close')}</button>
+              </div>
+              <form className="review-form modal-review-form" onSubmit={submitReview}>
+                <label><span>{text(lang, 'bookingCode')}</span><input value={form.booking_code} onChange={(event) => update('booking_code', event.target.value)} required /></label>
+                <label><span>{text(lang, 'name')}</span><input value={form.reviewer_name} onChange={(event) => update('reviewer_name', event.target.value)} /></label>
+                <label><span>{text(lang, 'reviewRating')}</span><select value={form.rating} onChange={(event) => update('rating', event.target.value)}>{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating}/5</option>)}</select></label>
+                <label><span>{text(lang, 'reviewText')}</span><textarea rows={5} value={form.review_text} onChange={(event) => update('review_text', event.target.value)} required /></label>
+                {submitState.error && <div className="admin-alert error" role="alert">{submitState.error}</div>}
+                {submitState.success && <div className="admin-alert success" role="status">{submitState.success}</div>}
+                <div className="modal-actions"><button className="button primary" type="submit" disabled={submitState.loading || !isSupabaseConfigured}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitReview')}</button><button className="button secondary" type="button" onClick={() => setModalOpen(false)}>{text(lang, 'close')}</button></div>
+              </form>
             </div>
           </div>
-          <label className="field-label" htmlFor="reviewText">{text(lang, 'reviewText')}</label>
-          <textarea id="reviewText" value={form.reviewText} onChange={(event) => update('reviewText', event.target.value)} rows={5} />
-          {submitState.error && <p className="form-status error" role="alert">{submitState.error}</p>}
-          {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
-          <button className="button primary" type="submit" disabled={submitState.loading || !isSupabaseConfigured}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitReview')}</button>
-        </form>
-      </div>
-    </section>
-  );
-}
-
-function ExperienceAccordion({ lang, fillForm }) {
-  const [openId, setOpenId] = useState(experiences[0].id);
-  return (
-    <section className="section" id="experiences">
-      <div className="container">
-        <div className="section-header">
-          <h2>{text(lang, 'experiencesTitle')}</h2>
-          {text(lang, 'experiencesIntro') && <p>{text(lang, 'experiencesIntro')}</p>}
-        </div>
-        <div className="accordion-list">
-          {experiences.map((experience) => {
-            const isOpen = openId === experience.id;
-            const message = buildExperienceMessage(experience, lang);
-            return (
-              <article className={`experience-card ${isOpen ? 'open' : ''}`} key={experience.id}>
-                <button className="experience-summary" type="button" onClick={() => setOpenId(isOpen ? '' : experience.id)} aria-expanded={isOpen}>
-                  <span className="experience-image" aria-hidden="true"><img src={experience.image} alt="" loading="lazy" /></span>
-                  <span className="experience-main">
-                    <strong>{experience.title}</strong>
-                    <small>{experience.summary[lang]}</small>
-                  </span>
-                  <span className="experience-meta"><b>{text(lang, 'bestFor')}:</b> {experience.bestFor[lang]}</span>
-                  <span className="experience-meta"><b>{text(lang, 'starting')}:</b> {experience.starting[lang]}</span>
-                  <span className="button small-button">{isOpen ? text(lang, 'hide') : text(lang, 'details')}</span>
-                </button>
-                {isOpen && (
-                  <div className="experience-body">
-                    <div className="experience-copy-grid">
-                      <p>{experience.description[lang]}</p>
-                      <dl>
-                        <div><dt>{text(lang, 'value')}</dt><dd>{experience.value[lang]}</dd></div>
-                        <div><dt>{text(lang, 'practical')}</dt><dd>{experience.notes[lang]}</dd></div>
-                        <div><dt>{text(lang, 'safety')}</dt><dd>{experience.safety[lang]}</dd></div>
-                      </dl>
-                    </div>
-                    <div className="cta-row">
-                      <a className="button primary" href={`https://wa.me/${PHONE_WA}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'whatsapp')}</a>
-                      <button className="button secondary" type="button" onClick={() => fillForm({ experienceId: experience.id, message, scroll: true })}>{text(lang, 'useInForm')}</button>
-                      <ContactActions
-                        lang={lang}
-                        compact
-                        contextMessage={message}
-                        experienceId={experience.id}
-                        onUseForm={() => fillForm({ experienceId: experience.id, message, scroll: true })}
-                      />
-                    </div>
-                  </div>
-                )}
-              </article>
-            );
-          })}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function loadAvailability() {
-  return loadPublicAvailability();
-}
-
-function startOfMonth(date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function dateToIso(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function monthLabel(date, lang) {
-  return new Intl.DateTimeFormat(lang === 'it' ? 'it-IT' : 'en-US', { month: 'long', year: 'numeric' }).format(date);
-}
-
-function getCalendarDays(monthDate) {
-  const first = startOfMonth(monthDate);
-  const offset = (first.getDay() + 6) % 7;
-  const start = new Date(first);
-  start.setDate(first.getDate() - offset);
-  return Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(start);
-    date.setDate(start.getDate() + index);
-    return date;
-  });
-}
-
-function resolveAvailability(dateIso, experienceId, records, lang) {
-  const today = dateToIso(new Date());
-  if (dateIso < today) {
-    return { status: 'closed', reason: lang === 'it' ? 'Data passata' : 'Past date', source: 'past' };
-  }
-  const baseStatus = defaultExperienceAvailability[experienceId] || 'on-request';
-  const globalRecords = records.filter((record) => record.date === dateIso && !record.experience);
-  const activityRecords = records.filter((record) => record.date === dateIso && record.experience === experienceId);
-  const all = [...globalRecords, ...activityRecords];
-  const closed = all.find((record) => record.status === 'closed');
-  const selected = closed || activityRecords[activityRecords.length - 1] || globalRecords[globalRecords.length - 1];
-  if (selected) {
-    return {
-      status: selected.status,
-      reason: selected.reason?.[lang] || selected.reason?.it || selected.reason?.en || '',
-      source: selected.experience ? 'experience' : 'global'
-    };
-  }
-  return { status: baseStatus, reason: statusLabels[baseStatus][lang], source: 'default' };
-}
-
-function AvailabilityCalendar({ lang, fillForm }) {
-  const [mode, setMode] = useState('fixed');
-  const [records, setRecords] = useState(blockedDates);
-  const [fixedExcursions, setFixedExcursions] = useState([]);
-  const [monthDate, setMonthDate] = useState(startOfMonth(new Date()));
-  const [experienceId, setExperienceId] = useState('etna-live');
-  const [selected, setSelected] = useState(null);
-  const [selectedFixedId, setSelectedFixedId] = useState('');
-
-  useEffect(() => {
-    loadAvailability().then((runtimeRecords) => {
-      if (Array.isArray(runtimeRecords) && runtimeRecords.length) {
-        setRecords([...blockedDates, ...runtimeRecords]);
-      }
-    });
-    loadPublicFixedExcursions().then(setFixedExcursions);
-  }, []);
-
-  const days = useMemo(() => getCalendarDays(monthDate), [monthDate]);
-  const selectedExperience = experienceById(experienceId);
-  const selectedMessage = selected
-    ? buildCalendarMessage({ experience: selectedExperience, date: selected.date, status: selected.status, note: selected.reason }, lang)
-    : '';
-  const selectedFixed = fixedExcursions.find((item) => item.id === selectedFixedId) || null;
-  const fixedMessage = selectedFixed ? buildFixedExcursionMessage({ fixedExcursion: selectedFixed, people: '' }, lang) : '';
-
-  function changeMonth(delta) {
-    setMonthDate((date) => new Date(date.getFullYear(), date.getMonth() + delta, 1));
-    setSelected(null);
-  }
-
-  function handleDateClick(date) {
-    const dateIso = dateToIso(date);
-    const availability = resolveAvailability(dateIso, experienceId, records, lang);
-    setSelected({ date: dateIso, ...availability });
-  }
-
-  function chooseFixed(id) {
-    setSelectedFixedId(id);
-    const fixed = fixedExcursions.find((item) => item.id === id);
-    if (fixed) {
-      fillForm({
-        experienceId: fixed.experience_id,
-        requestType: 'fixed',
-        fixedExcursionId: fixed.id,
-        requestedDate: fixed.date,
-        message: buildFixedExcursionMessage({ fixedExcursion: fixed, people: '' }, lang),
-        scroll: false
-      });
-    }
-  }
-
-  return (
-    <section className="section alt-section" id="availability">
-      <div className="container calendar-layout">
-        <div className="section-header sticky-note">
-          <span className="kicker">{text(lang, 'availabilityKicker')}</span>
-          <h2>{text(lang, 'availabilityTitle')}</h2>
-          <p>{text(lang, 'availabilityIntro')}</p>
-          <div className="mode-toggle" role="tablist" aria-label={text(lang, 'requestMode')}>
-            <button type="button" className={mode === 'fixed' ? 'active' : ''} onClick={() => setMode('fixed')}>{text(lang, 'fixedExcursion')}</button>
-            <button type="button" className={mode === 'private' ? 'active' : ''} onClick={() => setMode('private')}>{text(lang, 'privateExcursion')}</button>
-          </div>
-          {mode === 'private' && (
-            <div className="legend" aria-label="Calendar legend">
-              {['available', 'limited', 'closed', 'on-request'].map((status) => <span key={status}><i className={`dot ${status}`} />{statusLabels[status][lang]}</span>)}
-            </div>
-          )}
-        </div>
-        <div className="calendar-card">
-          {mode === 'fixed' ? (
-            <div className="fixed-excursion-panel">
-              <h3>{text(lang, 'fixedExcursions')}</h3>
-              {fixedExcursions.length === 0 ? <p>{text(lang, 'noFixedExcursions')}</p> : (
-                <div className="fixed-excursion-list">
-                  {fixedExcursions.map((item) => {
-                    const note = fixedExcursionField(item, 'description', lang) || item[`note_${lang}`] || item.note_it || item.note_en || '';
-                    return (
-                      <button key={item.id} type="button" className={`fixed-excursion-option ${selectedFixedId === item.id ? 'selected' : ''}`} onClick={() => chooseFixed(item.id)}>
-                        <span><strong>{fixedExcursionLabel(item, lang)}</strong>{note && <small>{note}</small>}</span>
-                        <b>{text(lang, 'placesRemaining')}: {item.places_remaining}/{item.capacity}</b>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {selectedFixed && (
-                <div className="date-result available">
-                  <strong>{fixedExcursionLabel(selectedFixed, lang)}</strong>
-                  <p>{text(lang, 'placesRemaining')}: {selectedFixed.places_remaining}/{selectedFixed.capacity}</p>
-                  <ContactActions
-                    lang={lang}
-                    compact
-                    contextMessage={fixedMessage}
-                    experienceId={selectedFixed.experience_id}
-                    onUseForm={() => fillForm({ experienceId: selectedFixed.experience_id, requestType: 'fixed', fixedExcursionId: selectedFixed.id, requestedDate: selectedFixed.date, message: fixedMessage, scroll: true })}
-                  />
-                </div>
-              )}
-            </div>
-          ) : (
-            <>
-              <div className="calendar-toolbar">
-                <button type="button" className="round-button" onClick={() => changeMonth(-1)} aria-label={text(lang, 'previousMonth')}>‹</button>
-                <strong>{monthLabel(monthDate, lang)}</strong>
-                <button type="button" className="round-button" onClick={() => changeMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
-              </div>
-              <label className="field-label" htmlFor="calendarExperience">{text(lang, 'chooseExperience')}</label>
-              <select id="calendarExperience" value={experienceId} onChange={(event) => { setExperienceId(event.target.value); setSelected(null); }}>
-                {experiences.map((experience) => <option key={experience.id} value={experience.id}>{experience.title}</option>)}
-              </select>
-              <div className="weekdays" aria-hidden="true">{(lang === 'it' ? ['L', 'M', 'M', 'G', 'V', 'S', 'D'] : ['M', 'T', 'W', 'T', 'F', 'S', 'S']).map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}</div>
-              <div className="calendar-grid">
-                {days.map((date) => {
-                  const iso = dateToIso(date);
-                  const availability = resolveAvailability(iso, experienceId, records, lang);
-                  const outside = date.getMonth() !== monthDate.getMonth();
-                  return (
-                    <button
-                      key={iso}
-                      type="button"
-                      className={`date-button ${availability.status} ${outside ? 'outside' : ''} ${selected?.date === iso ? 'selected' : ''}`}
-                      onClick={() => handleDateClick(date)}
-                      aria-label={`${iso}, ${statusLabels[availability.status][lang]}`}
-                    >
-                      <span>{date.getDate()}</span>
-                      <small>{statusLabels[availability.status][lang]}</small>
-                    </button>
-                  );
-                })}
-              </div>
-              {selected && (
-                <div className={`date-result ${selected.status}`}>
-                  <strong>{formatDateForMessage(selected.date, lang)} · {statusLabels[selected.status][lang]}</strong>
-                  <p>{selected.status === 'closed' ? text(lang, 'dateClosed') : selected.reason}</p>
-                  {selected.status === 'closed' ? (
-                    <button className="button secondary" type="button" onClick={() => fillForm({ experienceId, requestType: 'private', message: selectedMessage, scroll: true })}>{text(lang, 'requestAlternative')}</button>
-                  ) : (
-                    <ContactActions
-                      lang={lang}
-                      compact
-                      contextMessage={selectedMessage}
-                      experienceId={experienceId}
-                      onUseForm={() => fillForm({ experienceId, requestType: 'private', requestedDate: selected.date, message: selectedMessage, scroll: true })}
-                    />
-                  )}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function recommendFromAnswers(answers, lang) {
-  let recommended = experienceById('etna-premium');
-  let alternative = experienceById('etna-stories');
-  let reason = lang === 'it' ? 'Hai indicato una preferenza per un’esperienza privata, curata e confortevole.' : 'You indicated a preference for a private, curated, comfortable experience.';
-
-  if (answers.travelingWith === 'company') {
-    recommended = experienceById('etna-learning');
-    alternative = experienceById('etna-premium');
-    reason = lang === 'it' ? 'Un team aziendale ha bisogno di contenuto chiaro, ritmo controllato e gestione del gruppo.' : 'A company team needs clear content, controlled pace, and group management.';
-  } else if (answers.travelingWith === 'school') {
-    recommended = experienceById('etna-learning');
-    alternative = experienceById('etna-stories');
-    reason = lang === 'it' ? 'Un gruppo scolastico richiede un formato educativo e adatto all’età.' : 'A school group requires an educational format suited to the students’ age.';
-  } else if (answers.interest === 'volcanic-activity') {
-    recommended = experienceById('etna-live');
-    alternative = experienceById('etna-premium');
-    reason = lang === 'it' ? 'L’interesse principale è osservare l’attività vulcanica con prudenza e interpretazione corretta.' : 'Your main interest is observing volcanic activity with prudence and proper interpretation.';
-  } else if (answers.interest === 'local-culture') {
-    recommended = experienceById('etna-stories');
-    alternative = experienceById('etna-learning');
-    reason = lang === 'it' ? 'Cerchi racconto, cultura locale e connessione con il territorio.' : 'You are looking for storytelling, local culture, and connection with the territory.';
-  } else if (answers.private === 'yes' || answers.interest === 'private-exclusive') {
-    recommended = experienceById('etna-premium');
-    alternative = experienceById('etna-stories');
-    reason = lang === 'it' ? 'La preferenza privata/esclusiva indica un percorso più su misura.' : 'The private/exclusive preference points to a more tailored route.';
-  } else if (answers.travelingWith === 'family') {
-    if (answers.interest === 'learning') {
-      recommended = experienceById('etna-learning');
-      alternative = experienceById('etna-stories');
-      reason = lang === 'it' ? 'Una famiglia orientata all’apprendimento beneficia di contenuti semplici e coinvolgenti.' : 'A learning-oriented family benefits from clear and engaging content.';
-    } else {
-      recommended = experienceById('etna-stories');
-      alternative = experienceById('etna-learning');
-      reason = lang === 'it' ? 'Per una famiglia, racconto e ritmo adattabile sono spesso la scelta più naturale.' : 'For a family, storytelling and adaptable pace are often the most natural choice.';
-    }
-  } else if (answers.interest === 'learning') {
-    recommended = experienceById('etna-learning');
-    alternative = experienceById('etna-stories');
-    reason = lang === 'it' ? 'Hai indicato interesse per contenuto educativo e comprensione del vulcano.' : 'You indicated interest in educational content and understanding the volcano.';
-  }
-
-  const details = {
-    travelingWith: optionLabel('travelingWith', answers.travelingWith, lang),
-    interest: optionLabel('interest', answers.interest, lang),
-    pace: optionLabel('pace', answers.pace, lang),
-    private: optionLabel('private', answers.private, lang),
-    children: optionLabel('children', answers.children, lang)
-  };
-
-  return { recommended, alternative, reason, details, childWarning: answers.children === 'under3' };
-}
-
-function RadioGroup({ legend, name, options, value, onChange, lang }) {
-  return (
-    <fieldset className="radio-fieldset">
-      <legend>{legend}</legend>
-      <div className="choice-grid">
-        {options.map((option) => (
-          <label className={`choice-card ${value === option.value ? 'selected' : ''}`} key={option.value}>
-            <input type="radio" name={name} value={option.value} checked={value === option.value} onChange={(event) => onChange(event.target.value)} />
-            <span>{option[lang]}</span>
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  );
-}
-
-function Questionnaire({ lang, fillForm }) {
-  const [answers, setAnswers] = useState({
-    travelingWith: 'solo',
-    interest: 'private-exclusive',
-    pace: 'slow-comfortable',
-    private: 'yes',
-    children: 'no'
-  });
-  const [result, setResult] = useState(null);
-
-  function update(name, value) {
-    setAnswers((current) => ({ ...current, [name]: value }));
-  }
-
-  function submit(event) {
-    event.preventDefault();
-    const nextResult = recommendFromAnswers(answers, lang);
-    nextResult.message = buildQuestionnaireMessage(nextResult, lang);
-    setResult(nextResult);
-    window.setTimeout(() => document.getElementById('questionnaire-result')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
-  }
-
-  return (
-    <section className="section" id="questionnaire">
-      <div className="container questionnaire-layout">
-        <div className="section-header">
-          <span className="kicker">{text(lang, 'questionnaireKicker')}</span>
-          <h2>{text(lang, 'questionnaireTitle')}</h2>
-          <p>{text(lang, 'questionnaireIntro')}</p>
-        </div>
-        <form className="questionnaire-card" onSubmit={submit}>
-          <RadioGroup legend={text(lang, 'travelingWith')} name="travelingWith" options={questionnaireOptions.travelingWith} value={answers.travelingWith} onChange={(value) => update('travelingWith', value)} lang={lang} />
-          <RadioGroup legend={text(lang, 'interest')} name="interest" options={questionnaireOptions.interest} value={answers.interest} onChange={(value) => update('interest', value)} lang={lang} />
-          <RadioGroup legend={text(lang, 'pace')} name="pace" options={questionnaireOptions.pace} value={answers.pace} onChange={(value) => update('pace', value)} lang={lang} />
-          <RadioGroup legend={text(lang, 'private')} name="private" options={questionnaireOptions.private} value={answers.private} onChange={(value) => update('private', value)} lang={lang} />
-          <RadioGroup legend={text(lang, 'children')} name="children" options={questionnaireOptions.children} value={answers.children} onChange={(value) => update('children', value)} lang={lang} />
-          <button className="button primary" type="submit">{text(lang, 'generate')}</button>
-        </form>
-        {result && (
-          <article className="result-card" id="questionnaire-result">
-            <div className="result-grid">
-              <div>
-                <span className="micro-label">{text(lang, 'recommended')}</span>
-                <h3>{result.recommended.title}</h3>
-              </div>
-              <div>
-                <span className="micro-label">{text(lang, 'alternative')}</span>
-                <h3>{result.alternative.title}</h3>
-              </div>
-            </div>
-            <p><strong>{text(lang, 'reason')}:</strong> {result.reason}</p>
-            {result.childWarning && <p className="warning-note">{text(lang, 'childNote')}</p>}
-            <label className="field-label" htmlFor="generatedMessage">{text(lang, 'preparedMessage')}</label>
-            <textarea id="generatedMessage" value={result.message} onChange={(event) => setResult({ ...result, message: event.target.value })} />
-            <div className="cta-row">
-              <a className="button primary" href={`https://wa.me/${PHONE_WA}?text=${encode(result.message)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'whatsapp')}</a>
-              <ContactActions lang={lang} compact contextMessage={result.message} onUseForm={() => fillForm({ experienceId: result.recommended.id, message: result.message, scroll: true })} />
-              <button className="button secondary" type="button" onClick={() => copyText(result.message)}>{text(lang, 'copyMessage')}</button>
-              <button className="button secondary" type="button" onClick={() => fillForm({ experienceId: result.recommended.id, message: result.message, scroll: true })}>{text(lang, 'useThisForm')}</button>
-              <button className="button secondary" type="button" onClick={() => fillForm({ experienceId: result.recommended.id, message: result.message, scroll: true })}>{text(lang, 'requestThis')}</button>
-            </div>
-          </article>
         )}
       </div>
     </section>
@@ -1567,7 +1461,7 @@ function WearReviewsSafety({ lang }) {
   );
 }
 
-function Team({ lang }) {
+function Team({ lang, siteMedia }) {
   return (
     <section className="section" id="team">
       <div className="container">
@@ -1576,7 +1470,7 @@ function Team({ lang }) {
         </div>
         <div className="team-grid">
           <article className="team-card leonardo-card">
-            <img className="team-photo" src={MEDIA.leonardo} alt={lang === 'it' ? 'Leonardo, guida vulcanologica vulcanIQ' : 'Leonardo, vulcanIQ volcanological guide'} loading="lazy" />
+            <img className="team-photo" src={mediaUrl(siteMedia, 'about_leonardo_image', MEDIA.leonardo)} alt={mediaAlt(siteMedia, 'about_leonardo_image', lang, lang === 'it' ? 'Leonardo, guida vulcanologica vulcanIQ' : 'Leonardo, vulcanIQ volcanological guide')} loading="lazy" />
             <div>
               <h3>Leonardo Chiavetta</h3>
               <p className="role">{text(lang, 'leonardoRole')}</p>
@@ -1585,7 +1479,7 @@ function Team({ lang }) {
             </div>
           </article>
           <article className="team-card">
-            <img className="team-photo" src="/images/co-owner.jpg" alt={text(lang, 'coFounderAlt')} />
+            <img className="team-photo" src={mediaUrl(siteMedia, 'about_deborah_image', '/images/co-owner.jpg')} alt={mediaAlt(siteMedia, 'about_deborah_image', lang, text(lang, 'coFounderAlt'))} />
             <div>
               <h3>{text(lang, 'coFounderName')}</h3>
               <p className="role">{text(lang, 'coFounderRole')}</p>
@@ -1894,6 +1788,38 @@ function adminCopy(lang, it, en) {
   return lang === 'en' ? en : it;
 }
 
+function dateToIso(date) {
+  const value = date instanceof Date ? date : new Date(date);
+  const local = new Date(value.getTime() - value.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function startOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1, 12, 0, 0, 0);
+}
+
+function startOfWeekMonday(date) {
+  const value = new Date(date);
+  const day = (value.getDay() + 6) % 7;
+  value.setDate(value.getDate() - day);
+  value.setHours(12, 0, 0, 0);
+  return value;
+}
+
+function getCalendarDays(monthDate) {
+  const start = startOfWeekMonday(startOfMonth(monthDate));
+  return Array.from({ length: 42 }, (_, index) => {
+    const value = new Date(start);
+    value.setDate(start.getDate() + index);
+    return value;
+  });
+}
+
+function monthLabel(date, lang) {
+  const locale = lang === 'it' ? 'it-IT' : 'en-GB';
+  return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(date);
+}
+
 function todayIso() {
   return dateToIso(new Date());
 }
@@ -2060,15 +1986,21 @@ function ProtectedAdminArea({ pathname, navigate, lang, setLang }) {
 
 function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
-  const pageLabel = normalizedPath.includes('/partnerships')
-    ? adminCopy(lang, 'Collaborazioni', 'Partnerships')
-    : normalizedPath.includes('/upcoming')
-      ? adminCopy(lang, 'Prossime', 'Upcoming')
-      : normalizedPath.includes('/requests')
-        ? adminCopy(lang, 'Richieste', 'Requests')
-        : normalizedPath.includes('/availability')
-          ? adminCopy(lang, 'Disponibilità', 'Availability')
-          : adminCopy(lang, 'Oggi', 'Today');
+  const currentAdminPath = normalizedPath.includes('/calendar')
+    ? '/admin/calendar'
+    : normalizedPath.includes('/finance')
+      ? '/admin/finance'
+      : normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media')
+        ? '/admin/website'
+        : normalizedPath.includes('/partnerships')
+            ? '/admin/partnerships'
+            : normalizedPath.includes('/upcoming')
+              ? '/admin/upcoming'
+              : normalizedPath.includes('/requests')
+                ? '/admin/requests'
+                : normalizedPath.includes('/availability')
+                  ? '/admin/availability'
+                  : '/admin/today';
 
   useEffect(() => {
     if (pathname === '/admin') navigate('/admin/today');
@@ -2083,21 +2015,27 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
     <div className="admin-shell">
       <header className="admin-header">
         <button className="brand admin-brand-button" type="button" onClick={() => navigate('/admin/today')} aria-label="vulcanIQ admin home">
-          <span className="admin-page-label">{pageLabel}</span>
+          <BrandLogo compact />
         </button>
-        <select className="admin-mobile-nav" value={normalizedPath.includes('/partnerships') ? '/admin/partnerships' : normalizedPath.includes('/upcoming') ? '/admin/upcoming' : normalizedPath.includes('/requests') ? '/admin/requests' : normalizedPath.includes('/availability') ? '/admin/availability' : '/admin/today'} onChange={(event) => navigate(event.target.value)} aria-label="Admin navigation">
+        <select className="admin-mobile-nav" value={currentAdminPath} onChange={(event) => navigate(event.target.value)} aria-label="Admin navigation">
           <option value="/admin/today">{adminCopy(lang, 'Oggi', 'Today')}</option>
+          <option value="/admin/calendar">{adminCopy(lang, 'Calendario', 'Calendar')}</option>
           <option value="/admin/upcoming">{adminCopy(lang, 'Prossime', 'Upcoming')}</option>
           <option value="/admin/requests">{adminCopy(lang, 'Richieste', 'Requests')}</option>
           <option value="/admin/availability">{adminCopy(lang, 'Disponibilità', 'Availability')}</option>
           <option value="/admin/partnerships">{adminCopy(lang, 'Collaborazioni', 'Partnerships')}</option>
+          <option value="/admin/website">{adminCopy(lang, 'Modifica sito', 'Edit website')}</option>
+          <option value="/admin/finance">{adminCopy(lang, 'Finanze', 'Finance')}</option>
         </select>
         <nav className="admin-nav" aria-label="Admin navigation">
           <button type="button" className={normalizedPath.includes('/today') ? 'active' : ''} onClick={() => navigate('/admin/today')}>{adminCopy(lang, 'Oggi', 'Today')}</button>
+          <button type="button" className={normalizedPath.includes('/calendar') ? 'active' : ''} onClick={() => navigate('/admin/calendar')}>{adminCopy(lang, 'Calendario', 'Calendar')}</button>
           <button type="button" className={normalizedPath.includes('/upcoming') ? 'active' : ''} onClick={() => navigate('/admin/upcoming')}>{adminCopy(lang, 'Prossime', 'Upcoming')}</button>
           <button type="button" className={normalizedPath.includes('/requests') ? 'active' : ''} onClick={() => navigate('/admin/requests')}>{adminCopy(lang, 'Richieste', 'Requests')}</button>
           <button type="button" className={normalizedPath.includes('/availability') ? 'active' : ''} onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Disponibilità', 'Availability')}</button>
           <button type="button" className={normalizedPath.includes('/partnerships') ? 'active' : ''} onClick={() => navigate('/admin/partnerships')}>{adminCopy(lang, 'Collaborazioni', 'Partnerships')}</button>
+          <button type="button" className={normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media') ? 'active' : ''} onClick={() => navigate('/admin/website')}>{adminCopy(lang, 'Modifica sito', 'Edit website')}</button>
+          <button type="button" className={normalizedPath.includes('/finance') ? 'active' : ''} onClick={() => navigate('/admin/finance')}>{adminCopy(lang, 'Finanze', 'Finance')}</button>
           <a href="/" target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Sito pubblico', 'Public site')}</a>
         </nav>
         <div className="admin-userbox">
@@ -2107,7 +2045,13 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
         </div>
       </header>
       <main className="admin-main">
-        {normalizedPath.includes('/partnerships') ? (
+        {normalizedPath.includes('/calendar') ? (
+          <AdminCalendarPage lang={lang} session={session} navigate={navigate} />
+        ) : normalizedPath.includes('/finance') ? (
+          <FinanceAdminPage lang={lang} session={session} />
+        ) : normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media') ? (
+          <WebsiteAdminPage lang={lang} session={session} />
+        ) : normalizedPath.includes('/partnerships') ? (
           <PartnershipsAdminPage lang={lang} session={session} />
         ) : normalizedPath.includes('/upcoming') ? (
           <UpcomingPage lang={lang} session={session} navigate={navigate} />
@@ -2147,6 +2091,692 @@ function useAdminRequests(filters = {}) {
   }, [JSON.stringify(filters)]);
 
   return { requests, loading, error, refresh };
+}
+
+
+function calendarItemsByDate({ fixedExcursions = [], requests = [], blocks = [] }) {
+  const map = {};
+  fixedExcursions.forEach((item) => {
+    if (!item.date || item.active === false) return;
+    map[item.date] = map[item.date] || { fixed: [], bookings: [], blocks: [] };
+    map[item.date].fixed.push(item);
+  });
+  requests.forEach((request) => {
+    if (!request.requested_date || request.status !== 'accepted') return;
+    map[request.requested_date] = map[request.requested_date] || { fixed: [], bookings: [], blocks: [] };
+    map[request.requested_date].bookings.push(request);
+  });
+  blocks.forEach((block) => {
+    if (!block.date || block.active === false) return;
+    map[block.date] = map[block.date] || { fixed: [], bookings: [], blocks: [] };
+    map[block.date].blocks.push(block);
+  });
+  return map;
+}
+
+function AdminCalendarPage({ lang, session, navigate }) {
+  const { requests, loading: requestsLoading, error: requestsError, refresh: refreshRequests } = useAdminRequests({ status: 'accepted', limit: 500 });
+  const [fixedExcursions, setFixedExcursions] = useState([]);
+  const [blocks, setBlocks] = useState([]);
+  const [monthDate, setMonthDate] = useState(startOfMonth(new Date()));
+  const [selectedDate, setSelectedDate] = useState(todayIso());
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [selectedFixed, setSelectedFixed] = useState(null);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+
+  async function refreshCalendar() {
+    setError('');
+    try {
+      const [fixedData, blockData] = await Promise.all([
+        listFixedExcursions({ activeOnly: false }),
+        listAvailabilityBlocks({ activeOnly: true, fromDate: `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-01`, toDate: addDaysIso(365) })
+      ]);
+      setFixedExcursions(fixedData || []);
+      setBlocks(blockData || []);
+      await refreshRequests();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Calendario non caricato.', 'Calendar not loaded.'));
+    }
+  }
+
+  useEffect(() => { refreshCalendar(); }, [monthDate.getFullYear(), monthDate.getMonth()]);
+
+  const days = useMemo(() => getCalendarDays(monthDate), [monthDate]);
+  const byDate = useMemo(() => calendarItemsByDate({ fixedExcursions, requests, blocks }), [fixedExcursions, requests, blocks]);
+  const selected = byDate[selectedDate] || { fixed: [], bookings: [], blocks: [] };
+  const isLoading = requestsLoading && !requests.length;
+
+  function changeMonth(delta) {
+    setMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1));
+  }
+
+  async function handleBookingUpdate(request, values) {
+    setError('');
+    try {
+      await updateBookingRequest(request.id, { ...values, updated_by: session.user.id });
+      setSelectedBooking(null);
+      setFeedback(adminCopy(lang, 'Prenotazione aggiornata.', 'Booking updated.'));
+      await refreshCalendar();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Prenotazione non aggiornata.', 'Booking not updated.'));
+    }
+  }
+
+  async function handleFixedUpdate(item, values) {
+    setError('');
+    try {
+      await updateFixedExcursion(item.id, { ...values, updated_by: session.user.id });
+      setSelectedFixed(null);
+      setFeedback(adminCopy(lang, 'Escursione fissa aggiornata.', 'Fixed excursion updated.'));
+      await refreshCalendar();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Escursione non aggiornata.', 'Fixed excursion not updated.'));
+    }
+  }
+
+  return (
+    <section className="admin-page">
+      <div className="admin-page-header">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'Calendario', 'Calendar')}</span>
+          <h1>{adminCopy(lang, 'Calendario disponibilità', 'Availability calendar')}</h1>
+          <p>{adminCopy(lang, 'Verde: escursione fissa. Rosso: esperienza prenotata. Grigio: data bloccata o non disponibile.', 'Green: fixed excursion. Red: booked experience. Grey: blocked or unavailable date.')}</p>
+        </div>
+        <div className="admin-header-actions">
+          <button className="button secondary" type="button" onClick={refreshCalendar}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+          <button className="button primary" type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Gestisci disponibilità', 'Manage availability')}</button>
+        </div>
+      </div>
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {(error || requestsError) && <div className="admin-alert error" role="alert">{error || requestsError}</div>}
+      <div className="admin-calendar-layout">
+        <article className="calendar-card admin-calendar-card">
+          <div className="calendar-topline">
+            <button type="button" onClick={() => changeMonth(-1)} aria-label={text(lang, 'previousMonth')}>‹</button>
+            <h2>{monthLabel(monthDate, lang)}</h2>
+            <button type="button" onClick={() => changeMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
+          </div>
+          <div className="calendar-legend compact-legend">
+            <span><i className="legend-dot fixed" />{adminCopy(lang, 'Verde: escursione fissa', 'Green: fixed excursion')}</span>
+            <span><i className="legend-dot booked" />{adminCopy(lang, 'Rosso: esperienza prenotata', 'Red: booked experience')}</span>
+            <span><i className="legend-dot blocked" />{adminCopy(lang, 'Grigio: bloccata', 'Grey: blocked')}</span>
+          </div>
+          <div className="weekdays" aria-hidden="true">
+            {(lang === 'it' ? ['L', 'M', 'M', 'G', 'V', 'S', 'D'] : ['M', 'T', 'W', 'T', 'F', 'S', 'S']).map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
+          </div>
+          <div className="calendar-grid admin-calendar-grid">
+            {days.map((date) => {
+              const iso = dateToIso(date);
+              const dateItems = byDate[iso] || { fixed: [], bookings: [], blocks: [] };
+              const outside = date.getMonth() !== monthDate.getMonth();
+              return (
+                <button type="button" key={iso} className={`date-button admin-date-button ${outside ? 'outside' : ''} ${selectedDate === iso ? 'selected' : ''}`} onClick={() => setSelectedDate(iso)}>
+                  <strong>{date.getDate()}</strong>
+                  <span className="admin-date-markers">
+                    {dateItems.fixed.length > 0 && <i className="date-dot fixed" />}
+                    {dateItems.bookings.length > 0 && <i className="date-dot booked" />}
+                    {dateItems.blocks.length > 0 && <i className="date-dot blocked" />}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </article>
+        <aside className="admin-panel date-detail-panel admin-date-detail-panel">
+          <span className="micro-label">{adminCopy(lang, 'Dettagli data', 'Date details')}</span>
+          <h2>{formatDateForMessage(selectedDate, lang)}</h2>
+          {isLoading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : (
+            <>
+              {selected.fixed.length === 0 && selected.bookings.length === 0 && selected.blocks.length === 0 && <p>{adminCopy(lang, 'Nessuna attività per questa data.', 'No activity for this date.')}</p>}
+              {selected.fixed.length > 0 && <h3>{adminCopy(lang, 'Escursioni fisse', 'Fixed excursions')}</h3>}
+              {selected.fixed.map((item) => {
+                const bookedGuests = requests.filter((request) => request.fixed_excursion_id === item.id && request.status === 'accepted');
+                return (
+                  <article className="calendar-detail-item" key={item.id}>
+                    <strong>{fixedExcursionLabel(item, lang)}</strong>
+                    <span>{adminExperienceLabel(item.experience_id, lang)} · {item.places_remaining}/{item.capacity}</span>
+                    <dl className="request-details-grid">
+                      <div><dt>{adminCopy(lang, 'Data', 'Date')}</dt><dd>{formatDateForMessage(item.date, lang)}</dd></div>
+                      <div><dt>{adminCopy(lang, 'Ora inizio', 'Start time')}</dt><dd>{item.start_time ? String(item.start_time).slice(0, 5) : '-'}</dd></div>
+                      <div><dt>{adminCopy(lang, 'Ora fine', 'End time')}</dt><dd>{item.end_time ? String(item.end_time).slice(0, 5) : '-'}</dd></div>
+                      <div><dt>{adminCopy(lang, 'Stato', 'Status')}</dt><dd>{item.status || (item.active ? 'active' : 'inactive')}</dd></div>
+                    </dl>
+                    <div className="guest-detail-list">
+                      <strong>{adminCopy(lang, 'Ospiti prenotati', 'Booked guests')}</strong>
+                      {bookedGuests.length ? bookedGuests.map((guest) => (
+                        <p className="small-note" key={guest.id}>{guest.customer_name || '-'} · {guest.customer_email || '-'} · {guest.customer_phone || '-'} · {Number(guest.adults || 0) + Number(guest.children || 0) || '-'} {adminCopy(lang, 'ospiti', 'guests')}{guest.booking_code ? ` · ${guest.booking_code}` : ''}</p>
+                      )) : <p className="small-note">{adminCopy(lang, 'Nessun ospite prenotato per questa data.', 'No guests booked for this date yet.')}</p>}
+                    </div>
+                    <button type="button" className="button secondary" onClick={() => setSelectedFixed(item)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
+                  </article>
+                );
+              })}
+              {selected.bookings.length > 0 && <h3>{adminCopy(lang, 'Esperienze prenotate', 'Booked experiences')}</h3>}
+              {selected.bookings.map((request) => (
+                <article className="calendar-detail-item" key={request.id}>
+                  <strong>{request.customer_name || '-'}</strong>
+                  <span>{adminExperienceLabel(request.experience_id, lang)} · {Number(request.adults || 0) + Number(request.children || 0) || '-'} {adminCopy(lang, 'ospiti', 'guests')}</span>
+                  <button type="button" className="button secondary" onClick={() => setSelectedBooking(request)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
+                </article>
+              ))}
+              {selected.blocks.length > 0 && <h3>{adminCopy(lang, 'Blocchi', 'Blocks')}</h3>}
+              {selected.blocks.map((block) => <p className="small-note" key={block.id}>{adminAvailabilityStatusLabels[block.status]?.[lang] || block.status} · {block.reason_it || block.reason_en || '-'}</p>)}
+            </>
+          )}
+        </aside>
+      </div>
+      {selectedBooking && <CalendarBookingModal lang={lang} request={selectedBooking} onClose={() => setSelectedBooking(null)} onSave={handleBookingUpdate} />}
+      {selectedFixed && <CalendarFixedModal lang={lang} item={selectedFixed} onClose={() => setSelectedFixed(null)} onSave={handleFixedUpdate} />}
+    </section>
+  );
+}
+
+function CalendarBookingModal({ lang, request, onClose, onSave }) {
+  const [form, setForm] = useState({ status: request.status, requested_date: request.requested_date || '', adults: String(request.adults || ''), children: String(request.children || ''), admin_note: request.admin_note || '', decision_note: request.decision_note || '' });
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <div className="admin-modal wide" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="admin-modal-header"><div><h2>{request.customer_name || adminCopy(lang, 'Prenotazione', 'Booking')}</h2><p>{request.customer_email || '-'} · {request.customer_phone || '-'}</p></div><button className="round-button" type="button" onClick={onClose}>{text(lang, 'close')}</button></div>
+        <div className="admin-form-grid">
+          <AdminSelect label={adminCopy(lang, 'Stato', 'Status')} value={form.status} onChange={(value) => setForm((current) => ({ ...current, status: value }))} options={REQUEST_STATUSES} formatter={(value) => requestStatusLabels[value]?.[lang] || value} />
+          <AdminInput label={adminCopy(lang, 'Data confermata', 'Confirmed date')} type="date" value={form.requested_date} onChange={(value) => setForm((current) => ({ ...current, requested_date: value }))} />
+          <AdminInput label={adminCopy(lang, 'Adulti', 'Adults')} type="number" value={form.adults} onChange={(value) => setForm((current) => ({ ...current, adults: value }))} />
+          <AdminInput label={adminCopy(lang, 'Bambini', 'Children')} type="number" value={form.children} onChange={(value) => setForm((current) => ({ ...current, children: value }))} />
+          <label className="admin-field full"><span>{adminCopy(lang, 'Nota interna', 'Internal note')}</span><textarea rows={3} value={form.admin_note} onChange={(event) => setForm((current) => ({ ...current, admin_note: event.target.value }))} /></label>
+          <label className="admin-field full"><span>{adminCopy(lang, 'Nota decisione', 'Decision note')}</span><textarea rows={3} value={form.decision_note} onChange={(event) => setForm((current) => ({ ...current, decision_note: event.target.value }))} /></label>
+          <div className="modal-actions full"><button className="button primary" type="button" onClick={() => onSave(request, { ...form, adults: Number.parseInt(form.adults || '0', 10), children: Number.parseInt(form.children || '0', 10) })}>{adminCopy(lang, 'Salva modifiche', 'Save changes')}</button><button className="button secondary" type="button" onClick={onClose}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CalendarFixedModal({ lang, item, onClose, onSave }) {
+  const [form, setForm] = useState({ date: item.date || '', start_time: item.start_time || '', end_time: item.end_time || '', title_it: item.title_it || '', title_en: item.title_en || '', description_it: item.description_it || item.note_it || '', description_en: item.description_en || item.note_en || '', meeting_point_it: item.meeting_point_it || '', meeting_point_en: item.meeting_point_en || '', capacity: String(item.capacity || 12), active: item.active !== false });
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <div className="admin-modal wide" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="admin-modal-header"><div><h2>{fixedExcursionTitle(item, lang)}</h2><p>{adminExperienceLabel(item.experience_id, lang)}</p></div><button className="round-button" type="button" onClick={onClose}>{text(lang, 'close')}</button></div>
+        <div className="admin-form-grid">
+          <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.date} onChange={(value) => setForm((current) => ({ ...current, date: value }))} />
+          <AdminInput label={adminCopy(lang, 'Ora inizio', 'Start time')} type="time" value={form.start_time} onChange={(value) => setForm((current) => ({ ...current, start_time: value }))} />
+          <AdminInput label={adminCopy(lang, 'Ora fine', 'End time')} type="time" value={form.end_time} onChange={(value) => setForm((current) => ({ ...current, end_time: value }))} />
+          <AdminInput label={adminCopy(lang, 'Capienza', 'Capacity')} type="number" value={form.capacity} onChange={(value) => setForm((current) => ({ ...current, capacity: value }))} />
+          <AdminInput label="Title IT" value={form.title_it} onChange={(value) => setForm((current) => ({ ...current, title_it: value }))} />
+          <AdminInput label="Title EN" value={form.title_en} onChange={(value) => setForm((current) => ({ ...current, title_en: value }))} />
+          <label className="admin-field full"><span>Description IT</span><textarea rows={3} value={form.description_it} onChange={(event) => setForm((current) => ({ ...current, description_it: event.target.value }))} /></label>
+          <label className="admin-field full"><span>Description EN</span><textarea rows={3} value={form.description_en} onChange={(event) => setForm((current) => ({ ...current, description_en: event.target.value }))} /></label>
+          <AdminInput label="Meeting point IT" value={form.meeting_point_it} onChange={(value) => setForm((current) => ({ ...current, meeting_point_it: value }))} />
+          <AdminInput label="Meeting point EN" value={form.meeting_point_en} onChange={(value) => setForm((current) => ({ ...current, meeting_point_en: value }))} />
+          <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
+          <div className="modal-actions full"><button className="button primary" type="button" onClick={() => onSave(item, { ...form, capacity: Number.parseInt(form.capacity || '12', 10) })}>{adminCopy(lang, 'Salva modifiche', 'Save changes')}</button><button className="button secondary" type="button" onClick={onClose}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const MEDIA_ADMIN_ITEMS = [
+  { key: 'home_hero_background', it: 'Sfondo hero homepage', en: 'Home hero background' },
+  { key: 'home_hero_feature_image', it: 'Immagine hero homepage', en: 'Home hero image' },
+  { key: 'home_hero_video', it: 'Video homepage', en: 'Home video' },
+  { key: 'mission_main_image', it: 'Immagine missione', en: 'Mission image' },
+  { key: 'about_leonardo_image', it: 'Foto Leonardo', en: 'Leonardo photo' },
+  { key: 'about_deborah_image', it: 'Foto Deborah', en: 'Deborah photo' },
+  { key: 'reviews_background_image', it: 'Immagine recensioni', en: 'Reviews image' },
+  { key: 'default_experience_premium_image', it: 'Etna Premium', en: 'Etna Premium' },
+  { key: 'default_experience_learning_image', it: 'Etna Learning', en: 'Etna Learning' },
+  { key: 'default_experience_live_image', it: 'Etna Live', en: 'Etna Live' },
+  { key: 'default_experience_stories_image', it: 'Etna Stories', en: 'Etna Stories' }
+];
+
+function WebsiteAdminPage({ lang, session }) {
+  const [tab, setTab] = useState('content');
+  return (
+    <section className="admin-page website-admin-page">
+      <div className="admin-page-header">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'Modifica sito', 'Edit website')}</span>
+          <h1>{adminCopy(lang, 'Testi e media del sito', 'Website texts and media')}</h1>
+          <p>{adminCopy(lang, 'Da qui puoi modificare i testi pubblici, immagini, video e file visibili sul sito.', 'Use this area to edit public website text, images, videos, and files.')}</p>
+        </div>
+      </div>
+      <div className="admin-tabs website-edit-tabs" role="tablist" aria-label={adminCopy(lang, 'Sezioni modifica sito', 'Website edit sections')}>
+        <button type="button" className={tab === 'content' ? 'active' : ''} onClick={() => setTab('content')}>{adminCopy(lang, 'Testi sito', 'Website text')}</button>
+        <button type="button" className={tab === 'media' ? 'active' : ''} onClick={() => setTab('media')}>{adminCopy(lang, 'Immagini e media', 'Images and media')}</button>
+      </div>
+      {tab === 'content' ? <ContentAdminPage lang={lang} session={session} compactHeader /> : <MediaAdminPage lang={lang} session={session} compactHeader />}
+    </section>
+  );
+}
+
+function MediaAdminPage({ lang, session, compactHeader = false }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    try {
+      setItems(await listSiteMedia({ activeOnly: false }));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Media non caricati.', 'Media not loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  const itemMap = items.reduce((acc, item) => ({ ...acc, [item.media_key]: item }), {});
+
+  async function saveMedia(key, file) {
+    setError('');
+    setFeedback('');
+    try {
+      const existing = itemMap[key];
+      const uploaded = file ? await uploadSiteMediaFile(file, key, session.user.id) : {};
+      if (file && existing?.file_path) await removeSiteMediaFile(existing.file_path);
+      const definition = MEDIA_ADMIN_ITEMS.find((entry) => entry.key === key);
+      await upsertSiteMedia({
+        media_key: key,
+        label_it: definition?.it || key,
+        label_en: definition?.en || key,
+        alt_it: definition?.it || key,
+        alt_en: definition?.en || key,
+        active: true,
+        updated_by: session.user.id,
+        ...uploaded
+      });
+      setFeedback(adminCopy(lang, 'Media aggiornato.', 'Media updated.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Upload non riuscito.', 'Upload failed.'));
+    }
+  }
+
+  async function removeMedia(item) {
+    setError('');
+    try {
+      if (item.file_path) await removeSiteMediaFile(item.file_path);
+      await upsertSiteMedia({ ...item, file_url: null, file_path: null, file_name: null, file_type: null, active: false, updated_by: session.user.id });
+      setFeedback(adminCopy(lang, 'Media rimosso.', 'Media removed.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Rimozione non riuscita.', 'Remove failed.'));
+    }
+  }
+
+  return (
+    <section className={compactHeader ? "admin-subpage" : "admin-page"}>
+      {!compactHeader && (
+        <div className="admin-page-header">
+          <div><span className="kicker">{adminCopy(lang, 'Contenuti media', 'Media content')}</span><h1>{adminCopy(lang, 'Media sito', 'Site media')}</h1><p>{adminCopy(lang, 'Sostituisci immagini, video e documenti pubblici senza modificare il codice.', 'Replace public images, videos, and documents without code changes.')}</p></div>
+        </div>
+      )}
+      {compactHeader && <div className="admin-subpage-actions"><button className="button secondary" type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna media', 'Refresh media')}</button></div>}
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {error && <div className="admin-alert error" role="alert">{error}</div>}
+      {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : (
+        <div className="media-admin-grid">
+          {MEDIA_ADMIN_ITEMS.map((definition) => {
+            const item = itemMap[definition.key];
+            return (
+              <article className="media-admin-card" key={definition.key}>
+                <div><span className="micro-label">{definition.key}</span><h3>{lang === 'it' ? definition.it : definition.en}</h3></div>
+                {item?.file_url ? (
+                  item.media_kind === 'video' ? <video src={item.file_url} controls /> : <img src={item.file_url} alt={lang === 'it' ? item.alt_it : item.alt_en} />
+                ) : <div className="media-empty-preview">{adminCopy(lang, 'Fallback statico', 'Static fallback')}</div>}
+                <p className="small-note">{item?.file_name || adminCopy(lang, 'Nessun file caricato', 'No uploaded file')}</p>
+                <label className="button secondary"><input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,application/pdf,.jpg,.jpeg,.png,.webp,.mp4,.pdf" onChange={(event) => saveMedia(definition.key, event.target.files?.[0])} />{adminCopy(lang, 'Carica / sostituisci', 'Upload / replace')}</label>
+                {item?.file_url && <button className="button secondary danger" type="button" onClick={() => removeMedia(item)}>{adminCopy(lang, 'Rimuovi', 'Remove')}</button>}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const SITE_CONTENT_DEFINITIONS = [
+  { key: 'home.hero.title', section: 'Homepage', label_it: 'Homepage hero title', label_en: 'Homepage hero title', type: 'textarea', default_it: "L'Etna non è solo uno scenario.", default_en: 'Etna is not just scenery.' },
+  { key: 'home.hero.subtitle', section: 'Homepage', label_it: 'Homepage hero subtitle', label_en: 'Homepage hero subtitle', type: 'textarea', default_it: 'Esperienze private e fisse sull’Etna per leggere il vulcano come territorio vivo: con conoscenza, sicurezza e relazione umana.', default_en: 'Private and fixed experiences on Mount Etna to read the volcano as a living territory: with knowledge, safety, and human connection.' },
+  { key: 'home.hero.primary_cta', section: 'Homepage', label_it: 'CTA principale', label_en: 'Primary CTA', type: 'text', default_it: "Trova l'esperienza giusta", default_en: 'Find the right experience' },
+  { key: 'home.hero.secondary_cta', section: 'Homepage', label_it: 'CTA secondaria', label_en: 'Secondary CTA', type: 'text', default_it: 'Guarda le disponibilità', default_en: 'View availability' },
+  { key: 'mission.mission.title', section: 'Missione', label_it: 'Titolo Missione', label_en: 'Mission title', type: 'text', default_it: 'Missione', default_en: 'Mission' },
+  { key: 'mission.mission.body', section: 'Missione', label_it: 'Testo Missione', label_en: 'Mission body', type: 'textarea', default_it: 'vulcanIQ nasce per trasformare il modo in cui le persone vivono l’Etna: non come una semplice destinazione da visitare, ma come un territorio da ascoltare, comprendere e ricordare.', default_en: 'vulcanIQ was created to transform the way people experience Etna: not as a simple destination to visit, but as a territory to listen to, understand and remember.' },
+  { key: 'mission.vision.title', section: 'Missione', label_it: 'Titolo Visione', label_en: 'Vision title', type: 'text', default_it: 'Visione', default_en: 'Vision' },
+  { key: 'mission.vision.body', section: 'Missione', label_it: 'Testo Visione', label_en: 'Vision body', type: 'textarea', default_it: 'Crediamo in un turismo che non consuma il territorio, ma lo ascolta. Un modo più autentico di vivere l’Etna, fatto di connessione, rispetto e ricordi che restano.', default_en: 'We believe in a form of tourism that does not consume the territory, but listens to it. A more authentic way to experience Etna, made of connection, respect and lasting memories.' },
+  { key: 'reviews.page.title', section: 'Recensioni', label_it: 'Titolo recensioni', label_en: 'Reviews title', type: 'textarea', default_it: 'Recensioni di chi ha vissuto l’Etna con noi.', default_en: 'Reviews from people who experienced Etna with us.' },
+  { key: 'reviews.page.intro', section: 'Recensioni', label_it: 'Intro recensioni', label_en: 'Reviews intro', type: 'textarea', default_it: '', default_en: '' },
+  { key: 'reviews.publish_button', section: 'Recensioni', label_it: 'Bottone recensione', label_en: 'Review button', type: 'text', default_it: 'Pubblica una recensione', default_en: 'Publish a review' },
+  { key: 'contact.page.title', section: 'Contatti', label_it: 'Titolo contatti', label_en: 'Contact title', type: 'text', default_it: 'Prepara la richiesta.', default_en: 'Prepare your request.' },
+  { key: 'contact.page.intro', section: 'Contatti', label_it: 'Intro contatti', label_en: 'Contact intro', type: 'textarea', default_it: 'Scegli una data fissa o una richiesta privata, indica il numero di persone e lascia un contatto: il team risponderà direttamente.', default_en: 'Choose a fixed date or a private request, indicate the number of people, and leave a contact: the team will reply directly.' }
+];
+
+function contentDefinitionMap() {
+  return SITE_CONTENT_DEFINITIONS.reduce((acc, item) => ({ ...acc, [item.key]: item }), {});
+}
+
+function ContentAdminPage({ lang, session, compactHeader = false }) {
+  const [items, setItems] = useState([]);
+  const [section, setSection] = useState('all');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    try {
+      setItems(await listSiteContent({ activeOnly: false }));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Contenuti non caricati.', 'Content not loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  const existing = items.reduce((acc, item) => ({ ...acc, [item.content_key]: item }), {});
+  const merged = SITE_CONTENT_DEFINITIONS.map((definition) => ({ ...definition, ...(existing[definition.key] || {}) }));
+  const sections = ['all', ...Array.from(new Set(SITE_CONTENT_DEFINITIONS.map((item) => item.section)))];
+  const visible = section === 'all' ? merged : merged.filter((item) => item.section === section);
+
+  async function save(definition, values) {
+    setError('');
+    setFeedback('');
+    try {
+      await upsertSiteContent({
+        content_key: definition.key,
+        section: definition.section,
+        label_it: definition.label_it,
+        label_en: definition.label_en,
+        value_it: values.value_it,
+        value_en: values.value_en,
+        default_it: definition.default_it,
+        default_en: definition.default_en,
+        content_type: definition.type === 'textarea' ? 'textarea' : 'text',
+        active: values.active,
+        updated_by: session.user.id
+      });
+      setFeedback(adminCopy(lang, 'Contenuto salvato.', 'Content saved.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Contenuto non salvato.', 'Content not saved.'));
+    }
+  }
+
+  return (
+    <section className={compactHeader ? "admin-subpage" : "admin-page"}>
+      {!compactHeader && (
+        <div className="admin-page-header">
+          <div>
+            <span className="kicker">{adminCopy(lang, 'Testi sito', 'Site texts')}</span>
+            <h1>{adminCopy(lang, 'Contenuti', 'Content')}</h1>
+            <p>{adminCopy(lang, 'Modifica testi pubblici in italiano e inglese senza cambiare codice. Se un campo resta vuoto, il sito usa il fallback statico.', 'Edit public Italian and English copy without changing code. Empty fields fall back to static defaults.')}</p>
+          </div>
+          <button className="button secondary" type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+        </div>
+      )}
+      {compactHeader && <div className="admin-subpage-actions"><button className="button secondary" type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna testi', 'Refresh text')}</button></div>}
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {error && <div className="admin-alert error" role="alert">{error}</div>}
+      <div className="admin-filter-bar content-filter-bar">
+        <select value={section} onChange={(event) => setSection(event.target.value)} aria-label={adminCopy(lang, 'Sezione', 'Section')}>
+          {sections.map((value) => <option key={value} value={value}>{value === 'all' ? adminCopy(lang, 'Tutte le sezioni', 'All sections') : value}</option>)}
+        </select>
+      </div>
+      {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : (
+        <div className="content-admin-grid">
+          {visible.map((item) => <ContentEditorCard key={item.key} item={item} lang={lang} onSave={save} />)}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ContentEditorCard({ item, lang, onSave }) {
+  const [form, setForm] = useState({ value_it: item.value_it ?? item.default_it ?? '', value_en: item.value_en ?? item.default_en ?? '', active: item.active !== false });
+  useEffect(() => {
+    setForm({ value_it: item.value_it ?? item.default_it ?? '', value_en: item.value_en ?? item.default_en ?? '', active: item.active !== false });
+  }, [item.key, item.value_it, item.value_en, item.active]);
+  const Field = item.type === 'textarea' || item.content_type === 'textarea' ? 'textarea' : 'input';
+  return (
+    <article className="content-admin-card">
+      <div>
+        <span className="micro-label">{item.section} · {item.key}</span>
+        <h3>{lang === 'it' ? item.label_it : item.label_en}</h3>
+      </div>
+      <label className="admin-field full"><span>Italiano</span><Field rows={4} value={form.value_it} onChange={(event) => setForm((current) => ({ ...current, value_it: event.target.value }))} /></label>
+      <label className="admin-field full"><span>English</span><Field rows={4} value={form.value_en} onChange={(event) => setForm((current) => ({ ...current, value_en: event.target.value }))} /></label>
+      <p className="small-note">{adminCopy(lang, 'Fallback IT', 'Fallback IT')}: {item.default_it || '—'}<br />{adminCopy(lang, 'Fallback EN', 'Fallback EN')}: {item.default_en || '—'}</p>
+      <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> {adminCopy(lang, 'Attivo', 'Active')}</label>
+      <div className="request-actions">
+        <button className="button primary" type="button" onClick={() => onSave(item, form)}>{adminCopy(lang, 'Salva', 'Save')}</button>
+        <button className="button secondary" type="button" onClick={() => setForm({ value_it: item.default_it || '', value_en: item.default_en || '', active: true })}>{adminCopy(lang, 'Ripristina fallback', 'Restore fallback')}</button>
+      </div>
+      {item.updated_at && <p className="small-note">{adminCopy(lang, 'Ultimo aggiornamento', 'Last updated')}: {formatDateForMessage(String(item.updated_at).slice(0, 10), lang)}</p>}
+    </article>
+  );
+}
+
+const FINANCE_CATEGORIES = {
+  income: [
+    ['booking_payment', 'Pagamento prenotazione', 'Booking payment'],
+    ['deposit', 'Acconto', 'Deposit'],
+    ['balance_payment', 'Saldo', 'Balance payment'],
+    ['private_experience', 'Esperienza privata', 'Private experience'],
+    ['fixed_excursion', 'Escursione fissa', 'Fixed excursion'],
+    ['other_income', 'Altra entrata', 'Other income']
+  ],
+  expense: [
+    ['fuel', 'Carburante', 'Fuel'],
+    ['equipment', 'Attrezzatura', 'Equipment'],
+    ['guide_cost', 'Costo guida', 'Guide cost'],
+    ['transport', 'Trasporto', 'Transport'],
+    ['food_supplies', 'Cibo / forniture', 'Food / supplies'],
+    ['marketing', 'Marketing', 'Marketing'],
+    ['maintenance', 'Manutenzione', 'Maintenance'],
+    ['permits', 'Permessi', 'Permits'],
+    ['other_expense', 'Altra spesa', 'Other expense']
+  ]
+};
+
+function financeCategoryLabel(value, lang) {
+  const found = [...FINANCE_CATEGORIES.income, ...FINANCE_CATEGORIES.expense].find(([key]) => key === value);
+  return found ? (lang === 'it' ? found[1] : found[2]) : value || '-';
+}
+
+function formatMoney(amount, currency = 'EUR') {
+  return new Intl.NumberFormat('it-IT', { style: 'currency', currency: currency || 'EUR' }).format(Number(amount || 0));
+}
+
+function FinanceAdminPage({ lang, session }) {
+  const [entries, setEntries] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [fixedExcursions, setFixedExcursions] = useState([]);
+  const [leaflets, setLeaflets] = useState([]);
+  const [filters, setFilters] = useState({ type: 'all', fromDate: '', toDate: '', category: 'all', linked: 'all', includeArchived: false });
+  const [form, setForm] = useState({ entry_date: todayIso(), type: 'income', amount: '', currency: 'EUR', title: '', description: '', category: 'booking_payment', payment_method: '', booking_request_id: '', fixed_excursion_id: '', leaflet_id: '' });
+  const [editing, setEditing] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    try {
+      const [entryData, requestData, fixedData, leafletData] = await Promise.all([
+        listFinanceEntries(filters),
+        listBookingRequests({ limit: 250 }),
+        listFixedExcursions({ activeOnly: false }),
+        listMonthlyLeaflets({ activeOnly: false })
+      ]);
+      setEntries(entryData);
+      setRequests(requestData);
+      setFixedExcursions(fixedData);
+      setLeaflets(leafletData);
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Finanze non caricate.', 'Finance data not loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, [filters.type, filters.fromDate, filters.toDate, filters.category, filters.linked, filters.includeArchived]);
+
+  function update(field, value) {
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+      ...(field === 'type' ? { category: value === 'income' ? 'booking_payment' : 'fuel' } : {})
+    }));
+  }
+
+  function updateFilter(field, value) {
+    setFilters((current) => ({ ...current, [field]: value }));
+  }
+
+  function startEdit(entry) {
+    setEditing(entry);
+    setForm({
+      entry_date: entry.entry_date || todayIso(),
+      type: entry.type || 'income',
+      amount: String(entry.amount || ''),
+      currency: entry.currency || 'EUR',
+      title: entry.title || '',
+      description: entry.description || '',
+      category: entry.category || (entry.type === 'expense' ? 'fuel' : 'booking_payment'),
+      payment_method: entry.payment_method || '',
+      booking_request_id: entry.booking_request_id || '',
+      fixed_excursion_id: entry.fixed_excursion_id || '',
+      leaflet_id: entry.leaflet_id || ''
+    });
+  }
+
+  function resetForm() {
+    setEditing(null);
+    setForm({ entry_date: todayIso(), type: 'income', amount: '', currency: 'EUR', title: '', description: '', category: 'booking_payment', payment_method: '', booking_request_id: '', fixed_excursion_id: '', leaflet_id: '' });
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setError('');
+    setFeedback('');
+    if (!form.entry_date || !form.title.trim() || Number(form.amount || 0) <= 0) {
+      setError(adminCopy(lang, 'Data, titolo e importo positivo sono obbligatori.', 'Date, title, and a positive amount are required.'));
+      return;
+    }
+    try {
+      if (editing) await updateFinanceEntry(editing.id, form, session.user.id);
+      else await createFinanceEntry(form, session.user.id);
+      setFeedback(editing ? adminCopy(lang, 'Voce aggiornata.', 'Entry updated.') : adminCopy(lang, 'Voce aggiunta.', 'Entry added.'));
+      resetForm();
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Voce non salvata.', 'Entry not saved.'));
+    }
+  }
+
+  async function archive(entry) {
+    setError('');
+    try {
+      await archiveFinanceEntry(entry.id, session.user.id, 'archived from admin');
+      setFeedback(adminCopy(lang, 'Voce archiviata.', 'Entry archived.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Archivio non riuscito.', 'Archive failed.'));
+    }
+  }
+
+  const income = entries.filter((entry) => entry.active !== false && entry.type === 'income').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const expenses = entries.filter((entry) => entry.active !== false && entry.type === 'expense').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const linked = entries.filter((entry) => entry.booking_request_id || entry.fixed_excursion_id || entry.leaflet_id).length;
+  const unlinkedExpenses = entries.filter((entry) => entry.type === 'expense' && !entry.booking_request_id && !entry.fixed_excursion_id && !entry.leaflet_id).length;
+  const categories = filters.type === 'expense' ? FINANCE_CATEGORIES.expense : filters.type === 'income' ? FINANCE_CATEGORIES.income : [...FINANCE_CATEGORIES.income, ...FINANCE_CATEGORIES.expense];
+
+  return (
+    <section className="admin-page">
+      <div className="admin-page-header">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'Tracker economico', 'Money tracker')}</span>
+          <h1>{adminCopy(lang, 'Finanze', 'Finance')}</h1>
+          <p>{adminCopy(lang, 'Registro interno per entrate, uscite e collegamenti a prenotazioni o escursioni. Non è un sistema di pagamento.', 'Internal ledger for income, expenses, and links to bookings or excursions. This is not a payment system.')}</p>
+        </div>
+        <button className="button secondary" type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+      </div>
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {error && <div className="admin-alert error" role="alert">{error}</div>}
+      <div className="admin-summary-grid finance-summary-grid">
+        <SummaryCard label={adminCopy(lang, 'Entrate totali', 'Total earnings')} value={formatMoney(income)} />
+        <SummaryCard label={adminCopy(lang, 'Uscite totali', 'Total expenses')} value={formatMoney(expenses)} />
+        <SummaryCard label={adminCopy(lang, 'Utile netto', 'Net profit')} value={formatMoney(income - expenses)} />
+        <SummaryCard label={adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings')} value={linked} />
+        <SummaryCard label={adminCopy(lang, 'Spese non collegate', 'Unlinked expenses')} value={unlinkedExpenses} />
+      </div>
+      <div className="admin-filter-bar finance-filter-bar">
+        <select value={filters.type} onChange={(event) => updateFilter('type', event.target.value)}><option value="all">{adminCopy(lang, 'Tutti i tipi', 'All types')}</option><option value="income">{adminCopy(lang, 'Entrate', 'Income')}</option><option value="expense">{adminCopy(lang, 'Uscite', 'Expenses')}</option></select>
+        <select value={filters.category} onChange={(event) => updateFilter('category', event.target.value)}><option value="all">{adminCopy(lang, 'Tutte le categorie', 'All categories')}</option>{categories.map(([key]) => <option key={key} value={key}>{financeCategoryLabel(key, lang)}</option>)}</select>
+        <select value={filters.linked} onChange={(event) => updateFilter('linked', event.target.value)}><option value="all">{adminCopy(lang, 'Collegate e libere', 'Linked and unlinked')}</option><option value="linked">{adminCopy(lang, 'Solo collegate', 'Linked only')}</option><option value="unlinked">{adminCopy(lang, 'Solo non collegate', 'Unlinked only')}</option></select>
+        <input type="date" value={filters.fromDate} onChange={(event) => updateFilter('fromDate', event.target.value)} />
+        <input type="date" value={filters.toDate} onChange={(event) => updateFilter('toDate', event.target.value)} />
+        <label className="check-field compact-check"><input type="checkbox" checked={filters.includeArchived} onChange={(event) => updateFilter('includeArchived', event.target.checked)} /> {adminCopy(lang, 'Includi archivio', 'Include archive')}</label>
+      </div>
+      <div className="admin-two-column finance-layout">
+        <section className="admin-panel">
+          <h2>{editing ? adminCopy(lang, 'Modifica voce', 'Edit entry') : adminCopy(lang, 'Aggiungi voce', 'Add entry')}</h2>
+          <form className="admin-form-grid" onSubmit={submit}>
+            <AdminSelect label={adminCopy(lang, 'Tipo', 'Type')} value={form.type} onChange={(value) => update('type', value)} options={['income', 'expense']} formatter={(value) => value === 'income' ? adminCopy(lang, 'Entrata', 'Income') : adminCopy(lang, 'Uscita', 'Expense')} />
+            <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.entry_date} onChange={(value) => update('entry_date', value)} />
+            <AdminInput label={adminCopy(lang, 'Importo', 'Amount')} type="number" value={form.amount} onChange={(value) => update('amount', value)} />
+            <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => update('currency', value)} />
+            <AdminInput label={adminCopy(lang, 'Titolo', 'Title')} value={form.title} onChange={(value) => update('title', value)} />
+            <AdminSelect label={adminCopy(lang, 'Categoria', 'Category')} value={form.category} onChange={(value) => update('category', value)} options={(form.type === 'income' ? FINANCE_CATEGORIES.income : FINANCE_CATEGORIES.expense).map(([key]) => key)} formatter={(value) => financeCategoryLabel(value, lang)} />
+            <AdminInput label={adminCopy(lang, 'Metodo pagamento', 'Payment method')} value={form.payment_method} onChange={(value) => update('payment_method', value)} />
+            <AdminSelect label={adminCopy(lang, 'Prenotazione collegata', 'Linked booking')} value={form.booking_request_id} onChange={(value) => update('booking_request_id', value)} options={['', ...requests.map((request) => request.id)]} formatter={(value) => value ? requestFinanceLabel(requests.find((request) => request.id === value), lang) : adminCopy(lang, 'Nessuna', 'None')} />
+            <AdminSelect label={adminCopy(lang, 'Escursione fissa collegata', 'Linked fixed excursion')} value={form.fixed_excursion_id} onChange={(value) => update('fixed_excursion_id', value)} options={['', ...fixedExcursions.map((item) => item.id)]} formatter={(value) => value ? fixedExcursionLabel(fixedExcursions.find((item) => item.id === value), lang) : adminCopy(lang, 'Nessuna', 'None')} />
+            <AdminSelect label={adminCopy(lang, 'Calendario mensile collegato', 'Linked monthly leaflet')} value={form.leaflet_id} onChange={(value) => update('leaflet_id', value)} options={['', ...leaflets.map((item) => item.id)]} formatter={(value) => value ? leafletLabel(leaflets.find((item) => item.id === value), lang) : adminCopy(lang, 'Nessuno', 'None')} />
+            <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione / note', 'Description / notes')}</span><textarea rows={4} value={form.description} onChange={(event) => update('description', event.target.value)} /></label>
+            <div className="modal-actions full"><button className="button primary" type="submit">{editing ? adminCopy(lang, 'Salva modifiche', 'Save changes') : adminCopy(lang, 'Aggiungi voce', 'Add entry')}</button>{editing && <button className="button secondary" type="button" onClick={resetForm}>{adminCopy(lang, 'Annulla modifica', 'Cancel edit')}</button>}</div>
+          </form>
+        </section>
+        <section className="admin-panel">
+          <div className="admin-panel-header"><h2>{adminCopy(lang, 'Voci finanziarie', 'Financial entries')}</h2><span className="status-pill accepted">{entries.length}</span></div>
+          {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : entries.length === 0 ? <p>{adminCopy(lang, 'Nessuna voce trovata.', 'No entries found.')}</p> : (
+            <div className="finance-entry-list">
+              {entries.map((entry) => <FinanceEntryCard key={entry.id} entry={entry} lang={lang} onEdit={() => startEdit(entry)} onArchive={() => archive(entry)} />)}
+            </div>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function requestFinanceLabel(request, lang) {
+  if (!request) return '-';
+  return `${formatDateForMessage(request.requested_date, lang) || '-'} · ${request.customer_name || '-'} · ${adminExperienceLabel(request.experience_id, lang)}${request.booking_code ? ` · ${request.booking_code}` : ''}`;
+}
+
+function FinanceEntryCard({ entry, lang, onEdit, onArchive }) {
+  return (
+    <article className={`finance-entry-card ${entry.active === false ? 'inactive' : ''}`}>
+      <div className="request-card-head">
+        <div><h3>{entry.title}</h3><p>{formatDateForMessage(entry.entry_date, lang)} · {financeCategoryLabel(entry.category, lang)}</p></div>
+        <strong className={`finance-amount ${entry.type}`}>{entry.type === 'expense' ? '-' : '+'}{formatMoney(entry.amount, entry.currency)}</strong>
+      </div>
+      {entry.description && <p>{entry.description}</p>}
+      <p className="small-note">{entry.payment_method || adminCopy(lang, 'Metodo non indicato', 'No payment method')} · {entry.booking_request_id || entry.fixed_excursion_id || entry.leaflet_id ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Unlinked')}</p>
+      <div className="request-actions"><button className="button secondary" type="button" onClick={onEdit}>{adminCopy(lang, 'Modifica', 'Edit')}</button>{entry.active !== false && <button className="button secondary danger" type="button" onClick={onArchive}>{adminCopy(lang, 'Archivia', 'Archive')}</button>}</div>
+    </article>
+  );
 }
 
 function TodayDashboard({ lang, session, navigate }) {
@@ -2191,7 +2821,6 @@ function TodayDashboard({ lang, session, navigate }) {
       <div className="admin-page-header">
         <div>
           <h1>{adminCopy(lang, 'Pannello operativo', 'Operations')}</h1>
-          <p>{adminCopy(lang, 'Richieste in attesa, conferme vicine e disponibilità dei prossimi giorni.', 'Pending requests, upcoming accepted bookings, and near-term availability.')}</p>
         </div>
         <div className="admin-header-actions">
           <button className="button primary" type="button" onClick={() => setManualOpen(true)}>{adminCopy(lang, 'Aggiungi richiesta manuale', 'Add manual request')}</button>
@@ -2235,7 +2864,7 @@ function TodayDashboard({ lang, session, navigate }) {
         </section>
 
         <aside className="admin-panel compact-panel">
-          <h2>{adminCopy(lang, 'Operatività prossima', 'Upcoming operations')}</h2>
+          <h2>{adminCopy(lang, 'Prossima operatività', 'Upcoming operations')}</h2>
           <AdminMiniList
             items={operational}
             empty={adminCopy(lang, 'Nessuna conferma nei prossimi 7 giorni.', 'No accepted bookings in the next 7 days.')}
@@ -2315,6 +2944,9 @@ function UpcomingPage({ lang, session, navigate }) {
   const upcoming = requests
     .filter((request) => request.status === 'accepted' && request.requested_date && request.requested_date >= todayIso())
     .sort((a, b) => String(a.requested_date).localeCompare(String(b.requested_date)) || String(a.created_at).localeCompare(String(b.created_at)));
+  const pastAccepted = requests
+    .filter((request) => request.status === 'accepted' && request.requested_date && request.requested_date < todayIso())
+    .sort((a, b) => String(b.requested_date).localeCompare(String(a.requested_date)) || String(b.created_at).localeCompare(String(a.created_at)));
   const groups = bucketUpcomingRequests(upcoming);
   const nearBlocks = blocks.filter((block) => block.date <= addDaysIso(30));
 
@@ -2352,6 +2984,14 @@ function UpcomingPage({ lang, session, navigate }) {
               ))}
             </div>
           )}
+          <details className="admin-archive-details">
+            <summary><span>{adminCopy(lang, 'Esperienze passate', 'Past experiences')}</span><strong>{pastAccepted.length}</strong></summary>
+            {pastAccepted.length === 0 ? <p className="small-note">{adminCopy(lang, 'Nessuna esperienza passata.', 'No past experiences.')}</p> : (
+              <div className="request-card-list compact-list">
+                {pastAccepted.map((request) => <RequestCard key={request.id} request={request} lang={lang} compact />)}
+              </div>
+            )}
+          </details>
         </section>
         <aside className="admin-panel compact-panel">
           <h2>{adminCopy(lang, 'Blocchi e limitazioni', 'Blocks and limitations')}</h2>
@@ -2789,7 +3429,7 @@ function PartnershipsAdminPage({ lang, session }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
-  const emptyForm = { name: '', category_it: '', category_en: '', description_it: '', description_en: '', website_url: '', image_url: '', display_order: '0', active: true };
+  const emptyForm = { name: '', category_it: '', category_en: '', description_it: '', description_en: '', website_url: '', image_url: '', image_path: '', image_name: '', image_type: '', imageFile: null, display_order: '0', active: true };
   const [form, setForm] = useState(emptyForm);
 
   async function refresh() {
@@ -2819,12 +3459,14 @@ function PartnershipsAdminPage({ lang, session }) {
       setError(adminCopy(lang, 'Il nome è obbligatorio.', 'Name is required.'));
       return;
     }
-    if (!isValidOptionalUrl(form.website_url) || !isValidOptionalUrl(form.image_url)) {
+    if (!isValidOptionalUrl(form.website_url) || (!form.imageFile && !isValidOptionalUrl(form.image_url))) {
       setError(adminCopy(lang, 'Inserisci URL validi che iniziano con http o https.', 'Enter valid URLs starting with http or https.'));
       return;
     }
     try {
-      await createPartnership({ ...form, created_by: session.user.id, updated_by: session.user.id });
+      const imagePayload = form.imageFile ? await uploadPartnershipImage(form.imageFile, session.user.id) : {};
+      const { imageFile, ...payload } = form;
+      await createPartnership({ ...payload, ...imagePayload, created_by: session.user.id, updated_by: session.user.id });
       setForm(emptyForm);
       setFeedback(adminCopy(lang, 'Collaborazione creata.', 'Partnership created.'));
       refresh();
@@ -2854,7 +3496,9 @@ function PartnershipsAdminPage({ lang, session }) {
             <label className="admin-field full"><span>Description IT</span><textarea value={form.description_it} onChange={(event) => update('description_it', event.target.value)} rows={3} /></label>
             <label className="admin-field full"><span>Description EN</span><textarea value={form.description_en} onChange={(event) => update('description_en', event.target.value)} rows={3} /></label>
             <AdminInput label="Website URL" value={form.website_url} onChange={(value) => update('website_url', value)} />
-            <AdminInput label="Image URL" value={form.image_url} onChange={(value) => update('image_url', value)} />
+            <AdminInput label={adminCopy(lang, 'URL immagine opzionale', 'Optional image URL')} value={form.image_url} onChange={(value) => update('image_url', value)} />
+            <label className="admin-field full"><span>{adminCopy(lang, 'Immagine collaborazione', 'Partnership image')}</span><input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={(event) => update('imageFile', event.target.files?.[0] || null)} /></label>
+            {form.imageFile && <p className="small-note full">{adminCopy(lang, 'File selezionato', 'Selected file')}: {form.imageFile.name}</p>}
             <AdminInput label={adminCopy(lang, 'Ordine', 'Display order')} type="number" value={form.display_order} onChange={(value) => update('display_order', value)} />
             <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => update('active', event.target.checked)} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
             <div className="modal-actions full"><button className="button primary" type="submit">{adminCopy(lang, 'Salva collaborazione', 'Save partnership')}</button></div>
@@ -2883,6 +3527,11 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
     description_en: item.description_en || '',
     website_url: item.website_url || '',
     image_url: item.image_url || '',
+    image_path: item.image_path || '',
+    image_name: item.image_name || '',
+    image_type: item.image_type || '',
+    imageFile: null,
+    removeImage: false,
     display_order: String(item.display_order || 0),
     active: item.active !== false
   });
@@ -2894,12 +3543,21 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
       setError(adminCopy(lang, 'Il nome è obbligatorio.', 'Name is required.'));
       return;
     }
-    if (!isValidOptionalUrl(form.website_url) || !isValidOptionalUrl(form.image_url)) {
+    if (!isValidOptionalUrl(form.website_url) || (!form.imageFile && !form.removeImage && !isValidOptionalUrl(form.image_url))) {
       setError(adminCopy(lang, 'URL non valido.', 'Invalid URL.'));
       return;
     }
     try {
-      await updatePartnership(item.id, { ...form, updated_by: userId });
+      let imagePayload = {};
+      if (form.imageFile) {
+        imagePayload = await uploadPartnershipImage(form.imageFile, userId);
+        if (item.image_path) await removePartnershipImage(item.image_path);
+      } else if (form.removeImage) {
+        if (item.image_path) await removePartnershipImage(item.image_path);
+        imagePayload = { image_url: null, image_path: null, image_name: null, image_type: null };
+      }
+      const { imageFile, removeImage, ...payload } = form;
+      await updatePartnership(item.id, { ...payload, ...imagePayload, updated_by: userId });
       setEditing(false);
       onChanged(adminCopy(lang, 'Collaborazione aggiornata.', 'Partnership updated.'));
     } catch (err) {
@@ -2931,7 +3589,10 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
           <label className="admin-field full"><span>Description IT</span><textarea value={form.description_it} onChange={(event) => setForm((current) => ({ ...current, description_it: event.target.value }))} rows={3} /></label>
           <label className="admin-field full"><span>Description EN</span><textarea value={form.description_en} onChange={(event) => setForm((current) => ({ ...current, description_en: event.target.value }))} rows={3} /></label>
           <AdminInput label="Website URL" value={form.website_url} onChange={(value) => setForm((current) => ({ ...current, website_url: value }))} />
-          <AdminInput label="Image URL" value={form.image_url} onChange={(value) => setForm((current) => ({ ...current, image_url: value }))} />
+          <AdminInput label={adminCopy(lang, 'URL immagine', 'Image URL')} value={form.image_url} onChange={(value) => setForm((current) => ({ ...current, image_url: value }))} />
+          <label className="admin-field full"><span>{adminCopy(lang, 'Sostituisci immagine', 'Replace image')}</span><input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={(event) => setForm((current) => ({ ...current, imageFile: event.target.files?.[0] || null, removeImage: false }))} /></label>
+          {form.image_url && !form.removeImage && <p className="small-note full"><a href={form.image_url} target="_blank" rel="noopener noreferrer">{form.image_name || adminCopy(lang, 'Immagine esistente', 'Existing image')}</a> <button type="button" className="inline-danger-button" onClick={() => setForm((current) => ({ ...current, removeImage: true, imageFile: null }))}>{adminCopy(lang, 'Rimuovi immagine', 'Remove image')}</button></p>}
+          {form.imageFile && <p className="small-note full">{adminCopy(lang, 'Nuovo file', 'New file')}: {form.imageFile.name}</p>}
           <AdminInput label={adminCopy(lang, 'Ordine', 'Display order')} type="number" value={form.display_order} onChange={(value) => setForm((current) => ({ ...current, display_order: value }))} />
           <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
           {error && <div className="admin-alert error full">{error}</div>}
@@ -2939,8 +3600,9 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
         </div>
       ) : (
         <>
+          {item.image_url && <img className="admin-card-preview-image" src={item.image_url} alt={item.name} />}
           {(item.description_it || item.description_en) && <p>{lang === 'it' ? item.description_it || item.description_en : item.description_en || item.description_it}</p>}
-          <p className="small-note">{item.website_url || '-'} · {adminCopy(lang, 'Ordine', 'Order')} {item.display_order}</p>
+          <p className="small-note">{item.website_url || '-'} · {item.image_name || adminCopy(lang, 'Nessuna immagine', 'No image')} · {adminCopy(lang, 'Ordine', 'Order')} {item.display_order}</p>
           {error && <div className="admin-alert error">{error}</div>}
           <div className="request-actions"><button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>{item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}</div>
         </>
@@ -2953,22 +3615,26 @@ function AvailabilityPage({ lang, session }) {
   const [tab, setTab] = useState('blocks');
   const [blocks, setBlocks] = useState([]);
   const [fixedExcursions, setFixedExcursions] = useState([]);
+  const [leaflets, setLeaflets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [form, setForm] = useState({ date: '', experience_id: '', status: 'closed', reason_it: '', reason_en: '', internal_note: '' });
-  const [fixedForm, setFixedForm] = useState({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
+  const [fixedForm, setFixedForm] = useState({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', leaflet_id: '', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
+  const [leafletForm, setLeafletForm] = useState({ month: String(new Date().getMonth() + 1), year: String(new Date().getFullYear()), title_it: '', title_en: '', file: null, active: true });
 
   async function refresh() {
     setLoading(true);
     setError('');
     try {
-      const [blockData, fixedData] = await Promise.all([
+      const [blockData, fixedData, leafletData] = await Promise.all([
         listAvailabilityBlocks({ activeOnly: false }),
-        listFixedExcursions({ activeOnly: false })
+        listFixedExcursions({ activeOnly: false }),
+        listMonthlyLeaflets({ activeOnly: false })
       ]);
       setBlocks(blockData);
       setFixedExcursions(fixedData);
+      setLeaflets(leafletData);
     } catch (err) {
       setError(err?.message || 'Could not load calendar data.');
     } finally {
@@ -2984,6 +3650,10 @@ function AvailabilityPage({ lang, session }) {
 
   function updateFixed(field, value) {
     setFixedForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateLeaflet(field, value) {
+    setLeafletForm((current) => ({ ...current, [field]: value }));
   }
 
   async function submit(event) {
@@ -3023,11 +3693,31 @@ function AvailabilityPage({ lang, session }) {
     try {
       const filePayload = fixedForm.blockedDatesFile ? await uploadBlockedDatesFile(fixedForm.blockedDatesFile, session.user.id) : {};
       await createFixedExcursion({ ...fixedForm, ...filePayload, created_by: session.user.id, updated_by: session.user.id });
-      setFixedForm({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
+      setFixedForm({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', leaflet_id: '', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
       setFeedback(adminCopy(lang, 'Escursione fissa creata.', 'Fixed excursion created.'));
       refresh();
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Escursione fissa non salvata.', 'Fixed excursion not saved.'));
+    }
+  }
+
+
+  async function submitLeaflet(event) {
+    event.preventDefault();
+    setError('');
+    setFeedback('');
+    if (!leafletForm.month || !leafletForm.year || !leafletForm.file) {
+      setError(adminCopy(lang, 'Mese, anno e file sono obbligatori.', 'Month, year, and file are required.'));
+      return;
+    }
+    try {
+      const filePayload = await uploadMonthlyLeafletFile(leafletForm.file, session.user.id);
+      await createMonthlyLeaflet({ ...leafletForm, ...filePayload, created_by: session.user.id, updated_by: session.user.id });
+      setLeafletForm({ month: String(new Date().getMonth() + 1), year: String(new Date().getFullYear()), title_it: '', title_en: '', file: null, active: true });
+      setFeedback(adminCopy(lang, 'Calendario mensile caricato.', 'Monthly leaflet uploaded.'));
+      refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Calendario mensile non salvato.', 'Monthly leaflet not saved.'));
     }
   }
 
@@ -3043,6 +3733,7 @@ function AvailabilityPage({ lang, session }) {
       <div className="mode-toggle admin-tabs" role="tablist" aria-label="Calendar admin tabs">
         <button type="button" className={tab === 'blocks' ? 'active' : ''} onClick={() => setTab('blocks')}>{adminCopy(lang, 'Blocchi disponibilità', 'Availability blocks')}</button>
         <button type="button" className={tab === 'fixed' ? 'active' : ''} onClick={() => setTab('fixed')}>{adminCopy(lang, 'Escursioni fisse', 'Fixed excursions')}</button>
+        <button type="button" className={tab === 'leaflets' ? 'active' : ''} onClick={() => setTab('leaflets')}>{adminCopy(lang, 'Calendari mensili', 'Monthly leaflets')}</button>
       </div>
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
@@ -3065,7 +3756,40 @@ function AvailabilityPage({ lang, session }) {
             <div className="admin-panel-header"><h2>{adminCopy(lang, 'Blocchi esistenti', 'Existing blocks')}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
             {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : blocks.length === 0 ? <p>{adminCopy(lang, 'Nessun blocco salvato.', 'No saved blocks.')}</p> : (
               <div className="availability-block-list">
-                {blocks.map((block) => <AvailabilityBlockCard key={block.id} block={block} lang={lang} userId={session.user.id} onChanged={(message) => { setFeedback(message); refresh(); }} />)}
+                {blocks.filter((block) => block.active !== false).map((block) => <AvailabilityBlockCard key={block.id} block={block} lang={lang} userId={session.user.id} onChanged={(message) => { setFeedback(message); refresh(); }} />)}
+                <details className="admin-archive-details">
+                  <summary><span>{adminCopy(lang, 'Archivio', 'Archive')}</span><strong>{blocks.filter((block) => block.active === false).length}</strong></summary>
+                  {blocks.filter((block) => block.active === false).length === 0 ? <p className="small-note">{adminCopy(lang, 'Nessun blocco archiviato.', 'No archived blocks.')}</p> : blocks.filter((block) => block.active === false).map((block) => <AvailabilityBlockCard key={block.id} block={block} lang={lang} userId={session.user.id} onChanged={(message) => { setFeedback(message); refresh(); }} />)}
+                </details>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : tab === 'leaflets' ? (
+        <div className="admin-two-column availability-columns">
+          <section className="admin-panel">
+            <h2>{adminCopy(lang, 'Aggiungi calendario mensile', 'Add monthly leaflet')}</h2>
+            <p className="small-note">{adminCopy(lang, 'Carica un PDF o immagine mensile e poi collega le date fisse dal tab Escursioni fisse.', 'Upload a monthly PDF or image, then link fixed dates from the Fixed excursions tab.')}</p>
+            <form className="admin-form-grid" onSubmit={submitLeaflet}>
+              <AdminInput label={adminCopy(lang, 'Mese', 'Month')} type="number" value={leafletForm.month} onChange={(value) => updateLeaflet('month', value)} />
+              <AdminInput label={adminCopy(lang, 'Anno', 'Year')} type="number" value={leafletForm.year} onChange={(value) => updateLeaflet('year', value)} />
+              <AdminInput label="Title IT" value={leafletForm.title_it} onChange={(value) => updateLeaflet('title_it', value)} />
+              <AdminInput label="Title EN" value={leafletForm.title_en} onChange={(value) => updateLeaflet('title_en', value)} />
+              <label className="admin-field full"><span>{adminCopy(lang, 'File calendario / leaflet', 'Calendar / leaflet file')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => updateLeaflet('file', event.target.files?.[0] || null)} /></label>
+              {leafletForm.file && <p className="small-note full">{adminCopy(lang, 'File selezionato', 'Selected file')}: {leafletForm.file.name}</p>}
+              <label className="check-field"><input type="checkbox" checked={leafletForm.active} onChange={(event) => updateLeaflet('active', event.target.checked)} /> {adminCopy(lang, 'Attivo', 'Active')}</label>
+              <div className="modal-actions full"><button className="button primary" type="submit">{adminCopy(lang, 'Salva calendario mensile', 'Save monthly leaflet')}</button></div>
+            </form>
+          </section>
+          <section className="admin-panel">
+            <div className="admin-panel-header"><h2>{adminCopy(lang, 'Calendari caricati', 'Uploaded leaflets')}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
+            {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : leaflets.length === 0 ? <p>{adminCopy(lang, 'Nessun calendario mensile salvato.', 'No monthly leaflet saved.')}</p> : (
+              <div className="availability-block-list">
+                {leaflets.filter((leaflet) => leaflet.active !== false).map((leaflet) => <MonthlyLeafletCard key={leaflet.id} item={leaflet} lang={lang} userId={session.user.id} onChanged={(message) => { setFeedback(message); refresh(); }} />)}
+                <details className="admin-archive-details">
+                  <summary><span>{adminCopy(lang, 'Archivio', 'Archive')}</span><strong>{leaflets.filter((leaflet) => leaflet.active === false).length}</strong></summary>
+                  {leaflets.filter((leaflet) => leaflet.active === false).length === 0 ? <p className="small-note">{adminCopy(lang, 'Nessun calendario archiviato.', 'No archived leaflet.')}</p> : leaflets.filter((leaflet) => leaflet.active === false).map((leaflet) => <MonthlyLeafletCard key={leaflet.id} item={leaflet} lang={lang} userId={session.user.id} onChanged={(message) => { setFeedback(message); refresh(); }} />)}
+                </details>
               </div>
             )}
           </section>
@@ -3080,6 +3804,7 @@ function AvailabilityPage({ lang, session }) {
               <AdminInput label={adminCopy(lang, 'Ora inizio', 'Start time')} type="time" value={fixedForm.start_time} onChange={(value) => updateFixed('start_time', value)} />
               <AdminInput label={adminCopy(lang, 'Ora fine opzionale', 'Optional end time')} type="time" value={fixedForm.end_time} onChange={(value) => updateFixed('end_time', value)} />
               <AdminSelect label={adminCopy(lang, 'Esperienza', 'Experience')} value={fixedForm.experience_id} onChange={(value) => updateFixed('experience_id', value)} options={['etna-premium', 'etna-learning', 'etna-live', 'etna-stories']} formatter={(value) => adminExperienceLabel(value, lang)} />
+              {leaflets.length > 0 && <AdminSelect label={adminCopy(lang, 'Calendario mensile collegato', 'Linked monthly leaflet')} value={fixedForm.leaflet_id} onChange={(value) => updateFixed('leaflet_id', value)} options={['', ...leaflets.map((leaflet) => leaflet.id)]} formatter={(value) => value ? leafletLabel(leaflets.find((leaflet) => leaflet.id === value), lang) : adminCopy(lang, 'Nessuno', 'None')} />}
               <AdminInput label={adminCopy(lang, 'Capienza', 'Capacity')} type="number" value={fixedForm.capacity} onChange={(value) => updateFixed('capacity', value)} />
               <AdminInput label="Title IT" value={fixedForm.title_it} onChange={(value) => updateFixed('title_it', value)} />
               <AdminInput label="Title EN" value={fixedForm.title_en} onChange={(value) => updateFixed('title_en', value)} />
@@ -3101,13 +3826,54 @@ function AvailabilityPage({ lang, session }) {
             <div className="admin-panel-header"><h2>{adminCopy(lang, 'Escursioni fisse', 'Fixed excursions')}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
             {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : fixedExcursions.length === 0 ? <p>{adminCopy(lang, 'Nessuna escursione fissa salvata.', 'No fixed excursions saved.')}</p> : (
               <div className="availability-block-list">
-                {fixedExcursions.map((item) => <FixedExcursionCard key={item.id} item={item} lang={lang} userId={session.user.id} onChanged={(message) => { setFeedback(message); refresh(); }} />)}
+                {fixedExcursions.filter((item) => item.active !== false && (!item.date || item.date >= todayIso())).map((item) => <FixedExcursionCard key={item.id} item={item} lang={lang} userId={session.user.id} onChanged={(message) => { setFeedback(message); refresh(); }} />)}
+                <details className="admin-archive-details">
+                  <summary><span>{adminCopy(lang, 'Esperienze passate / Archivio', 'Past experiences / Archive')}</span><strong>{fixedExcursions.filter((item) => item.active === false || (item.date && item.date < todayIso())).length}</strong></summary>
+                  {fixedExcursions.filter((item) => item.active === false || (item.date && item.date < todayIso())).length === 0 ? <p className="small-note">{adminCopy(lang, 'Nessuna escursione passata o archiviata.', 'No past or archived excursions.')}</p> : fixedExcursions.filter((item) => item.active === false || (item.date && item.date < todayIso())).map((item) => <FixedExcursionCard key={item.id} item={item} lang={lang} userId={session.user.id} onChanged={(message) => { setFeedback(message); refresh(); }} />)}
+                </details>
               </div>
             )}
           </section>
         </div>
       )}
     </section>
+  );
+}
+
+
+function leafletLabel(item, lang) {
+  if (!item) return '-';
+  const title = lang === 'it' ? item.title_it || item.title_en : item.title_en || item.title_it;
+  const base = `${String(item.month).padStart(2, '0')}/${item.year}`;
+  return title ? `${base} · ${title}` : base;
+}
+
+function MonthlyLeafletCard({ item, lang, userId, onChanged }) {
+  const [error, setError] = useState('');
+  async function deactivate() {
+    setError('');
+    try {
+      await deactivateMonthlyLeaflet(item.id, userId);
+      onChanged(adminCopy(lang, 'Calendario mensile disattivato.', 'Monthly leaflet deactivated.'));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Disattivazione non riuscita.', 'Deactivate failed.'));
+    }
+  }
+  const isImage = item.file_type?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(item.file_url || '');
+  return (
+    <article className={`availability-block-card ${item.active ? '' : 'inactive'}`}>
+      <div className="request-card-head">
+        <div><h3>{leafletLabel(item, lang)}</h3><p>{item.file_name || '-'}</p></div>
+        <span className={`status-pill ${item.active ? 'accepted' : 'cancelled'}`}>{item.active ? adminCopy(lang, 'Attivo', 'Active') : adminCopy(lang, 'Inattivo', 'Inactive')}</span>
+      </div>
+      {item.file_url && (isImage ? <img className="admin-card-preview-image" src={item.file_url} alt={leafletLabel(item, lang)} loading="lazy" /> : <a className="button secondary" href={item.file_url} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri PDF / file', 'Open PDF / file')}</a>)}
+      <p className="small-note">{adminCopy(lang, 'Collega le singole date usando il campo calendario mensile nel form escursione fissa.', 'Link individual dates through the monthly leaflet field in the fixed excursion form.')}</p>
+      {error && <div className="admin-alert error">{error}</div>}
+      <div className="request-actions">
+        {item.file_url && <a className="button secondary" href={item.file_url} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri file', 'Open file')}</a>}
+        {item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}
+      </div>
+    </article>
   );
 }
 
@@ -3285,7 +4051,26 @@ function App() {
   const [lang, setLang] = useState('it');
   const [formState, setFormState] = useState({ language: 'it', requestType: 'private', partyType: 'solo', adults: '1', children: '0', message: i18n.it.defaultMessage });
   const [activePage, setActivePage] = useState('home');
+  const [siteMedia, setSiteMedia] = useState({});
+  const [siteContent, setSiteContent] = useState({});
   const contactRef = useRef(null);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let active = true;
+    Promise.all([listSiteMedia({ activeOnly: true }), loadPublicSiteContent()])
+      .then(([mediaItems, contentItems]) => {
+        if (!active) return;
+        setSiteMedia(buildMediaMap(mediaItems));
+        setSiteContent(buildSiteContentMap(contentItems));
+      })
+      .catch(() => {
+        if (!active) return;
+        setSiteMedia({});
+        setSiteContent({});
+      });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -3319,27 +4104,22 @@ function App() {
   function renderPublicPage() {
     switch (activePage) {
       case 'experiences':
-        return <ExperienceAccordion lang={lang} fillForm={fillForm} />;
+        return <ExperienceAccordion lang={lang} fillForm={fillForm} siteMedia={siteMedia} />;
       case 'upcoming':
         return <PublicUpcomingExcursions lang={lang} fillForm={fillForm} />;
       case 'partnerships':
         return <PartnershipsPage lang={lang} />;
       case 'about':
-        return <Team lang={lang} />;
+        return <Team lang={lang} siteMedia={siteMedia} />;
       case 'mission':
-        return <MissionPage lang={lang} />;
+        return <MissionPage lang={lang} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'reviews':
-        return <ReviewsPage lang={lang} />;
+        return <ReviewsPage lang={lang} siteContent={siteContent} />;
       case 'contact':
-        return (
-          <>
-            <Questionnaire lang={lang} fillForm={fillForm} />
-            <ContactForm lang={lang} formState={formState} setFormState={setFormState} />
-          </>
-        );
+        return <ContactForm lang={lang} formState={formState} setFormState={setFormState} />;
       case 'home':
       default:
-        return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} />;
+        return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} siteMedia={siteMedia} siteContent={siteContent} />;
     }
   }
 

@@ -108,6 +108,12 @@ alter table public.booking_requests add column if not exists review_submitted bo
 alter table public.booking_requests add column if not exists review_submitted_at timestamptz null;
 alter table public.booking_requests add column if not exists removed_at timestamptz null;
 alter table public.booking_requests add column if not exists removed_by uuid references auth.users(id);
+alter table public.booking_requests add column if not exists archived_at timestamptz null;
+alter table public.booking_requests add column if not exists archived_by uuid references auth.users(id);
+alter table public.booking_requests add column if not exists archive_reason text;
+alter table public.booking_requests add column if not exists cancelled_at timestamptz null;
+alter table public.booking_requests add column if not exists cancelled_by uuid references auth.users(id);
+alter table public.booking_requests add column if not exists completed_at timestamptz null;
 
 create index if not exists booking_requests_status_idx on public.booking_requests(status);
 create index if not exists booking_requests_requested_date_idx on public.booking_requests(requested_date);
@@ -115,6 +121,7 @@ create index if not exists booking_requests_created_at_idx on public.booking_req
 create index if not exists booking_requests_source_idx on public.booking_requests(source);
 create index if not exists booking_requests_request_type_idx on public.booking_requests(request_type);
 create index if not exists booking_requests_fixed_excursion_idx on public.booking_requests(fixed_excursion_id);
+create index if not exists booking_requests_archive_idx on public.booking_requests(archived_at) where archived_at is not null;
 create unique index if not exists booking_requests_booking_code_idx on public.booking_requests(booking_code) where booking_code is not null;
 
 drop trigger if exists booking_requests_set_updated_at on public.booking_requests;
@@ -145,11 +152,48 @@ create table if not exists public.availability_blocks (
 
 create index if not exists availability_blocks_date_idx on public.availability_blocks(date);
 create index if not exists availability_blocks_active_idx on public.availability_blocks(active);
+alter table public.availability_blocks add column if not exists archived_at timestamptz null;
+alter table public.availability_blocks add column if not exists archived_by uuid references auth.users(id);
+alter table public.availability_blocks add column if not exists archive_reason text;
+
 create index if not exists availability_blocks_experience_idx on public.availability_blocks(experience_id);
+create index if not exists availability_blocks_archive_idx on public.availability_blocks(archived_at) where archived_at is not null;
 
 drop trigger if exists availability_blocks_set_updated_at on public.availability_blocks;
 create trigger availability_blocks_set_updated_at
 before update on public.availability_blocks
+for each row execute function public.set_updated_at();
+
+
+-- -----------------------------------------------------------------------------
+-- Monthly availability leaflets: owner-uploaded month files linked to fixed dates
+-- -----------------------------------------------------------------------------
+create table if not exists public.monthly_availability_leaflets (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  month integer not null,
+  year integer not null,
+  title_it text,
+  title_en text,
+  file_url text,
+  file_path text,
+  file_name text,
+  file_type text,
+  active boolean not null default true,
+  created_by uuid references auth.users(id),
+  updated_by uuid references auth.users(id),
+  constraint monthly_availability_leaflets_month_check check (month between 1 and 12),
+  constraint monthly_availability_leaflets_year_check check (year between 2024 and 2100),
+  constraint monthly_availability_leaflets_file_url_check check (file_url is null or file_url ~* '^https?://')
+);
+
+create index if not exists monthly_availability_leaflets_month_year_idx on public.monthly_availability_leaflets(year, month);
+create index if not exists monthly_availability_leaflets_active_idx on public.monthly_availability_leaflets(active);
+
+drop trigger if exists monthly_availability_leaflets_set_updated_at on public.monthly_availability_leaflets;
+create trigger monthly_availability_leaflets_set_updated_at
+before update on public.monthly_availability_leaflets
 for each row execute function public.set_updated_at();
 
 -- -----------------------------------------------------------------------------
@@ -205,9 +249,22 @@ alter table public.fixed_excursions add column if not exists blocked_dates_file_
 alter table public.fixed_excursions add column if not exists note_it text;
 alter table public.fixed_excursions add column if not exists note_en text;
 
+alter table public.fixed_excursions add column if not exists leaflet_id uuid references public.monthly_availability_leaflets(id);
+alter table public.fixed_excursions add column if not exists status text not null default 'available';
+alter table public.fixed_excursions add column if not exists public_visibility boolean not null default true;
+alter table public.fixed_excursions add column if not exists archived_at timestamptz null;
+alter table public.fixed_excursions add column if not exists archived_by uuid references auth.users(id);
+alter table public.fixed_excursions add column if not exists archive_reason text;
+alter table public.fixed_excursions add column if not exists cancelled_at timestamptz null;
+alter table public.fixed_excursions add column if not exists cancelled_by uuid references auth.users(id);
+alter table public.fixed_excursions add column if not exists completed_at timestamptz null;
+
 create index if not exists fixed_excursions_date_idx on public.fixed_excursions(date);
 create index if not exists fixed_excursions_active_idx on public.fixed_excursions(active);
 create index if not exists fixed_excursions_experience_idx on public.fixed_excursions(experience_id);
+create index if not exists fixed_excursions_leaflet_idx on public.fixed_excursions(leaflet_id);
+create index if not exists fixed_excursions_status_idx on public.fixed_excursions(status);
+create index if not exists fixed_excursions_archive_idx on public.fixed_excursions(archived_at) where archived_at is not null;
 
 drop trigger if exists fixed_excursions_set_updated_at on public.fixed_excursions;
 create trigger fixed_excursions_set_updated_at
@@ -343,6 +400,11 @@ create table if not exists public.partnerships (
   constraint partnerships_image_url_check check (image_url is null or image_url ~* '^https?://')
 );
 
+
+alter table public.partnerships add column if not exists image_path text;
+alter table public.partnerships add column if not exists image_name text;
+alter table public.partnerships add column if not exists image_type text;
+
 create index if not exists partnerships_active_idx on public.partnerships(active);
 create index if not exists partnerships_display_order_idx on public.partnerships(display_order, name);
 
@@ -377,6 +439,107 @@ begin
   end if;
 end;
 $$;
+
+
+-- -----------------------------------------------------------------------------
+-- Site media: admin-managed public images, videos, and documents
+-- -----------------------------------------------------------------------------
+create table if not exists public.site_media (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  media_key text unique not null,
+  label_it text,
+  label_en text,
+  file_url text,
+  file_path text,
+  file_name text,
+  file_type text,
+  media_kind text not null default 'image',
+  alt_it text,
+  alt_en text,
+  active boolean not null default true,
+  updated_by uuid references auth.users(id),
+  constraint site_media_kind_check check (media_kind in ('image', 'video', 'document')),
+  constraint site_media_file_url_check check (file_url is null or file_url ~* '^https?://')
+);
+
+create index if not exists site_media_key_idx on public.site_media(media_key);
+create index if not exists site_media_active_idx on public.site_media(active);
+
+drop trigger if exists site_media_set_updated_at on public.site_media;
+create trigger site_media_set_updated_at
+before update on public.site_media
+for each row execute function public.set_updated_at();
+
+
+-- -----------------------------------------------------------------------------
+-- Site content: admin-managed bilingual public text
+-- -----------------------------------------------------------------------------
+create table if not exists public.site_content (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  content_key text unique not null,
+  section text not null,
+  label_it text,
+  label_en text,
+  value_it text,
+  value_en text,
+  default_it text,
+  default_en text,
+  content_type text not null default 'text',
+  active boolean not null default true,
+  updated_by uuid references auth.users(id),
+  constraint site_content_type_check check (content_type in ('text', 'textarea'))
+);
+
+create index if not exists site_content_key_idx on public.site_content(content_key);
+create index if not exists site_content_section_idx on public.site_content(section);
+create index if not exists site_content_active_idx on public.site_content(active);
+
+drop trigger if exists site_content_set_updated_at on public.site_content;
+create trigger site_content_set_updated_at
+before update on public.site_content
+for each row execute function public.set_updated_at();
+
+-- -----------------------------------------------------------------------------
+-- Finance ledger: admin-only income and expense tracker
+-- -----------------------------------------------------------------------------
+create table if not exists public.finance_entries (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  entry_date date not null,
+  type text not null check (type in ('income', 'expense')),
+  amount numeric(12,2) not null check (amount >= 0),
+  currency text not null default 'EUR',
+  title text not null,
+  description text,
+  category text,
+  payment_method text,
+  booking_request_id uuid null references public.booking_requests(id),
+  fixed_excursion_id uuid null references public.fixed_excursions(id),
+  leaflet_id uuid null references public.monthly_availability_leaflets(id),
+  created_by uuid references auth.users(id),
+  updated_by uuid references auth.users(id),
+  archived_at timestamptz,
+  archived_by uuid references auth.users(id),
+  archive_reason text,
+  active boolean not null default true
+);
+
+create index if not exists finance_entries_date_idx on public.finance_entries(entry_date desc);
+create index if not exists finance_entries_type_idx on public.finance_entries(type);
+create index if not exists finance_entries_active_idx on public.finance_entries(active);
+create index if not exists finance_entries_booking_idx on public.finance_entries(booking_request_id);
+create index if not exists finance_entries_fixed_idx on public.finance_entries(fixed_excursion_id);
+create index if not exists finance_entries_leaflet_idx on public.finance_entries(leaflet_id);
+
+drop trigger if exists finance_entries_set_updated_at on public.finance_entries;
+create trigger finance_entries_set_updated_at
+before update on public.finance_entries
+for each row execute function public.set_updated_at();
 
 -- -----------------------------------------------------------------------------
 -- Optional owner activity log
@@ -428,6 +591,10 @@ select
   fe.blocked_dates_file_url,
   fe.blocked_dates_file_name,
   fe.blocked_dates_file_type,
+  fe.blocked_dates_file_path,
+  fe.leaflet_id,
+  fe.status,
+  fe.public_visibility,
   fe.capacity,
   fe.note_it,
   fe.note_en,
@@ -439,6 +606,8 @@ left join public.booking_requests br
   on br.fixed_excursion_id = fe.id
   and br.request_type = 'fixed'
 where fe.active = true
+  and fe.public_visibility = true
+  and fe.status = 'available'
 group by fe.id;
 
 drop view if exists public.public_partnerships;
@@ -450,6 +619,9 @@ select
   description_en,
   website_url,
   image_url,
+  image_path,
+  image_name,
+  image_type,
   category_it,
   category_en,
   active,
@@ -457,6 +629,43 @@ select
 from public.partnerships
 where active = true;
 
+
+drop view if exists public.public_site_media;
+create view public.public_site_media as
+select
+  id,
+  media_key,
+  label_it,
+  label_en,
+  file_url,
+  file_path,
+  file_name,
+  file_type,
+  media_kind,
+  alt_it,
+  alt_en,
+  active
+from public.site_media
+where active = true
+  and file_url is not null;
+
+
+drop view if exists public.public_site_content;
+create view public.public_site_content as
+select
+  id,
+  content_key,
+  section,
+  label_it,
+  label_en,
+  value_it,
+  value_en,
+  default_it,
+  default_en,
+  content_type,
+  active
+from public.site_content
+where active = true;
 
 drop view if exists public.public_reviews;
 create view public.public_reviews as
@@ -480,7 +689,7 @@ values (
   'vulcaniq-public-assets',
   true,
   10485760,
-  array['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+  array['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4']
 )
 on conflict (id) do update set
   public = excluded.public,
@@ -494,7 +703,11 @@ alter table public.admin_profiles enable row level security;
 alter table public.booking_requests enable row level security;
 alter table public.availability_blocks enable row level security;
 alter table public.fixed_excursions enable row level security;
+alter table public.monthly_availability_leaflets enable row level security;
 alter table public.partnerships enable row level security;
+alter table public.site_media enable row level security;
+alter table public.site_content enable row level security;
+alter table public.finance_entries enable row level security;
 alter table public.reviews enable row level security;
 alter table public.activity_log enable row level security;
 
@@ -597,6 +810,30 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+
+-- monthly_availability_leaflets: owners manage table. Public sees only linked safe fixed excursions/files.
+drop policy if exists "Admins can read monthly leaflets" on public.monthly_availability_leaflets;
+create policy "Admins can read monthly leaflets"
+on public.monthly_availability_leaflets
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "Admins can insert monthly leaflets" on public.monthly_availability_leaflets;
+create policy "Admins can insert monthly leaflets"
+on public.monthly_availability_leaflets
+for insert
+to authenticated
+with check (public.is_admin());
+
+drop policy if exists "Admins can update monthly leaflets" on public.monthly_availability_leaflets;
+create policy "Admins can update monthly leaflets"
+on public.monthly_availability_leaflets
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
 -- partnerships: owners manage table. Public reads only the public_partnerships view.
 drop policy if exists "Admins can read partnerships" on public.partnerships;
 create policy "Admins can read partnerships"
@@ -615,6 +852,77 @@ with check (public.is_admin());
 drop policy if exists "Admins can update partnerships" on public.partnerships;
 create policy "Admins can update partnerships"
 on public.partnerships
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+
+-- site_media: owners manage table. Public reads only public_site_media view.
+drop policy if exists "Admins can read site media" on public.site_media;
+create policy "Admins can read site media"
+on public.site_media
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "Admins can insert site media" on public.site_media;
+create policy "Admins can insert site media"
+on public.site_media
+for insert
+to authenticated
+with check (public.is_admin());
+
+drop policy if exists "Admins can update site media" on public.site_media;
+create policy "Admins can update site media"
+on public.site_media
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+
+-- site_content: owners manage table. Public reads only active public_site_content view.
+drop policy if exists "Admins can read site content" on public.site_content;
+create policy "Admins can read site content"
+on public.site_content
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "Admins can insert site content" on public.site_content;
+create policy "Admins can insert site content"
+on public.site_content
+for insert
+to authenticated
+with check (public.is_admin());
+
+drop policy if exists "Admins can update site content" on public.site_content;
+create policy "Admins can update site content"
+on public.site_content
+for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+-- finance_entries: admin-only ledger. No public access or public-safe view.
+drop policy if exists "Admins can read finance entries" on public.finance_entries;
+create policy "Admins can read finance entries"
+on public.finance_entries
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "Admins can insert finance entries" on public.finance_entries;
+create policy "Admins can insert finance entries"
+on public.finance_entries
+for insert
+to authenticated
+with check (public.is_admin());
+
+drop policy if exists "Admins can update finance entries" on public.finance_entries;
+create policy "Admins can update finance entries"
+on public.finance_entries
 for update
 to authenticated
 using (public.is_admin())
@@ -693,6 +1001,8 @@ grant usage on schema public to anon, authenticated;
 grant select on public.public_availability_blocks to anon, authenticated;
 grant select on public.public_fixed_excursions to anon, authenticated;
 grant select on public.public_partnerships to anon, authenticated;
+grant select on public.public_site_media to anon, authenticated;
+grant select on public.public_site_content to anon, authenticated;
 grant select on public.public_reviews to anon, authenticated;
 grant execute on function public.submit_public_review(text, text, text, integer, text) to anon, authenticated;
 grant insert on public.booking_requests to anon, authenticated;
@@ -700,7 +1010,11 @@ grant select, insert, update on public.admin_profiles to authenticated;
 grant select, insert, update on public.booking_requests to authenticated;
 grant select, insert, update on public.availability_blocks to authenticated;
 grant select, insert, update on public.fixed_excursions to authenticated;
+grant select, insert, update on public.monthly_availability_leaflets to authenticated;
 grant select, insert, update on public.partnerships to authenticated;
+grant select, insert, update on public.site_media to authenticated;
+grant select, insert, update on public.site_content to authenticated;
+grant select, insert, update on public.finance_entries to authenticated;
 grant select, insert, update on public.reviews to authenticated;
 grant select, insert on public.activity_log to authenticated;
 
@@ -715,4 +1029,4 @@ notify pgrst, 'reload schema';
 -- insert into public.admin_profiles (user_id, full_name, role, active)
 -- values
 --   ('00000000-0000-0000-0000-000000000000', 'Leonardo Chiavetta', 'owner', true),
---   ('11111111-1111-1111-1111-111111111111', 'Deborah', 'owner', true);
+--   ('11111111-1111-1111-1111-111111111111', 'Deborah Giusti', 'owner', true);
