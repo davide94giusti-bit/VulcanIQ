@@ -3379,3 +3379,284 @@ h3 {
     padding: 10px;
   }
 }
+
+/* Mobile fix pass: calendar, reviews, modal, request-form and mission stability */
+html,
+body,
+#root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.simplified-calendar-header {
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+}
+
+.simplified-calendar-header .calendar-month-title {
+  margin: 0;
+  min-width: 0;
+  text-align: center;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.selected-date-heading-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-bottom: 8px;
+  min-width: 0;
+}
+
+.selected-date-heading-row h3 {
+  margin: 0;
+  color: var(--night);
+  letter-spacing: -0.045em;
+}
+
+.selected-date-heading-row span {
+  color: var(--basalt);
+  font-size: clamp(1.05rem, 2vw, 1.35rem);
+  font-weight: 900;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.selected-excursion-title {
+  margin: 6px 0 14px;
+  color: var(--night);
+  font-size: clamp(1.18rem, 2.6vw, 1.65rem);
+  font-weight: 950;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+}
+
+.blocked-dates-attachment {
+  overflow: hidden;
+}
+
+.blocked-dates-attachment > a {
+  display: block;
+  min-width: 0;
+}
+
+.blocked-dates-admin-meta {
+  display: grid;
+  gap: 2px;
+}
+
+.review-card-info-header {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(13, 22, 38, 0.08);
+}
+
+.review-rating-stars {
+  line-height: 1;
+}
+
+.review-info-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: var(--basalt);
+  font-size: 0.88rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.review-info-list span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.review-info-list b {
+  color: var(--night);
+}
+
+.modal-close-button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  border: 1px solid rgba(10, 18, 35, 0.12);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.84);
+  color: var(--night);
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.contact-form,
+.contact-form *,
+.request-form-card,
+.request-form-card * {
+  box-sizing: border-box;
+}
+
+.contact-form {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.contact-section-grid > *,
+.form-two-cols > *,
+.cta-row > *,
+.checkbox-stack > *,
+.inline-checkboxes > * {
+  min-width: 0;
+}
+
+.contact-form label,
+.contact-form p,
+.contact-form span,
+.contact-form textarea,
+.contact-form .small-note,
+.contact-form .form-status,
+.contact-form .selected-excursion-summary {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.contact-form textarea {
+  display: block;
+  min-width: 0;
+}
+
+.inline-checkboxes label,
+.checkbox-stack label,
+.check-field {
+  align-items: flex-start;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.inline-checkboxes input,
+.checkbox-stack input,
+.check-field input {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.contact-form .cta-row {
+  align-items: stretch;
+}
+
+.contact-form .cta-row .contact-actions,
+.contact-form .cta-row .email-action-wrap,
+.contact-form .cta-row .button {
+  min-width: 0;
+}
+
+.mission-redesign,
+.mission-balanced-layout,
+.mission-top-row,
+.mission-bottom-row,
+.mission-card-stack,
+.mission-card,
+.mission-image-feature,
+.vision-copy-card {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.mobile-sticky-bar {
+  bottom: max(10px, env(safe-area-inset-bottom));
+}
+
+@media (max-width: 768px) {
+  .public-page-shell,
+  main.public-page-shell {
+    padding-bottom: calc(120px + env(safe-area-inset-bottom));
+  }
+
+  .footer {
+    padding-bottom: calc(150px + env(safe-area-inset-bottom));
+  }
+
+  #contact,
+  #upcoming,
+  #reviews,
+  #mission {
+    padding-bottom: calc(92px + env(safe-area-inset-bottom));
+  }
+
+  .mission-redesign,
+  .mission-redesign *,
+  .mission-balanced-layout,
+  .mission-balanced-layout *,
+  .mission-image-feature,
+  .mission-image-feature * {
+    transform: none !important;
+    animation: none !important;
+    will-change: auto !important;
+  }
+
+  .mission-redesign {
+    contain: layout paint;
+  }
+
+  .balanced-mission-card,
+  .mission-copy-card,
+  .vision-copy-card,
+  .centered-mission-image,
+  .mission-image-only-row .mission-image-feature {
+    max-width: 100%;
+  }
+
+  .date-detail-panel,
+  .compact-upcoming-card,
+  .contact-form,
+  .review-modal {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .selected-date-heading-row span {
+    white-space: normal;
+  }
+
+  .review-modal {
+    width: min(100% - 22px, 720px);
+    max-height: calc(100dvh - 44px);
+    overflow-y: auto;
+  }
+
+  .admin-modal-header {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 16px;
+  }
+
+  .modal-close-button {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 620px) {
+  .simplified-calendar-header {
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
+  }
+
+  .simplified-calendar-header .calendar-month-title {
+    font-size: clamp(1.25rem, 7vw, 1.75rem);
+  }
+
+  .review-info-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .contact-form .cta-row .contact-actions.compact {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+}

@@ -194,6 +194,9 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     upcomingExcursions: 'Prossime escursioni',
     upcomingEmpty: 'Al momento non ci sono escursioni programmate. Contattaci per organizzare un’esperienza privata.',
     dateLabel: 'Data',
+    bookedBy: 'Prenotato da',
+    reviewDateLabel: 'Data',
+    guideLabel: 'Guida',
     timeLabel: 'Orario',
     experienceLabel: 'Esperienza',
     meetingPoint: 'Punto d’incontro',
@@ -252,7 +255,7 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     excursionCalendar: 'Calendario escursioni',
     availableDates: 'Date disponibili',
     unavailableDatesLegend: 'Date non disponibili',
-    dateDetails: 'Dettagli della data',
+    dateDetails: 'Dettagli',
     noExcursionsOnDate: 'Nessuna escursione fissa in questa data.',
     publishReview: 'Pubblica una recensione',
     missionHero: 'Non accompagniamo solo persone sull’Etna. Creiamo un modo più attento di incontrarlo.',
@@ -387,6 +390,9 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     upcomingExcursions: 'Upcoming excursions',
     upcomingEmpty: 'There are currently no scheduled excursions. Contact us to arrange a private experience.',
     dateLabel: 'Date',
+    bookedBy: 'Booked by',
+    reviewDateLabel: 'Date',
+    guideLabel: 'Guide',
     timeLabel: 'Time',
     experienceLabel: 'Experience',
     meetingPoint: 'Meeting point',
@@ -445,7 +451,7 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     excursionCalendar: 'Excursion calendar',
     availableDates: 'Available dates',
     unavailableDatesLegend: 'Unavailable dates',
-    dateDetails: 'Date details',
+    dateDetails: 'Details',
     noExcursionsOnDate: 'No fixed excursion on this date.',
     publishReview: 'Publish a review',
     missionHero: 'We do not simply guide people on Etna. We create a more mindful way to encounter it.',
@@ -1145,7 +1151,7 @@ function MissionPage({ lang, siteMedia, siteContent, editor }) {
 }
 
 
-function BlockedDatesAttachment({ item, lang }) {
+function BlockedDatesAttachment({ item, lang, publicView = true }) {
   const url = item?.blocked_dates_file_url;
   if (!url) return null;
 
@@ -1155,10 +1161,12 @@ function BlockedDatesAttachment({ item, lang }) {
 
   return (
     <div className="blocked-dates-attachment">
-      <div>
-        <strong>{text(lang, 'unavailableDates')}</strong>
-        <span>{name}</span>
-      </div>
+      {!publicView && (
+        <div className="blocked-dates-admin-meta">
+          <strong>{text(lang, 'unavailableDates')}</strong>
+          <span>{name}</span>
+        </div>
+      )}
       {isImage ? (
         <a href={url} target="_blank" rel="noopener noreferrer" aria-label={text(lang, 'openCalendarFile')}>
           <img src={url} alt={text(lang, 'blockedDatesCalendar')} loading="lazy" decoding="async" />
@@ -1295,13 +1303,14 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
     const meeting = fixedExcursionField(item, 'meeting_point', lang);
     const difficulty = fixedExcursionField(item, 'difficulty', lang);
     const price = fixedExcursionField(item, 'price_note', lang);
+    const timeRange = item.start_time ? `${String(item.start_time).slice(0, 5)}${item.end_time ? `–${String(item.end_time).slice(0, 5)}` : ''}` : text(lang, 'onRequest');
     return (
       <article className="upcoming-card compact-upcoming-card" key={item.id}>
-        <div className="upcoming-card-head">
-          <span className="date-badge">{formatDateForMessage(item.date, lang)}</span>
-          <span>{item.start_time ? `${String(item.start_time).slice(0, 5)}${item.end_time ? `-${String(item.end_time).slice(0, 5)}` : ''}` : text(lang, 'onRequest')}</span>
+        <div className="selected-date-heading-row">
+          <h3>{formatDateForMessage(item.date, lang)}</h3>
+          <span>{timeRange}</span>
         </div>
-        <h3>{title}</h3>
+        <h4 className="selected-excursion-title">{title}</h4>
         <FormattedDescription textValue={description || experienceById(item.experience_id).summary[lang]} />
         <dl className="public-details-grid">
           <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(item.experience_id, lang)}</dd></div>
@@ -1326,17 +1335,13 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
         {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : (
           <div className="public-calendar-layout">
             <article className="calendar-card public-excursion-calendar">
-              <div className="calendar-topline">
+              <div className="calendar-topline simplified-calendar-header">
                 <button type="button" onClick={() => changeMonth(-1)} aria-label={text(lang, 'previousMonth')}>‹</button>
-                <div>
-                  <span className="micro-label">{text(lang, 'excursionCalendar')}</span>
-                  <h3>{monthLabel(monthDate, lang)}</h3>
-                </div>
+                <h3 className="calendar-month-title">{monthLabel(monthDate, lang)}</h3>
                 <button type="button" onClick={() => changeMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
               </div>
               <div className="calendar-legend compact-legend">
                 <span><i className="legend-dot fixed" />{text(lang, 'availableDates')}</span>
-                <span><i className="legend-dot blocked" />{text(lang, 'unavailableDatesLegend')}</span>
               </div>
               <div className="weekdays" aria-hidden="true">
                 {(lang === 'it' ? ['L', 'M', 'M', 'G', 'V', 'S', 'D'] : ['M', 'T', 'W', 'T', 'F', 'S', 'S']).map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
@@ -1361,8 +1366,8 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
               </div>
             </article>
             <aside className="date-detail-panel">
-              <span className="micro-label">{text(lang, 'dateDetails')}</span>
-              <h3>{selectedDate ? formatDateForMessage(selectedDate, lang) : text(lang, 'dateDetails')}</h3>
+              <span className="micro-label details-label">{text(lang, 'dateDetails')}</span>
+              {selectedItems.length === 0 && <h3>{selectedDate ? formatDateForMessage(selectedDate, lang) : text(lang, 'dateDetails')}</h3>}
               {items.length === 0 ? (
                 <article className="empty-state-card"><p>{text(lang, 'upcomingEmpty')}</p><button className="button primary" type="button" onClick={() => fillForm({ requestType: 'private', scroll: true })}>{text(lang, 'contact')}</button></article>
               ) : selectedItems.length === 0 ? (
@@ -1484,6 +1489,19 @@ function ReviewsPage({ lang, siteContent, editor }) {
     return String(b.created_at || '').localeCompare(String(a.created_at || ''));
   });
 
+  function reviewDate(review) {
+    const raw = review.experience_date || review.excursion_date || review.submitted_at || review.created_at;
+    return raw ? formatDateForMessage(String(raw).slice(0, 10), lang) : '-';
+  }
+
+  function reviewGuide(review) {
+    return review.guide_name || review.guide || review.owner_name || 'Leonardo Chiavetta';
+  }
+
+  function reviewBookedBy(review) {
+    return review.reviewer_name || review.customer_name || review.booked_by || (lang === 'it' ? 'Ospite' : 'Guest');
+  }
+
   return (
     <section className="section compact-section" id="reviews">
       <div className="container reviews-panel redesigned-reviews-panel">
@@ -1504,9 +1522,15 @@ function ReviewsPage({ lang, siteContent, editor }) {
         <div className="reviews-grid-public balanced-reviews-grid">
           {sortedCards.map((review) => (
             <article className="review-card featured-review-card" key={review.id}>
-              <div className="stars" aria-label={`${review.rating || 0}/5`}>{'★'.repeat(review.rating || 5)}</div>
+              <header className="review-card-info-header">
+                <div className="stars review-rating-stars" aria-label={`${review.rating || 0}/5`}>{'★'.repeat(Number(review.rating) || 5)}</div>
+                <div className="review-info-list">
+                  <span><b>{text(lang, 'bookedBy')}:</b> {reviewBookedBy(review)}</span>
+                  <span><b>{text(lang, 'reviewDateLabel')}:</b> {reviewDate(review)}</span>
+                  <span><b>{text(lang, 'guideLabel')}:</b> {reviewGuide(review)}</span>
+                </div>
+              </header>
               <blockquote>{review.review_text}</blockquote>
-              <p className="review-author">{review.reviewer_name || 'Guest'} · {review.language || lang}{review.created_at ? ` · ${formatDateForMessage(String(review.created_at).slice(0, 10), lang)}` : ''}</p>
             </article>
           ))}
         </div>
@@ -1519,12 +1543,12 @@ function ReviewsPage({ lang, siteContent, editor }) {
                   <h2 id="reviewModalTitle">{text(lang, 'leaveReviewTitle')}</h2>
                   <p>{text(lang, 'leaveReviewIntro')}</p>
                 </div>
-                <button className="round-button" type="button" onClick={() => setModalOpen(false)}>{text(lang, 'close')}</button>
+                <button className="modal-close-button" type="button" onClick={() => setModalOpen(false)}>{text(lang, 'close')}</button>
               </div>
               <form className="review-form modal-review-form" onSubmit={submitReview}>
                 <label><span>{text(lang, 'bookingCode')}</span><input value={form.booking_code} onChange={(event) => update('booking_code', event.target.value)} required /></label>
                 <label><span>{text(lang, 'name')}</span><input value={form.reviewer_name} onChange={(event) => update('reviewer_name', event.target.value)} /></label>
-                <label><span>{text(lang, 'reviewRating')}</span><select value={form.rating} onChange={(event) => update('rating', event.target.value)}>{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating}/5</option>)}</select></label>
+                <label><span>{text(lang, 'rating')}</span><select value={form.rating} onChange={(event) => update('rating', event.target.value)}>{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating}/5</option>)}</select></label>
                 <label><span>{text(lang, 'reviewText')}</span><textarea rows={5} value={form.review_text} onChange={(event) => update('review_text', event.target.value)} required /></label>
                 {submitState.error && <div className="admin-alert error" role="alert">{submitState.error}</div>}
                 {submitState.success && <div className="admin-alert success" role="status">{submitState.success}</div>}
@@ -1737,7 +1761,6 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
     <section className="section alt-section" id="contact">
       <div className="container contact-section-grid">
         <div>
-          <span className="kicker">{text(lang, 'formKicker')}</span>
           <EditableText as="h2" itemKey="contact.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formTitle')} />
           <EditableText as="p" itemKey="contact.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formIntro')} />
           <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={null} />
@@ -4502,7 +4525,7 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
             <div><dt>{adminCopy(lang, 'Posti residui', 'Remaining')}</dt><dd>{item.places_remaining}</dd></div>
             <div><dt>{adminCopy(lang, 'Aggiornata', 'Updated')}</dt><dd>{formatDateForMessage(String(item.updated_at || item.created_at || '').slice(0, 10), lang) || '-'}</dd></div>
           </dl>
-          {item.blocked_dates_file_url && <BlockedDatesAttachment item={item} lang={lang} />}
+          {item.blocked_dates_file_url && <BlockedDatesAttachment item={item} lang={lang} publicView={false} />}
           {(item.description_it || item.description_en || item.note_it || item.note_en) && <p>{fixedExcursionField(item, 'description', lang) || (lang === 'it' ? item.note_it || item.note_en : item.note_en || item.note_it)}</p>}
           {error && <div className="admin-alert error">{error}</div>}
           <div className="request-actions"><button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>{item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}</div>
