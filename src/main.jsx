@@ -20,7 +20,7 @@ const EMAIL = 'leo97ct@yahoo.it';
 const INSTAGRAM = 'https://www.instagram.com/leonardo_chiavetta?igsh=bnhkNWQzbnF2aW5m';
 
 const BRAND = {
-  logo: '/brand/vulcaniq/logo-blue-background.png',
+  logo: '/brand/vulcaniq/vulcaniq-logo-premium.png',
   og: '/brand/vulcaniq/og-image.png'
 };
 
@@ -594,6 +594,142 @@ function buildSiteContentMap(items = []) {
   }, {});
 }
 
+
+
+function getContentDefinition(key) {
+  return SITE_CONTENT_DEFINITIONS.find((item) => item.key === key) || { key, content_key: key, section: 'General', label_it: key, label_en: key, type: 'text', default_it: '', default_en: '' };
+}
+
+function getMediaDefinition(key) {
+  return MEDIA_ADMIN_ITEMS.find((item) => item.key === key) || { key, it: key, en: key, fallback: '' };
+}
+
+function editorContentItem(siteContent, key, fallback = '') {
+  const definition = getContentDefinition(key);
+  const stored = siteContent?.[key] || {};
+  return {
+    ...definition,
+    ...stored,
+    key,
+    content_key: key,
+    section: stored.section || definition.section || 'General',
+    label_it: stored.label_it || definition.label_it || key,
+    label_en: stored.label_en || definition.label_en || key,
+    default_it: stored.default_it ?? definition.default_it ?? fallback,
+    default_en: stored.default_en ?? definition.default_en ?? fallback,
+    content_type: stored.content_type || (definition.type === 'textarea' ? 'textarea' : 'text'),
+    active: stored.active !== false,
+    visible: stored.visible !== false,
+    text_size: stored.text_size || definition.text_size || 'normal',
+    text_align: stored.text_align || definition.text_align || 'left',
+    style_variant: stored.style_variant || definition.style_variant || 'body',
+    layout_variant: stored.layout_variant || definition.layout_variant || 'default'
+  };
+}
+
+function editorMediaItem(siteMedia, key, fallbackSrc = '', fallbackAlt = '') {
+  const definition = getMediaDefinition(key);
+  const stored = siteMedia?.[key] || {};
+  return {
+    ...definition,
+    ...stored,
+    key,
+    media_key: key,
+    label_it: stored.label_it || definition.it || key,
+    label_en: stored.label_en || definition.en || key,
+    file_url: stored.file_url || fallbackSrc || definition.fallback || '',
+    alt_it: stored.alt_it || definition.alt_it || fallbackAlt || definition.it || key,
+    alt_en: stored.alt_en || definition.alt_en || fallbackAlt || definition.en || key,
+    active: stored.active !== false,
+    media_kind: stored.media_kind || definition.media_kind || 'image',
+    image_position: stored.image_position || definition.image_position || 'center',
+    image_size: stored.image_size || definition.image_size || 'normal'
+  };
+}
+
+function textStyleClass(item = {}) {
+  return ['controlled-text', `text-size-${item.text_size || 'normal'}`, `text-align-${item.text_align || 'left'}`, `text-variant-${item.style_variant || 'body'}`].join(' ');
+}
+
+function EditableText({ as: Tag = 'span', itemKey, lang, siteContent, editor, fallback = '', className = '', children }) {
+  const source = editor?.contentMap || siteContent || {};
+  const item = editorContentItem(source, itemKey, fallback || children || '');
+  const resolved = contentText(source, itemKey, lang, fallback || children || item.default_it || item.default_en || '');
+  const hidden = item.visible === false;
+  if (hidden && !editor?.isEditing) return null;
+  const isSelected = editor?.selected?.type === 'text' && editor.selected.key === itemKey;
+  return (
+    <Tag
+      className={`${className} ${textStyleClass(item)} ${editor?.isEditing ? 'editor-selectable editor-selectable-text' : ''} ${hidden ? 'editor-hidden-public' : ''} ${isSelected ? 'selected' : ''}`.trim()}
+      onClick={editor?.isEditing ? (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        editor.select({ type: 'text', key: itemKey, label: lang === 'it' ? item.label_it : item.label_en, section: item.section });
+      } : undefined}
+      role={editor?.isEditing ? 'button' : undefined}
+      tabIndex={editor?.isEditing ? 0 : undefined}
+    >
+      {editor?.isEditing && <span className="editor-badge">{lang === 'it' ? 'Modifica testo' : 'Edit text'}</span>}
+      {resolved || (editor?.isEditing ? (lang === 'it' ? 'Testo vuoto' : 'Empty text') : '')}
+    </Tag>
+  );
+}
+
+function EditableImage({ mediaKey, lang, siteMedia, editor, fallbackSrc, fallbackAlt, className = '', loading = 'lazy', decoding = 'async' }) {
+  const source = editor?.mediaMap || siteMedia || {};
+  const item = editorMediaItem(source, mediaKey, fallbackSrc, fallbackAlt);
+  const src = item.file_url || fallbackSrc;
+  const alt = (lang === 'it' ? item.alt_it || item.alt_en : item.alt_en || item.alt_it) || fallbackAlt || '';
+  if (!src && !editor?.isEditing) return null;
+  const isSelected = editor?.selected?.type === 'image' && editor.selected.key === mediaKey;
+  const image = <img className={className} src={src || BRAND.logo} alt={alt} loading={loading} decoding={decoding} />;
+  if (!editor?.isEditing) return image;
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      className={`editor-image-button editor-selectable ${isSelected ? 'selected' : ''}`}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        editor.select({ type: 'image', key: mediaKey, label: lang === 'it' ? item.label_it : item.label_en, section: item.section || 'Media', fallbackSrc, fallbackAlt });
+      }}
+    >
+      <span className="editor-badge">{lang === 'it' ? 'Modifica immagine' : 'Edit image'}</span>
+      {image}
+    </span>
+  );
+}
+
+function EditableImageSlot({ mediaKey, lang, siteMedia, editor, fallbackSrc, fallbackAlt, ratio = 'standard' }) {
+  return (
+    <figure className={`image-slot ${ratio}`}>
+      <EditableImage mediaKey={mediaKey} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={fallbackSrc} fallbackAlt={fallbackAlt} />
+    </figure>
+  );
+}
+
+function EditableCardFrame({ editor, cardKey, label, section, children }) {
+  if (!editor?.isEditing) return children;
+  const isSelected = editor.selected?.type === 'card' && editor.selected.key === cardKey;
+  return (
+    <div
+      className={`editor-card-frame editor-selectable ${isSelected ? 'selected' : ''}`}
+      role="button"
+      tabIndex={0}
+      onClickCapture={(event) => {
+        if (event.target.closest('.editor-selectable-text, .editor-image-button')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        editor.select({ type: 'card', key: cardKey, label, section });
+      }}
+    >
+      <span className="editor-badge">{editor.lang === 'it' ? 'Modifica card' : 'Edit card'}</span>
+      {children}
+    </div>
+  );
+}
+
 function experienceById(id) {
   return experiences.find((experience) => experience.id === id) || experiences[0];
 }
@@ -806,16 +942,16 @@ function VideoSlot({ src, poster, label, lang }) {
 }
 
 
-function BrandLogo({ compact = false }) {
+function BrandLogo({ compact = false, siteMedia, editor }) {
   return (
     <span className={`brand-logo-wrap ${compact ? 'compact' : ''}`}>
-      <img src={BRAND.logo} alt="vulcanIQ Etna Premium Experiences" className="brand-logo" />
+      <EditableImage mediaKey="brand_logo_main" lang={editor?.lang || 'it'} siteMedia={siteMedia} editor={editor} fallbackSrc={BRAND.logo} fallbackAlt={editor?.lang === 'en' ? 'vulcanIQ logo — premium Etna experiences' : 'Logo vulcanIQ — esperienze premium sull’Etna'} className="brand-logo" loading="eager" />
     </span>
   );
 }
 
 const publicPages = ['home', 'experiences', 'upcoming', 'partnerships', 'about', 'mission', 'reviews', 'contact'];
-function Header({ lang, setLang, activePage, setActivePage }) {
+function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor }) {
   const [open, setOpen] = useState(false);
 
   function choose(page) {
@@ -828,7 +964,7 @@ function Header({ lang, setLang, activePage, setActivePage }) {
     <header className="site-header">
       <div className="container nav-shell">
         <button className="brand brand-button" type="button" onClick={() => choose('home')} aria-label="vulcanIQ home">
-          <BrandLogo compact />
+          <BrandLogo compact siteMedia={siteMedia} editor={editor} />
         </button>
         <button className="nav-toggle" type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-controls="site-nav">Menu</button>
         <nav id="site-nav" className={`nav-links ${open ? 'open' : ''}`} aria-label="Primary navigation">
@@ -842,7 +978,7 @@ function Header({ lang, setLang, activePage, setActivePage }) {
   );
 }
 
-function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent }) {
+function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, editor }) {
   const heroBackground = mediaUrl(siteMedia, 'home_hero_background', '');
   const heroStyle = heroBackground ? { backgroundImage: `linear-gradient(90deg, rgba(13,22,38,0.94), rgba(13,22,38,0.78) 48%, rgba(13,22,38,0.54)), url("${heroBackground}")` } : undefined;
   return (
@@ -850,11 +986,11 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent }) {
       <div className="hero-overlay" />
       <div className="container hero-grid">
         <div className="hero-copy">
-          <h1>{contentText(siteContent, 'home.hero.title', lang, text(lang, 'heroTitle'))}</h1>
-          <p className="lead">{contentText(siteContent, 'home.hero.subtitle', lang, text(lang, 'heroLead'))}</p>
+          <EditableText as="h1" itemKey="home.hero.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroTitle')} />
+          <EditableText as="p" className="lead" itemKey="home.hero.subtitle" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroLead')} />
           <div className="hero-ctas">
-            <button className="button primary" type="button" onClick={() => setActivePage('experiences')}>{contentText(siteContent, 'home.hero.primary_cta', lang, text(lang, 'findExperience'))}</button>
-            <button className="button secondary dark" type="button" onClick={() => setActivePage('upcoming')}>{contentText(siteContent, 'home.hero.secondary_cta', lang, text(lang, 'viewAvailability'))}</button>
+            <button className="button primary" type="button" onClick={() => setActivePage('experiences')}><EditableText itemKey="home.hero.primary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'findExperience')} /></button>
+            <button className="button secondary dark" type="button" onClick={() => setActivePage('upcoming')}><EditableText itemKey="home.hero.secondary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'viewAvailability')} /></button>
             <button className="button secondary dark" type="button" onClick={scrollToForm}>{text(lang, 'contact')}</button>
           </div>
           <div className="trust-grid" aria-label="Trust points">
@@ -874,7 +1010,7 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent }) {
   );
 }
 
-function ExperienceAccordion({ lang, fillForm, siteMedia }) {
+function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor }) {
   const [openId, setOpenId] = useState(null);
 
   function handleRequest(experience) {
@@ -890,8 +1026,8 @@ function ExperienceAccordion({ lang, fillForm, siteMedia }) {
     <section className="section page-section" id="experiences">
       <div className="container">
         <div className="section-header refined-section-header experience-page-header">
-          <h2>{text(lang, 'experiencesTitle')}</h2>
-          <p>{text(lang, 'experiencesIntro')}</p>
+          <EditableText as="h2" itemKey="experiences.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'experiencesTitle')} />
+          <EditableText as="p" itemKey="experiences.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'experiencesIntro')} />
         </div>
         <div className="accordion-list experience-accordion-list">
           {experiences.map((experience) => {
@@ -899,7 +1035,8 @@ function ExperienceAccordion({ lang, fillForm, siteMedia }) {
             const imageUrl = mediaUrl(siteMedia, experienceMediaKey(experience.id), experience.image);
             const imageAlt = mediaAlt(siteMedia, experienceMediaKey(experience.id), lang, `${experience.title} vulcanIQ`);
             return (
-              <article className={`experience-card ${isOpen ? 'open' : ''}`} key={experience.id}>
+              <EditableCardFrame editor={editor} cardKey={`experience.${experience.id}`} label={experience.title} section={lang === 'it' ? 'Esperienze' : 'Experiences'} key={experience.id}>
+              <article className={`experience-card ${isOpen ? 'open' : ''}`}>
                 <button
                   type="button"
                   className="experience-summary"
@@ -907,22 +1044,22 @@ function ExperienceAccordion({ lang, fillForm, siteMedia }) {
                   aria-controls={`experience-${experience.id}`}
                   onClick={() => setOpenId(isOpen ? null : experience.id)}
                 >
-                  <span className="experience-image" aria-hidden="true"><img src={imageUrl} alt="" loading="lazy" decoding="async" /></span>
-                  <span className="experience-main"><strong>{experience.title}</strong><small>{experience.summary[lang]}</small></span>
-                  <span className="experience-meta"><b>{text(lang, 'bestFor')}</b><br />{experience.bestFor[lang]}</span>
-                  <span className="experience-meta"><b>{text(lang, 'starting')}</b><br />{experience.starting[lang]}</span>
+                  <span className="experience-image" aria-hidden="true"><EditableImage mediaKey={experienceMediaKey(experience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={experience.image} fallbackAlt={`${experience.title} vulcanIQ`} /></span>
+                  <span className="experience-main"><EditableText as="strong" itemKey={`experiences.${experience.id}.title`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.title} /><EditableText as="small" itemKey={`experiences.${experience.id}.summary`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.summary[lang]} /></span>
+                  <span className="experience-meta"><b>{text(lang, 'bestFor')}</b><br /><EditableText itemKey={`experiences.${experience.id}.best_for`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.bestFor[lang]} /></span>
+                  <span className="experience-meta"><b>{text(lang, 'starting')}</b><br /><EditableText itemKey={`experiences.${experience.id}.starting`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.starting[lang]} /></span>
                   <span className="small-button">{isOpen ? text(lang, 'hide') : text(lang, 'details')}</span>
                 </button>
                 {isOpen && (
                   <div className="experience-body" id={`experience-${experience.id}`}>
                     <div className="experience-copy-grid">
-                      <ImageSlot src={imageUrl} alt={imageAlt} lang={lang} ratio="wide" />
+                      <EditableImageSlot mediaKey={experienceMediaKey(experience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={experience.image} fallbackAlt={imageAlt} ratio="wide" />
                       <div className="experience-copy">
-                        <p>{experience.description[lang]}</p>
+                        <EditableText as="p" itemKey={`experiences.${experience.id}.description`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.description[lang]} />
                         <dl>
-                          <div><dt>{text(lang, 'value')}</dt><dd>{experience.value[lang]}</dd></div>
-                          <div><dt>{text(lang, 'practical')}</dt><dd>{experience.notes[lang]}</dd></div>
-                          <div><dt>{text(lang, 'safety')}</dt><dd>{experience.safety[lang]}</dd></div>
+                          <div><dt>{text(lang, 'value')}</dt><dd><EditableText itemKey={`experiences.${experience.id}.value`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.value[lang]} /></dd></div>
+                          <div><dt>{text(lang, 'practical')}</dt><dd><EditableText itemKey={`experiences.${experience.id}.notes`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.notes[lang]} /></dd></div>
+                          <div><dt>{text(lang, 'safety')}</dt><dd><EditableText itemKey={`experiences.${experience.id}.safety`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.safety[lang]} /></dd></div>
                         </dl>
                         <div className="cta-row experience-actions">
                           <button className="button primary" type="button" onClick={() => handleRequest(experience)}>{text(lang, 'request')}</button>
@@ -939,6 +1076,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia }) {
                   </div>
                 )}
               </article>
+              </EditableCardFrame>
             );
           })}
         </div>
@@ -947,7 +1085,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia }) {
   );
 }
 
-function Philosophy({ lang }) {
+function Philosophy({ lang, siteMedia, editor }) {
   const paragraphs = text(lang, 'philosophyText').split('\n\n');
   return (
     <section className="section compact-section">
@@ -961,7 +1099,7 @@ function Philosophy({ lang }) {
         </div>
         <div className="mission-grid">
           <article className="mission-card visual-note">
-            <ImageSlot src={mediaUrl(siteMedia, 'mission_main_image', MEDIA.landscape)} alt={mediaAlt(siteMedia, 'mission_main_image', lang, text(lang, 'safetyAlt'))} lang={lang} ratio="wide" />
+            <EditableImageSlot mediaKey="mission_main_image" lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={MEDIA.landscape} fallbackAlt={text(lang, 'safetyAlt')} ratio="wide" />
           </article>
           <article className="mission-card accent">
             <span>{text(lang, 'vision')}</span>
@@ -973,7 +1111,7 @@ function Philosophy({ lang }) {
   );
 }
 
-function MissionPage({ lang, siteMedia, siteContent }) {
+function MissionPage({ lang, siteMedia, siteContent, editor }) {
   const missionTitle = contentText(siteContent, 'mission.mission.title', lang, text(lang, 'mission'));
   const visionTitle = contentText(siteContent, 'mission.vision.title', lang, text(lang, 'vision'));
   const missionBody = contentText(siteContent, 'mission.mission.body', lang, text(lang, 'missionText'));
@@ -984,21 +1122,21 @@ function MissionPage({ lang, siteMedia, siteContent }) {
       <div className="container mission-balanced-layout">
         <div className="mission-top-row titled-mission-row">
           <div className="mission-card-stack">
-            <h2>{missionTitle}</h2>
+            <EditableText as="h2" itemKey="mission.mission.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'mission')} />
             <article className="mission-card mission-copy-card balanced-mission-card">
-              <p>{missionBody}</p>
+              <EditableText as="p" itemKey="mission.mission.body" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'missionText')} />
             </article>
           </div>
           <div className="mission-card-stack">
-            <h2>{visionTitle}</h2>
+            <EditableText as="h2" itemKey="mission.vision.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'vision')} />
             <article className="mission-card accent vision-copy-card balanced-mission-card">
-              <p>{visionBody}</p>
+              <EditableText as="p" itemKey="mission.vision.body" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'visionText')} />
             </article>
           </div>
         </div>
         <div className="mission-bottom-row mission-image-only-row">
           <article className="mission-image-feature centered-mission-image">
-            <ImageSlot src={mediaUrl(siteMedia, 'mission_main_image', MEDIA.landscape)} alt={mediaAlt(siteMedia, 'mission_main_image', lang, text(lang, 'safetyAlt'))} lang={lang} ratio="wide" />
+            <EditableImageSlot mediaKey="mission_main_image" lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={MEDIA.landscape} fallbackAlt={text(lang, 'safetyAlt')} ratio="wide" />
           </article>
         </div>
       </div>
@@ -1106,7 +1244,7 @@ function FormattedDescription({ textValue }) {
   );
 }
 
-function PublicUpcomingExcursions({ lang, fillForm }) {
+function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [monthDate, setMonthDate] = useState(startOfMonth(new Date()));
@@ -1182,8 +1320,8 @@ function PublicUpcomingExcursions({ lang, fillForm }) {
     <section className="section page-section alt-section" id="upcoming">
       <div className="container">
         <div className="section-header refined-section-header">
-          <h2>{text(lang, 'upcomingExcursions')}</h2>
-          <p>{text(lang, 'availabilityIntro')}</p>
+          <EditableText as="h2" itemKey="upcoming.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'upcomingExcursions')} />
+          <EditableText as="p" itemKey="upcoming.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'availabilityIntro')} />
         </div>
         {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : (
           <div className="public-calendar-layout">
@@ -1240,7 +1378,7 @@ function PublicUpcomingExcursions({ lang, fillForm }) {
   );
 }
 
-function PartnershipsPage({ lang }) {
+function PartnershipsPage({ lang, siteContent, editor }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -1258,7 +1396,8 @@ function PartnershipsPage({ lang }) {
     <section className="section page-section" id="partnerships">
       <div className="container">
         <div className="section-header refined-section-header">
-          <h2>{text(lang, 'partnershipsTitle')}</h2>
+          <EditableText as="h2" itemKey="partnerships.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'partnershipsTitle')} />
+          <EditableText as="p" itemKey="partnerships.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'partnershipsIntro') || ''} />
         </div>
         {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : items.length === 0 ? (
           <article className="empty-state-card"><p>{text(lang, 'partnershipsEmpty')}</p></article>
@@ -1286,7 +1425,7 @@ function PartnershipsPage({ lang }) {
   );
 }
 
-function ReviewsPage({ lang, siteContent }) {
+function ReviewsPage({ lang, siteContent, editor }) {
   const fallbackReview = lang === 'it'
     ? 'Bellissima esperienza grazie alla nostra guida Leonardo, che ha una vera passione per i vulcani. Percorso moderato, pause ben gestite e consigli pratici molto chiari.'
     : 'Beautiful experience thanks to our guide Leonardo, who has a real passion for volcanoes. The route was moderate, breaks were well managed, and the practical advice was very clear.';
@@ -1350,11 +1489,11 @@ function ReviewsPage({ lang, siteContent }) {
       <div className="container reviews-panel redesigned-reviews-panel">
         <div className="section-header refined-section-header reviews-header-row">
           <div>
-            <h2>{contentText(siteContent, 'reviews.page.title', lang, text(lang, 'reviewsTitle'))}</h2>
-            <p>{contentText(siteContent, 'reviews.page.intro', lang, text(lang, 'reviewsIntro'))}</p>
+            <EditableText as="h2" itemKey="reviews.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'reviewsTitle')} />
+            <EditableText as="p" itemKey="reviews.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'reviewsIntro')} />
           </div>
           <div className="reviews-header-actions">
-            <button className="button primary" type="button" onClick={() => { setSubmitState({ loading: false, error: '', success: '' }); setModalOpen(true); }}>{contentText(siteContent, 'reviews.publish_button', lang, text(lang, 'publishReview'))}</button>
+            <button className="button primary" type="button" onClick={() => { setSubmitState({ loading: false, error: '', success: '' }); setModalOpen(true); }}><EditableText itemKey="reviews.publish_button" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'publishReview')} /></button>
             <div className="review-sort-control" role="group" aria-label={lang === 'it' ? 'Ordina recensioni' : 'Sort reviews'}>
               <button type="button" className={sortMode === 'recent' ? 'active' : ''} onClick={() => setSortMode('recent')}>{adminCopy(lang, 'Più recenti', 'Most recent')}</button>
               <button type="button" className={sortMode === 'highest' ? 'active' : ''} onClick={() => setSortMode('highest')}>{adminCopy(lang, 'Voto più alto', 'Highest score')}</button>
@@ -1461,29 +1600,29 @@ function WearReviewsSafety({ lang }) {
   );
 }
 
-function Team({ lang, siteMedia }) {
+function Team({ lang, siteMedia, siteContent, editor }) {
   return (
     <section className="section" id="team">
       <div className="container">
         <div className="section-header">
-          <h2>{text(lang, 'teamTitle')}</h2>
+          <EditableText as="h2" itemKey="about.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'teamTitle')} />
         </div>
         <div className="team-grid">
           <article className="team-card leonardo-card">
-            <img className="team-photo" src={mediaUrl(siteMedia, 'about_leonardo_image', MEDIA.leonardo)} alt={mediaAlt(siteMedia, 'about_leonardo_image', lang, lang === 'it' ? 'Leonardo, guida vulcanologica vulcanIQ' : 'Leonardo, vulcanIQ volcanological guide')} loading="lazy" />
+            <EditableImage mediaKey="about_leonardo_image" lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={MEDIA.leonardo} fallbackAlt={lang === 'it' ? 'Leonardo, guida vulcanologica vulcanIQ' : 'Leonardo, vulcanIQ volcanological guide'} className="team-photo" />
             <div>
               <h3>Leonardo Chiavetta</h3>
-              <p className="role">{text(lang, 'leonardoRole')}</p>
-              <p>{text(lang, 'leonardoBio')}</p>
+              <EditableText as="p" className="role" itemKey="about.leonardo.role" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'leonardoRole')} />
+              <EditableText as="p" itemKey="about.leonardo.bio" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'leonardoBio')} />
               <a className="inline-link" href={INSTAGRAM} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
             </div>
           </article>
           <article className="team-card">
-            <img className="team-photo" src={mediaUrl(siteMedia, 'about_deborah_image', '/images/co-owner.jpg')} alt={mediaAlt(siteMedia, 'about_deborah_image', lang, text(lang, 'coFounderAlt'))} />
+            <EditableImage mediaKey="about_deborah_image" lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc="/images/co-owner.jpg" fallbackAlt={text(lang, 'coFounderAlt')} className="team-photo" />
             <div>
-              <h3>{text(lang, 'coFounderName')}</h3>
-              <p className="role">{text(lang, 'coFounderRole')}</p>
-              <p>{text(lang, 'coFounderBio')}</p>
+              <EditableText as="h3" itemKey="about.deborah.name" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'coFounderName')} />
+              <EditableText as="p" className="role" itemKey="about.deborah.role" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'coFounderRole')} />
+              <EditableText as="p" itemKey="about.deborah.bio" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'coFounderBio')} />
             </div>
           </article>
         </div>
@@ -1492,7 +1631,7 @@ function Team({ lang, siteMedia }) {
   );
 }
 
-function ContactForm({ lang, formState, setFormState }) {
+function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
   const [submitState, setSubmitState] = useState({ loading: false, error: '', success: '' });
   const [fixedExcursions, setFixedExcursions] = useState([]);
   const requestType = formState.requestType || 'private';
@@ -1599,8 +1738,8 @@ function ContactForm({ lang, formState, setFormState }) {
       <div className="container contact-section-grid">
         <div>
           <span className="kicker">{text(lang, 'formKicker')}</span>
-          <h2>{text(lang, 'formTitle')}</h2>
-          <p>{text(lang, 'formIntro')}</p>
+          <EditableText as="h2" itemKey="contact.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formTitle')} />
+          <EditableText as="p" itemKey="contact.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formIntro')} />
           <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={null} />
           <a className="instagram-link" href={INSTAGRAM} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
         </div>
@@ -2318,6 +2457,7 @@ function CalendarFixedModal({ lang, item, onClose, onSave }) {
 }
 
 const MEDIA_ADMIN_ITEMS = [
+  { key: 'brand_logo_main', it: 'Logo principale vulcanIQ', en: 'Main vulcanIQ logo', fallback: BRAND.logo, alt_it: 'Logo vulcanIQ — esperienze premium sull’Etna', alt_en: 'vulcanIQ logo — premium Etna experiences' },
   { key: 'home_hero_background', it: 'Sfondo hero homepage', en: 'Home hero background' },
   { key: 'home_hero_feature_image', it: 'Immagine hero homepage', en: 'Home hero image' },
   { key: 'home_hero_video', it: 'Video homepage', en: 'Home video' },
@@ -2331,25 +2471,381 @@ const MEDIA_ADMIN_ITEMS = [
   { key: 'default_experience_stories_image', it: 'Etna Stories', en: 'Etna Stories' }
 ];
 
+const EDITOR_PAGE_OPTIONS = [
+  { key: 'home', it: 'Home', en: 'Home' },
+  { key: 'experiences', it: 'Esperienze', en: 'Experiences' },
+  { key: 'upcoming', it: 'Prossime escursioni', en: 'Upcoming excursions' },
+  { key: 'partnerships', it: 'Collaborazioni', en: 'Partnerships' },
+  { key: 'about', it: 'Chi siamo', en: 'About us' },
+  { key: 'mission', it: 'Missione', en: 'Mission' },
+  { key: 'reviews', it: 'Recensioni', en: 'Reviews' },
+  { key: 'contact', it: 'Contatti', en: 'Contact' }
+];
+
+function buildEditorContentMap(items = [], drafts = {}) {
+  const stored = (items || []).reduce((acc, item) => ({ ...acc, [item.content_key]: item }), {});
+  const map = SITE_CONTENT_DEFINITIONS.reduce((acc, definition) => {
+    acc[definition.key] = editorContentItem(stored, definition.key, definition.default_it || definition.default_en || '');
+    return acc;
+  }, {});
+  Object.keys(stored).forEach((key) => {
+    if (!map[key]) map[key] = editorContentItem(stored, key, stored[key]?.default_it || stored[key]?.default_en || '');
+  });
+  return Object.keys(drafts || {}).reduce((acc, key) => ({ ...acc, [key]: { ...(acc[key] || {}), ...drafts[key] } }), map);
+}
+
+function buildEditorMediaMap(items = [], drafts = {}) {
+  const stored = (items || []).reduce((acc, item) => ({ ...acc, [item.media_key]: item }), {});
+  const map = MEDIA_ADMIN_ITEMS.reduce((acc, definition) => {
+    acc[definition.key] = editorMediaItem(stored, definition.key, definition.fallback || '', definition.alt_it || definition.alt_en || '');
+    return acc;
+  }, {});
+  Object.keys(stored).forEach((key) => {
+    if (!map[key]) map[key] = editorMediaItem(stored, key, stored[key]?.file_url || '', stored[key]?.alt_it || stored[key]?.alt_en || '');
+  });
+  return Object.keys(drafts || {}).reduce((acc, key) => ({ ...acc, [key]: { ...(acc[key] || {}), ...drafts[key] } }), map);
+}
+
 function WebsiteAdminPage({ lang, session }) {
-  const [tab, setTab] = useState('content');
+  const [page, setPage] = useState('home');
+  const [editorLang, setEditorLang] = useState(lang || 'it');
+  const [device, setDevice] = useState('desktop');
+  const [contentRows, setContentRows] = useState([]);
+  const [mediaRows, setMediaRows] = useState([]);
+  const [contentDrafts, setContentDrafts] = useState({});
+  const [mediaDrafts, setMediaDrafts] = useState({});
+  const [selected, setSelected] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [notice, setNotice] = useState('');
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    if (!isSupabaseConfigured) {
+      setContentRows([]);
+      setMediaRows([]);
+      setLoading(false);
+      setError(adminCopy(lang, 'Supabase non è configurato. Puoi vedere l’anteprima, ma non salvare modifiche.', 'Supabase is not configured. You can preview the site, but changes cannot be saved.'));
+      return;
+    }
+    try {
+      const [content, media] = await Promise.all([listSiteContent({ activeOnly: false }), listSiteMedia({ activeOnly: false })]);
+      setContentRows(content);
+      setMediaRows(media);
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Editor non caricato.', 'Editor not loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  const contentMap = useMemo(() => buildEditorContentMap(contentRows, contentDrafts), [contentRows, contentDrafts]);
+  const mediaMap = useMemo(() => buildEditorMediaMap(mediaRows, mediaDrafts), [mediaRows, mediaDrafts]);
+  const hasDrafts = Object.keys(contentDrafts).length > 0 || Object.keys(mediaDrafts).length > 0;
+  const editor = useMemo(() => ({ isEditing: true, lang: editorLang, selected, select: setSelected, contentMap, mediaMap }), [editorLang, selected, contentMap, mediaMap]);
+
+  function updateContentDraft(key, patch) {
+    setFeedback('');
+    setContentDrafts((current) => ({ ...current, [key]: { ...(contentMap[key] || editorContentItem({}, key)), ...(current[key] || {}), ...patch } }));
+  }
+
+  function updateMediaDraft(key, patch) {
+    setFeedback('');
+    setMediaDrafts((current) => ({ ...current, [key]: { ...(mediaMap[key] || editorMediaItem({}, key)), ...(current[key] || {}), ...patch } }));
+  }
+
+  async function saveContentItem(item) {
+    if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non è configurato.', 'Supabase is not configured.'));
+    await upsertSiteContent({
+      content_key: item.content_key || item.key,
+      section: item.section,
+      label_it: item.label_it,
+      label_en: item.label_en,
+      value_it: item.value_it,
+      value_en: item.value_en,
+      default_it: item.default_it,
+      default_en: item.default_en,
+      content_type: item.content_type || (item.type === 'textarea' ? 'textarea' : 'text'),
+      style_variant: item.style_variant || 'body',
+      text_size: item.text_size || 'normal',
+      text_align: item.text_align || 'left',
+      visible: item.visible !== false,
+      layout_variant: item.layout_variant || 'default',
+      sort_order: item.sort_order || 0,
+      active: item.active !== false,
+      updated_by: session.user.id
+    });
+  }
+
+  async function saveMediaItem(item) {
+    if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non è configurato.', 'Supabase is not configured.'));
+    const key = item.media_key || item.key;
+    const existing = mediaRows.find((row) => row.media_key === key);
+    const uploaded = item.file ? await uploadSiteMediaFile(item.file, key, session.user.id) : {};
+    if (item.file && existing?.file_path) await removeSiteMediaFile(existing.file_path);
+    await upsertSiteMedia({
+      media_key: key,
+      label_it: item.label_it || item.it || key,
+      label_en: item.label_en || item.en || key,
+      alt_it: item.alt_it || item.label_it || key,
+      alt_en: item.alt_en || item.label_en || key,
+      file_url: uploaded.file_url || item.file_url || null,
+      file_path: uploaded.file_path || item.file_path || null,
+      file_name: uploaded.file_name || item.file_name || null,
+      file_type: uploaded.file_type || item.file_type || null,
+      media_kind: uploaded.media_kind || item.media_kind || 'image',
+      active: item.active !== false,
+      updated_by: session.user.id
+    });
+  }
+
+  async function saveSelected() {
+    if (!selected) return;
+    setError('');
+    setFeedback('');
+    try {
+      if (selected.type === 'text') {
+        await saveContentItem(contentMap[selected.key]);
+        setContentDrafts((current) => {
+          const next = { ...current };
+          delete next[selected.key];
+          return next;
+        });
+      }
+      if (selected.type === 'image') {
+        await saveMediaItem(mediaMap[selected.key]);
+        setMediaDrafts((current) => {
+          const next = { ...current };
+          delete next[selected.key];
+          return next;
+        });
+      }
+      if (selected.type === 'card') {
+        setFeedback(adminCopy(lang, 'Card selezionata. Modifica i testi o immagini cliccabili dentro la card, oppure usa la sezione admin dedicata per dati strutturati.', 'Card selected. Edit the clickable text or images inside the card, or use the dedicated admin section for structured data.'));
+        return;
+      }
+      setFeedback(adminCopy(lang, 'Modifiche salvate.', 'Changes saved.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Impossibile salvare le modifiche. Riprova.', 'Unable to save changes. Please try again.'));
+    }
+  }
+
+  async function saveAll() {
+    setError('');
+    setFeedback('');
+    try {
+      const contentItems = Object.keys(contentDrafts).map((key) => contentMap[key]).filter(Boolean);
+      const mediaItems = Object.keys(mediaDrafts).map((key) => mediaMap[key]).filter(Boolean);
+      for (const item of contentItems) await saveContentItem(item);
+      for (const item of mediaItems) await saveMediaItem(item);
+      setContentDrafts({});
+      setMediaDrafts({});
+      setFeedback(adminCopy(lang, 'Tutte le modifiche sono state salvate.', 'All changes have been saved.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Impossibile salvare tutte le modifiche.', 'Unable to save all changes.'));
+    }
+  }
+
+  function discardDrafts() {
+    if (hasDrafts && !window.confirm(adminCopy(lang, 'Scartare le modifiche non salvate?', 'Discard unsaved changes?'))) return;
+    setContentDrafts({});
+    setMediaDrafts({});
+    setFeedback(adminCopy(lang, 'Modifiche locali scartate.', 'Local changes discarded.'));
+  }
+
+  function resetSelected() {
+    if (!selected) return;
+    if (!window.confirm(adminCopy(lang, 'Ripristinare il contenuto selezionato al valore predefinito?', 'Reset the selected item to its default value?'))) return;
+    if (selected.type === 'text') {
+      const item = contentMap[selected.key] || editorContentItem({}, selected.key);
+      updateContentDraft(selected.key, {
+        value_it: item.default_it || '',
+        value_en: item.default_en || '',
+        visible: true,
+        active: true,
+        text_size: getContentDefinition(selected.key).text_size || 'normal',
+        text_align: getContentDefinition(selected.key).text_align || 'left',
+        style_variant: getContentDefinition(selected.key).style_variant || 'body'
+      });
+    }
+    if (selected.type === 'image') {
+      const definition = getMediaDefinition(selected.key);
+      updateMediaDraft(selected.key, {
+        file: null,
+        file_url: definition.fallback || selected.fallbackSrc || '',
+        alt_it: definition.alt_it || definition.it || selected.fallbackAlt || '',
+        alt_en: definition.alt_en || definition.en || selected.fallbackAlt || '',
+        active: true
+      });
+    }
+  }
+
   return (
-    <section className="admin-page website-admin-page">
-      <div className="admin-page-header">
+    <section className="admin-page website-admin-page visual-editor-page">
+      <div className="visual-editor-toolbar">
         <div>
           <span className="kicker">{adminCopy(lang, 'Modifica sito', 'Edit website')}</span>
-          <h1>{adminCopy(lang, 'Testi e media del sito', 'Website texts and media')}</h1>
-          <p>{adminCopy(lang, 'Da qui puoi modificare i testi pubblici, immagini, video e file visibili sul sito.', 'Use this area to edit public website text, images, videos, and files.')}</p>
+          <h1>{adminCopy(lang, 'Editor visuale controllato', 'Controlled visual editor')}</h1>
         </div>
+        <label><span>{adminCopy(lang, 'Pagina', 'Page')}</span><select value={page} onChange={(event) => { setPage(event.target.value); setSelected(null); }}>
+          {EDITOR_PAGE_OPTIONS.map((item) => <option key={item.key} value={item.key}>{lang === 'it' ? item.it : item.en}</option>)}
+        </select></label>
+        <label><span>{adminCopy(lang, 'Lingua', 'Language')}</span><select value={editorLang} onChange={(event) => setEditorLang(event.target.value)}><option value="it">IT</option><option value="en">EN</option></select></label>
+        <label><span>{adminCopy(lang, 'Dispositivo', 'Device')}</span><select value={device} onChange={(event) => setDevice(event.target.value)}><option value="desktop">Desktop</option><option value="tablet">Tablet</option><option value="mobile">Mobile</option></select></label>
+        <button className="button secondary" type="button" onClick={() => window.open('/', '_blank', 'noopener,noreferrer')}>{adminCopy(lang, 'Apri sito pubblico', 'Open public site')}</button>
+        <button className="button secondary" type="button" onClick={resetSelected} disabled={!selected}>{adminCopy(lang, 'Ripristina selezione', 'Reset selected')}</button>
+        <button className="button secondary" type="button" onClick={discardDrafts} disabled={!hasDrafts}>{adminCopy(lang, 'Scarta', 'Discard')}</button>
+        <button className="button primary" type="button" onClick={saveAll} disabled={!hasDrafts || !isSupabaseConfigured}>{adminCopy(lang, 'Salva tutto', 'Save all')}</button>
       </div>
-      <div className="admin-tabs website-edit-tabs" role="tablist" aria-label={adminCopy(lang, 'Sezioni modifica sito', 'Website edit sections')}>
-        <button type="button" className={tab === 'content' ? 'active' : ''} onClick={() => setTab('content')}>{adminCopy(lang, 'Testi sito', 'Website text')}</button>
-        <button type="button" className={tab === 'media' ? 'active' : ''} onClick={() => setTab('media')}>{adminCopy(lang, 'Immagini e media', 'Images and media')}</button>
-      </div>
-      {tab === 'content' ? <ContentAdminPage lang={lang} session={session} compactHeader /> : <MediaAdminPage lang={lang} session={session} compactHeader />}
+
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {error && <div className="admin-alert error" role="alert">{error}</div>}
+      {notice && <div className="admin-alert warning" role="status">{notice}</div>}
+      {loading ? <p>{adminCopy(lang, 'Caricamento editor...', 'Loading editor...')}</p> : (
+        <div className="visual-editor-shell">
+          <VisualEditorPreview
+            page={page}
+            setPage={setPage}
+            lang={editorLang}
+            setLang={setEditorLang}
+            device={device}
+            siteMedia={mediaMap}
+            siteContent={contentMap}
+            editor={editor}
+            setNotice={setNotice}
+          />
+          <EditorInspector
+            lang={lang}
+            editorLang={editorLang}
+            selected={selected}
+            contentMap={contentMap}
+            mediaMap={mediaMap}
+            updateContentDraft={updateContentDraft}
+            updateMediaDraft={updateMediaDraft}
+            onSave={saveSelected}
+            onReset={resetSelected}
+            canSave={isSupabaseConfigured}
+          />
+        </div>
+      )}
     </section>
   );
 }
+
+function VisualEditorPreview({ page, setPage, lang, setLang, device, siteMedia, siteContent, editor, setNotice }) {
+  const [formState, setFormState] = useState({ language: lang, requestType: 'private', partyType: 'solo', adults: '1', children: '0', message: text(lang, 'defaultMessage') });
+
+  function disabledActionNotice() {
+    setNotice(lang === 'it' ? 'Azione disattivata durante la modifica del sito.' : 'This action is disabled while editing the website.');
+    window.setTimeout(() => setNotice(''), 2800);
+  }
+
+  function fillForm() {
+    disabledActionNotice();
+  }
+
+  function renderPage() {
+    switch (page) {
+      case 'experiences':
+        return <ExperienceAccordion lang={lang} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
+      case 'upcoming':
+        return <PublicUpcomingExcursions lang={lang} fillForm={fillForm} siteContent={siteContent} editor={editor} />;
+      case 'partnerships':
+        return <PartnershipsPage lang={lang} siteContent={siteContent} editor={editor} />;
+      case 'about':
+        return <Team lang={lang} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
+      case 'mission':
+        return <MissionPage lang={lang} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
+      case 'reviews':
+        return <ReviewsPage lang={lang} siteContent={siteContent} editor={editor} />;
+      case 'contact':
+        return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteContent={siteContent} editor={editor} />;
+      case 'home':
+      default:
+        return <Hero lang={lang} setActivePage={setPage} scrollToForm={disabledActionNotice} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
+    }
+  }
+
+  return (
+    <div className="visual-editor-canvas">
+      <div className={`visual-preview-frame ${device}`} onSubmitCapture={(event) => { event.preventDefault(); disabledActionNotice(); }} onClickCapture={(event) => {
+        const link = event.target.closest('a[href]');
+        if (link && !link.closest('.editor-selectable')) {
+          event.preventDefault();
+          event.stopPropagation();
+          disabledActionNotice();
+        }
+      }}>
+        <Header lang={lang} setLang={setLang} activePage={page} setActivePage={setPage} siteMedia={siteMedia} editor={editor} />
+        <main className="public-page-shell editor-preview-public">{renderPage()}</main>
+      </div>
+    </div>
+  );
+}
+
+function EditorInspector({ lang, editorLang, selected, contentMap, mediaMap, updateContentDraft, updateMediaDraft, onSave, onReset, canSave }) {
+  if (!selected) {
+    return (
+      <aside className="editor-inspector empty">
+        <span className="kicker">{adminCopy(lang, 'Ispettore', 'Inspector')}</span>
+        <h2>{adminCopy(lang, 'Seleziona un elemento', 'Select an element')}</h2>
+        <p>{adminCopy(lang, 'Seleziona un testo, un’immagine o una card nella preview per modificarla.', 'Select a text, image, or card in the preview to edit it.')}</p>
+      </aside>
+    );
+  }
+
+  if (selected.type === 'text') {
+    const item = contentMap[selected.key] || editorContentItem({}, selected.key);
+    const Field = item.content_type === 'textarea' || item.type === 'textarea' ? 'textarea' : 'input';
+    return (
+      <aside className="editor-inspector">
+        <div className="inspector-heading"><span className="kicker">{adminCopy(lang, 'Testo', 'Text')}</span><h2>{selected.label}</h2><p>{item.section} · {selected.key}</p></div>
+        <label className="admin-field full"><span>Italiano</span><Field rows={5} value={item.value_it ?? item.default_it ?? ''} onChange={(event) => updateContentDraft(selected.key, { value_it: event.target.value, active: true })} /></label>
+        <label className="admin-field full"><span>English</span><Field rows={5} value={item.value_en ?? item.default_en ?? ''} onChange={(event) => updateContentDraft(selected.key, { value_en: event.target.value, active: true })} /></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Dimensione testo', 'Text size')}</span><select value={item.text_size || 'normal'} onChange={(event) => updateContentDraft(selected.key, { text_size: event.target.value })}><option value="small">Small</option><option value="normal">Normal</option><option value="large">Large</option><option value="hero">Hero</option></select></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Stile testo', 'Text style')}</span><select value={item.style_variant || 'body'} onChange={(event) => updateContentDraft(selected.key, { style_variant: event.target.value })}><option value="label">Label</option><option value="body">Body</option><option value="heading">Heading</option><option value="display">Display heading</option></select></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Allineamento', 'Alignment')}</span><select value={item.text_align || 'left'} onChange={(event) => updateContentDraft(selected.key, { text_align: event.target.value })}><option value="left">Left</option><option value="center">Center</option></select></label>
+        <label className="check-field"><input type="checkbox" checked={item.visible !== false} onChange={(event) => updateContentDraft(selected.key, { visible: event.target.checked })} /> {adminCopy(lang, 'Visibile', 'Visible')}</label>
+        <div className="inspector-actions"><button className="button primary" type="button" onClick={onSave} disabled={!canSave}>{adminCopy(lang, 'Salva selezione', 'Save selected')}</button><button className="button secondary" type="button" onClick={onReset}>{adminCopy(lang, 'Ripristina default', 'Reset to default')}</button></div>
+      </aside>
+    );
+  }
+
+  if (selected.type === 'image') {
+    const item = mediaMap[selected.key] || editorMediaItem({}, selected.key, selected.fallbackSrc, selected.fallbackAlt);
+    return (
+      <aside className="editor-inspector">
+        <div className="inspector-heading"><span className="kicker">{adminCopy(lang, 'Immagine', 'Image')}</span><h2>{selected.label}</h2><p>{selected.key}</p></div>
+        {item.file_url && (item.media_kind === 'video' ? <video className="inspector-media-preview" src={item.file_url} controls /> : <img className="inspector-media-preview" src={item.file_url} alt={editorLang === 'it' ? item.alt_it : item.alt_en} />)}
+        <label className="admin-field full"><span>{adminCopy(lang, 'Sostituisci immagine', 'Replace image')}</span><input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,.jpg,.jpeg,.png,.webp,.mp4" onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (!file) return;
+          updateMediaDraft(selected.key, { file, file_url: URL.createObjectURL(file), file_name: file.name, file_type: file.type, media_kind: file.type.startsWith('video/') ? 'video' : 'image', active: true });
+        }} /></label>
+        <label className="admin-field full"><span>Alt text IT</span><input value={item.alt_it || ''} onChange={(event) => updateMediaDraft(selected.key, { alt_it: event.target.value })} /></label>
+        <label className="admin-field full"><span>Alt text EN</span><input value={item.alt_en || ''} onChange={(event) => updateMediaDraft(selected.key, { alt_en: event.target.value })} /></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Posizione immagine', 'Image position')}</span><select value={item.image_position || 'center'} onChange={(event) => updateMediaDraft(selected.key, { image_position: event.target.value })}><option value="center">Center</option><option value="top">Top</option><option value="bottom">Bottom</option></select></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Dimensione immagine', 'Image size')}</span><select value={item.image_size || 'normal'} onChange={(event) => updateMediaDraft(selected.key, { image_size: event.target.value })}><option value="compact">Compact</option><option value="normal">Normal</option><option value="large">Large</option></select></label>
+        <label className="check-field"><input type="checkbox" checked={item.active !== false} onChange={(event) => updateMediaDraft(selected.key, { active: event.target.checked })} /> {adminCopy(lang, 'Visibile', 'Visible')}</label>
+        <div className="inspector-actions"><button className="button primary" type="button" onClick={onSave} disabled={!canSave}>{adminCopy(lang, 'Salva selezione', 'Save selected')}</button><button className="button secondary" type="button" onClick={onReset}>{adminCopy(lang, 'Ripristina default', 'Reset to default')}</button></div>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="editor-inspector">
+      <div className="inspector-heading"><span className="kicker">{adminCopy(lang, 'Card', 'Card')}</span><h2>{selected.label}</h2><p>{selected.section} · {selected.key}</p></div>
+      <p>{adminCopy(lang, 'Questa card è selezionata. Per modificare contenuti visibili, clicca direttamente su titolo, descrizione o immagine dentro la card. Per dati strutturati come collaborazioni o escursioni fisse, usa la sezione admin dedicata.', 'This card is selected. To edit visible content, click directly on the title, description, or image inside the card. For structured data such as partnerships or fixed excursions, use the dedicated admin section.')}</p>
+    </aside>
+  );
+}
+
 
 function MediaAdminPage({ lang, session, compactHeader = false }) {
   const [items, setItems] = useState([]);
@@ -2442,20 +2938,44 @@ function MediaAdminPage({ lang, session, compactHeader = false }) {
   );
 }
 
+const EXPERIENCE_CONTENT_DEFINITIONS = experiences.flatMap((experience) => [
+  { key: `experiences.${experience.id}.title`, section: 'Esperienze', label_it: `${experience.title} · titolo`, label_en: `${experience.title} · title`, type: 'text', default_it: experience.title, default_en: experience.title, text_size: 'large', style_variant: 'heading' },
+  { key: `experiences.${experience.id}.summary`, section: 'Esperienze', label_it: `${experience.title} · sintesi`, label_en: `${experience.title} · summary`, type: 'textarea', default_it: experience.summary.it, default_en: experience.summary.en },
+  { key: `experiences.${experience.id}.best_for`, section: 'Esperienze', label_it: `${experience.title} · ideale per`, label_en: `${experience.title} · best for`, type: 'textarea', default_it: experience.bestFor.it, default_en: experience.bestFor.en },
+  { key: `experiences.${experience.id}.starting`, section: 'Esperienze', label_it: `${experience.title} · indicazione`, label_en: `${experience.title} · starting`, type: 'text', default_it: experience.starting.it, default_en: experience.starting.en },
+  { key: `experiences.${experience.id}.description`, section: 'Esperienze', label_it: `${experience.title} · descrizione`, label_en: `${experience.title} · description`, type: 'textarea', default_it: experience.description.it, default_en: experience.description.en },
+  { key: `experiences.${experience.id}.value`, section: 'Esperienze', label_it: `${experience.title} · valore`, label_en: `${experience.title} · value`, type: 'textarea', default_it: experience.value.it, default_en: experience.value.en },
+  { key: `experiences.${experience.id}.notes`, section: 'Esperienze', label_it: `${experience.title} · note pratiche`, label_en: `${experience.title} · practical notes`, type: 'textarea', default_it: experience.notes.it, default_en: experience.notes.en },
+  { key: `experiences.${experience.id}.safety`, section: 'Esperienze', label_it: `${experience.title} · sicurezza`, label_en: `${experience.title} · safety`, type: 'textarea', default_it: experience.safety.it, default_en: experience.safety.en }
+]);
+
 const SITE_CONTENT_DEFINITIONS = [
-  { key: 'home.hero.title', section: 'Homepage', label_it: 'Homepage hero title', label_en: 'Homepage hero title', type: 'textarea', default_it: "L'Etna non è solo uno scenario.", default_en: 'Etna is not just scenery.' },
-  { key: 'home.hero.subtitle', section: 'Homepage', label_it: 'Homepage hero subtitle', label_en: 'Homepage hero subtitle', type: 'textarea', default_it: 'Esperienze private e fisse sull’Etna per leggere il vulcano come territorio vivo: con conoscenza, sicurezza e relazione umana.', default_en: 'Private and fixed experiences on Mount Etna to read the volcano as a living territory: with knowledge, safety, and human connection.' },
-  { key: 'home.hero.primary_cta', section: 'Homepage', label_it: 'CTA principale', label_en: 'Primary CTA', type: 'text', default_it: "Trova l'esperienza giusta", default_en: 'Find the right experience' },
-  { key: 'home.hero.secondary_cta', section: 'Homepage', label_it: 'CTA secondaria', label_en: 'Secondary CTA', type: 'text', default_it: 'Guarda le disponibilità', default_en: 'View availability' },
-  { key: 'mission.mission.title', section: 'Missione', label_it: 'Titolo Missione', label_en: 'Mission title', type: 'text', default_it: 'Missione', default_en: 'Mission' },
-  { key: 'mission.mission.body', section: 'Missione', label_it: 'Testo Missione', label_en: 'Mission body', type: 'textarea', default_it: 'vulcanIQ nasce per trasformare il modo in cui le persone vivono l’Etna: non come una semplice destinazione da visitare, ma come un territorio da ascoltare, comprendere e ricordare.', default_en: 'vulcanIQ was created to transform the way people experience Etna: not as a simple destination to visit, but as a territory to listen to, understand and remember.' },
-  { key: 'mission.vision.title', section: 'Missione', label_it: 'Titolo Visione', label_en: 'Vision title', type: 'text', default_it: 'Visione', default_en: 'Vision' },
-  { key: 'mission.vision.body', section: 'Missione', label_it: 'Testo Visione', label_en: 'Vision body', type: 'textarea', default_it: 'Crediamo in un turismo che non consuma il territorio, ma lo ascolta. Un modo più autentico di vivere l’Etna, fatto di connessione, rispetto e ricordi che restano.', default_en: 'We believe in a form of tourism that does not consume the territory, but listens to it. A more authentic way to experience Etna, made of connection, respect and lasting memories.' },
-  { key: 'reviews.page.title', section: 'Recensioni', label_it: 'Titolo recensioni', label_en: 'Reviews title', type: 'textarea', default_it: 'Recensioni di chi ha vissuto l’Etna con noi.', default_en: 'Reviews from people who experienced Etna with us.' },
-  { key: 'reviews.page.intro', section: 'Recensioni', label_it: 'Intro recensioni', label_en: 'Reviews intro', type: 'textarea', default_it: '', default_en: '' },
-  { key: 'reviews.publish_button', section: 'Recensioni', label_it: 'Bottone recensione', label_en: 'Review button', type: 'text', default_it: 'Pubblica una recensione', default_en: 'Publish a review' },
-  { key: 'contact.page.title', section: 'Contatti', label_it: 'Titolo contatti', label_en: 'Contact title', type: 'text', default_it: 'Prepara la richiesta.', default_en: 'Prepare your request.' },
-  { key: 'contact.page.intro', section: 'Contatti', label_it: 'Intro contatti', label_en: 'Contact intro', type: 'textarea', default_it: 'Scegli una data fissa o una richiesta privata, indica il numero di persone e lascia un contatto: il team risponderà direttamente.', default_en: 'Choose a fixed date or a private request, indicate the number of people, and leave a contact: the team will reply directly.' }
+  { key: 'home.hero.title', section: 'Homepage', label_it: 'Homepage hero title', label_en: 'Homepage hero title', type: 'textarea', default_it: i18n.it.heroTitle, default_en: i18n.en.heroTitle, text_size: 'hero', style_variant: 'display' },
+  { key: 'home.hero.subtitle', section: 'Homepage', label_it: 'Homepage hero subtitle', label_en: 'Homepage hero subtitle', type: 'textarea', default_it: i18n.it.heroLead, default_en: i18n.en.heroLead, text_size: 'large', style_variant: 'body' },
+  { key: 'home.hero.primary_cta', section: 'Homepage', label_it: 'CTA principale', label_en: 'Primary CTA', type: 'text', default_it: i18n.it.findExperience, default_en: i18n.en.findExperience, style_variant: 'label' },
+  { key: 'home.hero.secondary_cta', section: 'Homepage', label_it: 'CTA secondaria', label_en: 'Secondary CTA', type: 'text', default_it: i18n.it.viewAvailability, default_en: i18n.en.viewAvailability, style_variant: 'label' },
+  { key: 'experiences.page.title', section: 'Esperienze', label_it: 'Titolo pagina esperienze', label_en: 'Experiences page title', type: 'textarea', default_it: i18n.it.experiencesTitle, default_en: i18n.en.experiencesTitle, text_size: 'hero', style_variant: 'display', text_align: 'center' },
+  { key: 'experiences.page.intro', section: 'Esperienze', label_it: 'Intro pagina esperienze', label_en: 'Experiences page intro', type: 'textarea', default_it: i18n.it.experiencesIntro, default_en: i18n.en.experiencesIntro, text_size: 'large', text_align: 'center' },
+  ...EXPERIENCE_CONTENT_DEFINITIONS,
+  { key: 'upcoming.page.title', section: 'Prossime escursioni', label_it: 'Titolo prossime escursioni', label_en: 'Upcoming excursions title', type: 'text', default_it: i18n.it.upcomingExcursions, default_en: i18n.en.upcomingExcursions, text_size: 'hero', style_variant: 'display', text_align: 'center' },
+  { key: 'upcoming.page.intro', section: 'Prossime escursioni', label_it: 'Intro prossime escursioni', label_en: 'Upcoming excursions intro', type: 'textarea', default_it: i18n.it.availabilityIntro, default_en: i18n.en.availabilityIntro, text_size: 'large', text_align: 'center' },
+  { key: 'partnerships.page.title', section: 'Collaborazioni', label_it: 'Titolo collaborazioni', label_en: 'Partnerships title', type: 'text', default_it: i18n.it.partnershipsTitle, default_en: i18n.en.partnershipsTitle, text_size: 'hero', style_variant: 'display', text_align: 'center' },
+  { key: 'partnerships.page.intro', section: 'Collaborazioni', label_it: 'Intro collaborazioni', label_en: 'Partnerships intro', type: 'textarea', default_it: '', default_en: '', text_size: 'large', text_align: 'center' },
+  { key: 'about.page.title', section: 'Chi siamo', label_it: 'Titolo chi siamo', label_en: 'About us title', type: 'textarea', default_it: i18n.it.teamTitle, default_en: i18n.en.teamTitle, text_size: 'hero', style_variant: 'display', text_align: 'center' },
+  { key: 'about.leonardo.role', section: 'Chi siamo', label_it: 'Ruolo Leonardo', label_en: 'Leonardo role', type: 'text', default_it: i18n.it.leonardoRole, default_en: i18n.en.leonardoRole, style_variant: 'label' },
+  { key: 'about.leonardo.bio', section: 'Chi siamo', label_it: 'Bio Leonardo', label_en: 'Leonardo bio', type: 'textarea', default_it: i18n.it.leonardoBio, default_en: i18n.en.leonardoBio },
+  { key: 'about.deborah.name', section: 'Chi siamo', label_it: 'Nome Deborah', label_en: 'Deborah name', type: 'text', default_it: i18n.it.coFounderName, default_en: i18n.en.coFounderName, text_size: 'large', style_variant: 'heading' },
+  { key: 'about.deborah.role', section: 'Chi siamo', label_it: 'Ruolo Deborah', label_en: 'Deborah role', type: 'text', default_it: i18n.it.coFounderRole, default_en: i18n.en.coFounderRole, style_variant: 'label' },
+  { key: 'about.deborah.bio', section: 'Chi siamo', label_it: 'Bio Deborah', label_en: 'Deborah bio', type: 'textarea', default_it: i18n.it.coFounderBio, default_en: i18n.en.coFounderBio },
+  { key: 'mission.mission.title', section: 'Missione', label_it: 'Titolo Missione', label_en: 'Mission title', type: 'text', default_it: i18n.it.mission, default_en: i18n.en.mission, text_size: 'hero', style_variant: 'display' },
+  { key: 'mission.mission.body', section: 'Missione', label_it: 'Testo Missione', label_en: 'Mission body', type: 'textarea', default_it: i18n.it.missionText, default_en: i18n.en.missionText, text_size: 'large' },
+  { key: 'mission.vision.title', section: 'Missione', label_it: 'Titolo Visione', label_en: 'Vision title', type: 'text', default_it: i18n.it.vision, default_en: i18n.en.vision, text_size: 'hero', style_variant: 'display' },
+  { key: 'mission.vision.body', section: 'Missione', label_it: 'Testo Visione', label_en: 'Vision body', type: 'textarea', default_it: i18n.it.visionText, default_en: i18n.en.visionText, text_size: 'large' },
+  { key: 'reviews.page.title', section: 'Recensioni', label_it: 'Titolo recensioni', label_en: 'Reviews title', type: 'textarea', default_it: i18n.it.reviewsTitle, default_en: i18n.en.reviewsTitle, text_size: 'hero', style_variant: 'display' },
+  { key: 'reviews.page.intro', section: 'Recensioni', label_it: 'Intro recensioni', label_en: 'Reviews intro', type: 'textarea', default_it: i18n.it.reviewsIntro || '', default_en: i18n.en.reviewsIntro || '' },
+  { key: 'reviews.publish_button', section: 'Recensioni', label_it: 'Bottone recensione', label_en: 'Review button', type: 'text', default_it: i18n.it.publishReview, default_en: i18n.en.publishReview, style_variant: 'label' },
+  { key: 'contact.page.title', section: 'Contatti', label_it: 'Titolo contatti', label_en: 'Contact title', type: 'text', default_it: i18n.it.formTitle, default_en: i18n.en.formTitle, text_size: 'hero', style_variant: 'display' },
+  { key: 'contact.page.intro', section: 'Contatti', label_it: 'Intro contatti', label_en: 'Contact intro', type: 'textarea', default_it: i18n.it.formIntro, default_en: i18n.en.formIntro, text_size: 'large' }
 ];
 
 function contentDefinitionMap() {
@@ -4104,19 +4624,19 @@ function App() {
   function renderPublicPage() {
     switch (activePage) {
       case 'experiences':
-        return <ExperienceAccordion lang={lang} fillForm={fillForm} siteMedia={siteMedia} />;
+        return <ExperienceAccordion lang={lang} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'upcoming':
-        return <PublicUpcomingExcursions lang={lang} fillForm={fillForm} />;
+        return <PublicUpcomingExcursions lang={lang} fillForm={fillForm} siteContent={siteContent} />;
       case 'partnerships':
-        return <PartnershipsPage lang={lang} />;
+        return <PartnershipsPage lang={lang} siteContent={siteContent} />;
       case 'about':
-        return <Team lang={lang} siteMedia={siteMedia} />;
+        return <Team lang={lang} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'mission':
         return <MissionPage lang={lang} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'reviews':
         return <ReviewsPage lang={lang} siteContent={siteContent} />;
       case 'contact':
-        return <ContactForm lang={lang} formState={formState} setFormState={setFormState} />;
+        return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteContent={siteContent} />;
       case 'home':
       default:
         return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} siteMedia={siteMedia} siteContent={siteContent} />;
@@ -4129,7 +4649,7 @@ function App() {
 
   return (
     <>
-      <Header lang={lang} setLang={setLang} activePage={activePage} setActivePage={setActivePage} />
+      <Header lang={lang} setLang={setLang} activePage={activePage} setActivePage={setActivePage} siteMedia={siteMedia} />
       <main ref={contactRef} className="public-page-shell">
         {renderPublicPage()}
       </main>

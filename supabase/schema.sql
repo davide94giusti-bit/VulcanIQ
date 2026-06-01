@@ -464,6 +464,10 @@ create table if not exists public.site_media (
   constraint site_media_file_url_check check (file_url is null or file_url ~* '^https?://')
 );
 
+
+alter table public.site_media add column if not exists image_position text default 'center';
+alter table public.site_media add column if not exists image_size text default 'normal';
+
 create index if not exists site_media_key_idx on public.site_media(media_key);
 create index if not exists site_media_active_idx on public.site_media(active);
 
@@ -493,6 +497,18 @@ create table if not exists public.site_content (
   updated_by uuid references auth.users(id),
   constraint site_content_type_check check (content_type in ('text', 'textarea'))
 );
+
+
+alter table public.site_content add column if not exists style_variant text;
+alter table public.site_content add column if not exists text_size text default 'normal';
+alter table public.site_content add column if not exists text_align text default 'left';
+alter table public.site_content add column if not exists visible boolean not null default true;
+alter table public.site_content add column if not exists sort_order integer not null default 0;
+alter table public.site_content add column if not exists image_url text;
+alter table public.site_content add column if not exists image_alt_it text;
+alter table public.site_content add column if not exists image_alt_en text;
+alter table public.site_content add column if not exists image_position text default 'center';
+alter table public.site_content add column if not exists layout_variant text default 'default';
 
 create index if not exists site_content_key_idx on public.site_content(content_key);
 create index if not exists site_content_section_idx on public.site_content(section);
@@ -644,6 +660,8 @@ select
   media_kind,
   alt_it,
   alt_en,
+  image_position,
+  image_size,
   active
 from public.site_media
 where active = true
@@ -663,6 +681,16 @@ select
   default_it,
   default_en,
   content_type,
+  style_variant,
+  text_size,
+  text_align,
+  visible,
+  sort_order,
+  image_url,
+  image_alt_it,
+  image_alt_en,
+  image_position,
+  layout_variant,
   active
 from public.site_content
 where active = true;

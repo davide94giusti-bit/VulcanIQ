@@ -329,3 +329,57 @@ The schema also adds optional lifecycle fields to booking requests, availability
 
 These fields support archive and historical views without deleting operational history.
 
+
+## Visual editor content tables
+
+The visual editor uses the existing `site_content` and `site_media` systems. Run the latest `supabase/schema.sql` so the following safe editor columns exist.
+
+For `site_content`:
+
+```sql
+style_variant text
+text_size text
+text_align text
+visible boolean
+sort_order integer
+image_url text
+image_alt_it text
+image_alt_en text
+image_position text
+layout_variant text
+```
+
+For `site_media`:
+
+```sql
+image_position text
+image_size text
+```
+
+The public site reads through safe public views. Authenticated active admins can read, insert, and update editable content and media through RLS policies. Public visitors can read only the safe public views and cannot write content.
+
+## Visual editor storage
+
+The visual editor reuses the existing public asset bucket:
+
+```text
+vulcaniq-public-assets
+```
+
+Supported upload types for visual media are JPEG, PNG, WEBP, and MP4. Public media can be read publicly. Only active admins should be able to upload or update files.
+
+## Logo media key
+
+The default logo is stored in the project at:
+
+```text
+public/brand/vulcaniq/vulcaniq-logo-premium.png
+```
+
+The visual editor can override it through `site_media` using this media key:
+
+```text
+brand_logo_main
+```
+
+If no Supabase override exists, the website uses the default local logo.

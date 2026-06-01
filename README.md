@@ -155,3 +155,42 @@ Build verified with:
 npm install
 npm run build
 ```
+
+## Controlled visual website editor
+
+This update replaces the old form-only **Admin → Edit website / Modifica sito** area with a controlled visual editor.
+
+Admins can now:
+
+- choose the public page to preview: Home, Experiences, Upcoming excursions, Partnerships, About us, Mission, Reviews, or Contact;
+- switch preview language between IT and EN;
+- switch device preview between desktop, tablet, and mobile;
+- click editable text directly in the live preview;
+- click editable public images, including the main logo, hero media, experience images, mission image, and team images;
+- edit Italian and English text side by side in the inspector;
+- use safe style controls only: text size, text style, alignment, image position, image size, visibility, reset, discard, and save;
+- save a selected item or save all local draft changes.
+
+The editor is intentionally not a free drag-and-drop builder. It does not expose arbitrary CSS, free positioning, custom z-indexes, color pickers, or font uploads. The public site continues to use static fallbacks if Supabase is missing or if no admin-edited content exists.
+
+## Current official logo
+
+The official project logo asset is now:
+
+```text
+public/brand/vulcaniq/vulcaniq-logo-premium.png
+```
+
+The browser icon uses:
+
+```text
+public/brand/vulcaniq/favicon.png
+```
+
+The Open Graph image uses:
+
+```text
+public/brand/vulcaniq/og-image.png
+```
+
+The public header, mobile header, admin login, admin dashboard, and visual editor preview all use the same black-and-gold vulcanIQ logo treatment. The old blue-background logo file is left in the repository for safety, but it is no longer referenced by the normal UI.
