@@ -81,7 +81,6 @@ const i18n = {
     whatsapp: 'Scrivici su WhatsApp',
     email: "Invia un'email",
     trust: ['Guida vulcanologica certificata'],
-    verifyLicense: 'Verifica licenza',
     guideLicenseAria: 'Apri la licenza della guida vulcanologica Leonardo Chiavetta',
     philosophyKicker: 'Filosofia',
     philosophyTitle: 'Perché un luogo non si visita davvero finché non si entra in relazione con ciò che lo rende vivo.',
@@ -287,7 +286,6 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     whatsapp: 'Message on WhatsApp',
     email: 'Send an email',
     trust: ['Certified volcanological guide'],
-    verifyLicense: 'Verify license',
     guideLicenseAria: "Open Leonardo Chiavetta's certified volcanological guide license",
     philosophyKicker: 'Philosophy',
     philosophyTitle: 'Because a place is not truly visited until you enter into relationship with what makes it alive.',
@@ -1058,7 +1056,6 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, edito
               <span className="trust-check" aria-hidden="true">✓</span>
               <span>
                 <strong>{text(lang, 'trust')[0]}</strong>
-                <small>{text(lang, 'verifyLicense')}</small>
               </span>
             </a>
           </div>
@@ -5013,7 +5010,7 @@ function App() {
   return (
     <>
       <Header lang={lang} setLang={setLang} activePage={activePage} setActivePage={setActivePage} siteMedia={siteMedia} />
-      <main ref={contactRef} className="public-page-shell">
+      <main ref={contactRef} className={`public-page-shell public-page-${activePage}`}>
         {renderPublicPage()}
       </main>
       <Footer lang={lang} />
