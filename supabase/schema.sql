@@ -271,37 +271,6 @@ create trigger fixed_excursions_set_updated_at
 before update on public.fixed_excursions
 for each row execute function public.set_updated_at();
 
-create or replace function public.sync_fixed_excursion_booking_request()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  fixed_row public.fixed_excursions%rowtype;
-begin
-  if new.request_type = 'fixed' and new.fixed_excursion_id is not null then
-    select * into fixed_row
-    from public.fixed_excursions
-    where id = new.fixed_excursion_id
-    limit 1;
-
-    if found then
-      new.experience_id := fixed_row.experience_id;
-      new.requested_date := coalesce(new.requested_date, fixed_row.date);
-      new.private_experience := false;
-    end if;
-  end if;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists booking_requests_sync_fixed_excursion on public.booking_requests;
-create trigger booking_requests_sync_fixed_excursion
-before insert or update of request_type, fixed_excursion_id on public.booking_requests
-for each row execute function public.sync_fixed_excursion_booking_request();
-
 -- -----------------------------------------------------------------------------
 -- Public reviews validated by unique booking code
 -- -----------------------------------------------------------------------------
@@ -320,9 +289,6 @@ create table if not exists public.reviews (
   admin_reply_by text,
   approved boolean not null default true,
   active boolean not null default true,
-  admin_reply text,
-  admin_reply_at timestamptz null,
-  admin_reply_by uuid references auth.users(id),
   constraint reviews_rating_check check (rating is null or (rating >= 1 and rating <= 5)),
   constraint reviews_language_check check (language is null or language in ('it', 'en'))
 );
@@ -339,9 +305,6 @@ alter table public.reviews add column if not exists admin_reply_at timestamptz;
 alter table public.reviews add column if not exists admin_reply_by text;
 alter table public.reviews add column if not exists approved boolean not null default true;
 alter table public.reviews add column if not exists active boolean not null default true;
-alter table public.reviews add column if not exists admin_reply text;
-alter table public.reviews add column if not exists admin_reply_at timestamptz null;
-alter table public.reviews add column if not exists admin_reply_by uuid references auth.users(id);
 
 create unique index if not exists reviews_booking_code_unique_idx on public.reviews(booking_code);
 create index if not exists reviews_active_idx on public.reviews(active, approved);

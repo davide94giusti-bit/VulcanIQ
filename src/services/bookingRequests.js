@@ -34,28 +34,17 @@ function intOrNull(value) {
 }
 
 export function normalizeRequestInput(input, defaults = {}) {
-<<<<<<< HEAD
-=======
-  const requestedDate = textOrNull(input.requested_date);
-  const requestType = textOrNull(input.request_type) || defaults.request_type || 'private';
-  const fixedExcursionExperienceId = textOrNull(input.fixed_excursion_experience_id ?? input.fixedExperienceId);
->>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
   return {
     customer_name: textOrNull(input.customer_name ?? input.name),
     customer_email: textOrNull(input.customer_email ?? input.email),
     customer_phone: textOrNull(input.customer_phone ?? input.phone),
     preferred_contact: textOrNull(input.preferred_contact) || defaults.preferred_contact || 'unknown',
-<<<<<<< HEAD
     experience_id: textOrNull(input.experience_id) || 'unsure',
     requested_date: textOrNull(input.requested_date),
-=======
-    experience_id: requestType === 'fixed' ? (fixedExcursionExperienceId || textOrNull(input.experience_id) || 'unsure') : (textOrNull(input.experience_id) || 'unsure'),
-    requested_date: requestedDate,
->>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
     alternative_date: textOrNull(input.alternative_date),
     language: textOrNull(input.language) || defaults.language || 'it',
     party_type: textOrNull(input.party_type),
-    request_type: requestType,
+    request_type: textOrNull(input.request_type) || defaults.request_type || 'private',
     fixed_excursion_id: textOrNull(input.fixed_excursion_id),
     adults: intOrNull(input.adults),
     children: intOrNull(input.children),
