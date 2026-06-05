@@ -4440,3 +4440,123 @@ body.modal-scroll-lock { overflow: hidden; }
     height: 34px;
   }
 }
+/* Full-page leaflet preview: opens monthly/date-specific files in-app instead of a new tab. */
+.leaflet-fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1600;
+  display: grid;
+  place-items: stretch;
+  padding: clamp(10px, 2vw, 22px);
+  background: rgba(5, 10, 20, 0.82);
+  backdrop-filter: blur(10px);
+}
+
+.leaflet-fullscreen-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(100%, 1120px);
+  height: min(100dvh - 20px, 940px);
+  margin: auto;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 30px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.leaflet-fullscreen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.leaflet-fullscreen-header h2 {
+  margin: 0;
+  font-size: clamp(1.1rem, 3vw, 1.65rem);
+  line-height: 1.1;
+}
+
+.leaflet-fullscreen-body {
+  min-height: 0;
+  overflow: auto;
+  padding: clamp(10px, 2vw, 18px);
+  background: #fff;
+}
+
+.leaflet-fullscreen-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+  margin: 0 auto;
+  object-fit: contain;
+  border-radius: 18px;
+}
+
+.leaflet-fullscreen-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 72dvh;
+  border: 0;
+  border-radius: 18px;
+  background: #fff;
+}
+
+@media (max-width: 760px) {
+  .leaflet-fullscreen-overlay {
+    padding: 0;
+  }
+
+  .leaflet-fullscreen-modal {
+    width: 100%;
+    height: 100dvh;
+    border-radius: 0;
+  }
+
+  .leaflet-fullscreen-header {
+    padding: calc(12px + env(safe-area-inset-top)) 14px 12px;
+  }
+
+  .leaflet-fullscreen-body {
+    padding: 10px;
+  }
+
+  .leaflet-fullscreen-frame {
+    min-height: calc(100dvh - 92px - env(safe-area-inset-top));
+  }
+}
+
+/* Center certified guide hero card label */
+.guide-license-card.trust-card {
+  position: relative;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding-left: 52px;
+  padding-right: 52px;
+}
+
+.guide-license-card .trust-check {
+  position: absolute;
+  left: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.guide-license-card span:last-child {
+  justify-items: center;
+  text-align: center;
+  width: 100%;
+}
+
+.guide-license-card strong {
+  display: block;
+  text-align: center;
+  width: 100%;
+}

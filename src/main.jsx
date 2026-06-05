@@ -599,6 +599,19 @@ function encode(value) {
   return encodeURIComponent(value || '');
 }
 
+function buildMailto(to, subject = '', body = '') {
+  const params = new URLSearchParams();
+  if (subject) params.set('subject', subject);
+  if (body) params.set('body', body);
+  const query = params.toString();
+  return `mailto:${to}${query ? `?${query}` : ''}`;
+}
+
+function openDefaultEmailApp(to, subject = '', body = '') {
+  const mailto = buildMailto(to, subject, body);
+  window.location.assign(mailto);
+}
+
 function text(lang, key) {
   return i18n[lang][key];
 }
@@ -910,7 +923,7 @@ function Icon({ name }) {
 
 function EmailPanel({ lang, message, subject, onClose, onUseForm }) {
   const [copied, setCopied] = useState('');
-  const mailto = `mailto:${EMAIL}?subject=${encode(subject)}&body=${encode(message)}`;
+  const mailto = buildMailto(EMAIL, subject, message);
   const gmail = `https://mail.google.com/mail/?view=cm&fs=1&to=${encode(EMAIL)}&su=${encode(subject)}&body=${encode(message)}`;
 
   async function handleCopy(kind, value) {
@@ -925,7 +938,7 @@ function EmailPanel({ lang, message, subject, onClose, onUseForm }) {
         <strong>{text(lang, 'emailOptions')}</strong>
         <button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>×</button>
       </div>
-      <a className="email-option" href={mailto}>{text(lang, 'defaultEmail')}</a>
+      <button type="button" className="email-option" onClick={() => openDefaultEmailApp(EMAIL, subject, message)}>{text(lang, 'defaultEmail')}</button>
       <a className="email-option" href={gmail} target="_blank" rel="noopener noreferrer">{text(lang, 'openGmail')}</a>
       <button type="button" className="email-option" onClick={() => handleCopy('email', EMAIL)}>{text(lang, 'copyEmail')} {copied === 'email' ? `· ${text(lang, 'copied')}` : ''}</button>
       <button type="button" className="email-option" onClick={() => handleCopy('message', message)}>{text(lang, 'copyMessage')} {copied === 'message' ? `· ${text(lang, 'copied')}` : ''}</button>
@@ -1080,7 +1093,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
   const [monthDate, setMonthDate] = useState(startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [selectedExperience, setSelectedExperience] = useState(null);
-  const [leafletOpen, setLeafletOpen] = useState(false);
+  const [activeLeaflet, setActiveLeaflet] = useState(null);
   const [dateModalOpen, setDateModalOpen] = useState(false);
   const [dateRequest, setDateRequest] = useState({ experienceId: 'etna-premium', adults: '1', children: '0', childrenUnder3Count: '0' });
 
@@ -1112,15 +1125,15 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
   }, []);
 
   useEffect(() => {
-    document.body.classList.toggle('modal-scroll-lock', Boolean(selectedExperience || leafletOpen || dateModalOpen));
+    document.body.classList.toggle('modal-scroll-lock', Boolean(selectedExperience || activeLeaflet || dateModalOpen));
     return () => document.body.classList.remove('modal-scroll-lock');
-  }, [selectedExperience, leafletOpen, dateModalOpen]);
+  }, [selectedExperience, activeLeaflet, dateModalOpen]);
 
   useEffect(() => {
     function closeOnEscape(event) {
       if (event.key === 'Escape') {
         setSelectedExperience(null);
-        setLeafletOpen(false);
+        setActiveLeaflet(null);
         setDateModalOpen(false);
       }
     }
@@ -1194,6 +1207,11 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
     return lang === 'it' ? `Apri programma di ${monthName}` : `Open ${monthName} program`;
   }
 
+  function openLeafletModal(leaflet, label) {
+    if (!leaflet?.file_url) return;
+    setActiveLeaflet({ leaflet, label });
+  }
+
   function renderDateModalFixedDetails(item) {
     const title = fixedExcursionTitle(item, lang);
     const description = fixedExcursionField(item, 'description', lang) || item[`note_${lang}`] || item.note_it || item.note_en || '';
@@ -1223,7 +1241,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
           <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestInformation')}</button>
           <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(fixedMessage)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
           {selectedDateLeaflet && (
-            <a className="request-action-button request-action-button-secondary" href={selectedDateLeaflet.file_url} target="_blank" rel="noopener noreferrer">{text(lang, 'openExcursionProgram')}</a>
+            <button className="request-action-button request-action-button-secondary" type="button" onClick={() => openLeafletModal(selectedDateLeaflet, text(lang, 'openExcursionProgram'))}>{text(lang, 'openExcursionProgram')}</button>
           )}
         </div>
       </article>
@@ -1288,7 +1306,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
                   <span><i className="legend-dot available" />{text(lang, 'availableDates')}</span>
                 </div>
                 {visibleMonthLeaflet && (
-                  <button className="button secondary leaflet-trigger" type="button" onClick={() => setLeafletOpen(true)}>{monthlyLeafletButtonLabel()}</button>
+                  <button className="button secondary leaflet-trigger" type="button" onClick={() => openLeafletModal(visibleMonthLeaflet, monthlyLeafletButtonLabel())}>{monthlyLeafletButtonLabel()}</button>
                 )}
                 <div className="weekdays" aria-hidden="true">
                   {(lang === 'it' ? ['L', 'M', 'M', 'G', 'V', 'S', 'D'] : ['M', 'T', 'W', 'T', 'F', 'S', 'S']).map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
@@ -1376,18 +1394,20 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         </div>
       )}
 
-      {leafletOpen && visibleMonthLeaflet && (
-        <div className="public-modal-backdrop leaflet-modal-backdrop" role="dialog" aria-modal="true" aria-label={monthlyLeafletButtonLabel()} onClick={() => setLeafletOpen(false)}>
-          <article className="review-modal leaflet-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="admin-modal-header">
-              <h2>{monthlyLeafletButtonLabel()}</h2>
-              <button className="modal-close-button" type="button" onClick={() => setLeafletOpen(false)}>{text(lang, 'close')}</button>
+      {activeLeaflet?.leaflet && (
+        <div className="leaflet-fullscreen-overlay" role="dialog" aria-modal="true" aria-label={activeLeaflet.label || text(lang, 'openProgram')} onClick={() => setActiveLeaflet(null)}>
+          <article className="leaflet-fullscreen-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="leaflet-fullscreen-header">
+              <h2>{activeLeaflet.label || text(lang, 'openProgram')}</h2>
+              <button className="date-modal-close" type="button" onClick={() => setActiveLeaflet(null)}>{text(lang, 'close')}</button>
             </div>
-            {String(visibleMonthLeaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(visibleMonthLeaflet.file_url) ? (
-              <img className="leaflet-modal-image" src={visibleMonthLeaflet.file_url} alt={monthlyLeafletButtonLabel()} loading="lazy" decoding="async" />
-            ) : (
-              <a className="button primary" href={visibleMonthLeaflet.file_url} target="_blank" rel="noopener noreferrer">{text(lang, 'openProgram')}</a>
-            )}
+            <div className="leaflet-fullscreen-body">
+              {String(activeLeaflet.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(activeLeaflet.leaflet.file_url) ? (
+                <img className="leaflet-fullscreen-image" src={activeLeaflet.leaflet.file_url} alt={activeLeaflet.label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
+              ) : (
+                <iframe className="leaflet-fullscreen-frame" src={activeLeaflet.leaflet.file_url} title={activeLeaflet.label || text(lang, 'openProgram')} />
+              )}
+            </div>
           </article>
         </div>
       )}
@@ -2221,7 +2241,7 @@ function Footer({ lang }) {
     <footer className="footer">
       <div className="container footer-grid">
         <div>
-          <p><strong>Leonardo Chiavetta</strong><br />{PHONE_DISPLAY}<br /><a href={`mailto:${EMAIL}`}>{EMAIL}</a></p>
+          <p><strong>Leonardo Chiavetta</strong><br />{PHONE_DISPLAY}<br /><a href={buildMailto(EMAIL)}>{EMAIL}</a></p>
           <a className="inline-link" href={INSTAGRAM} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
         </div>
       </div>
@@ -2235,7 +2255,7 @@ function StickyMobileBar({ lang }) {
     <div className="mobile-sticky-bar" aria-label="Mobile contact actions">
       <a href={`tel:${PHONE_TEL}`}><Icon name="phone" />{lang === 'it' ? 'Chiama' : 'Call'}</a>
       <a href={`https://wa.me/${PHONE_WA}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer"><Icon name="chat" />WhatsApp</a>
-      <a href="#contact"><Icon name="mail" />Email</a>
+      <a href={buildMailto(EMAIL, text(lang, 'emailSubject'), message)} onClick={(event) => { event.preventDefault(); openDefaultEmailApp(EMAIL, text(lang, 'emailSubject'), message); }}><Icon name="mail" />Email</a>
     </div>
   );
 }
@@ -3939,7 +3959,7 @@ function ReplyTools({ request, lang }) {
       {phoneNeedsCountry && <p className="small-note">{adminCopy(lang, 'Il numero potrebbe richiedere il prefisso internazionale prima di aprire WhatsApp.', 'Phone number may need country code before opening WhatsApp.')}</p>}
       {emailOpen && (
         <div className="admin-email-panel">
-          {customerEmail ? <a href={`mailto:${customerEmail}?subject=${encode(subject)}&body=${encode(prepared)}`}>{adminCopy(lang, 'Apri app email predefinita', 'Open default email app')}</a> : <span>{adminCopy(lang, 'Email cliente non disponibile.', 'Customer email unavailable.')}</span>}
+          {customerEmail ? <button type="button" onClick={() => openDefaultEmailApp(customerEmail, subject, prepared)}>{adminCopy(lang, 'Apri app email predefinita', 'Open default email app')}</button> : <span>{adminCopy(lang, 'Email cliente non disponibile.', 'Customer email unavailable.')}</span>}
           {customerEmail && <a href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encode(customerEmail)}&su=${encode(subject)}&body=${encode(prepared)}`} target="_blank" rel="noopener noreferrer">Gmail</a>}
           {customerEmail && <button type="button" onClick={() => copy('email', customerEmail)}>{adminCopy(lang, 'Copia email cliente', 'Copy customer email')} {copied === 'email' ? '· ✓' : ''}</button>}
           <button type="button" onClick={() => copy('reply', prepared)}>{adminCopy(lang, 'Copia messaggio preparato', 'Copy prepared message')}</button>
@@ -4163,7 +4183,7 @@ function AdminReviewsPanel({ lang }) {
     setLoading(true);
     setError('');
     try {
-      setReviews(await listReviews({ activeOnly: true }));
+      setReviews(await listReviews({ activeOnly: false }));
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Recensioni non caricate.', 'Could not load reviews.'));
     } finally {
@@ -4200,7 +4220,7 @@ function AdminReviewsPanel({ lang }) {
 
   return (
     <section className="admin-panel admin-reviews-panel">
-      <div className="admin-panel-header"><h2>{adminCopy(lang, 'Recensioni pubbliche', 'Public reviews')}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
+      <div className="admin-panel-header"><h2>{adminCopy(lang, 'Gestione recensioni', 'Review management')}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : reviews.length === 0 ? <p>{adminCopy(lang, 'Nessuna recensione ricevuta.', 'No reviews received.')}</p> : (
@@ -4214,7 +4234,7 @@ function AdminReviewsPanel({ lang }) {
               </div>
               <div className="admin-review-actions">
                 <button className="button secondary" type="button" onClick={() => setVisible(review, !review.active)}>{review.active ? adminCopy(lang, 'Nascondi', 'Hide') : adminCopy(lang, 'Ripubblica', 'Republish')}</button>
-                {review.active && <button className="button secondary danger" type="button" onClick={() => setConfirmReview(review)}>{adminCopy(lang, 'Elimina recensione', 'Delete review')}</button>}
+                <button className="button secondary danger" type="button" onClick={() => setConfirmReview(review)}>{adminCopy(lang, 'Elimina recensione', 'Delete review')}</button>
               </div>
             </article>
           ))}

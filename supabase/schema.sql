@@ -997,6 +997,13 @@ for insert
 to authenticated
 with check (public.is_admin());
 
+drop policy if exists "Admins can delete reviews" on public.reviews;
+create policy "Admins can delete reviews"
+on public.reviews
+for delete
+to authenticated
+using (public.is_admin());
+
 -- storage.objects: public read for published assets; admins can manage files.
 drop policy if exists "Public can read vulcanIQ public assets" on storage.objects;
 create policy "Public can read vulcanIQ public assets"
@@ -1062,7 +1069,7 @@ grant select, insert, update on public.partnerships to authenticated;
 grant select, insert, update on public.site_media to authenticated;
 grant select, insert, update on public.site_content to authenticated;
 grant select, insert, update on public.finance_entries to authenticated;
-grant select, insert, update on public.reviews to authenticated;
+grant select, insert, update, delete on public.reviews to authenticated;
 grant select, insert on public.activity_log to authenticated;
 
 notify pgrst, 'reload schema';
