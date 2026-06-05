@@ -4795,3 +4795,161 @@ body.modal-scroll-lock { overflow: hidden; }
     border-radius: 18px;
   }
 }
+
+/* Admin IA refinement: clickable cards, grouped actions, collapsed operations, finance details */
+.clickable-summary-card {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.clickable-summary-card:hover,
+.clickable-summary-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(218, 155, 73, 0.55);
+  box-shadow: 0 20px 44px rgba(13, 22, 38, 0.14);
+  outline: none;
+}
+
+.summary-card small {
+  display: block;
+  margin-top: 10px;
+  color: var(--ash);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.admin-action-groups {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.admin-action-group {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.68);
+}
+
+.admin-action-group h3 {
+  margin: 0 0 10px;
+  font-size: 0.84rem;
+  color: var(--ash);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.grouped-actions {
+  margin: 0;
+}
+
+.admin-operation-group,
+.admin-upcoming-group,
+.admin-calendar-detail-group,
+.edit-workspace-section {
+  background: rgba(255,255,255,0.64);
+}
+
+.admin-calendar-detail-group .calendar-detail-item,
+.admin-upcoming-group .request-card,
+.nested-upcoming-group .request-card {
+  margin-top: 12px;
+}
+
+.admin-edit-page > .edit-workspace-section {
+  margin-top: 18px;
+}
+
+.admin-edit-page .website-admin-page,
+.admin-edit-page .admin-reviews-panel {
+  margin: 16px;
+  box-shadow: none;
+}
+
+.admin-edit-page .visual-editor-toolbar {
+  margin-top: 0;
+}
+
+.full-screen-admin-modal {
+  width: min(1120px, calc(100vw - 28px));
+  max-height: calc(100vh - 28px);
+  overflow: auto;
+}
+
+.finance-detail-entry-list {
+  display: grid;
+  gap: 12px;
+}
+
+.finance-detail-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.74);
+}
+
+.finance-detail-entry p {
+  margin: 4px 0 0;
+}
+
+@media (max-width: 680px) {
+  .admin-primary-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .admin-primary-stat-grid .summary-card {
+    aspect-ratio: 1 / 1;
+    min-height: 118px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .admin-primary-stat-grid .summary-card strong {
+    font-size: clamp(1.8rem, 12vw, 3rem);
+  }
+
+  .admin-primary-stat-grid .summary-card span {
+    font-size: 0.86rem;
+    line-height: 1.15;
+  }
+
+  .admin-primary-stat-grid .summary-card small {
+    font-size: 0.7rem;
+  }
+
+  .admin-action-group {
+    padding: 12px;
+  }
+
+  .grouped-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .grouped-actions a,
+  .grouped-actions button {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .finance-detail-entry {
+    display: grid;
+  }
+
+  .full-screen-admin-modal {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    border-radius: 22px;
+  }
+}

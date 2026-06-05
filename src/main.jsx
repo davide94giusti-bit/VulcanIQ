@@ -2557,8 +2557,8 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
     ? '/admin/calendar'
     : normalizedPath.includes('/finance')
       ? '/admin/finance'
-      : normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media')
-        ? '/admin/website'
+      : normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media')
+        ? '/admin/edit'
         : normalizedPath.includes('/partnerships')
             ? '/admin/partnerships'
             : normalizedPath.includes('/upcoming')
@@ -2588,7 +2588,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           <option value="/admin/requests">{adminCopy(lang, 'Richieste', 'Requests')}</option>
           <option value="/admin/availability">{adminCopy(lang, 'Disponibilità', 'Availability')}</option>
           <option value="/admin/partnerships">{adminCopy(lang, 'Collaborazioni', 'Partnerships')}</option>
-          <option value="/admin/website">{adminCopy(lang, 'Modifica sito', 'Edit website')}</option>
+          <option value="/admin/edit">{adminCopy(lang, 'Modifica', 'Edit')}</option>
           <option value="/admin/finance">{adminCopy(lang, 'Finanze', 'Finance')}</option>
         </select>
         <nav className="admin-nav" aria-label="Admin navigation">
@@ -2598,7 +2598,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           <button type="button" className={normalizedPath.includes('/requests') ? 'active' : ''} onClick={() => navigate('/admin/requests')}>{adminCopy(lang, 'Richieste', 'Requests')}</button>
           <button type="button" className={normalizedPath.includes('/availability') ? 'active' : ''} onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Disponibilità', 'Availability')}</button>
           <button type="button" className={normalizedPath.includes('/partnerships') ? 'active' : ''} onClick={() => navigate('/admin/partnerships')}>{adminCopy(lang, 'Collaborazioni', 'Partnerships')}</button>
-          <button type="button" className={normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media') ? 'active' : ''} onClick={() => navigate('/admin/website')}>{adminCopy(lang, 'Modifica sito', 'Edit website')}</button>
+          <button type="button" className={normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media') ? 'active' : ''} onClick={() => navigate('/admin/edit')}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
           <button type="button" className={normalizedPath.includes('/finance') ? 'active' : ''} onClick={() => navigate('/admin/finance')}>{adminCopy(lang, 'Finanze', 'Finance')}</button>
           <a href="/" target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Sito pubblico', 'Public site')}</a>
         </nav>
@@ -2613,8 +2613,8 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           <AdminCalendarPage lang={lang} session={session} navigate={navigate} />
         ) : normalizedPath.includes('/finance') ? (
           <FinanceAdminPage lang={lang} session={session} />
-        ) : normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media') ? (
-          <WebsiteAdminPage lang={lang} session={session} />
+        ) : normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media') ? (
+          <AdminEditPage lang={lang} session={session} />
         ) : normalizedPath.includes('/partnerships') ? (
           <PartnershipsAdminPage lang={lang} session={session} />
         ) : normalizedPath.includes('/upcoming') ? (
@@ -2793,39 +2793,51 @@ function AdminCalendarPage({ lang, session, navigate }) {
           {isLoading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : (
             <>
               {selected.fixed.length === 0 && selected.bookings.length === 0 && selected.blocks.length === 0 && <p>{adminCopy(lang, 'Nessuna attività per questa data.', 'No activity for this date.')}</p>}
-              {selected.fixed.length > 0 && <h3>{adminCopy(lang, 'Escursioni fisse', 'Fixed excursions')}</h3>}
-              {selected.fixed.map((item) => {
-                const bookedGuests = requests.filter((request) => request.fixed_excursion_id === item.id && request.status === 'accepted');
-                return (
-                  <article className="calendar-detail-item" key={item.id}>
-                    <strong>{fixedExcursionLabel(item, lang)}</strong>
-                    <span>{adminExperienceLabel(item.experience_id, lang)} · {item.places_remaining}/{item.capacity}</span>
-                    <dl className="request-details-grid">
-                      <div><dt>{adminCopy(lang, 'Data', 'Date')}</dt><dd>{formatDateForMessage(item.date, lang)}</dd></div>
-                      <div><dt>{adminCopy(lang, 'Ora inizio', 'Start time')}</dt><dd>{item.start_time ? String(item.start_time).slice(0, 5) : '-'}</dd></div>
-                      <div><dt>{adminCopy(lang, 'Ora fine', 'End time')}</dt><dd>{item.end_time ? String(item.end_time).slice(0, 5) : '-'}</dd></div>
-                      <div><dt>{adminCopy(lang, 'Stato', 'Status')}</dt><dd>{item.status || (item.active ? 'active' : 'inactive')}</dd></div>
-                    </dl>
-                    <div className="guest-detail-list">
-                      <strong>{adminCopy(lang, 'Ospiti prenotati', 'Booked guests')}</strong>
-                      {bookedGuests.length ? bookedGuests.map((guest) => (
-                        <p className="small-note" key={guest.id}>{guest.customer_name || '-'} · {guest.customer_email || '-'} · {guest.customer_phone || '-'} · {Number(guest.adults || 0) + Number(guest.children || 0) || '-'} {adminCopy(lang, 'ospiti', 'guests')}{guest.booking_code ? ` · ${guest.booking_code}` : ''}</p>
-                      )) : <p className="small-note">{adminCopy(lang, 'Nessun ospite prenotato per questa data.', 'No guests booked for this date yet.')}</p>}
-                    </div>
-                    <button type="button" className="button secondary" onClick={() => setSelectedFixed(item)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
-                  </article>
-                );
-              })}
-              {selected.bookings.length > 0 && <h3>{adminCopy(lang, 'Esperienze prenotate', 'Booked experiences')}</h3>}
-              {selected.bookings.map((request) => (
-                <article className="calendar-detail-item" key={request.id}>
-                  <strong>{request.customer_name || '-'}</strong>
-                  <span>{adminExperienceLabel(request.experience_id, lang)} · {Number(request.adults || 0) + Number(request.children || 0) || '-'} {adminCopy(lang, 'ospiti', 'guests')}</span>
-                  <button type="button" className="button secondary" onClick={() => setSelectedBooking(request)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
-                </article>
-              ))}
-              {selected.blocks.length > 0 && <h3>{adminCopy(lang, 'Blocchi', 'Blocks')}</h3>}
-              {selected.blocks.map((block) => <p className="small-note" key={block.id}>{adminAvailabilityStatusLabels[block.status]?.[lang] || block.status} · {block.reason_it || block.reason_en || '-'}</p>)}
+              {selected.fixed.length > 0 && (
+                <details className="admin-archive-details admin-calendar-detail-group">
+                  <summary><span>{adminCopy(lang, 'Escursioni fisse', 'Fixed excursions')}</span><strong>{selected.fixed.length}</strong></summary>
+                  {selected.fixed.map((item) => {
+                    const bookedGuests = requests.filter((request) => request.fixed_excursion_id === item.id && request.status === 'accepted');
+                    return (
+                      <article className="calendar-detail-item" key={item.id}>
+                        <strong>{fixedExcursionLabel(item, lang)}</strong>
+                        <span>{adminExperienceLabel(item.experience_id, lang)} · {item.places_remaining}/{item.capacity}</span>
+                        <dl className="request-details-grid">
+                          <div><dt>{adminCopy(lang, 'Data', 'Date')}</dt><dd>{formatDateForMessage(item.date, lang)}</dd></div>
+                          <div><dt>{adminCopy(lang, 'Ora inizio', 'Start time')}</dt><dd>{item.start_time ? String(item.start_time).slice(0, 5) : '-'}</dd></div>
+                          <div><dt>{adminCopy(lang, 'Ora fine', 'End time')}</dt><dd>{item.end_time ? String(item.end_time).slice(0, 5) : '-'}</dd></div>
+                          <div><dt>{adminCopy(lang, 'Stato', 'Status')}</dt><dd>{item.status || (item.active ? 'active' : 'inactive')}</dd></div>
+                        </dl>
+                        <div className="guest-detail-list">
+                          <strong>{adminCopy(lang, 'Ospiti prenotati', 'Booked guests')}</strong>
+                          {bookedGuests.length ? bookedGuests.map((guest) => (
+                            <p className="small-note" key={guest.id}>{guest.customer_name || '-'} · {guest.customer_email || '-'} · {guest.customer_phone || '-'} · {Number(guest.adults || 0) + Number(guest.children || 0) || '-'} {adminCopy(lang, 'ospiti', 'guests')}{guest.booking_code ? ` · ${guest.booking_code}` : ''}</p>
+                          )) : <p className="small-note">{adminCopy(lang, 'Nessun ospite prenotato per questa data.', 'No guests booked for this date yet.')}</p>}
+                        </div>
+                        <button type="button" className="button secondary" onClick={() => setSelectedFixed(item)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
+                      </article>
+                    );
+                  })}
+                </details>
+              )}
+              {selected.bookings.length > 0 && (
+                <details className="admin-archive-details admin-calendar-detail-group">
+                  <summary><span>{adminCopy(lang, 'Esperienze prenotate', 'Booked experiences')}</span><strong>{selected.bookings.length}</strong></summary>
+                  {selected.bookings.map((request) => (
+                    <article className="calendar-detail-item" key={request.id}>
+                      <strong>{request.customer_name || '-'}</strong>
+                      <span>{adminExperienceLabel(request.experience_id, lang)} · {Number(request.adults || 0) + Number(request.children || 0) || '-'} {adminCopy(lang, 'ospiti', 'guests')}</span>
+                      <button type="button" className="button secondary" onClick={() => setSelectedBooking(request)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
+                    </article>
+                  ))}
+                </details>
+              )}
+              {selected.blocks.length > 0 && (
+                <details className="admin-archive-details admin-calendar-detail-group">
+                  <summary><span>{adminCopy(lang, 'Blocchi e note disponibilità', 'Availability notes')}</span><strong>{selected.blocks.length}</strong></summary>
+                  {selected.blocks.map((block) => <p className="small-note" key={block.id}>{adminAvailabilityStatusLabels[block.status]?.[lang] || block.status} · {block.reason_it || block.reason_en || '-'}</p>)}
+                </details>
+              )}
             </>
           )}
         </aside>
@@ -3157,6 +3169,29 @@ function WebsiteAdminPage({ lang, session }) {
           />
         </div>
       )}
+    </section>
+  );
+}
+
+
+function AdminEditPage({ lang, session }) {
+  return (
+    <section className="admin-page admin-edit-page">
+      <div className="admin-page-header">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'Modifica', 'Edit')}</span>
+          <h1>{adminCopy(lang, 'Modifica sito e recensioni', 'Edit website and reviews')}</h1>
+          <p>{adminCopy(lang, 'Gestisci contenuti, media e recensioni pubbliche da un’unica area.', 'Manage public content, media, and reviews from one area.')}</p>
+        </div>
+      </div>
+      <details className="admin-archive-details edit-workspace-section" open>
+        <summary><span>{adminCopy(lang, 'Sito pubblico', 'Public website')}</span><strong>{adminCopy(lang, 'Testi e media', 'Text and media')}</strong></summary>
+        <WebsiteAdminPage lang={lang} session={session} />
+      </details>
+      <details className="admin-archive-details edit-workspace-section">
+        <summary><span>{adminCopy(lang, 'Recensioni', 'Reviews')}</span><strong>{adminCopy(lang, 'Gestione', 'Management')}</strong></summary>
+        <AdminReviewsPanel lang={lang} />
+      </details>
     </section>
   );
 }
@@ -3547,6 +3582,7 @@ function FinanceAdminPage({ lang, session }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
+  const [activeFinanceDetail, setActiveFinanceDetail] = useState(null);
 
   async function refresh() {
     setLoading(true);
@@ -3635,10 +3671,15 @@ function FinanceAdminPage({ lang, session }) {
     }
   }
 
-  const income = entries.filter((entry) => entry.active !== false && entry.type === 'income').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const expenses = entries.filter((entry) => entry.active !== false && entry.type === 'expense').reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const linked = entries.filter((entry) => entry.booking_request_id || entry.fixed_excursion_id || entry.leaflet_id).length;
-  const unlinkedExpenses = entries.filter((entry) => entry.type === 'expense' && !entry.booking_request_id && !entry.fixed_excursion_id && !entry.leaflet_id).length;
+  const activeEntries = entries.filter((entry) => entry.active !== false);
+  const incomeEntries = activeEntries.filter((entry) => entry.type === 'income');
+  const expenseEntries = activeEntries.filter((entry) => entry.type === 'expense');
+  const linkedEntries = activeEntries.filter((entry) => entry.booking_request_id || entry.fixed_excursion_id || entry.leaflet_id);
+  const unlinkedExpenseEntries = expenseEntries.filter((entry) => !entry.booking_request_id && !entry.fixed_excursion_id && !entry.leaflet_id);
+  const income = incomeEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const expenses = expenseEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const linked = linkedEntries.length;
+  const unlinkedExpenses = unlinkedExpenseEntries.length;
   const categories = filters.type === 'expense' ? FINANCE_CATEGORIES.expense : filters.type === 'income' ? FINANCE_CATEGORIES.income : [...FINANCE_CATEGORIES.income, ...FINANCE_CATEGORIES.expense];
 
   return (
@@ -3654,11 +3695,11 @@ function FinanceAdminPage({ lang, session }) {
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       <div className="admin-summary-grid finance-summary-grid">
-        <SummaryCard label={adminCopy(lang, 'Entrate totali', 'Total earnings')} value={formatMoney(income)} />
-        <SummaryCard label={adminCopy(lang, 'Uscite totali', 'Total expenses')} value={formatMoney(expenses)} />
-        <SummaryCard label={adminCopy(lang, 'Utile netto', 'Net profit')} value={formatMoney(income - expenses)} />
-        <SummaryCard label={adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings')} value={linked} />
-        <SummaryCard label={adminCopy(lang, 'Spese non collegate', 'Unlinked expenses')} value={unlinkedExpenses} />
+        <SummaryCard label={adminCopy(lang, 'Entrate totali', 'Total earnings')} value={formatMoney(income)} onClick={() => setActiveFinanceDetail({ key: 'income', title: adminCopy(lang, 'Entrate', 'Income'), entries: incomeEntries, total: income })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Uscite totali', 'Total expenses')} value={formatMoney(expenses)} onClick={() => setActiveFinanceDetail({ key: 'expenses', title: adminCopy(lang, 'Uscite', 'Expenses'), entries: expenseEntries, total: expenses })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Utile netto', 'Net profit')} value={formatMoney(income - expenses)} onClick={() => setActiveFinanceDetail({ key: 'net', title: adminCopy(lang, 'Utile netto', 'Net profit'), entries: activeEntries, total: income - expenses })} helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
+        <SummaryCard label={adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings')} value={linked} onClick={() => setActiveFinanceDetail({ key: 'linked', title: adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings'), entries: linkedEntries, total: linked })} helper={adminCopy(lang, 'Vedi movimenti', 'View entries')} />
+        <SummaryCard label={adminCopy(lang, 'Spese non collegate', 'Unlinked expenses')} value={unlinkedExpenses} onClick={() => setActiveFinanceDetail({ key: 'unlinked-expenses', title: adminCopy(lang, 'Spese non collegate', 'Unlinked expenses'), entries: unlinkedExpenseEntries, total: unlinkedExpenses })} helper={adminCopy(lang, 'Vedi spese', 'View expenses')} />
       </div>
       <div className="admin-filter-bar finance-filter-bar">
         <select value={filters.type} onChange={(event) => updateFilter('type', event.target.value)}><option value="all">{adminCopy(lang, 'Tutti i tipi', 'All types')}</option><option value="income">{adminCopy(lang, 'Entrate', 'Income')}</option><option value="expense">{adminCopy(lang, 'Uscite', 'Expenses')}</option></select>
@@ -3695,7 +3736,42 @@ function FinanceAdminPage({ lang, session }) {
           )}
         </section>
       </div>
+      {activeFinanceDetail && <FinanceDetailModal detail={activeFinanceDetail} lang={lang} onClose={() => setActiveFinanceDetail(null)} />}
     </section>
+  );
+}
+
+function FinanceDetailModal({ detail, lang, onClose }) {
+  const numericTotal = typeof detail.total === 'number' ? detail.total : 0;
+  const isCountOnly = detail.key === 'linked' || detail.key === 'unlinked-expenses';
+  return (
+    <div className="modal-backdrop finance-detail-backdrop" role="presentation" onClick={onClose}>
+      <section className="admin-modal finance-detail-modal full-screen-admin-modal" role="dialog" aria-modal="true" aria-labelledby="financeDetailTitle" onClick={(event) => event.stopPropagation()}>
+        <div className="admin-modal-header">
+          <div>
+            <span className="kicker">{adminCopy(lang, 'Dettaglio finanze', 'Finance details')}</span>
+            <h2 id="financeDetailTitle">{detail.title}</h2>
+            <p>{isCountOnly ? `${detail.entries.length} ${adminCopy(lang, 'movimenti', 'entries')}` : formatMoney(numericTotal)}</p>
+          </div>
+          <button className="modal-close-button" type="button" onClick={onClose}>{adminCopy(lang, 'Chiudi', 'Close')}</button>
+        </div>
+        {detail.entries.length === 0 ? <p>{adminCopy(lang, 'Nessun movimento disponibile.', 'No entries available.')}</p> : (
+          <div className="finance-detail-entry-list">
+            {detail.entries.map((entry) => (
+              <article className="finance-detail-entry" key={entry.id}>
+                <div>
+                  <strong>{entry.title || '-'}</strong>
+                  <p>{formatDateForMessage(entry.entry_date, lang)} · {financeCategoryLabel(entry.category, lang)} · {entry.payment_method || adminCopy(lang, 'Metodo non indicato', 'No payment method')}</p>
+                  {entry.description && <p className="small-note">{entry.description}</p>}
+                  <p className="small-note">{entry.booking_request_id || entry.fixed_excursion_id || entry.leaflet_id ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Unlinked')}</p>
+                </div>
+                <strong className={`finance-amount ${entry.type}`}>{entry.type === 'expense' ? '-' : '+'}{formatMoney(entry.amount, entry.currency)}</strong>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -3770,16 +3846,16 @@ function TodayDashboard({ lang, session, navigate }) {
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {(error || blocksError) && <div className="admin-alert error" role="alert">{error || blocksError}</div>}
 
-      <div className="admin-summary-grid">
-        <SummaryCard label={adminCopy(lang, 'Pending oggi', 'Pending today')} value={pendingToday.length} />
-        <SummaryCard label={adminCopy(lang, 'Pending totale', 'Pending total')} value={pending.length} />
-        <SummaryCard label={adminCopy(lang, 'Accettate oggi', 'Accepted today')} value={acceptedToday.length} />
-        <SummaryCard label={adminCopy(lang, 'Disponibilità oggi', 'Availability issues today')} value={availabilityIssuesToday.length} />
+      <div className="admin-summary-grid admin-primary-stat-grid">
+        <SummaryCard label={adminCopy(lang, 'Pending oggi', 'Pending today')} value={pendingToday.length} onClick={() => document.getElementById('adminTodayRequests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} helper={adminCopy(lang, 'Apri richieste di oggi', 'Open today requests')} />
+        <SummaryCard label={adminCopy(lang, 'Pending totale', 'Pending total')} value={pending.length} onClick={() => navigate('/admin/requests')} helper={adminCopy(lang, 'Vai alle richieste', 'Go to requests')} />
+        <SummaryCard label={adminCopy(lang, 'Accettate oggi', 'Accepted today')} value={acceptedToday.length} onClick={() => navigate('/admin/upcoming')} helper={adminCopy(lang, 'Vedi confermate', 'View accepted')} />
+        <SummaryCard label={adminCopy(lang, 'Disponibilità oggi', 'Availability issues today')} value={availabilityIssuesToday.length} onClick={() => navigate('/admin/availability')} helper={adminCopy(lang, 'Gestisci calendario', 'Manage calendar')} />
       </div>
 
       <div className="admin-two-column">
         <section className="admin-panel">
-          <details className="admin-archive-details today-requests-details">
+          <details className="admin-archive-details today-requests-details" id="adminTodayRequests">
             <summary><span>{adminCopy(lang, 'Richieste di oggi', 'Today requests')}</span><strong>{todayRequests.length}</strong></summary>
             <div className="today-requests-collapsed-body">
               <div className="admin-panel-header today-requests-inner-header">
@@ -3807,35 +3883,48 @@ function TodayDashboard({ lang, session, navigate }) {
           </div>
         </section>
 
-        <aside className="admin-panel compact-panel">
-          <h2>{adminCopy(lang, 'Prossima operatività', 'Upcoming operations')}</h2>
-          <AdminMiniList
-            items={operational}
-            empty={adminCopy(lang, 'Nessuna conferma nei prossimi 7 giorni.', 'No accepted bookings in the next 7 days.')}
-            render={(request) => <span><strong>{formatDateForMessage(request.requested_date, lang)}</strong> · {request.customer_name || '-'} · {adminExperienceLabel(request.experience_id, lang)}</span>}
-          />
-          <button className="button secondary admin-inline-button" type="button" onClick={() => navigate('/admin/upcoming')}>{adminCopy(lang, 'Apri prossime prenotazioni', 'Open upcoming bookings')}</button>
-          <h3>{adminCopy(lang, 'Blocchi prossimi', 'Near-term blocks')}</h3>
-          <AdminMiniList
-            items={blocks.slice(0, 8)}
-            empty={adminCopy(lang, 'Nessun blocco attivo nei prossimi 30 giorni.', 'No active blocks in the next 30 days.')}
-            render={(block) => <span><strong>{formatDateForMessage(block.date, lang)}</strong> · {adminAvailabilityStatusLabels[block.status]?.[lang] || block.status} · {block.experience_id ? adminExperienceLabel(block.experience_id, lang) : adminCopy(lang, 'Tutte', 'All')}</span>}
-          />
-          <h3>{adminCopy(lang, 'Decisioni recenti', 'Recent decisions')}</h3>
-          <AdminMiniList
-            items={recentDecisions}
-            empty={adminCopy(lang, 'Nessuna decisione recente.', 'No recent decisions.')}
-            render={(request) => <span><strong>{requestStatusLabels[request.status]?.[lang] || request.status}</strong> · {request.customer_name || '-'} · {formatDateForMessage(request.requested_date, lang) || '-'}{request.decision_note ? ` · ${request.decision_note}` : ''}</span>}
-          />
-          <button className="button secondary admin-inline-button" type="button" onClick={() => navigate('/admin/requests')}>{adminCopy(lang, 'Apri storico richieste', 'Open request history')}</button>
-          <div className="admin-quick-actions">
-            <button type="button" onClick={() => setManualOpen(true)}>{adminCopy(lang, 'Aggiungi richiesta', 'Add request')}</button>
-            <button type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Blocca data', 'Block date')}</button>
-            <button type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Segna limitata', 'Mark limited')}</button>
-            <button type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Segna su richiesta', 'Mark on request')}</button>
-            <a href="/#availability" target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri calendario pubblico', 'Open public calendar')}</a>
-            <button type="button" onClick={() => copyText(PHONE_TEL)}>{adminCopy(lang, 'Copia WhatsApp Leonardo', 'Copy Leonardo WhatsApp')}</button>
-            <button type="button" onClick={() => copyText(EMAIL)}>{adminCopy(lang, 'Copia email', 'Copy business email')}</button>
+        <aside className="admin-panel compact-panel admin-operations-panel">
+          <div className="admin-panel-header"><h2>{adminCopy(lang, 'Operazioni imminenti', 'Upcoming operations')}</h2><span className="status-pill accepted">{operational.length + next14.length}</span></div>
+          <details className="admin-archive-details admin-operation-group">
+            <summary><span>{adminCopy(lang, 'Prenotazioni accettate', 'Accepted bookings')}</span><strong>{operational.length}</strong></summary>
+            <AdminMiniList
+              items={operational}
+              empty={adminCopy(lang, 'Nessuna conferma nei prossimi 7 giorni.', 'No accepted bookings in the next 7 days.')}
+              render={(request) => <span><strong>{formatDateForMessage(request.requested_date, lang)}</strong> · {request.customer_name || '-'} · {adminExperienceLabel(request.experience_id, lang)}</span>}
+            />
+            <button className="button secondary admin-inline-button" type="button" onClick={() => navigate('/admin/upcoming')}>{adminCopy(lang, 'Apri prossime prenotazioni', 'Open upcoming bookings')}</button>
+          </details>
+          <details className="admin-archive-details admin-operation-group">
+            <summary><span>{adminCopy(lang, 'Blocchi prossimi', 'Near-term blocks')}</span><strong>{next14.length}</strong></summary>
+            <AdminMiniList
+              items={blocks.slice(0, 8)}
+              empty={adminCopy(lang, 'Nessun blocco attivo nei prossimi 30 giorni.', 'No active blocks in the next 30 days.')}
+              render={(block) => <span><strong>{formatDateForMessage(block.date, lang)}</strong> · {adminAvailabilityStatusLabels[block.status]?.[lang] || block.status} · {block.experience_id ? adminExperienceLabel(block.experience_id, lang) : adminCopy(lang, 'Tutte', 'All')}</span>}
+            />
+          </details>
+          <details className="admin-archive-details admin-operation-group">
+            <summary><span>{adminCopy(lang, 'Decisioni recenti', 'Recent decisions')}</span><strong>{recentDecisions.length}</strong></summary>
+            <AdminMiniList
+              items={recentDecisions}
+              empty={adminCopy(lang, 'Nessuna decisione recente.', 'No recent decisions.')}
+              render={(request) => <span><strong>{requestStatusLabels[request.status]?.[lang] || request.status}</strong> · {request.customer_name || '-'} · {formatDateForMessage(request.requested_date, lang) || '-'}{request.decision_note ? ` · ${request.decision_note}` : ''}</span>}
+            />
+          </details>
+          <div className="admin-action-groups">
+            <AdminActionGroup title={adminCopy(lang, 'Richieste', 'Requests')}>
+              <button type="button" onClick={() => setManualOpen(true)}>{adminCopy(lang, 'Aggiungi richiesta', 'Add request')}</button>
+              <button type="button" onClick={() => navigate('/admin/requests')}>{adminCopy(lang, 'Storico richieste', 'Request history')}</button>
+            </AdminActionGroup>
+            <AdminActionGroup title={adminCopy(lang, 'Disponibilità', 'Availability')}>
+              <button type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Blocca data', 'Block date')}</button>
+              <button type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Segna limitata', 'Mark limited')}</button>
+              <button type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Segna su richiesta', 'Mark on request')}</button>
+              <a href="/#availability" target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri calendario pubblico', 'Open public calendar')}</a>
+            </AdminActionGroup>
+            <AdminActionGroup title={adminCopy(lang, 'Contatti rapidi', 'Quick contacts')}>
+              <button type="button" onClick={() => copyText(PHONE_TEL)}>{adminCopy(lang, 'Copia WhatsApp Leonardo', 'Copy Leonardo WhatsApp')}</button>
+              <button type="button" onClick={() => copyText(EMAIL)}>{adminCopy(lang, 'Copia email business', 'Copy business email')}</button>
+            </AdminActionGroup>
           </div>
         </aside>
       </div>
@@ -3914,21 +4003,23 @@ function UpcomingPage({ lang, session, navigate }) {
       </div>
       {(error || blocksError) && <div className="admin-alert error" role="alert">{error || blocksError}</div>}
       <div className="admin-two-column">
-        <section className="admin-panel">
-          <div className="admin-panel-header"><h2>{adminCopy(lang, 'Prenotazioni accettate', 'Accepted bookings')}</h2><span className="status-pill accepted">{upcoming.length}</span></div>
-          {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : upcoming.length === 0 ? <p>{adminCopy(lang, 'Nessuna prenotazione accettata futura.', 'No future accepted bookings.')}</p> : (
-            <div className="upcoming-group-list">
-              {groups.map((group) => group.items.length > 0 && (
-                <section className="upcoming-group" key={group.key}>
-                  <h3>{group.title[lang]}</h3>
-                  <div className="request-card-list compact-list">
-                    {group.items.map((request) => <RequestCard key={request.id} request={request} lang={lang} compact />)}
-                  </div>
-                </section>
-              ))}
-            </div>
-          )}
-          <details className="admin-archive-details">
+        <section className="admin-panel upcoming-collapsed-panel">
+          <details className="admin-archive-details admin-upcoming-group">
+            <summary><span>{adminCopy(lang, 'Prenotazioni accettate', 'Accepted bookings')}</span><strong>{upcoming.length}</strong></summary>
+            {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : upcoming.length === 0 ? <p>{adminCopy(lang, 'Nessuna prenotazione accettata futura.', 'No future accepted bookings.')}</p> : (
+              <div className="upcoming-group-list">
+                {groups.map((group) => group.items.length > 0 && (
+                  <details className="admin-archive-details nested-upcoming-group" key={group.key}>
+                    <summary><span>{group.title[lang]}</span><strong>{group.items.length}</strong></summary>
+                    <div className="request-card-list compact-list">
+                      {group.items.map((request) => <RequestCard key={request.id} request={request} lang={lang} compact />)}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+          </details>
+          <details className="admin-archive-details admin-upcoming-group">
             <summary><span>{adminCopy(lang, 'Esperienze passate', 'Past experiences')}</span><strong>{pastAccepted.length}</strong></summary>
             {pastAccepted.length === 0 ? <p className="small-note">{adminCopy(lang, 'Nessuna esperienza passata.', 'No past experiences.')}</p> : (
               <div className="request-card-list compact-list">
@@ -3944,10 +4035,12 @@ function UpcomingPage({ lang, session, navigate }) {
             empty={adminCopy(lang, 'Nessun blocco attivo nei prossimi 30 giorni.', 'No active blocks in the next 30 days.')}
             render={(block) => <span><strong>{formatDateForMessage(block.date, lang)}</strong> · {adminAvailabilityStatusLabels[block.status]?.[lang] || block.status} · {block.experience_id ? adminExperienceLabel(block.experience_id, lang) : adminCopy(lang, 'Tutte le esperienze', 'All experiences')}</span>}
           />
-          <div className="admin-quick-actions">
-            <button type="button" onClick={() => navigate('/admin/today')}>{adminCopy(lang, 'Torna a oggi', 'Back to Today')}</button>
-            <button type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Blocca / limita data', 'Block / limit date')}</button>
-            <a href="/#availability" target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri calendario pubblico', 'Open public calendar')}</a>
+          <div className="admin-action-groups">
+            <AdminActionGroup title={adminCopy(lang, 'Scorciatoie', 'Shortcuts')}>
+              <button type="button" onClick={() => navigate('/admin/today')}>{adminCopy(lang, 'Torna a oggi', 'Back to Today')}</button>
+              <button type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Blocca / limita data', 'Block / limit date')}</button>
+              <a href="/#availability" target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri calendario pubblico', 'Open public calendar')}</a>
+            </AdminActionGroup>
           </div>
         </aside>
       </div>
@@ -3955,8 +4048,16 @@ function UpcomingPage({ lang, session, navigate }) {
   );
 }
 
-function SummaryCard({ label, value }) {
-  return <article className="summary-card"><strong>{value}</strong><span>{label}</span></article>;
+function SummaryCard({ label, value, onClick, helper }) {
+  const content = <><strong>{value}</strong><span>{label}</span>{helper && <small>{helper}</small>}</>;
+  if (onClick) {
+    return <button type="button" className="summary-card clickable-summary-card" onClick={onClick} aria-label={`${label}: ${value}`}>{content}</button>;
+  }
+  return <article className="summary-card">{content}</article>;
+}
+
+function AdminActionGroup({ title, children }) {
+  return <section className="admin-action-group"><h3>{title}</h3><div className="admin-quick-actions grouped-actions">{children}</div></section>;
 }
 
 function AdminMiniList({ items, empty, render }) {
@@ -4446,7 +4547,6 @@ function RequestsPage({ lang, session }) {
           />
         )}
       </section>
-      <AdminReviewsPanel lang={lang} />
       {decision && <DecisionModal lang={lang} session={session} decision={decision} onClose={() => setDecision(null)} onDone={(message) => { setDecision(null); refreshWithFeedback(message); }} />}
       {manualOpen && <ManualRequestModal lang={lang} session={session} onClose={() => setManualOpen(false)} onSaved={() => { setManualOpen(false); refreshWithFeedback(adminCopy(lang, 'Richiesta manuale creata.', 'Manual request created.')); }} />}
     </section>
