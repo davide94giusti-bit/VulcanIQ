@@ -78,3 +78,26 @@ export async function updateReviewVisibility(id, input) {
   if (error) throw error;
   return data;
 }
+
+
+export async function deleteReview(id) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
+  // Prefer soft delete because the current schema exposes active/approved fields
+  // and the public_reviews view already filters them out.
+  const payload = {
+    active: false,
+    approved: false,
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabase
+    .from('reviews')
+    .update(payload)
+    .eq('id', id)
+    .select('id, created_at, booking_request_id, booking_code, reviewer_name, review_text, rating, language, approved, active')
+    .single();
+
+  if (error) throw error;
+  return data;
+}

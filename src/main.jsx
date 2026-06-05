@@ -4,9 +4,9 @@ import { blockedDates, defaultExperienceAvailability } from './data/availability
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
 import { createPublicBookingRequest, createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
-import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
+import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
-import { loadPublicReviews, submitPublicReview, listReviews, updateReviewVisibility } from './services/reviewsService.js';
+import { loadPublicReviews, submitPublicReview, listReviews, updateReviewVisibility, deleteReview } from './services/reviewsService.js';
 import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFile } from './services/siteMediaService.js';
 import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
 import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
@@ -70,7 +70,7 @@ const i18n = {
   it: {
     languageLabel: 'Italiano',
     switchLabel: 'EN',
-    nav: ['Inizio', 'Esperienze', 'Prossime escursioni', 'Collaborazioni', 'Chi siamo', 'Missione', 'Recensioni', 'Contattaci'],
+    nav: ['Inizio', 'Escursioni', 'Collaborazioni', 'Chi siamo', 'Recensioni', 'Contattaci'],
     contact: 'Contattaci',
     heroKicker: '',
     heroTitle: "L'Etna non è solo uno scenario.",
@@ -79,9 +79,10 @@ const i18n = {
     viewAvailability: 'Guarda le disponibilità',
     call: 'Chiama Leonardo',
     whatsapp: 'Scrivici su WhatsApp',
-    addContact: 'Aggiungi ai contatti',
     email: "Invia un'email",
-    trust: ['Guida vulcanologica certificata', 'Esperienze su misura', 'Sicurezza e valutazione reale', 'Italiano e inglese'],
+    trust: ['Guida vulcanologica certificata'],
+    verifyLicense: 'Verifica licenza',
+    guideLicenseAria: 'Apri la licenza della guida vulcanologica Leonardo Chiavetta',
     philosophyKicker: 'Filosofia',
     philosophyTitle: 'Perché un luogo non si visita davvero finché non si entra in relazione con ciò che lo rende vivo.',
     philosophyText: `vulcanIQ nasce da un’esigenza di fermarsi e cambiare prospettiva. Dopo anni a contatto con il turismo di massa, è emersa una domanda semplice ma potente: è davvero questo il modo di vivere un luogo come l’Etna?
@@ -97,8 +98,8 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     visionText: 'Crediamo in un turismo che non consumi il territorio, ma lo ascolti. Un modo più autentico di vivere l’Etna, fatto di connessione, rispetto e ricordi che restano.',
     readMore: 'Leggi di più',
     hide: 'Riduci',
-    experiencesKicker: 'Esperienze',
-    experiencesTitle: 'Esperienze sull’Etna, pensate su misura.',
+    experiencesKicker: 'Escursioni',
+    experiencesTitle: 'Escursioni sull’Etna, pensate su misura.',
     experiencesIntro: 'Scegli il modo più adatto per vivere il vulcano: esperienze private, formative o condivise, sempre guidate con attenzione, sicurezza e conoscenza del territorio.',
     bestFor: 'Ideale per',
     starting: 'Indicazione',
@@ -254,9 +255,18 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     defaultMessage: 'Ciao Leonardo,\nvorrei informazioni su un’esperienza vulcanIQ sull’Etna.\n\nVorrei sapere disponibilità, durata indicativa, prezzo e consigli sull’abbigliamento.\n\nGrazie.',
     excursionCalendar: 'Calendario escursioni',
     availableDates: 'Date disponibili',
+    scheduledExcursion: 'Escursione programmata',
+    pastDates: 'Date passate',
+    programForDate: 'Programma del giorno',
+    monthlyProgramPrefix: 'Programma di',
+    openProgram: 'Apri programma',
+    closeProgram: 'Chiudi programma',
     unavailableDatesLegend: 'Date non disponibili',
     dateDetails: 'Dettagli',
-    noExcursionsOnDate: 'Nessuna escursione fissa in questa data.',
+    noExcursionsOnDate: 'Nessuna escursione programmata per questa data.',
+    availableDatePrivateCopy: 'Puoi richiedere un’esperienza privata o su misura.',
+    requestInformation: 'Richiedi informazioni',
+    openExcursionProgram: 'Apri programma dell’escursione',
     publishReview: 'Pubblica una recensione',
     missionHero: 'Non accompagniamo solo persone sull’Etna. Creiamo un modo più attento di incontrarlo.',
     missionShort: 'vulcanIQ nasce per trasformare l’escursione in un’esperienza di ascolto, conoscenza e relazione con il territorio.',
@@ -266,7 +276,7 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
   en: {
     languageLabel: 'English',
     switchLabel: 'IT',
-    nav: ['Home', 'Experiences', 'Upcoming excursions', 'Partnerships', 'About us', 'Mission', 'Reviews', 'Contact us'],
+    nav: ['Home', 'Excursions', 'Partnerships', 'Who we are', 'Reviews', 'Contact us'],
     contact: 'Contact us',
     heroKicker: '',
     heroTitle: 'Mount Etna is not just a backdrop.',
@@ -275,9 +285,10 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     viewAvailability: 'View availability',
     call: 'Call Leonardo',
     whatsapp: 'Message on WhatsApp',
-    addContact: 'Add to contacts',
     email: 'Send an email',
-    trust: ['Certified volcanological guide', 'Tailored experiences', 'Safety and real assessment', 'Italian and English'],
+    trust: ['Certified volcanological guide'],
+    verifyLicense: 'Verify license',
+    guideLicenseAria: "Open Leonardo Chiavetta's certified volcanological guide license",
     philosophyKicker: 'Philosophy',
     philosophyTitle: 'Because a place is not truly visited until you enter into relationship with what makes it alive.',
     philosophyText: `vulcanIQ was born from the need to pause and change perspective. After years in contact with mass tourism, one simple but powerful question emerged: is this really the way to experience a place like Mount Etna?
@@ -450,9 +461,18 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     defaultMessage: 'Hi Leonardo,\nI would like more information about a vulcanIQ experience on Mount Etna.\n\nI would like to know availability, approximate duration, price, and clothing recommendations.\n\nThank you.',
     excursionCalendar: 'Excursion calendar',
     availableDates: 'Available dates',
+    scheduledExcursion: 'Scheduled excursion',
+    pastDates: 'Past dates',
+    programForDate: 'Day program',
+    monthlyProgramPrefix: '',
+    openProgram: 'Open program',
+    closeProgram: 'Close program',
     unavailableDatesLegend: 'Unavailable dates',
     dateDetails: 'Details',
-    noExcursionsOnDate: 'No fixed excursion on this date.',
+    noExcursionsOnDate: 'No scheduled excursion is currently planned for this date.',
+    availableDatePrivateCopy: 'You can request a private or tailored experience.',
+    requestInformation: 'Request information',
+    openExcursionProgram: 'Open excursion program',
     publishReview: 'Publish a review',
     missionHero: 'We do not simply guide people on Etna. We create a more mindful way to encounter it.',
     missionShort: 'vulcanIQ was created to transform an excursion into an experience of listening, knowledge and connection with the territory.',
@@ -807,6 +827,48 @@ I would like to know whether the request can be confirmed and receive the practi
 Thank you.`;
 }
 
+function buildAvailableDateRequestMessage({ date, experienceId, adults, children, childrenUnder3Count }, lang) {
+  const experience = experienceById(experienceId || 'etna-premium');
+  const dateText = formatDateForMessage(date, lang);
+  const adultCount = adults || '1';
+  const childCount = children || '0';
+  const under3Count = childrenUnder3Count || '0';
+  if (lang === 'it') {
+    return `Ciao Leonardo,
+vorrei richiedere un’esperienza privata o su misura per il giorno ${dateText}.
+
+Esperienza preferita: ${experience.title}
+Adulti: ${adultCount}
+Bambini: ${childCount}
+Bambini sotto i 3 anni: ${under3Count}
+
+Vorrei sapere se la data è disponibile e ricevere dettagli su durata, prezzo e abbigliamento consigliato.
+
+Grazie.`;
+  }
+  return `Hi Leonardo,
+I would like to request a private or tailored experience for ${dateText}.
+
+Preferred experience: ${experience.title}
+Adults: ${adultCount}
+Children: ${childCount}
+Children under 3: ${under3Count}
+
+I would like to know whether the date is available and receive details about duration, price, and recommended clothing.
+
+Thank you.`;
+}
+
+function appendUnder3CountToMessage(message, count, lang) {
+  const cleanCount = Number.parseInt(count || '0', 10) || 0;
+  const base = String(message || text(lang, 'defaultMessage')).trimEnd();
+  if (cleanCount <= 0) return base;
+  const label = lang === 'it' ? 'Bambini sotto i 3 anni' : 'Children under 3';
+  return `${base}
+
+${label}: ${cleanCount}`;
+}
+
 function buildCalendarMessage({ experience, date, status, note }, lang) {
   const dateText = formatDateForMessage(date, lang);
   const statusText = statusLabels[status]?.[lang] || status;
@@ -831,19 +893,6 @@ async function copyText(value) {
   textarea.select();
   document.execCommand('copy');
   document.body.removeChild(textarea);
-}
-
-function downloadVCard() {
-  const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:Leonardo Chiavetta\nN:Chiavetta;Leonardo;;;\nTEL;TYPE=CELL:+393349298246\nEMAIL:leo97ct@yahoo.it\nORG:vulcanIQ\nTITLE:Certified volcanological guide\nEND:VCARD`;
-  const blob = new Blob([vcard], { type: 'text/vcard;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'leonardo-chiavetta-vulcaniq.vcf';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
 }
 
 function Icon({ name }) {
@@ -898,7 +947,6 @@ function ContactActions({ lang, contextMessage, compact = false, onUseForm, expe
     <div className={className} data-experience={experienceId || undefined}>
       <a className="pill-action" href={`tel:${PHONE_TEL}`}><Icon name="phone" />{text(lang, 'call')}</a>
       <a className="pill-action" href={whatsappUrl} target="_blank" rel="noopener noreferrer"><Icon name="chat" />{text(lang, 'whatsapp')}</a>
-      <button type="button" className="pill-action" onClick={downloadVCard}><Icon name="user" />{text(lang, 'addContact')}</button>
       <div className="email-action-wrap">
         <button type="button" className="pill-action" onClick={() => setEmailOpen((open) => !open)} aria-expanded={emailOpen}><Icon name="mail" />{text(lang, 'email')}</button>
         {emailOpen && (
@@ -956,9 +1004,11 @@ function BrandLogo({ compact = false, siteMedia, editor }) {
   );
 }
 
-const publicPages = ['home', 'experiences', 'upcoming', 'partnerships', 'about', 'mission', 'reviews', 'contact'];
+const publicPages = ['home', 'experiences', 'partnerships', 'about', 'reviews', 'contact'];
 function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor }) {
   const [open, setOpen] = useState(false);
+  const switchLanguage = () => setLang(lang === 'it' ? 'en' : 'it');
+  const languageAria = lang === 'it' ? 'Switch to English' : "Passa all'italiano";
 
   function choose(page) {
     setActivePage(page);
@@ -969,16 +1019,14 @@ function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor })
   return (
     <header className="site-header">
       <div className="container nav-shell">
-        <button className="brand brand-button" type="button" onClick={() => choose('home')} aria-label="vulcanIQ home">
-          <BrandLogo compact siteMedia={siteMedia} editor={editor} />
-        </button>
         <button className="nav-toggle" type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-controls="site-nav">Menu</button>
         <nav id="site-nav" className={`nav-links ${open ? 'open' : ''}`} aria-label="Primary navigation">
           {publicPages.map((page, index) => (
             <button key={page} type="button" className={activePage === page ? 'active' : ''} onClick={() => choose(page)}>{i18n[lang].nav[index]}</button>
           ))}
-          <button className="language-toggle" type="button" onClick={() => setLang(lang === 'it' ? 'en' : 'it')} aria-label="Switch language">{i18n[lang].switchLabel}</button>
+          <button className="language-toggle desktop-language-toggle" type="button" onClick={switchLanguage} aria-label={languageAria}>{i18n[lang].switchLabel}</button>
         </nav>
+        <button className="mobile-language-switch" type="button" onClick={switchLanguage} aria-label={languageAria}>{i18n[lang].switchLabel}</button>
       </div>
     </header>
   );
@@ -986,7 +1034,7 @@ function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor })
 
 function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, editor }) {
   const heroBackground = mediaUrl(siteMedia, 'home_hero_background', '');
-  const heroStyle = heroBackground ? { backgroundImage: `linear-gradient(90deg, rgba(13,22,38,0.94), rgba(13,22,38,0.78) 48%, rgba(13,22,38,0.54)), url("${heroBackground}")` } : undefined;
+  const heroStyle = heroBackground ? { backgroundImage: `linear-gradient(90deg, rgba(5,10,20,0.72), rgba(5,10,20,0.50) 50%, rgba(5,10,20,0.34)), url("${heroBackground}")` } : undefined;
   return (
     <section className="hero" id="top" style={heroStyle}>
       <div className="hero-overlay" />
@@ -996,11 +1044,23 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, edito
           <EditableText as="p" className="lead" itemKey="home.hero.subtitle" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroLead')} />
           <div className="hero-ctas">
             <button className="button primary" type="button" onClick={() => setActivePage('experiences')}><EditableText itemKey="home.hero.primary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'findExperience')} /></button>
-            <button className="button secondary dark" type="button" onClick={() => setActivePage('upcoming')}><EditableText itemKey="home.hero.secondary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'viewAvailability')} /></button>
+            <button className="button secondary dark" type="button" onClick={() => setActivePage('experiences')}><EditableText itemKey="home.hero.secondary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'viewAvailability')} /></button>
             <button className="button secondary dark" type="button" onClick={scrollToForm}>{text(lang, 'contact')}</button>
           </div>
-          <div className="trust-grid" aria-label="Trust points">
-            {i18n[lang].trust.map((item) => <div className="trust-card" key={item}>✓ <span>{item}</span></div>)}
+          <div className="trust-grid hero-trust-grid" aria-label="Trust points">
+            <a
+              className="trust-card guide-license-card"
+              href="https://www.guidealpinevulcanologichesicilia.it/tutte-le-guide/chiavetta-leonardo/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={text(lang, 'guideLicenseAria')}
+            >
+              <span className="trust-check" aria-hidden="true">✓</span>
+              <span>
+                <strong>{text(lang, 'trust')[0]}</strong>
+                <small>{text(lang, 'verifyLicense')}</small>
+              </span>
+            </a>
           </div>
         </div>
         <div className="hero-media" aria-hidden="false">
@@ -1017,9 +1077,80 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, edito
 }
 
 function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor }) {
-  const [openId, setOpenId] = useState(null);
+  const [items, setItems] = useState([]);
+  const [leaflets, setLeaflets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [monthDate, setMonthDate] = useState(startOfMonth(new Date()));
+  const [selectedDate, setSelectedDate] = useState(todayIso());
+  const [selectedExperience, setSelectedExperience] = useState(null);
+  const [leafletOpen, setLeafletOpen] = useState(false);
+  const [dateModalOpen, setDateModalOpen] = useState(false);
+  const [dateRequest, setDateRequest] = useState({ experienceId: 'etna-premium', adults: '1', children: '0', childrenUnder3Count: '0' });
 
-  function handleRequest(experience) {
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    Promise.all([
+      loadPublicFixedExcursions(),
+      loadPublicMonthlyLeaflets().catch(() => [])
+    ])
+      .then(([fixedRows, leafletRows]) => {
+        if (!active) return;
+        const rows = fixedRows || [];
+        setItems(rows);
+        setLeaflets(leafletRows || []);
+        const first = rows.find((item) => item.date >= todayIso());
+        if (first) {
+          setSelectedDate(first.date);
+          setMonthDate(startOfMonth(new Date(`${first.date}T12:00:00`)));
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        setItems([]);
+        setLeaflets([]);
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.toggle('modal-scroll-lock', Boolean(selectedExperience || leafletOpen || dateModalOpen));
+    return () => document.body.classList.remove('modal-scroll-lock');
+  }, [selectedExperience, leafletOpen, dateModalOpen]);
+
+  useEffect(() => {
+    function closeOnEscape(event) {
+      if (event.key === 'Escape') {
+        setSelectedExperience(null);
+        setLeafletOpen(false);
+        setDateModalOpen(false);
+      }
+    }
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, []);
+
+  const days = useMemo(() => getCalendarDays(monthDate), [monthDate]);
+  const byDate = useMemo(() => getItemsByDate(items), [items]);
+  const selectedItems = byDate[selectedDate] || [];
+  const visibleMonthLeaflet = useMemo(() => leaflets.find((leaflet) => Number(leaflet.month) === monthDate.getMonth() + 1 && Number(leaflet.year) === monthDate.getFullYear() && leaflet.file_url), [leaflets, monthDate]);
+  const selectedDateLeaflet = useMemo(() => {
+    const linkedId = selectedItems.find((item) => item.leaflet_id)?.leaflet_id;
+    return linkedId ? leaflets.find((leaflet) => leaflet.id === linkedId && leaflet.file_url) : null;
+  }, [leaflets, selectedItems]);
+
+  function changeMonth(delta) {
+    setMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1));
+  }
+
+  function openDateModal(iso) {
+    setSelectedDate(iso);
+    setDateModalOpen(true);
+  }
+
+  function requestExperience(experience) {
+    setSelectedExperience(null);
     fillForm({
       experienceId: experience.id,
       requestType: 'private',
@@ -1028,65 +1159,241 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
     });
   }
 
+  function requestItem(item) {
+    const message = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
+    setDateModalOpen(false);
+    fillForm({
+      experienceId: item.experience_id,
+      requestType: 'fixed',
+      fixedExcursionId: item.id,
+      requestedDate: item.date,
+      message,
+      scroll: true
+    });
+  }
+
+  function updateDateRequest(field, value) {
+    setDateRequest((current) => ({ ...current, [field]: value }));
+  }
+
+  function requestAvailableDate() {
+    const message = buildAvailableDateRequestMessage({ date: selectedDate, ...dateRequest }, lang);
+    setDateModalOpen(false);
+    fillForm({
+      experienceId: dateRequest.experienceId,
+      requestType: 'private',
+      requestedDate: selectedDate,
+      adults: dateRequest.adults,
+      children: dateRequest.children,
+      childrenUnder3Count: dateRequest.childrenUnder3Count,
+      message,
+      scroll: true
+    });
+  }
+
+  function monthlyLeafletButtonLabel() {
+    if (!visibleMonthLeaflet) return '';
+    const monthName = new Intl.DateTimeFormat(lang === 'it' ? 'it-IT' : 'en-GB', { month: 'long' }).format(monthDate);
+    return lang === 'it' ? `Apri programma di ${monthName}` : `Open ${monthName} program`;
+  }
+
+  function renderDateModalFixedDetails(item) {
+    const title = fixedExcursionTitle(item, lang);
+    const description = fixedExcursionField(item, 'description', lang) || item[`note_${lang}`] || item.note_it || item.note_en || '';
+    const meeting = fixedExcursionField(item, 'meeting_point', lang);
+    const difficulty = fixedExcursionField(item, 'difficulty', lang);
+    const price = fixedExcursionField(item, 'price_note', lang);
+    const timeRange = item.start_time ? `${String(item.start_time).slice(0, 5)}${item.end_time ? `–${String(item.end_time).slice(0, 5)}` : ''}` : text(lang, 'onRequest');
+    const fixedMessage = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
+
+    return (
+      <article className="date-modal-fixed-card" key={item.id}>
+        <div className="selected-date-heading-row">
+          <h3>{title}</h3>
+          <span>{timeRange}</span>
+        </div>
+        <FormattedDescription textValue={description || experienceById(item.experience_id).summary[lang]} />
+        <dl className="public-details-grid date-modal-details-grid">
+          <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(item.date, lang)}</dd></div>
+          <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(item.experience_id, lang)}</dd></div>
+          {meeting && <div><dt>{text(lang, 'meetingPoint')}</dt><dd>{meeting}</dd></div>}
+          {difficulty && <div><dt>{text(lang, 'difficulty')}</dt><dd>{difficulty}</dd></div>}
+          {price && <div><dt>{text(lang, 'priceNote')}</dt><dd>{price}</dd></div>}
+          <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{item.places_remaining}/{item.capacity}</dd></div>
+        </dl>
+        <BlockedDatesAttachment item={item} lang={lang} />
+        <div className="request-action-row date-modal-actions">
+          <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestInformation')}</button>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(fixedMessage)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
+          {selectedDateLeaflet && (
+            <a className="request-action-button request-action-button-secondary" href={selectedDateLeaflet.file_url} target="_blank" rel="noopener noreferrer">{text(lang, 'openExcursionProgram')}</a>
+          )}
+        </div>
+      </article>
+    );
+  }
+
+  function renderAvailableDateRequest() {
+    const message = buildAvailableDateRequestMessage({ date: selectedDate, ...dateRequest }, lang);
+    return (
+      <div className="available-date-flow">
+        <div className="empty-state-card date-modal-empty-copy">
+          <p>{text(lang, 'noExcursionsOnDate')}</p>
+          <p>{text(lang, 'availableDatePrivateCopy')}</p>
+        </div>
+        <div className="date-request-grid" aria-label={lang === 'it' ? 'Richiesta data' : 'Date request'}>
+          <label>
+            <span>{text(lang, 'chooseExperience')}</span>
+            <select value={dateRequest.experienceId} onChange={(event) => updateDateRequest('experienceId', event.target.value)}>
+              {experiences.map((experience) => <option value={experience.id} key={experience.id}>{experience.title}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>{text(lang, 'adults')}</span>
+            <input type="number" min="0" value={dateRequest.adults} onChange={(event) => updateDateRequest('adults', event.target.value)} />
+          </label>
+          <label>
+            <span>{text(lang, 'childrenCount')}</span>
+            <input type="number" min="0" value={dateRequest.children} onChange={(event) => updateDateRequest('children', event.target.value)} />
+          </label>
+          <label>
+            <span>{text(lang, 'childrenUnder3')}</span>
+            <input type="number" min="0" value={dateRequest.childrenUnder3Count} onChange={(event) => updateDateRequest('childrenUnder3Count', event.target.value)} />
+          </label>
+        </div>
+        <div className="request-action-row date-modal-actions">
+          <button className="request-action-button request-action-button-primary" type="button" onClick={requestAvailableDate}>{text(lang, 'requestDate')}</button>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <section className="section page-section" id="experiences">
+    <section className="section page-section excursions-section" id="experiences">
       <div className="container">
         <div className="section-header refined-section-header experience-page-header">
           <EditableText as="h2" itemKey="experiences.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'experiencesTitle')} />
           <EditableText as="p" itemKey="experiences.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'experiencesIntro')} />
         </div>
-        <div className="accordion-list experience-accordion-list">
-          {experiences.map((experience) => {
-            const isOpen = openId === experience.id;
-            const imageUrl = mediaUrl(siteMedia, experienceMediaKey(experience.id), experience.image);
-            const imageAlt = mediaAlt(siteMedia, experienceMediaKey(experience.id), lang, `${experience.title} vulcanIQ`);
-            return (
-              <EditableCardFrame editor={editor} cardKey={`experience.${experience.id}`} label={experience.title} section={lang === 'it' ? 'Esperienze' : 'Experiences'} key={experience.id}>
-              <article className={`experience-card ${isOpen ? 'open' : ''}`}>
-                <button
-                  type="button"
-                  className="experience-summary"
-                  aria-expanded={isOpen}
-                  aria-controls={`experience-${experience.id}`}
-                  onClick={() => setOpenId(isOpen ? null : experience.id)}
-                >
-                  <span className="experience-image" aria-hidden="true"><EditableImage mediaKey={experienceMediaKey(experience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={experience.image} fallbackAlt={`${experience.title} vulcanIQ`} /></span>
-                  <span className="experience-main"><EditableText as="strong" itemKey={`experiences.${experience.id}.title`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.title} /><EditableText as="small" itemKey={`experiences.${experience.id}.summary`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.summary[lang]} /></span>
-                  <span className="experience-meta"><b>{text(lang, 'bestFor')}</b><br /><EditableText itemKey={`experiences.${experience.id}.best_for`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.bestFor[lang]} /></span>
-                  <span className="experience-meta"><b>{text(lang, 'starting')}</b><br /><EditableText itemKey={`experiences.${experience.id}.starting`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.starting[lang]} /></span>
-                  <span className="small-button">{isOpen ? text(lang, 'hide') : text(lang, 'details')}</span>
-                </button>
-                {isOpen && (
-                  <div className="experience-body" id={`experience-${experience.id}`}>
-                    <div className="experience-copy-grid">
-                      <EditableImageSlot mediaKey={experienceMediaKey(experience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={experience.image} fallbackAlt={imageAlt} ratio="wide" />
-                      <div className="experience-copy">
-                        <EditableText as="p" itemKey={`experiences.${experience.id}.description`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.description[lang]} />
-                        <dl>
-                          <div><dt>{text(lang, 'value')}</dt><dd><EditableText itemKey={`experiences.${experience.id}.value`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.value[lang]} /></dd></div>
-                          <div><dt>{text(lang, 'practical')}</dt><dd><EditableText itemKey={`experiences.${experience.id}.notes`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.notes[lang]} /></dd></div>
-                          <div><dt>{text(lang, 'safety')}</dt><dd><EditableText itemKey={`experiences.${experience.id}.safety`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.safety[lang]} /></dd></div>
-                        </dl>
-                        <div className="cta-row experience-actions">
-                          <button className="button primary" type="button" onClick={() => handleRequest(experience)}>{text(lang, 'request')}</button>
-                          <ContactActions
-                            lang={lang}
-                            compact
-                            experienceId={experience.id}
-                            contextMessage={buildExperienceMessage(experience, lang)}
-                            onUseForm={() => handleRequest(experience)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+
+        {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : (
+          <div className="excursions-layout">
+            <div className="excursions-calendar-column">
+              <article className="calendar-card public-excursion-calendar">
+                <div className="calendar-topline simplified-calendar-header">
+                  <button type="button" onClick={() => changeMonth(-1)} aria-label={text(lang, 'previousMonth')}>‹</button>
+                  <h3 className="calendar-month-title">{monthLabel(monthDate, lang)}</h3>
+                  <button type="button" onClick={() => changeMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
+                </div>
+                <div className="calendar-legend compact-legend">
+                  <span><i className="legend-dot fixed" />{text(lang, 'scheduledExcursion')}</span>
+                  <span><i className="legend-dot available" />{text(lang, 'availableDates')}</span>
+                </div>
+                {visibleMonthLeaflet && (
+                  <button className="button secondary leaflet-trigger" type="button" onClick={() => setLeafletOpen(true)}>{monthlyLeafletButtonLabel()}</button>
                 )}
+                <div className="weekdays" aria-hidden="true">
+                  {(lang === 'it' ? ['L', 'M', 'M', 'G', 'V', 'S', 'D'] : ['M', 'T', 'W', 'T', 'F', 'S', 'S']).map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
+                </div>
+                <div className="calendar-grid public-calendar-grid">
+                  {days.map((date) => {
+                    const iso = dateToIso(date);
+                    const hasFixed = Boolean(byDate[iso]?.length);
+                    const outside = date.getMonth() !== monthDate.getMonth();
+                    const isPast = iso < todayIso();
+                    return (
+                      <button
+                        type="button"
+                        key={iso}
+                        className={`date-button public-date-button ${outside ? 'outside' : ''} ${hasFixed ? 'has-fixed has-fixed-excursion' : ''} ${isPast ? 'is-past' : ''} ${selectedDate === iso ? 'selected' : ''}`}
+                        onClick={() => !isPast && openDateModal(iso)}
+                        disabled={isPast}
+                      >
+                        <strong>{date.getDate()}</strong>
+                        {hasFixed && <span className="date-marker green-circle" aria-label={text(lang, 'scheduledExcursion')} />}
+                      </button>
+                    );
+                  })}
+                </div>
               </article>
-              </EditableCardFrame>
-            );
-          })}
-        </div>
+            </div>
+
+            <div className="excursions-cards-column">
+              {experiences.map((experience) => (
+                <EditableCardFrame editor={editor} cardKey={`experience.${experience.id}`} label={experience.title} section={lang === 'it' ? 'Escursioni' : 'Excursions'} key={experience.id}>
+                  <button className="experience-compact-card" type="button" onClick={() => setSelectedExperience(experience)}>
+                    <EditableImage mediaKey={experienceMediaKey(experience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={experience.image} fallbackAlt={`${experience.title} vulcanIQ`} />
+                    <span className="experience-compact-copy">
+                      <EditableText as="strong" itemKey={`experiences.${experience.id}.title`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.title} />
+                      <EditableText as="small" itemKey={`experiences.${experience.id}.summary`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.summary[lang]} />
+                    </span>
+                  </button>
+                </EditableCardFrame>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
+      {dateModalOpen && (
+        <div className="date-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="date-modal-title" onClick={() => setDateModalOpen(false)}>
+          <article className="date-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="date-modal-header">
+              <div>
+                <span className="micro-label details-label">{selectedItems.length ? text(lang, 'scheduledExcursion') : text(lang, 'availableDates')}</span>
+                <h2 id="date-modal-title">{formatDateForMessage(selectedDate, lang)}</h2>
+              </div>
+              <button className="date-modal-close" type="button" onClick={() => setDateModalOpen(false)}>{text(lang, 'close')}</button>
+            </div>
+            {selectedItems.length ? (
+              <div className="date-modal-content fixed-date-content">{selectedItems.map(renderDateModalFixedDetails)}</div>
+            ) : renderAvailableDateRequest()}
+          </article>
+        </div>
+      )}
+
+      {selectedExperience && (
+        <div className="experience-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="experience-modal-title" onClick={() => setSelectedExperience(null)}>
+          <article className="experience-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="experience-modal-header">
+              <h2 id="experience-modal-title">{selectedExperience.title}</h2>
+              <button className="experience-modal-close" type="button" onClick={() => setSelectedExperience(null)}>{text(lang, 'close')}</button>
+            </div>
+            <div className="experience-detail-content">
+              <EditableImage mediaKey={experienceMediaKey(selectedExperience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={selectedExperience.image} fallbackAlt={`${selectedExperience.title} vulcanIQ`} className="experience-modal-image" />
+              <div className="experience-detail-copy">
+                <EditableText as="p" itemKey={`experiences.${selectedExperience.id}.description`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.description[lang]} />
+                <dl>
+                  <div><dt>{text(lang, 'bestFor')}</dt><dd><EditableText itemKey={`experiences.${selectedExperience.id}.best_for`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.bestFor[lang]} /></dd></div>
+                  <div><dt>{text(lang, 'practical')}</dt><dd><EditableText itemKey={`experiences.${selectedExperience.id}.notes`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.notes[lang]} /></dd></div>
+                  <div><dt>{text(lang, 'safety')}</dt><dd><EditableText itemKey={`experiences.${selectedExperience.id}.safety`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.safety[lang]} /></dd></div>
+                </dl>
+                <div className="request-action-row experience-modal-actions">
+                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestExperience(selectedExperience)}>{text(lang, 'request')}</button>
+                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(buildExperienceMessage(selectedExperience, lang))}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      )}
+
+      {leafletOpen && visibleMonthLeaflet && (
+        <div className="public-modal-backdrop leaflet-modal-backdrop" role="dialog" aria-modal="true" aria-label={monthlyLeafletButtonLabel()} onClick={() => setLeafletOpen(false)}>
+          <article className="review-modal leaflet-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h2>{monthlyLeafletButtonLabel()}</h2>
+              <button className="modal-close-button" type="button" onClick={() => setLeafletOpen(false)}>{text(lang, 'close')}</button>
+            </div>
+            {String(visibleMonthLeaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(visibleMonthLeaflet.file_url) ? (
+              <img className="leaflet-modal-image" src={visibleMonthLeaflet.file_url} alt={monthlyLeafletButtonLabel()} loading="lazy" decoding="async" />
+            ) : (
+              <a className="button primary" href={visibleMonthLeaflet.file_url} target="_blank" rel="noopener noreferrer">{text(lang, 'openProgram')}</a>
+            )}
+          </article>
+        </div>
+      )}
     </section>
   );
 }
@@ -1627,7 +1934,7 @@ function WearReviewsSafety({ lang }) {
 function Team({ lang, siteMedia, siteContent, editor }) {
   return (
     <section className="section" id="team">
-      <div className="container">
+      <div className="container about-mission-section">
         <div className="section-header">
           <EditableText as="h2" itemKey="about.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'teamTitle')} />
         </div>
@@ -1650,6 +1957,16 @@ function Team({ lang, siteMedia, siteContent, editor }) {
             </div>
           </article>
         </div>
+        <div className="about-mission-grid">
+          <article className="mission-card mission-copy-card balanced-mission-card">
+            <EditableText as="h2" itemKey="mission.mission.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'mission')} />
+            <EditableText as="p" itemKey="mission.mission.body" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'missionText')} />
+          </article>
+          <article className="mission-card accent vision-copy-card balanced-mission-card">
+            <EditableText as="h2" itemKey="mission.vision.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'vision')} />
+            <EditableText as="p" itemKey="mission.vision.body" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'visionText')} />
+          </article>
+        </div>
       </div>
     </section>
   );
@@ -1665,9 +1982,10 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
   const selectedFixed = fixedExcursions.find((item) => item.id === formState.fixedExcursionId) || null;
   const adults = Number.parseInt(formState.adults || '0', 10) || 0;
   const children = Number.parseInt(formState.children || '0', 10) || 0;
+  const childrenUnder3Count = Number.parseInt(formState.childrenUnder3Count || '0', 10) || 0;
   const totalPeople = adults + children;
   const over12 = totalPeople > 12;
-  const fullMessage = message;
+  const fullMessage = appendUnder3CountToMessage(message, childrenUnder3Count, lang);
 
   useEffect(() => {
     loadPublicFixedExcursions().then(setFixedExcursions);
@@ -1746,9 +2064,9 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
         fixed_excursion_id: requestType === 'fixed' ? formState.fixedExcursionId : null,
         adults,
         children,
-        children_under_3: Boolean(formState.childrenUnder3),
+        children_under_3: childrenUnder3Count > 0,
         private_experience: requestType === 'private',
-        message,
+        message: fullMessage,
         source: 'website'
       });
       setSubmitState({ loading: false, error: '', success: text(lang, 'requestSent') });
@@ -1852,7 +2170,7 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
             </div>
           )}
 
-          <div className="form-two-cols three">
+          <div className="form-two-cols people-count-grid">
             <div>
               <label className="field-label" htmlFor="contactAdults">{text(lang, 'adults')}</label>
               <input id="contactAdults" type="number" min="0" value={formState.adults || ''} onChange={(event) => update('adults', event.target.value)} />
@@ -1861,14 +2179,14 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
               <label className="field-label" htmlFor="contactChildren">{text(lang, 'childrenCount')}</label>
               <input id="contactChildren" type="number" min="0" value={formState.children || ''} onChange={(event) => update('children', event.target.value)} />
             </div>
+            <div>
+              <label className="field-label" htmlFor="contactChildrenUnder3">{text(lang, 'childrenUnder3')}</label>
+              <input id="contactChildrenUnder3" type="number" min="0" max={children || undefined} value={formState.childrenUnder3Count || '0'} onChange={(event) => update('childrenUnder3Count', event.target.value)} />
+            </div>
             <div className="people-summary">
               <strong>{text(lang, 'totalPeople')}</strong>
               <span>{totalPeople}</span>
             </div>
-          </div>
-
-          <div className="checkbox-stack inline-checkboxes">
-            <label><input type="checkbox" checked={Boolean(formState.childrenUnder3)} onChange={(event) => update('childrenUnder3', event.target.checked)} /> {text(lang, 'childrenUnder3')}</label>
           </div>
           {over12 && <p className="form-status warning" role="status">{text(lang, 'contactGuideOver12')}</p>}
 
@@ -1877,11 +2195,9 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
           {selectedFixed && <p className="small-note">{text(lang, 'fixedExcursion')}: {fixedExcursionLabel(selectedFixed, lang)}</p>}
           {submitState.error && <p className="form-status error" role="alert">{submitState.error}</p>}
           {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
-          <div className="cta-row">
-            <button className="button primary" type="submit" disabled={submitState.loading}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitRequest')}</button>
-            <a className="button secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(fullMessage)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
-            <ContactActions lang={lang} compact contextMessage={fullMessage} />
-            <button className="button secondary" type="button" onClick={() => copyText(fullMessage)}>{text(lang, 'copyMessage')}</button>
+          <div className="request-action-row">
+            <button className="request-action-button request-action-button-primary" type="submit" disabled={submitState.loading}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitRequest')}</button>
+            <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(fullMessage)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
           </div>
         </form>
       </div>
@@ -2050,9 +2366,6 @@ function AdminLogin({ lang, setLang, navigate }) {
   return (
     <main className="admin-login-shell">
       <section className="admin-login-card" aria-labelledby="adminLoginTitle">
-        <a className="brand admin-login-brand" href="/" aria-label="vulcanIQ home">
-          <BrandLogo compact />
-        </a>
         <div>
           <span className="kicker">{adminCopy(lang, 'Area owner', 'Owner area')}</span>
           <h1 id="adminLoginTitle">{adminCopy(lang, 'Accesso admin', 'Admin login')}</h1>
@@ -2176,9 +2489,6 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   return (
     <div className="admin-shell">
       <header className="admin-header">
-        <button className="brand admin-brand-button" type="button" onClick={() => navigate('/admin/today')} aria-label="vulcanIQ admin home">
-          <BrandLogo compact />
-        </button>
         <select className="admin-mobile-nav" value={currentAdminPath} onChange={(event) => navigate(event.target.value)} aria-label="Admin navigation">
           <option value="/admin/today">{adminCopy(lang, 'Oggi', 'Today')}</option>
           <option value="/admin/calendar">{adminCopy(lang, 'Calendario', 'Calendar')}</option>
@@ -2496,11 +2806,9 @@ const MEDIA_ADMIN_ITEMS = [
 
 const EDITOR_PAGE_OPTIONS = [
   { key: 'home', it: 'Home', en: 'Home' },
-  { key: 'experiences', it: 'Esperienze', en: 'Experiences' },
-  { key: 'upcoming', it: 'Prossime escursioni', en: 'Upcoming excursions' },
+  { key: 'experiences', it: 'Escursioni', en: 'Excursions' },
   { key: 'partnerships', it: 'Collaborazioni', en: 'Partnerships' },
-  { key: 'about', it: 'Chi siamo', en: 'About us' },
-  { key: 'mission', it: 'Missione', en: 'Mission' },
+  { key: 'about', it: 'Chi siamo', en: 'Who we are' },
   { key: 'reviews', it: 'Recensioni', en: 'Reviews' },
   { key: 'contact', it: 'Contatti', en: 'Contact' }
 ];
@@ -2762,7 +3070,7 @@ function WebsiteAdminPage({ lang, session }) {
 }
 
 function VisualEditorPreview({ page, setPage, lang, setLang, device, siteMedia, siteContent, editor, setNotice }) {
-  const [formState, setFormState] = useState({ language: lang, requestType: 'private', partyType: 'solo', adults: '1', children: '0', message: text(lang, 'defaultMessage') });
+  const [formState, setFormState] = useState({ language: lang, requestType: 'private', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', message: text(lang, 'defaultMessage') });
 
   function disabledActionNotice() {
     setNotice(lang === 'it' ? 'Azione disattivata durante la modifica del sito.' : 'This action is disabled while editing the website.');
@@ -2777,14 +3085,10 @@ function VisualEditorPreview({ page, setPage, lang, setLang, device, siteMedia, 
     switch (page) {
       case 'experiences':
         return <ExperienceAccordion lang={lang} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
-      case 'upcoming':
-        return <PublicUpcomingExcursions lang={lang} fillForm={fillForm} siteContent={siteContent} editor={editor} />;
       case 'partnerships':
         return <PartnershipsPage lang={lang} siteContent={siteContent} editor={editor} />;
       case 'about':
         return <Team lang={lang} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
-      case 'mission':
-        return <MissionPage lang={lang} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
       case 'reviews':
         return <ReviewsPage lang={lang} siteContent={siteContent} editor={editor} />;
       case 'contact':
@@ -3855,12 +4159,14 @@ function AdminReviewsPanel({ lang }) {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [confirmReview, setConfirmReview] = useState(null);
 
   async function refresh() {
     setLoading(true);
     setError('');
     try {
-      setReviews(await listReviews());
+      setReviews(await listReviews({ activeOnly: true }));
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Recensioni non caricate.', 'Could not load reviews.'));
     } finally {
@@ -3872,6 +4178,7 @@ function AdminReviewsPanel({ lang }) {
 
   async function setVisible(review, active) {
     setError('');
+    setFeedback('');
     try {
       await updateReviewVisibility(review.id, { active, approved: active ? true : review.approved });
       await refresh();
@@ -3880,9 +4187,24 @@ function AdminReviewsPanel({ lang }) {
     }
   }
 
+  async function confirmDeleteReview() {
+    if (!confirmReview) return;
+    setError('');
+    setFeedback('');
+    try {
+      await deleteReview(confirmReview.id);
+      setConfirmReview(null);
+      setFeedback(adminCopy(lang, 'Recensione eliminata.', 'Review deleted.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Impossibile eliminare la recensione. Riprova.', 'Could not delete the review. Please try again.'));
+    }
+  }
+
   return (
     <section className="admin-panel admin-reviews-panel">
       <div className="admin-panel-header"><h2>{adminCopy(lang, 'Recensioni pubbliche', 'Public reviews')}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : reviews.length === 0 ? <p>{adminCopy(lang, 'Nessuna recensione ricevuta.', 'No reviews received.')}</p> : (
         <div className="admin-review-list">
@@ -3893,9 +4215,28 @@ function AdminReviewsPanel({ lang }) {
                 <p>{review.review_text}</p>
                 <p className="small-note">{review.booking_code} · {review.language || '-'}</p>
               </div>
-              <button className="button secondary" type="button" onClick={() => setVisible(review, !review.active)}>{review.active ? adminCopy(lang, 'Nascondi', 'Hide') : adminCopy(lang, 'Ripubblica', 'Republish')}</button>
+              <div className="admin-review-actions">
+                <button className="button secondary" type="button" onClick={() => setVisible(review, !review.active)}>{review.active ? adminCopy(lang, 'Nascondi', 'Hide') : adminCopy(lang, 'Ripubblica', 'Republish')}</button>
+                {review.active && <button className="button secondary danger" type="button" onClick={() => setConfirmReview(review)}>{adminCopy(lang, 'Elimina recensione', 'Delete review')}</button>}
+              </div>
             </article>
           ))}
+        </div>
+      )}
+      {confirmReview && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={adminCopy(lang, 'Conferma eliminazione', 'Confirm deletion')}>
+          <article className="admin-modal review-delete-modal">
+            <div className="admin-modal-header">
+              <h2>{adminCopy(lang, 'Conferma eliminazione', 'Confirm deletion')}</h2>
+              <button className="modal-close-button" type="button" onClick={() => setConfirmReview(null)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>
+            </div>
+            <p>{adminCopy(lang, 'Sei sicuro di voler eliminare questa recensione? Questa azione non può essere annullata.', 'Are you sure you want to delete this review? This action cannot be undone.')}</p>
+            <blockquote className="review-delete-preview">{confirmReview.review_text}</blockquote>
+            <div className="modal-actions">
+              <button className="button secondary" type="button" onClick={() => setConfirmReview(null)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>
+              <button className="button primary danger" type="button" onClick={confirmDeleteReview}>{adminCopy(lang, 'Conferma eliminazione', 'Confirm deletion')}</button>
+            </div>
+          </article>
         </div>
       )}
     </section>
@@ -4592,7 +4933,7 @@ function AvailabilityBlockCard({ block, lang, userId, onChanged }) {
 function App() {
   const [pathname, navigate] = usePathname();
   const [lang, setLang] = useState('it');
-  const [formState, setFormState] = useState({ language: 'it', requestType: 'private', partyType: 'solo', adults: '1', children: '0', message: i18n.it.defaultMessage });
+  const [formState, setFormState] = useState({ language: 'it', requestType: 'private', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', message: i18n.it.defaultMessage });
   const [activePage, setActivePage] = useState('home');
   const [siteMedia, setSiteMedia] = useState({});
   const [siteContent, setSiteContent] = useState({});
@@ -4630,13 +4971,16 @@ function App() {
     window.setTimeout(() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   }
 
-  function fillForm({ experienceId, message, requestType, fixedExcursionId, requestedDate, scroll = false }) {
+  function fillForm({ experienceId, message, requestType, fixedExcursionId, requestedDate, adults, children, childrenUnder3Count, scroll = false }) {
     setFormState((current) => ({
       ...current,
       experienceId: experienceId || current.experienceId,
       requestType: requestType || current.requestType || 'private',
       fixedExcursionId: fixedExcursionId !== undefined ? fixedExcursionId : current.fixedExcursionId,
       requestedDate: requestedDate || current.requestedDate,
+      adults: adults !== undefined ? adults : current.adults,
+      children: children !== undefined ? children : current.children,
+      childrenUnder3Count: childrenUnder3Count !== undefined ? childrenUnder3Count : current.childrenUnder3Count,
       privateExperience: requestType ? requestType === 'private' : current.privateExperience,
       message: message || current.message,
       language: lang
@@ -4648,14 +4992,10 @@ function App() {
     switch (activePage) {
       case 'experiences':
         return <ExperienceAccordion lang={lang} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} />;
-      case 'upcoming':
-        return <PublicUpcomingExcursions lang={lang} fillForm={fillForm} siteContent={siteContent} />;
       case 'partnerships':
         return <PartnershipsPage lang={lang} siteContent={siteContent} />;
       case 'about':
         return <Team lang={lang} siteMedia={siteMedia} siteContent={siteContent} />;
-      case 'mission':
-        return <MissionPage lang={lang} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'reviews':
         return <ReviewsPage lang={lang} siteContent={siteContent} />;
       case 'contact':

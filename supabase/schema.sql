@@ -626,6 +626,24 @@ where fe.active = true
   and fe.status = 'available'
 group by fe.id;
 
+
+-- Public-safe monthly availability leaflets for the customer-facing Escursioni calendar.
+-- This view intentionally omits file_name and file_path so public UI never exposes raw filenames or storage paths.
+drop view if exists public.public_monthly_availability_leaflets;
+create view public.public_monthly_availability_leaflets as
+select
+  id,
+  month,
+  year,
+  title_it,
+  title_en,
+  file_url,
+  file_type,
+  active
+from public.monthly_availability_leaflets
+where active = true
+  and file_url is not null;
+
 drop view if exists public.public_partnerships;
 create view public.public_partnerships as
 select
@@ -1028,6 +1046,7 @@ with check (public.is_admin());
 grant usage on schema public to anon, authenticated;
 grant select on public.public_availability_blocks to anon, authenticated;
 grant select on public.public_fixed_excursions to anon, authenticated;
+grant select on public.public_monthly_availability_leaflets to anon, authenticated;
 grant select on public.public_partnerships to anon, authenticated;
 grant select on public.public_site_media to anon, authenticated;
 grant select on public.public_site_content to anon, authenticated;

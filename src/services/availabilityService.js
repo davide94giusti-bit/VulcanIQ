@@ -353,6 +353,26 @@ function normalizeMonthlyLeaflet(row) {
   };
 }
 
+
+
+export async function loadPublicMonthlyLeaflets() {
+  if (!isSupabaseConfigured) return [];
+  try {
+    const { data, error } = await supabase
+      .from('public_monthly_availability_leaflets')
+      .select('id, month, year, title_it, title_en, file_url, file_type, active')
+      .eq('active', true)
+      .order('year', { ascending: false })
+      .order('month', { ascending: false });
+
+    if (error) throw error;
+    return Array.isArray(data) ? data.map(normalizeMonthlyLeaflet) : [];
+  } catch (error) {
+    console.warn('Supabase public monthly leaflets unavailable.', error?.message || error);
+    return [];
+  }
+}
+
 export async function listMonthlyLeaflets({ activeOnly = false } = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
