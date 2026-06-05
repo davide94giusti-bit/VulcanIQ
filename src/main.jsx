@@ -4,13 +4,13 @@ import { blockedDates, defaultExperienceAvailability } from './data/availability
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
 import { createPublicBookingRequest, createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
-import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
+import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
-import { loadPublicReviews, submitPublicReview, listReviews, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply } from './services/reviewsService.js';
+import { loadPublicReviews, submitPublicReview, listReviews, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply, deleteReview } from './services/reviewsService.js';
 import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFile } from './services/siteMediaService.js';
 import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
 import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
-import { buildApprovalReply, buildDeclineReply, replySubject, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
+import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import './styles.css';
 
 const PHONE_DISPLAY = '+39 334 929 8246';
@@ -20,7 +20,7 @@ const EMAIL = 'leo97ct@yahoo.it';
 const INSTAGRAM = 'https://www.instagram.com/leonardo_chiavetta?igsh=bnhkNWQzbnF2aW5m';
 
 const BRAND = {
-  logo: '/brand/vulcaniq/logo-blue-background.png',
+  logo: '/brand/vulcaniq/vulcaniq-logo-premium.png',
   og: '/brand/vulcaniq/og-image.png'
 };
 
@@ -70,7 +70,7 @@ const i18n = {
   it: {
     languageLabel: 'Italiano',
     switchLabel: 'EN',
-    nav: ['Inizio', 'Esperienze', 'Prossime escursioni', 'Collaborazioni', 'Chi siamo', 'Missione', 'Recensioni', 'Contattaci'],
+    nav: ['Inizio', 'Escursioni', 'Collaborazioni', 'Chi siamo', 'Recensioni', 'Contattaci'],
     contact: 'Contattaci',
     heroKicker: '',
     heroTitle: "L'Etna non è solo uno scenario.",
@@ -79,9 +79,9 @@ const i18n = {
     viewAvailability: 'Guarda le disponibilità',
     call: 'Chiama Leonardo',
     whatsapp: 'Scrivici su WhatsApp',
-    addContact: 'Aggiungi ai contatti',
     email: "Invia un'email",
-    trust: ['Guida vulcanologica certificata', 'Esperienze su misura', 'Sicurezza e valutazione reale', 'Italiano e inglese'],
+    trust: ['Guida vulcanologica certificata'],
+    guideLicenseAria: 'Apri la licenza della guida vulcanologica Leonardo Chiavetta',
     philosophyKicker: 'Filosofia',
     philosophyTitle: 'Perché un luogo non si visita davvero finché non si entra in relazione con ciò che lo rende vivo.',
     philosophyText: `vulcanIQ nasce da un’esigenza di fermarsi e cambiare prospettiva. Dopo anni a contatto con il turismo di massa, è emersa una domanda semplice ma potente: è davvero questo il modo di vivere un luogo come l’Etna?
@@ -97,8 +97,8 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     visionText: 'Crediamo in un turismo che non consumi il territorio, ma lo ascolti. Un modo più autentico di vivere l’Etna, fatto di connessione, rispetto e ricordi che restano.',
     readMore: 'Leggi di più',
     hide: 'Riduci',
-    experiencesKicker: 'Esperienze',
-    experiencesTitle: 'Esperienze sull’Etna, pensate su misura.',
+    experiencesKicker: 'Escursioni',
+    experiencesTitle: 'Escursioni sull’Etna, pensate su misura.',
     experiencesIntro: 'Scegli il modo più adatto per vivere il vulcano: esperienze private, formative o condivise, sempre guidate con attenzione, sicurezza e conoscenza del territorio.',
     bestFor: 'Ideale per',
     starting: 'Indicazione',
@@ -194,6 +194,9 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     upcomingExcursions: 'Prossime escursioni',
     upcomingEmpty: 'Al momento non ci sono escursioni programmate. Contattaci per organizzare un’esperienza privata.',
     dateLabel: 'Data',
+    bookedBy: 'Prenotato da',
+    reviewDateLabel: 'Data',
+    guideLabel: 'Guida',
     timeLabel: 'Orario',
     experienceLabel: 'Esperienza',
     meetingPoint: 'Punto d’incontro',
@@ -251,9 +254,18 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     defaultMessage: 'Ciao Leonardo,\nvorrei informazioni su un’esperienza vulcanIQ sull’Etna.\n\nVorrei sapere disponibilità, durata indicativa, prezzo e consigli sull’abbigliamento.\n\nGrazie.',
     excursionCalendar: 'Calendario escursioni',
     availableDates: 'Date disponibili',
+    scheduledExcursion: 'Escursione programmata',
+    pastDates: 'Date passate',
+    programForDate: 'Programma del giorno',
+    monthlyProgramPrefix: 'Programma di',
+    openProgram: 'Apri programma',
+    closeProgram: 'Chiudi programma',
     unavailableDatesLegend: 'Date non disponibili',
-    dateDetails: 'Dettagli della data',
-    noExcursionsOnDate: 'Nessuna escursione fissa in questa data.',
+    dateDetails: 'Dettagli',
+    noExcursionsOnDate: 'Nessuna escursione programmata per questa data.',
+    availableDatePrivateCopy: 'Puoi richiedere un’esperienza privata o su misura.',
+    requestInformation: 'Richiedi informazioni',
+    openExcursionProgram: 'Apri programma dell’escursione',
     publishReview: 'Pubblica una recensione',
     missionHero: 'Non accompagniamo solo persone sull’Etna. Creiamo un modo più attento di incontrarlo.',
     missionShort: 'vulcanIQ nasce per trasformare l’escursione in un’esperienza di ascolto, conoscenza e relazione con il territorio.',
@@ -263,7 +275,7 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
   en: {
     languageLabel: 'English',
     switchLabel: 'IT',
-    nav: ['Home', 'Experiences', 'Upcoming excursions', 'Partnerships', 'About us', 'Mission', 'Reviews', 'Contact us'],
+    nav: ['Home', 'Excursions', 'Partnerships', 'Who we are', 'Reviews', 'Contact us'],
     contact: 'Contact us',
     heroKicker: '',
     heroTitle: 'Mount Etna is not just a backdrop.',
@@ -272,9 +284,9 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     viewAvailability: 'View availability',
     call: 'Call Leonardo',
     whatsapp: 'Message on WhatsApp',
-    addContact: 'Add to contacts',
     email: 'Send an email',
-    trust: ['Certified volcanological guide', 'Tailored experiences', 'Safety and real assessment', 'Italian and English'],
+    trust: ['Certified volcanological guide'],
+    guideLicenseAria: "Open Leonardo Chiavetta's certified volcanological guide license",
     philosophyKicker: 'Philosophy',
     philosophyTitle: 'Because a place is not truly visited until you enter into relationship with what makes it alive.',
     philosophyText: `vulcanIQ was born from the need to pause and change perspective. After years in contact with mass tourism, one simple but powerful question emerged: is this really the way to experience a place like Mount Etna?
@@ -387,6 +399,9 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     upcomingExcursions: 'Upcoming excursions',
     upcomingEmpty: 'There are currently no scheduled excursions. Contact us to arrange a private experience.',
     dateLabel: 'Date',
+    bookedBy: 'Booked by',
+    reviewDateLabel: 'Date',
+    guideLabel: 'Guide',
     timeLabel: 'Time',
     experienceLabel: 'Experience',
     meetingPoint: 'Meeting point',
@@ -444,9 +459,18 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     defaultMessage: 'Hi Leonardo,\nI would like more information about a vulcanIQ experience on Mount Etna.\n\nI would like to know availability, approximate duration, price, and clothing recommendations.\n\nThank you.',
     excursionCalendar: 'Excursion calendar',
     availableDates: 'Available dates',
+    scheduledExcursion: 'Scheduled excursion',
+    pastDates: 'Past dates',
+    programForDate: 'Day program',
+    monthlyProgramPrefix: '',
+    openProgram: 'Open program',
+    closeProgram: 'Close program',
     unavailableDatesLegend: 'Unavailable dates',
-    dateDetails: 'Date details',
-    noExcursionsOnDate: 'No fixed excursion on this date.',
+    dateDetails: 'Details',
+    noExcursionsOnDate: 'No scheduled excursion is currently planned for this date.',
+    availableDatePrivateCopy: 'You can request a private or tailored experience.',
+    requestInformation: 'Request information',
+    openExcursionProgram: 'Open excursion program',
     publishReview: 'Publish a review',
     missionHero: 'We do not simply guide people on Etna. We create a more mindful way to encounter it.',
     missionShort: 'vulcanIQ was created to transform an excursion into an experience of listening, knowledge and connection with the territory.',
@@ -575,21 +599,60 @@ function encode(value) {
   return encodeURIComponent(value || '');
 }
 
-function encodeMailComponent(value) {
-  return encodeURIComponent(String(value || '').replace(/\r?\n/g, '\r\n'));
-}
-
-function buildMailtoHref(to, { subject = '', body = '' } = {}) {
-  const cleanTo = String(to || '').trim();
+function buildMailto(to, subject = '', body = '') {
   const params = [];
-  if (subject) params.push(`subject=${encodeMailComponent(subject)}`);
-  if (body) params.push(`body=${encodeMailComponent(body)}`);
-  return `mailto:${cleanTo}${params.length ? `?${params.join('&')}` : ''}`;
+  if (subject) params.push(`subject=${encodeURIComponent(subject)}`);
+  if (body) params.push(`body=${encodeURIComponent(body)}`);
+  const query = params.join('&');
+  return `mailto:${to}${query ? `?${query}` : ''}`;
 }
 
-function buildGmailComposeHref(to, { subject = '', body = '' } = {}) {
-  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeMailComponent(to)}&su=${encodeMailComponent(subject)}&body=${encodeMailComponent(body)}`;
+function openDefaultEmailApp(to, subject = '', body = '') {
+  const mailto = buildMailto(to, subject, body);
+  window.location.assign(mailto);
 }
+
+function normalizeReviewText(value) {
+  const raw = String(value || '').replace(/\r\n/g, '\n').trim();
+  if (!raw) return [];
+
+  const normalized = raw
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph
+      .replace(/[ \t\f\v]+/g, ' ')
+      .replace(/([.!?;:])(?=\S)/g, '$1 ')
+      .replace(/,([A-Za-zÀ-ÖØ-öø-ÿ])/g, ', $1')
+      .trim())
+    .filter(Boolean);
+
+  const source = normalized.length ? normalized : [raw];
+  const paragraphs = [];
+
+  source.forEach((paragraph) => {
+    if (paragraph.length <= 260) {
+      paragraphs.push(paragraph);
+      return;
+    }
+
+    const sentences = paragraph.match(/[^.!?]+[.!?]+[”"']?|[^.!?]+$/g) || [paragraph];
+    let buffer = '';
+
+    sentences.map((sentence) => sentence.trim()).filter(Boolean).forEach((sentence) => {
+      const next = buffer ? `${buffer} ${sentence}` : sentence;
+      if (next.length > 260 && buffer) {
+        paragraphs.push(buffer);
+        buffer = sentence;
+      } else {
+        buffer = next;
+      }
+    });
+
+    if (buffer) paragraphs.push(buffer);
+  });
+
+  return paragraphs.length ? paragraphs : [raw];
+}
+
 
 function text(lang, key) {
   return i18n[lang][key];
@@ -608,6 +671,142 @@ function buildSiteContentMap(items = []) {
     if (item?.content_key) acc[item.content_key] = item;
     return acc;
   }, {});
+}
+
+
+
+function getContentDefinition(key) {
+  return SITE_CONTENT_DEFINITIONS.find((item) => item.key === key) || { key, content_key: key, section: 'General', label_it: key, label_en: key, type: 'text', default_it: '', default_en: '' };
+}
+
+function getMediaDefinition(key) {
+  return MEDIA_ADMIN_ITEMS.find((item) => item.key === key) || { key, it: key, en: key, fallback: '' };
+}
+
+function editorContentItem(siteContent, key, fallback = '') {
+  const definition = getContentDefinition(key);
+  const stored = siteContent?.[key] || {};
+  return {
+    ...definition,
+    ...stored,
+    key,
+    content_key: key,
+    section: stored.section || definition.section || 'General',
+    label_it: stored.label_it || definition.label_it || key,
+    label_en: stored.label_en || definition.label_en || key,
+    default_it: stored.default_it ?? definition.default_it ?? fallback,
+    default_en: stored.default_en ?? definition.default_en ?? fallback,
+    content_type: stored.content_type || (definition.type === 'textarea' ? 'textarea' : 'text'),
+    active: stored.active !== false,
+    visible: stored.visible !== false,
+    text_size: stored.text_size || definition.text_size || 'normal',
+    text_align: stored.text_align || definition.text_align || 'left',
+    style_variant: stored.style_variant || definition.style_variant || 'body',
+    layout_variant: stored.layout_variant || definition.layout_variant || 'default'
+  };
+}
+
+function editorMediaItem(siteMedia, key, fallbackSrc = '', fallbackAlt = '') {
+  const definition = getMediaDefinition(key);
+  const stored = siteMedia?.[key] || {};
+  return {
+    ...definition,
+    ...stored,
+    key,
+    media_key: key,
+    label_it: stored.label_it || definition.it || key,
+    label_en: stored.label_en || definition.en || key,
+    file_url: stored.file_url || fallbackSrc || definition.fallback || '',
+    alt_it: stored.alt_it || definition.alt_it || fallbackAlt || definition.it || key,
+    alt_en: stored.alt_en || definition.alt_en || fallbackAlt || definition.en || key,
+    active: stored.active !== false,
+    media_kind: stored.media_kind || definition.media_kind || 'image',
+    image_position: stored.image_position || definition.image_position || 'center',
+    image_size: stored.image_size || definition.image_size || 'normal'
+  };
+}
+
+function textStyleClass(item = {}) {
+  return ['controlled-text', `text-size-${item.text_size || 'normal'}`, `text-align-${item.text_align || 'left'}`, `text-variant-${item.style_variant || 'body'}`].join(' ');
+}
+
+function EditableText({ as: Tag = 'span', itemKey, lang, siteContent, editor, fallback = '', className = '', children }) {
+  const source = editor?.contentMap || siteContent || {};
+  const item = editorContentItem(source, itemKey, fallback || children || '');
+  const resolved = contentText(source, itemKey, lang, fallback || children || item.default_it || item.default_en || '');
+  const hidden = item.visible === false;
+  if (hidden && !editor?.isEditing) return null;
+  const isSelected = editor?.selected?.type === 'text' && editor.selected.key === itemKey;
+  return (
+    <Tag
+      className={`${className} ${textStyleClass(item)} ${editor?.isEditing ? 'editor-selectable editor-selectable-text' : ''} ${hidden ? 'editor-hidden-public' : ''} ${isSelected ? 'selected' : ''}`.trim()}
+      onClick={editor?.isEditing ? (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        editor.select({ type: 'text', key: itemKey, label: lang === 'it' ? item.label_it : item.label_en, section: item.section });
+      } : undefined}
+      role={editor?.isEditing ? 'button' : undefined}
+      tabIndex={editor?.isEditing ? 0 : undefined}
+    >
+      {editor?.isEditing && <span className="editor-badge">{lang === 'it' ? 'Modifica testo' : 'Edit text'}</span>}
+      {resolved || (editor?.isEditing ? (lang === 'it' ? 'Testo vuoto' : 'Empty text') : '')}
+    </Tag>
+  );
+}
+
+function EditableImage({ mediaKey, lang, siteMedia, editor, fallbackSrc, fallbackAlt, className = '', loading = 'lazy', decoding = 'async' }) {
+  const source = editor?.mediaMap || siteMedia || {};
+  const item = editorMediaItem(source, mediaKey, fallbackSrc, fallbackAlt);
+  const src = item.file_url || fallbackSrc;
+  const alt = (lang === 'it' ? item.alt_it || item.alt_en : item.alt_en || item.alt_it) || fallbackAlt || '';
+  if (!src && !editor?.isEditing) return null;
+  const isSelected = editor?.selected?.type === 'image' && editor.selected.key === mediaKey;
+  const image = <img className={className} src={src || BRAND.logo} alt={alt} loading={loading} decoding={decoding} />;
+  if (!editor?.isEditing) return image;
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      className={`editor-image-button editor-selectable ${isSelected ? 'selected' : ''}`}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        editor.select({ type: 'image', key: mediaKey, label: lang === 'it' ? item.label_it : item.label_en, section: item.section || 'Media', fallbackSrc, fallbackAlt });
+      }}
+    >
+      <span className="editor-badge">{lang === 'it' ? 'Modifica immagine' : 'Edit image'}</span>
+      {image}
+    </span>
+  );
+}
+
+function EditableImageSlot({ mediaKey, lang, siteMedia, editor, fallbackSrc, fallbackAlt, ratio = 'standard' }) {
+  return (
+    <figure className={`image-slot ${ratio}`}>
+      <EditableImage mediaKey={mediaKey} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={fallbackSrc} fallbackAlt={fallbackAlt} />
+    </figure>
+  );
+}
+
+function EditableCardFrame({ editor, cardKey, label, section, children }) {
+  if (!editor?.isEditing) return children;
+  const isSelected = editor.selected?.type === 'card' && editor.selected.key === cardKey;
+  return (
+    <div
+      className={`editor-card-frame editor-selectable ${isSelected ? 'selected' : ''}`}
+      role="button"
+      tabIndex={0}
+      onClickCapture={(event) => {
+        if (event.target.closest('.editor-selectable-text, .editor-image-button')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        editor.select({ type: 'card', key: cardKey, label, section });
+      }}
+    >
+      <span className="editor-badge">{editor.lang === 'it' ? 'Modifica card' : 'Edit card'}</span>
+      {children}
+    </div>
+  );
 }
 
 function experienceById(id) {
@@ -661,12 +860,10 @@ function fixedExcursionLabel(item, lang) {
 
 function buildFixedExcursionMessage({ fixedExcursion, people }, lang) {
   const title = fixedExcursionLabel(fixedExcursion, lang);
-  const experience = adminExperienceLabel(fixedExcursion?.experience_id, lang);
   if (lang === 'it') {
     return `Ciao Leonardo,
 vorrei richiedere un posto per l’escursione fissa ${title}.
 
-Esperienza: ${experience}
 Persone: ${people || '-'}
 
 Vorrei sapere se la richiesta può essere confermata e ricevere i dettagli pratici.
@@ -676,12 +873,53 @@ Grazie.`;
   return `Hi Leonardo,
 I would like to request a place for the fixed excursion ${title}.
 
-Experience: ${experience}
 People: ${people || '-'}
 
 I would like to know whether the request can be confirmed and receive the practical details.
 
 Thank you.`;
+}
+
+function buildAvailableDateRequestMessage({ date, experienceId, adults, children, childrenUnder3Count }, lang) {
+  const experience = experienceById(experienceId || 'etna-premium');
+  const dateText = formatDateForMessage(date, lang);
+  const adultCount = adults || '1';
+  const childCount = children || '0';
+  const under3Count = childrenUnder3Count || '0';
+  if (lang === 'it') {
+    return `Ciao Leonardo,
+vorrei richiedere un’esperienza privata o su misura per il giorno ${dateText}.
+
+Esperienza preferita: ${experience.title}
+Adulti: ${adultCount}
+Bambini: ${childCount}
+Bambini sotto i 3 anni: ${under3Count}
+
+Vorrei sapere se la data è disponibile e ricevere dettagli su durata, prezzo e abbigliamento consigliato.
+
+Grazie.`;
+  }
+  return `Hi Leonardo,
+I would like to request a private or tailored experience for ${dateText}.
+
+Preferred experience: ${experience.title}
+Adults: ${adultCount}
+Children: ${childCount}
+Children under 3: ${under3Count}
+
+I would like to know whether the date is available and receive details about duration, price, and recommended clothing.
+
+Thank you.`;
+}
+
+function appendUnder3CountToMessage(message, count, lang) {
+  const cleanCount = Number.parseInt(count || '0', 10) || 0;
+  const base = String(message || text(lang, 'defaultMessage')).trimEnd();
+  if (cleanCount <= 0) return base;
+  const label = lang === 'it' ? 'Bambini sotto i 3 anni' : 'Children under 3';
+  return `${base}
+
+${label}: ${cleanCount}`;
 }
 
 function buildCalendarMessage({ experience, date, status, note }, lang) {
@@ -710,19 +948,6 @@ async function copyText(value) {
   document.body.removeChild(textarea);
 }
 
-function downloadVCard() {
-  const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:Leonardo Chiavetta\nN:Chiavetta;Leonardo;;;\nTEL;TYPE=CELL:+393349298246\nEMAIL:leo97ct@yahoo.it\nORG:vulcanIQ\nTITLE:Certified volcanological guide\nEND:VCARD`;
-  const blob = new Blob([vcard], { type: 'text/vcard;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'leonardo-chiavetta-vulcaniq.vcf';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
 function Icon({ name }) {
   const paths = {
     phone: 'M6.6 10.8c1.5 3 3.9 5.4 6.6 6.6l2.2-2.2c.3-.3.8-.4 1.2-.3 1.3.4 2.6.6 4 .6.7 0 1.2.5 1.2 1.2v3.5c0 .7-.5 1.2-1.2 1.2C10.2 22 2 13.8 2 3.4 2 2.7 2.5 2.2 3.2 2.2h3.5c.7 0 1.2.5 1.2 1.2 0 1.4.2 2.8.6 4 .1.4 0 .9-.3 1.2l-1.6 2.2z',
@@ -740,8 +965,8 @@ function Icon({ name }) {
 
 function EmailPanel({ lang, message, subject, onClose, onUseForm }) {
   const [copied, setCopied] = useState('');
-  const mailto = buildMailtoHref(EMAIL, { subject, body: message });
-  const gmail = buildGmailComposeHref(EMAIL, { subject, body: message });
+  const mailto = buildMailto(EMAIL, subject, message);
+  const gmail = `https://mail.google.com/mail/?view=cm&fs=1&to=${encode(EMAIL)}&su=${encode(subject)}&body=${encode(message)}`;
 
   async function handleCopy(kind, value) {
     await copyText(value);
@@ -755,7 +980,7 @@ function EmailPanel({ lang, message, subject, onClose, onUseForm }) {
         <strong>{text(lang, 'emailOptions')}</strong>
         <button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>×</button>
       </div>
-      <a className="email-option" href={mailto}>{text(lang, 'defaultEmail')}</a>
+      <button type="button" className="email-option" onClick={() => openDefaultEmailApp(EMAIL, subject, message)}>{text(lang, 'defaultEmail')}</button>
       <a className="email-option" href={gmail} target="_blank" rel="noopener noreferrer">{text(lang, 'openGmail')}</a>
       <button type="button" className="email-option" onClick={() => handleCopy('email', EMAIL)}>{text(lang, 'copyEmail')} {copied === 'email' ? `· ${text(lang, 'copied')}` : ''}</button>
       <button type="button" className="email-option" onClick={() => handleCopy('message', message)}>{text(lang, 'copyMessage')} {copied === 'message' ? `· ${text(lang, 'copied')}` : ''}</button>
@@ -775,7 +1000,6 @@ function ContactActions({ lang, contextMessage, compact = false, onUseForm, expe
     <div className={className} data-experience={experienceId || undefined}>
       <a className="pill-action" href={`tel:${PHONE_TEL}`}><Icon name="phone" />{text(lang, 'call')}</a>
       <a className="pill-action" href={whatsappUrl} target="_blank" rel="noopener noreferrer"><Icon name="chat" />{text(lang, 'whatsapp')}</a>
-      <button type="button" className="pill-action" onClick={downloadVCard}><Icon name="user" />{text(lang, 'addContact')}</button>
       <div className="email-action-wrap">
         <button type="button" className="pill-action" onClick={() => setEmailOpen((open) => !open)} aria-expanded={emailOpen}><Icon name="mail" />{text(lang, 'email')}</button>
         {emailOpen && (
@@ -825,17 +1049,19 @@ function VideoSlot({ src, poster, label, lang }) {
 }
 
 
-function BrandLogo({ compact = false }) {
+function BrandLogo({ compact = false, siteMedia, editor }) {
   return (
     <span className={`brand-logo-wrap ${compact ? 'compact' : ''}`}>
-      <img src={BRAND.logo} alt="vulcanIQ Etna Premium Experiences" className="brand-logo" />
+      <EditableImage mediaKey="brand_logo_main" lang={editor?.lang || 'it'} siteMedia={siteMedia} editor={editor} fallbackSrc={BRAND.logo} fallbackAlt={editor?.lang === 'en' ? 'vulcanIQ logo — premium Etna experiences' : 'Logo vulcanIQ — esperienze premium sull’Etna'} className="brand-logo" loading="eager" />
     </span>
   );
 }
 
-const publicPages = ['home', 'experiences', 'upcoming', 'partnerships', 'about', 'mission', 'reviews', 'contact'];
-function Header({ lang, setLang, activePage, setActivePage }) {
+const publicPages = ['home', 'experiences', 'partnerships', 'about', 'reviews', 'contact'];
+function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor }) {
   const [open, setOpen] = useState(false);
+  const switchLanguage = () => setLang(lang === 'it' ? 'en' : 'it');
+  const languageAria = lang === 'it' ? 'Switch to English' : "Passa all'italiano";
 
   function choose(page) {
     setActivePage(page);
@@ -846,38 +1072,47 @@ function Header({ lang, setLang, activePage, setActivePage }) {
   return (
     <header className="site-header">
       <div className="container nav-shell">
-        <button className="brand brand-button" type="button" onClick={() => choose('home')} aria-label="vulcanIQ home">
-          <BrandLogo compact />
-        </button>
         <button className="nav-toggle" type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-controls="site-nav">Menu</button>
         <nav id="site-nav" className={`nav-links ${open ? 'open' : ''}`} aria-label="Primary navigation">
           {publicPages.map((page, index) => (
             <button key={page} type="button" className={activePage === page ? 'active' : ''} onClick={() => choose(page)}>{i18n[lang].nav[index]}</button>
           ))}
-          <button className="language-toggle" type="button" onClick={() => setLang(lang === 'it' ? 'en' : 'it')} aria-label="Switch language">{i18n[lang].switchLabel}</button>
+          <button className="language-toggle desktop-language-toggle" type="button" onClick={switchLanguage} aria-label={languageAria}>{i18n[lang].switchLabel}</button>
         </nav>
+        <button className="mobile-language-switch" type="button" onClick={switchLanguage} aria-label={languageAria}>{i18n[lang].switchLabel}</button>
       </div>
     </header>
   );
 }
 
-function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent }) {
+function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, editor }) {
   const heroBackground = mediaUrl(siteMedia, 'home_hero_background', '');
-  const heroStyle = heroBackground ? { backgroundImage: `linear-gradient(90deg, rgba(13,22,38,0.94), rgba(13,22,38,0.78) 48%, rgba(13,22,38,0.54)), url("${heroBackground}")` } : undefined;
+  const heroStyle = heroBackground ? { backgroundImage: `linear-gradient(90deg, rgba(5,10,20,0.72), rgba(5,10,20,0.50) 50%, rgba(5,10,20,0.34)), url("${heroBackground}")` } : undefined;
   return (
     <section className="hero" id="top" style={heroStyle}>
       <div className="hero-overlay" />
       <div className="container hero-grid">
         <div className="hero-copy">
-          <h1>{contentText(siteContent, 'home.hero.title', lang, text(lang, 'heroTitle'))}</h1>
-          <p className="lead">{contentText(siteContent, 'home.hero.subtitle', lang, text(lang, 'heroLead'))}</p>
+          <EditableText as="h1" itemKey="home.hero.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroTitle')} />
+          <EditableText as="p" className="lead" itemKey="home.hero.subtitle" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroLead')} />
           <div className="hero-ctas">
-            <button className="button primary" type="button" onClick={() => setActivePage('experiences')}>{contentText(siteContent, 'home.hero.primary_cta', lang, text(lang, 'findExperience'))}</button>
-            <button className="button secondary dark" type="button" onClick={() => setActivePage('upcoming')}>{contentText(siteContent, 'home.hero.secondary_cta', lang, text(lang, 'viewAvailability'))}</button>
+            <button className="button primary" type="button" onClick={() => setActivePage('experiences')}><EditableText itemKey="home.hero.primary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'findExperience')} /></button>
+            <button className="button secondary dark" type="button" onClick={() => setActivePage('experiences')}><EditableText itemKey="home.hero.secondary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'viewAvailability')} /></button>
             <button className="button secondary dark" type="button" onClick={scrollToForm}>{text(lang, 'contact')}</button>
           </div>
-          <div className="trust-grid" aria-label="Trust points">
-            {i18n[lang].trust.map((item) => <div className="trust-card" key={item}>✓ <span>{item}</span></div>)}
+          <div className="trust-grid hero-trust-grid" aria-label="Trust points">
+            <a
+              className="trust-card guide-license-card"
+              href="https://www.guidealpinevulcanologichesicilia.it/tutte-le-guide/chiavetta-leonardo/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={text(lang, 'guideLicenseAria')}
+            >
+              <span className="trust-check" aria-hidden="true">✓</span>
+              <span>
+                <strong>{text(lang, 'trust')[0]}</strong>
+              </span>
+            </a>
           </div>
         </div>
         <div className="hero-media" aria-hidden="false">
@@ -893,10 +1128,81 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent }) {
   );
 }
 
-function ExperienceAccordion({ lang, fillForm, siteMedia }) {
-  const [openId, setOpenId] = useState(null);
+function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor }) {
+  const [items, setItems] = useState([]);
+  const [leaflets, setLeaflets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [monthDate, setMonthDate] = useState(startOfMonth(new Date()));
+  const [selectedDate, setSelectedDate] = useState(todayIso());
+  const [selectedExperience, setSelectedExperience] = useState(null);
+  const [activeLeaflet, setActiveLeaflet] = useState(null);
+  const [dateModalOpen, setDateModalOpen] = useState(false);
+  const [dateRequest, setDateRequest] = useState({ experienceId: 'etna-premium', adults: '1', children: '0', childrenUnder3Count: '0' });
 
-  function handleRequest(experience) {
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    Promise.all([
+      loadPublicFixedExcursions(),
+      loadPublicMonthlyLeaflets().catch(() => [])
+    ])
+      .then(([fixedRows, leafletRows]) => {
+        if (!active) return;
+        const rows = fixedRows || [];
+        setItems(rows);
+        setLeaflets(leafletRows || []);
+        const first = rows.find((item) => item.date >= todayIso());
+        if (first) {
+          setSelectedDate(first.date);
+          setMonthDate(startOfMonth(new Date(`${first.date}T12:00:00`)));
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        setItems([]);
+        setLeaflets([]);
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.toggle('modal-scroll-lock', Boolean(selectedExperience || activeLeaflet || dateModalOpen));
+    return () => document.body.classList.remove('modal-scroll-lock');
+  }, [selectedExperience, activeLeaflet, dateModalOpen]);
+
+  useEffect(() => {
+    function closeOnEscape(event) {
+      if (event.key === 'Escape') {
+        setSelectedExperience(null);
+        setActiveLeaflet(null);
+        setDateModalOpen(false);
+      }
+    }
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, []);
+
+  const days = useMemo(() => getCalendarDays(monthDate), [monthDate]);
+  const byDate = useMemo(() => getItemsByDate(items), [items]);
+  const selectedItems = byDate[selectedDate] || [];
+  const visibleMonthLeaflet = useMemo(() => leaflets.find((leaflet) => Number(leaflet.month) === monthDate.getMonth() + 1 && Number(leaflet.year) === monthDate.getFullYear() && leaflet.file_url), [leaflets, monthDate]);
+  const selectedDateLeaflet = useMemo(() => {
+    const linkedId = selectedItems.find((item) => item.leaflet_id)?.leaflet_id;
+    return linkedId ? leaflets.find((leaflet) => leaflet.id === linkedId && leaflet.file_url) : null;
+  }, [leaflets, selectedItems]);
+
+  function changeMonth(delta) {
+    setMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1));
+  }
+
+  function openDateModal(iso) {
+    setSelectedDate(iso);
+    setDateModalOpen(true);
+  }
+
+  function requestExperience(experience) {
+    setSelectedExperience(null);
     fillForm({
       experienceId: experience.id,
       requestType: 'private',
@@ -905,68 +1211,253 @@ function ExperienceAccordion({ lang, fillForm, siteMedia }) {
     });
   }
 
-  return (
-    <section className="section page-section" id="experiences">
-      <div className="container">
-        <div className="section-header refined-section-header experience-page-header">
-          <h2>{text(lang, 'experiencesTitle')}</h2>
-          <p>{text(lang, 'experiencesIntro')}</p>
+  function requestItem(item) {
+    const message = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
+    setDateModalOpen(false);
+    fillForm({
+      experienceId: item.experience_id,
+      requestType: 'fixed',
+      fixedExcursionId: item.id,
+      requestedDate: item.date,
+      message,
+      scroll: true
+    });
+  }
+
+  function updateDateRequest(field, value) {
+    setDateRequest((current) => ({ ...current, [field]: value }));
+  }
+
+  function requestAvailableDate() {
+    const message = buildAvailableDateRequestMessage({ date: selectedDate, ...dateRequest }, lang);
+    setDateModalOpen(false);
+    fillForm({
+      experienceId: dateRequest.experienceId,
+      requestType: 'private',
+      requestedDate: selectedDate,
+      adults: dateRequest.adults,
+      children: dateRequest.children,
+      childrenUnder3Count: dateRequest.childrenUnder3Count,
+      message,
+      scroll: true
+    });
+  }
+
+  function monthlyLeafletButtonLabel() {
+    if (!visibleMonthLeaflet) return '';
+    const monthName = new Intl.DateTimeFormat(lang === 'it' ? 'it-IT' : 'en-GB', { month: 'long' }).format(monthDate);
+    return lang === 'it' ? `Apri programma di ${monthName}` : `Open ${monthName} program`;
+  }
+
+  function openLeafletModal(leaflet, label) {
+    if (!leaflet?.file_url) return;
+    setActiveLeaflet({ leaflet, label });
+  }
+
+  function renderDateModalFixedDetails(item) {
+    const title = fixedExcursionTitle(item, lang);
+    const description = fixedExcursionField(item, 'description', lang) || item[`note_${lang}`] || item.note_it || item.note_en || '';
+    const meeting = fixedExcursionField(item, 'meeting_point', lang);
+    const difficulty = fixedExcursionField(item, 'difficulty', lang);
+    const price = fixedExcursionField(item, 'price_note', lang);
+    const timeRange = item.start_time ? `${String(item.start_time).slice(0, 5)}${item.end_time ? `–${String(item.end_time).slice(0, 5)}` : ''}` : text(lang, 'onRequest');
+    const fixedMessage = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
+
+    return (
+      <article className="date-modal-fixed-card" key={item.id}>
+        <div className="selected-date-heading-row">
+          <h3>{title}</h3>
+          <span>{timeRange}</span>
         </div>
-        <div className="accordion-list experience-accordion-list">
-          {experiences.map((experience) => {
-            const isOpen = openId === experience.id;
-            const imageUrl = mediaUrl(siteMedia, experienceMediaKey(experience.id), experience.image);
-            const imageAlt = mediaAlt(siteMedia, experienceMediaKey(experience.id), lang, `${experience.title} vulcanIQ`);
-            return (
-              <article className={`experience-card ${isOpen ? 'open' : ''}`} key={experience.id}>
-                <button
-                  type="button"
-                  className="experience-summary"
-                  aria-expanded={isOpen}
-                  aria-controls={`experience-${experience.id}`}
-                  onClick={() => setOpenId(isOpen ? null : experience.id)}
-                >
-                  <span className="experience-image" aria-hidden="true"><img src={imageUrl} alt="" loading="lazy" decoding="async" /></span>
-                  <span className="experience-main"><strong>{experience.title}</strong><small>{experience.summary[lang]}</small></span>
-                  <span className="experience-meta"><b>{text(lang, 'bestFor')}</b><br />{experience.bestFor[lang]}</span>
-                  <span className="experience-meta"><b>{text(lang, 'starting')}</b><br />{experience.starting[lang]}</span>
-                  <span className="small-button">{isOpen ? text(lang, 'hide') : text(lang, 'details')}</span>
-                </button>
-                {isOpen && (
-                  <div className="experience-body" id={`experience-${experience.id}`}>
-                    <div className="experience-copy-grid">
-                      <ImageSlot src={imageUrl} alt={imageAlt} lang={lang} ratio="wide" />
-                      <div className="experience-copy">
-                        <p>{experience.description[lang]}</p>
-                        <dl>
-                          <div><dt>{text(lang, 'value')}</dt><dd>{experience.value[lang]}</dd></div>
-                          <div><dt>{text(lang, 'practical')}</dt><dd>{experience.notes[lang]}</dd></div>
-                          <div><dt>{text(lang, 'safety')}</dt><dd>{experience.safety[lang]}</dd></div>
-                        </dl>
-                        <div className="cta-row experience-actions">
-                          <button className="button primary" type="button" onClick={() => handleRequest(experience)}>{text(lang, 'request')}</button>
-                          <ContactActions
-                            lang={lang}
-                            compact
-                            experienceId={experience.id}
-                            contextMessage={buildExperienceMessage(experience, lang)}
-                            onUseForm={() => handleRequest(experience)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </article>
-            );
-          })}
+        <FormattedDescription textValue={description || experienceById(item.experience_id).summary[lang]} />
+        <dl className="public-details-grid date-modal-details-grid">
+          <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(item.date, lang)}</dd></div>
+          <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(item.experience_id, lang)}</dd></div>
+          {meeting && <div><dt>{text(lang, 'meetingPoint')}</dt><dd>{meeting}</dd></div>}
+          {difficulty && <div><dt>{text(lang, 'difficulty')}</dt><dd>{difficulty}</dd></div>}
+          {price && <div><dt>{text(lang, 'priceNote')}</dt><dd>{price}</dd></div>}
+          <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{item.places_remaining}/{item.capacity}</dd></div>
+        </dl>
+        <BlockedDatesAttachment item={item} lang={lang} onOpenFile={(file, label) => openLeafletModal(file, label || text(lang, 'openExcursionProgram'))} />
+        <div className="request-action-row date-modal-actions">
+          <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestInformation')}</button>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(fixedMessage)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
+          {selectedDateLeaflet && (
+            <button className="request-action-button request-action-button-secondary" type="button" onClick={() => openLeafletModal(selectedDateLeaflet, text(lang, 'openExcursionProgram'))}>{text(lang, 'openExcursionProgram')}</button>
+          )}
+        </div>
+      </article>
+    );
+  }
+
+  function renderAvailableDateRequest() {
+    const message = buildAvailableDateRequestMessage({ date: selectedDate, ...dateRequest }, lang);
+    return (
+      <div className="available-date-flow">
+        <div className="empty-state-card date-modal-empty-copy">
+          <p>{text(lang, 'noExcursionsOnDate')}</p>
+          <p>{text(lang, 'availableDatePrivateCopy')}</p>
+        </div>
+        <div className="date-request-grid" aria-label={lang === 'it' ? 'Richiesta data' : 'Date request'}>
+          <label>
+            <span>{text(lang, 'chooseExperience')}</span>
+            <select value={dateRequest.experienceId} onChange={(event) => updateDateRequest('experienceId', event.target.value)}>
+              {experiences.map((experience) => <option value={experience.id} key={experience.id}>{experience.title}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>{text(lang, 'adults')}</span>
+            <input type="number" min="0" value={dateRequest.adults} onChange={(event) => updateDateRequest('adults', event.target.value)} />
+          </label>
+          <label>
+            <span>{text(lang, 'childrenCount')}</span>
+            <input type="number" min="0" value={dateRequest.children} onChange={(event) => updateDateRequest('children', event.target.value)} />
+          </label>
+          <label>
+            <span>{text(lang, 'childrenUnder3')}</span>
+            <input type="number" min="0" value={dateRequest.childrenUnder3Count} onChange={(event) => updateDateRequest('childrenUnder3Count', event.target.value)} />
+          </label>
+        </div>
+        <div className="request-action-row date-modal-actions">
+          <button className="request-action-button request-action-button-primary" type="button" onClick={requestAvailableDate}>{text(lang, 'requestDate')}</button>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
         </div>
       </div>
+    );
+  }
+
+  return (
+    <section className="section page-section excursions-section" id="experiences">
+      <div className="container">
+        <div className="section-header refined-section-header experience-page-header">
+          <EditableText as="h2" itemKey="experiences.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'experiencesTitle')} />
+          <EditableText as="p" itemKey="experiences.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'experiencesIntro')} />
+        </div>
+
+        {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : (
+          <div className="excursions-layout">
+            <div className="excursions-calendar-column">
+              <article className="calendar-card public-excursion-calendar">
+                <div className="calendar-topline simplified-calendar-header">
+                  <button type="button" onClick={() => changeMonth(-1)} aria-label={text(lang, 'previousMonth')}>‹</button>
+                  <h3 className="calendar-month-title">{monthLabel(monthDate, lang)}</h3>
+                  <button type="button" onClick={() => changeMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
+                </div>
+                <div className="calendar-legend compact-legend">
+                  <span><i className="legend-dot fixed" />{text(lang, 'scheduledExcursion')}</span>
+                  <span><i className="legend-dot available" />{text(lang, 'availableDates')}</span>
+                </div>
+                {visibleMonthLeaflet && (
+                  <button className="button secondary leaflet-trigger" type="button" onClick={() => openLeafletModal(visibleMonthLeaflet, monthlyLeafletButtonLabel())}>{monthlyLeafletButtonLabel()}</button>
+                )}
+                <div className="weekdays" aria-hidden="true">
+                  {(lang === 'it' ? ['L', 'M', 'M', 'G', 'V', 'S', 'D'] : ['M', 'T', 'W', 'T', 'F', 'S', 'S']).map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
+                </div>
+                <div className="calendar-grid public-calendar-grid">
+                  {days.map((date) => {
+                    const iso = dateToIso(date);
+                    const hasFixed = Boolean(byDate[iso]?.length);
+                    const outside = date.getMonth() !== monthDate.getMonth();
+                    const isPast = iso < todayIso();
+                    return (
+                      <button
+                        type="button"
+                        key={iso}
+                        className={`date-button public-date-button ${outside ? 'outside' : ''} ${hasFixed ? 'has-fixed has-fixed-excursion' : ''} ${isPast ? 'is-past' : ''} ${selectedDate === iso ? 'selected' : ''}`}
+                        onClick={() => !isPast && openDateModal(iso)}
+                        disabled={isPast}
+                      >
+                        <strong>{date.getDate()}</strong>
+                        {hasFixed && <span className="date-marker green-circle" aria-label={text(lang, 'scheduledExcursion')} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </article>
+            </div>
+
+            <div className="excursions-cards-column">
+              {experiences.map((experience) => (
+                <EditableCardFrame editor={editor} cardKey={`experience.${experience.id}`} label={experience.title} section={lang === 'it' ? 'Escursioni' : 'Excursions'} key={experience.id}>
+                  <button className="experience-compact-card" type="button" onClick={() => setSelectedExperience(experience)}>
+                    <EditableImage mediaKey={experienceMediaKey(experience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={experience.image} fallbackAlt={`${experience.title} vulcanIQ`} />
+                    <span className="experience-compact-copy">
+                      <EditableText as="strong" itemKey={`experiences.${experience.id}.title`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.title} />
+                      <EditableText as="small" itemKey={`experiences.${experience.id}.summary`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.summary[lang]} />
+                    </span>
+                  </button>
+                </EditableCardFrame>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {dateModalOpen && (
+        <div className="date-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="date-modal-title" onClick={() => setDateModalOpen(false)}>
+          <article className="date-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="date-modal-header">
+              <div>
+                <span className="micro-label details-label">{selectedItems.length ? text(lang, 'scheduledExcursion') : text(lang, 'availableDates')}</span>
+                <h2 id="date-modal-title">{formatDateForMessage(selectedDate, lang)}</h2>
+              </div>
+              <button className="date-modal-close" type="button" onClick={() => setDateModalOpen(false)}>{text(lang, 'close')}</button>
+            </div>
+            {selectedItems.length ? (
+              <div className="date-modal-content fixed-date-content">{selectedItems.map(renderDateModalFixedDetails)}</div>
+            ) : renderAvailableDateRequest()}
+          </article>
+        </div>
+      )}
+
+      {selectedExperience && (
+        <div className="experience-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="experience-modal-title" onClick={() => setSelectedExperience(null)}>
+          <article className="experience-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="experience-modal-header">
+              <h2 id="experience-modal-title">{selectedExperience.title}</h2>
+              <button className="experience-modal-close" type="button" onClick={() => setSelectedExperience(null)}>{text(lang, 'close')}</button>
+            </div>
+            <div className="experience-detail-content">
+              <EditableImage mediaKey={experienceMediaKey(selectedExperience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={selectedExperience.image} fallbackAlt={`${selectedExperience.title} vulcanIQ`} className="experience-modal-image" />
+              <div className="experience-detail-copy">
+                <EditableText as="p" itemKey={`experiences.${selectedExperience.id}.description`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.description[lang]} />
+                <dl>
+                  <div><dt>{text(lang, 'bestFor')}</dt><dd><EditableText itemKey={`experiences.${selectedExperience.id}.best_for`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.bestFor[lang]} /></dd></div>
+                  <div><dt>{text(lang, 'practical')}</dt><dd><EditableText itemKey={`experiences.${selectedExperience.id}.notes`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.notes[lang]} /></dd></div>
+                  <div><dt>{text(lang, 'safety')}</dt><dd><EditableText itemKey={`experiences.${selectedExperience.id}.safety`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.safety[lang]} /></dd></div>
+                </dl>
+                <div className="request-action-row experience-modal-actions">
+                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestExperience(selectedExperience)}>{text(lang, 'request')}</button>
+                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(buildExperienceMessage(selectedExperience, lang))}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      )}
+
+      {activeLeaflet?.leaflet && (
+        <div className="leaflet-fullscreen-overlay" role="dialog" aria-modal="true" aria-label={activeLeaflet.label || text(lang, 'openProgram')} onClick={() => setActiveLeaflet(null)}>
+          <article className="leaflet-fullscreen-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="leaflet-fullscreen-header">
+              <h2>{activeLeaflet.label || text(lang, 'openProgram')}</h2>
+              <button className="date-modal-close" type="button" onClick={() => setActiveLeaflet(null)}>{text(lang, 'close')}</button>
+            </div>
+            <div className="leaflet-fullscreen-body">
+              {String(activeLeaflet.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(activeLeaflet.leaflet.file_url) ? (
+                <img className="leaflet-fullscreen-image" src={activeLeaflet.leaflet.file_url} alt={activeLeaflet.label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
+              ) : (
+                <iframe className="leaflet-fullscreen-frame" src={activeLeaflet.leaflet.file_url} title={activeLeaflet.label || text(lang, 'openProgram')} />
+              )}
+            </div>
+          </article>
+        </div>
+      )}
     </section>
   );
 }
 
-function Philosophy({ lang }) {
+function Philosophy({ lang, siteMedia, editor }) {
   const paragraphs = text(lang, 'philosophyText').split('\n\n');
   return (
     <section className="section compact-section">
@@ -980,7 +1471,7 @@ function Philosophy({ lang }) {
         </div>
         <div className="mission-grid">
           <article className="mission-card visual-note">
-            <ImageSlot src={mediaUrl(siteMedia, 'mission_main_image', MEDIA.landscape)} alt={mediaAlt(siteMedia, 'mission_main_image', lang, text(lang, 'safetyAlt'))} lang={lang} ratio="wide" />
+            <EditableImageSlot mediaKey="mission_main_image" lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={MEDIA.landscape} fallbackAlt={text(lang, 'safetyAlt')} ratio="wide" />
           </article>
           <article className="mission-card accent">
             <span>{text(lang, 'vision')}</span>
@@ -992,7 +1483,7 @@ function Philosophy({ lang }) {
   );
 }
 
-function MissionPage({ lang, siteMedia, siteContent }) {
+function MissionPage({ lang, siteMedia, siteContent, editor }) {
   const missionTitle = contentText(siteContent, 'mission.mission.title', lang, text(lang, 'mission'));
   const visionTitle = contentText(siteContent, 'mission.vision.title', lang, text(lang, 'vision'));
   const missionBody = contentText(siteContent, 'mission.mission.body', lang, text(lang, 'missionText'));
@@ -1003,21 +1494,21 @@ function MissionPage({ lang, siteMedia, siteContent }) {
       <div className="container mission-balanced-layout">
         <div className="mission-top-row titled-mission-row">
           <div className="mission-card-stack">
-            <h2>{missionTitle}</h2>
+            <EditableText as="h2" itemKey="mission.mission.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'mission')} />
             <article className="mission-card mission-copy-card balanced-mission-card">
-              <p>{missionBody}</p>
+              <EditableText as="p" itemKey="mission.mission.body" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'missionText')} />
             </article>
           </div>
           <div className="mission-card-stack">
-            <h2>{visionTitle}</h2>
+            <EditableText as="h2" itemKey="mission.vision.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'vision')} />
             <article className="mission-card accent vision-copy-card balanced-mission-card">
-              <p>{visionBody}</p>
+              <EditableText as="p" itemKey="mission.vision.body" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'visionText')} />
             </article>
           </div>
         </div>
         <div className="mission-bottom-row mission-image-only-row">
           <article className="mission-image-feature centered-mission-image">
-            <ImageSlot src={mediaUrl(siteMedia, 'mission_main_image', MEDIA.landscape)} alt={mediaAlt(siteMedia, 'mission_main_image', lang, text(lang, 'safetyAlt'))} lang={lang} ratio="wide" />
+            <EditableImageSlot mediaKey="mission_main_image" lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={MEDIA.landscape} fallbackAlt={text(lang, 'safetyAlt')} ratio="wide" />
           </article>
         </div>
       </div>
@@ -1026,26 +1517,38 @@ function MissionPage({ lang, siteMedia, siteContent }) {
 }
 
 
-function BlockedDatesAttachment({ item, lang }) {
+function BlockedDatesAttachment({ item, lang, publicView = true, onOpenFile }) {
   const url = item?.blocked_dates_file_url;
   if (!url) return null;
 
   const type = item.blocked_dates_file_type || '';
   const name = item.blocked_dates_file_name || text(lang, 'blockedDatesCalendar');
   const isImage = type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(url);
+  const label = publicView ? text(lang, 'openExcursionProgram') : text(lang, 'openCalendarFile');
+  const filePayload = { file_url: url, file_type: type, file_name: name, title_it: name, title_en: name };
+
+  const openFile = () => {
+    if (typeof onOpenFile === 'function') {
+      onOpenFile(filePayload, label);
+    } else if (typeof window !== 'undefined') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
 
   return (
     <div className="blocked-dates-attachment">
-      <div>
-        <strong>{text(lang, 'unavailableDates')}</strong>
-        <span>{name}</span>
-      </div>
+      {!publicView && (
+        <div className="blocked-dates-admin-meta">
+          <strong>{text(lang, 'unavailableDates')}</strong>
+          <span>{name}</span>
+        </div>
+      )}
       {isImage ? (
-        <a href={url} target="_blank" rel="noopener noreferrer" aria-label={text(lang, 'openCalendarFile')}>
+        <button className="blocked-dates-preview-button" type="button" onClick={openFile} aria-label={label}>
           <img src={url} alt={text(lang, 'blockedDatesCalendar')} loading="lazy" decoding="async" />
-        </a>
+        </button>
       ) : (
-        <a className="button secondary" href={url} target="_blank" rel="noopener noreferrer">{text(lang, 'openCalendarFile')}</a>
+        <button className="button secondary" type="button" onClick={openFile}>{label}</button>
       )}
     </div>
   );
@@ -1125,7 +1628,7 @@ function FormattedDescription({ textValue }) {
   );
 }
 
-function PublicUpcomingExcursions({ lang, fillForm }) {
+function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [monthDate, setMonthDate] = useState(startOfMonth(new Date()));
@@ -1176,13 +1679,14 @@ function PublicUpcomingExcursions({ lang, fillForm }) {
     const meeting = fixedExcursionField(item, 'meeting_point', lang);
     const difficulty = fixedExcursionField(item, 'difficulty', lang);
     const price = fixedExcursionField(item, 'price_note', lang);
+    const timeRange = item.start_time ? `${String(item.start_time).slice(0, 5)}${item.end_time ? `–${String(item.end_time).slice(0, 5)}` : ''}` : text(lang, 'onRequest');
     return (
       <article className="upcoming-card compact-upcoming-card" key={item.id}>
-        <div className="upcoming-card-head">
-          <span className="date-badge">{formatDateForMessage(item.date, lang)}</span>
-          <span>{item.start_time ? `${String(item.start_time).slice(0, 5)}${item.end_time ? `-${String(item.end_time).slice(0, 5)}` : ''}` : text(lang, 'onRequest')}</span>
+        <div className="selected-date-heading-row">
+          <h3>{formatDateForMessage(item.date, lang)}</h3>
+          <span>{timeRange}</span>
         </div>
-        <h3>{title}</h3>
+        <h4 className="selected-excursion-title">{title}</h4>
         <FormattedDescription textValue={description || experienceById(item.experience_id).summary[lang]} />
         <dl className="public-details-grid">
           <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(item.experience_id, lang)}</dd></div>
@@ -1191,7 +1695,7 @@ function PublicUpcomingExcursions({ lang, fillForm }) {
           {price && <div><dt>{text(lang, 'priceNote')}</dt><dd>{price}</dd></div>}
           <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{item.places_remaining}/{item.capacity}</dd></div>
         </dl>
-        <BlockedDatesAttachment item={item} lang={lang} />
+        <BlockedDatesAttachment item={item} lang={lang} onOpenFile={(file, label) => openLeafletModal(file, label || text(lang, 'openExcursionProgram'))} />
         <button className="button primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestAvailability')}</button>
       </article>
     );
@@ -1201,23 +1705,19 @@ function PublicUpcomingExcursions({ lang, fillForm }) {
     <section className="section page-section alt-section" id="upcoming">
       <div className="container">
         <div className="section-header refined-section-header">
-          <h2>{text(lang, 'upcomingExcursions')}</h2>
-          <p>{text(lang, 'availabilityIntro')}</p>
+          <EditableText as="h2" itemKey="upcoming.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'upcomingExcursions')} />
+          <EditableText as="p" itemKey="upcoming.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'availabilityIntro')} />
         </div>
         {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : (
           <div className="public-calendar-layout">
             <article className="calendar-card public-excursion-calendar">
-              <div className="calendar-topline">
+              <div className="calendar-topline simplified-calendar-header">
                 <button type="button" onClick={() => changeMonth(-1)} aria-label={text(lang, 'previousMonth')}>‹</button>
-                <div>
-                  <span className="micro-label">{text(lang, 'excursionCalendar')}</span>
-                  <h3>{monthLabel(monthDate, lang)}</h3>
-                </div>
+                <h3 className="calendar-month-title">{monthLabel(monthDate, lang)}</h3>
                 <button type="button" onClick={() => changeMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
               </div>
               <div className="calendar-legend compact-legend">
                 <span><i className="legend-dot fixed" />{text(lang, 'availableDates')}</span>
-                <span><i className="legend-dot blocked" />{text(lang, 'unavailableDatesLegend')}</span>
               </div>
               <div className="weekdays" aria-hidden="true">
                 {(lang === 'it' ? ['L', 'M', 'M', 'G', 'V', 'S', 'D'] : ['M', 'T', 'W', 'T', 'F', 'S', 'S']).map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
@@ -1242,8 +1742,8 @@ function PublicUpcomingExcursions({ lang, fillForm }) {
               </div>
             </article>
             <aside className="date-detail-panel">
-              <span className="micro-label">{text(lang, 'dateDetails')}</span>
-              <h3>{selectedDate ? formatDateForMessage(selectedDate, lang) : text(lang, 'dateDetails')}</h3>
+              <span className="micro-label details-label">{text(lang, 'dateDetails')}</span>
+              {selectedItems.length === 0 && <h3>{selectedDate ? formatDateForMessage(selectedDate, lang) : text(lang, 'dateDetails')}</h3>}
               {items.length === 0 ? (
                 <article className="empty-state-card"><p>{text(lang, 'upcomingEmpty')}</p><button className="button primary" type="button" onClick={() => fillForm({ requestType: 'private', scroll: true })}>{text(lang, 'contact')}</button></article>
               ) : selectedItems.length === 0 ? (
@@ -1259,7 +1759,7 @@ function PublicUpcomingExcursions({ lang, fillForm }) {
   );
 }
 
-function PartnershipsPage({ lang }) {
+function PartnershipsPage({ lang, siteContent, editor }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -1277,7 +1777,8 @@ function PartnershipsPage({ lang }) {
     <section className="section page-section" id="partnerships">
       <div className="container">
         <div className="section-header refined-section-header">
-          <h2>{text(lang, 'partnershipsTitle')}</h2>
+          <EditableText as="h2" itemKey="partnerships.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'partnershipsTitle')} />
+          <EditableText as="p" itemKey="partnerships.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'partnershipsIntro') || ''} />
         </div>
         {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : items.length === 0 ? (
           <article className="empty-state-card"><p>{text(lang, 'partnershipsEmpty')}</p></article>
@@ -1305,68 +1806,7 @@ function PartnershipsPage({ lang }) {
   );
 }
 
-
-function normalizeReviewText(rawText) {
-  const value = String(rawText || '').replace(/\r\n?/g, '\n').trim();
-  if (!value) return '';
-
-  return value
-    .split(/\n{2,}/)
-    .map((block) => block
-      .replace(/[ \t]+/g, ' ')
-      .replace(/\s+([,;:.!?])/g, '$1')
-      .replace(/([,;:])(?=\S)/g, '$1 ')
-      .replace(/([.!?])(?=[A-ZÀ-ÖØ-Þ])/g, '$1 ')
-      .replace(/\s+/g, ' ')
-      .trim())
-    .filter(Boolean)
-    .join('\n\n');
-}
-
-function reviewTextParagraphs(rawText) {
-  const normalized = normalizeReviewText(rawText);
-  if (!normalized) return [];
-
-  const explicitBlocks = normalized.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
-  const paragraphs = [];
-
-  explicitBlocks.forEach((block) => {
-    if (block.length <= 230) {
-      paragraphs.push(block);
-      return;
-    }
-
-    const sentences = block.match(/[^.!?]+[.!?]+[”’"']?|[^.!?]+$/g)?.map((sentence) => sentence.trim()).filter(Boolean) || [block];
-    let current = '';
-
-    sentences.forEach((sentence) => {
-      const next = current ? `${current} ${sentence}` : sentence;
-      const currentSentenceCount = current ? (current.match(/[.!?]+/g) || []).length : 0;
-      if (current && (next.length > 340 || currentSentenceCount >= 2)) {
-        paragraphs.push(current);
-        current = sentence;
-      } else {
-        current = next;
-      }
-    });
-
-    if (current) paragraphs.push(current);
-  });
-
-  return paragraphs.length ? paragraphs : [normalized];
-}
-
-function FormattedReviewText({ textValue }) {
-  const paragraphs = reviewTextParagraphs(textValue);
-  if (!paragraphs.length) return null;
-  return (
-    <div className="review-body">
-      {paragraphs.map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>)}
-    </div>
-  );
-}
-
-function ReviewsPage({ lang, siteContent }) {
+function ReviewsPage({ lang, siteContent, editor }) {
   const fallbackReview = lang === 'it'
     ? 'Bellissima esperienza grazie alla nostra guida Leonardo, che ha una vera passione per i vulcani. Percorso moderato, pause ben gestite e consigli pratici molto chiari.'
     : 'Beautiful experience thanks to our guide Leonardo, who has a real passion for volcanoes. The route was moderate, breaks were well managed, and the practical advice was very clear.';
@@ -1425,16 +1865,37 @@ function ReviewsPage({ lang, siteContent }) {
     return String(b.created_at || '').localeCompare(String(a.created_at || ''));
   });
 
+  function reviewDate(review) {
+    const raw = review.experience_date || review.excursion_date || review.submitted_at || review.created_at;
+    return raw ? formatDateForMessage(String(raw).slice(0, 10), lang) : '-';
+  }
+
+  function reviewGuide(review) {
+    return review.guide_name || review.guide || review.owner_name || 'Leonardo Chiavetta';
+  }
+
+  function reviewBookedBy(review) {
+    return review.reviewer_name || review.customer_name || review.booked_by || (lang === 'it' ? 'Ospite' : 'Guest');
+  }
+
+  function renderReviewText(value, className = 'formatted-review-text') {
+    return (
+      <div className={className}>
+        {normalizeReviewText(value).map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 12)}`}>{paragraph}</p>)}
+      </div>
+    );
+  }
+
   return (
     <section className="section compact-section" id="reviews">
       <div className="container reviews-panel redesigned-reviews-panel">
         <div className="section-header refined-section-header reviews-header-row">
           <div>
-            <h2>{contentText(siteContent, 'reviews.page.title', lang, text(lang, 'reviewsTitle'))}</h2>
-            <p>{contentText(siteContent, 'reviews.page.intro', lang, text(lang, 'reviewsIntro'))}</p>
+            <EditableText as="h2" itemKey="reviews.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'reviewsTitle')} />
+            <EditableText as="p" itemKey="reviews.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'reviewsIntro')} />
           </div>
           <div className="reviews-header-actions">
-            <button className="button primary" type="button" onClick={() => { setSubmitState({ loading: false, error: '', success: '' }); setModalOpen(true); }}>{contentText(siteContent, 'reviews.publish_button', lang, text(lang, 'publishReview'))}</button>
+            <button className="button primary" type="button" onClick={() => { setSubmitState({ loading: false, error: '', success: '' }); setModalOpen(true); }}><EditableText itemKey="reviews.publish_button" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'publishReview')} /></button>
             <div className="review-sort-control" role="group" aria-label={lang === 'it' ? 'Ordina recensioni' : 'Sort reviews'}>
               <button type="button" className={sortMode === 'recent' ? 'active' : ''} onClick={() => setSortMode('recent')}>{adminCopy(lang, 'Più recenti', 'Most recent')}</button>
               <button type="button" className={sortMode === 'highest' ? 'active' : ''} onClick={() => setSortMode('highest')}>{adminCopy(lang, 'Voto più alto', 'Highest score')}</button>
@@ -1445,17 +1906,19 @@ function ReviewsPage({ lang, siteContent }) {
         <div className="reviews-grid-public balanced-reviews-grid">
           {sortedCards.map((review) => (
             <article className="review-card featured-review-card" key={review.id}>
-              <div className="stars" aria-label={`${review.rating || 0}/5`}>{'★'.repeat(review.rating || 5)}</div>
-              <div className="review-meta">
-                <p><strong>{adminCopy(lang, 'Prenotato da', 'Booked by')}:</strong> {review.reviewer_name || 'Guest'}</p>
-                {review.created_at && <p><strong>{adminCopy(lang, 'Data', 'Date')}:</strong> {formatDateForMessage(String(review.created_at).slice(0, 10), lang)}</p>}
-                <p><strong>{adminCopy(lang, 'Guida', 'Guide')}:</strong> Leonardo Chiavetta</p>
-              </div>
-              <FormattedReviewText textValue={review.review_text} />
+              <header className="review-card-info-header">
+                <div className="stars review-rating-stars" aria-label={`${review.rating || 0}/5`}>{'★'.repeat(Number(review.rating) || 5)}</div>
+                <div className="review-info-list">
+                  <span><b>{text(lang, 'bookedBy')}:</b> {reviewBookedBy(review)}</span>
+                  <span><b>{text(lang, 'reviewDateLabel')}:</b> {reviewDate(review)}</span>
+                  <span><b>{text(lang, 'guideLabel')}:</b> {reviewGuide(review)}</span>
+                </div>
+              </header>
+              <blockquote>{renderReviewText(review.review_text)}</blockquote>
               {review.admin_reply && (
                 <div className="public-admin-reply">
                   <strong>{adminCopy(lang, 'Risposta vulcanIQ', 'vulcanIQ response')}</strong>
-                  <FormattedReviewText textValue={review.admin_reply} />
+                  {renderReviewText(review.admin_reply, 'formatted-review-text admin-reply-text')}
                 </div>
               )}
             </article>
@@ -1470,12 +1933,12 @@ function ReviewsPage({ lang, siteContent }) {
                   <h2 id="reviewModalTitle">{text(lang, 'leaveReviewTitle')}</h2>
                   <p>{text(lang, 'leaveReviewIntro')}</p>
                 </div>
-                <button className="round-button" type="button" onClick={() => setModalOpen(false)}>{text(lang, 'close')}</button>
+                <button className="modal-close-button" type="button" onClick={() => setModalOpen(false)}>{text(lang, 'close')}</button>
               </div>
               <form className="review-form modal-review-form" onSubmit={submitReview}>
                 <label><span>{text(lang, 'bookingCode')}</span><input value={form.booking_code} onChange={(event) => update('booking_code', event.target.value)} required /></label>
                 <label><span>{text(lang, 'name')}</span><input value={form.reviewer_name} onChange={(event) => update('reviewer_name', event.target.value)} /></label>
-                <label><span>{text(lang, 'reviewRating')}</span><select value={form.rating} onChange={(event) => update('rating', event.target.value)}>{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating}/5</option>)}</select></label>
+                <label><span>{text(lang, 'rating')}</span><select value={form.rating} onChange={(event) => update('rating', event.target.value)}>{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating}/5</option>)}</select></label>
                 <label><span>{text(lang, 'reviewText')}</span><textarea rows={5} value={form.review_text} onChange={(event) => update('review_text', event.target.value)} required /></label>
                 {submitState.error && <div className="admin-alert error" role="alert">{submitState.error}</div>}
                 {submitState.success && <div className="admin-alert success" role="status">{submitState.success}</div>}
@@ -1551,30 +2014,40 @@ function WearReviewsSafety({ lang }) {
   );
 }
 
-function Team({ lang, siteMedia }) {
+function Team({ lang, siteMedia, siteContent, editor }) {
   return (
     <section className="section" id="team">
-      <div className="container">
+      <div className="container about-mission-section">
         <div className="section-header">
-          <h2>{text(lang, 'teamTitle')}</h2>
+          <EditableText as="h2" itemKey="about.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'teamTitle')} />
         </div>
         <div className="team-grid">
           <article className="team-card leonardo-card">
-            <img className="team-photo" src={mediaUrl(siteMedia, 'about_leonardo_image', MEDIA.leonardo)} alt={mediaAlt(siteMedia, 'about_leonardo_image', lang, lang === 'it' ? 'Leonardo, guida vulcanologica vulcanIQ' : 'Leonardo, vulcanIQ volcanological guide')} loading="lazy" />
+            <EditableImage mediaKey="about_leonardo_image" lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={MEDIA.leonardo} fallbackAlt={lang === 'it' ? 'Leonardo, guida vulcanologica vulcanIQ' : 'Leonardo, vulcanIQ volcanological guide'} className="team-photo" />
             <div>
               <h3>Leonardo Chiavetta</h3>
-              <p className="role">{text(lang, 'leonardoRole')}</p>
-              <p>{text(lang, 'leonardoBio')}</p>
+              <EditableText as="p" className="role" itemKey="about.leonardo.role" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'leonardoRole')} />
+              <EditableText as="p" itemKey="about.leonardo.bio" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'leonardoBio')} />
               <a className="inline-link" href={INSTAGRAM} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
             </div>
           </article>
           <article className="team-card">
-            <img className="team-photo" src={mediaUrl(siteMedia, 'about_deborah_image', '/images/co-owner.jpg')} alt={mediaAlt(siteMedia, 'about_deborah_image', lang, text(lang, 'coFounderAlt'))} />
+            <EditableImage mediaKey="about_deborah_image" lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc="/images/co-owner.jpg" fallbackAlt={text(lang, 'coFounderAlt')} className="team-photo" />
             <div>
-              <h3>{text(lang, 'coFounderName')}</h3>
-              <p className="role">{text(lang, 'coFounderRole')}</p>
-              <p>{text(lang, 'coFounderBio')}</p>
+              <EditableText as="h3" itemKey="about.deborah.name" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'coFounderName')} />
+              <EditableText as="p" className="role" itemKey="about.deborah.role" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'coFounderRole')} />
+              <EditableText as="p" itemKey="about.deborah.bio" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'coFounderBio')} />
             </div>
+          </article>
+        </div>
+        <div className="about-mission-grid">
+          <article className="mission-card mission-copy-card balanced-mission-card">
+            <EditableText as="h2" itemKey="mission.mission.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'mission')} />
+            <EditableText as="p" itemKey="mission.mission.body" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'missionText')} />
+          </article>
+          <article className="mission-card accent vision-copy-card balanced-mission-card">
+            <EditableText as="h2" itemKey="mission.vision.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'vision')} />
+            <EditableText as="p" itemKey="mission.vision.body" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'visionText')} />
           </article>
         </div>
       </div>
@@ -1582,21 +2055,21 @@ function Team({ lang, siteMedia }) {
   );
 }
 
-function ContactForm({ lang, formState, setFormState }) {
+function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
   const [submitState, setSubmitState] = useState({ loading: false, error: '', success: '' });
   const [fixedExcursions, setFixedExcursions] = useState([]);
   const requestType = formState.requestType || 'private';
   const message = formState.message || text(lang, 'defaultMessage');
   const experienceId = formState.experienceId || '';
   const selectedFixed = fixedExcursions.find((item) => item.id === formState.fixedExcursionId) || null;
-  const effectiveExperienceId = requestType === 'fixed' ? (selectedFixed?.experience_id || '') : experienceId;
+  const effectiveExperienceId = requestType === 'fixed' && selectedFixed?.experience_id ? selectedFixed.experience_id : experienceId;
+  const selectedTitle = effectiveExperienceId ? experienceById(effectiveExperienceId).title : '';
   const adults = Number.parseInt(formState.adults || '0', 10) || 0;
   const children = Number.parseInt(formState.children || '0', 10) || 0;
+  const childrenUnder3Count = Number.parseInt(formState.childrenUnder3Count || '0', 10) || 0;
   const totalPeople = adults + children;
   const over12 = totalPeople > 12;
-  const fullMessage = requestType === 'fixed' && selectedFixed
-    ? buildFixedExcursionMessage({ fixedExcursion: selectedFixed, people: totalPeople || '' }, lang)
-    : message;
+  const fullMessage = appendUnder3CountToMessage(message, childrenUnder3Count, lang);
 
   useEffect(() => {
     loadPublicFixedExcursions().then(setFixedExcursions);
@@ -1612,7 +2085,6 @@ function ContactForm({ lang, formState, setFormState }) {
       requestType: value,
       privateExperience: value === 'private',
       fixedExcursionId: value === 'fixed' ? current.fixedExcursionId : '',
-      experienceId: value === 'fixed' ? current.experienceId : current.experienceId,
       requestedDate: value === 'private' ? current.requestedDate : current.requestedDate
     }));
   }
@@ -1624,7 +2096,7 @@ function ContactForm({ lang, formState, setFormState }) {
       requestType: 'fixed',
       fixedExcursionId: id,
       privateExperience: false,
-      experienceId: fixed?.experience_id || '',
+      experienceId: fixed?.experience_id || current.experienceId,
       requestedDate: fixed?.date || current.requestedDate,
       message: fixed ? buildFixedExcursionMessage({ fixedExcursion: fixed, people: totalPeople || '' }, lang) : current.message
     }));
@@ -1649,7 +2121,7 @@ function ContactForm({ lang, formState, setFormState }) {
       return;
     }
 
-    if (requestType === 'fixed' && (!formState.fixedExcursionId || !selectedFixed?.experience_id)) {
+    if (requestType === 'fixed' && !formState.fixedExcursionId) {
       setSubmitState({ loading: false, error: text(lang, 'fixedDateRequired'), success: '' });
       return;
     }
@@ -1668,7 +2140,8 @@ function ContactForm({ lang, formState, setFormState }) {
         customer_phone: phone,
         preferred_contact: formState.preferredContact || 'form',
         experience_id: requestType === 'fixed' ? (selectedFixed?.experience_id || 'unsure') : (experienceId || 'unsure'),
-        requested_date: requestType === 'fixed' ? selectedFixed?.date : formState.requestedDate,
+        fixed_excursion_experience_id: selectedFixed?.experience_id || null,
+        requested_date: selectedFixed?.date || formState.requestedDate,
         alternative_date: formState.alternativeDate,
         language: formState.language || lang,
         party_type: formState.partyType || (requestType === 'private' ? 'other' : 'group'),
@@ -1676,7 +2149,7 @@ function ContactForm({ lang, formState, setFormState }) {
         fixed_excursion_id: requestType === 'fixed' ? formState.fixedExcursionId : null,
         adults,
         children,
-        children_under_3: Boolean(formState.childrenUnder3),
+        children_under_3: childrenUnder3Count > 0,
         private_experience: requestType === 'private',
         message: fullMessage,
         source: 'website'
@@ -1691,9 +2164,8 @@ function ContactForm({ lang, formState, setFormState }) {
     <section className="section alt-section" id="contact">
       <div className="container contact-section-grid">
         <div>
-          <span className="kicker">{text(lang, 'formKicker')}</span>
-          <h2>{text(lang, 'formTitle')}</h2>
-          <p>{text(lang, 'formIntro')}</p>
+          <EditableText as="h2" itemKey="contact.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formTitle')} />
+          <EditableText as="p" itemKey="contact.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formIntro')} />
           <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={null} />
           <a className="instagram-link" href={INSTAGRAM} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
         </div>
@@ -1763,9 +2235,9 @@ function ContactForm({ lang, formState, setFormState }) {
             </div>
             <div>
               <label className="field-label" htmlFor="contactExperience">{text(lang, 'selectedExperience')}</label>
-              {requestType === 'fixed' ? (
-                <div className="readonly-field locked-experience" id="contactExperience" aria-live="polite">
-                  <strong>{effectiveExperienceId ? adminExperienceLabel(effectiveExperienceId, lang) : text(lang, 'chooseFixedExcursion')}</strong>
+              {requestType === 'fixed' && selectedFixed ? (
+                <div className="readonly-selected-experience" id="contactExperience" role="note">
+                  <strong>{adminExperienceLabel(selectedFixed.experience_id, lang)}</strong>
                   <span>{adminCopy(lang, 'Definita dal programma scelto', 'Defined by the selected program')}</span>
                 </div>
               ) : (
@@ -1790,7 +2262,7 @@ function ContactForm({ lang, formState, setFormState }) {
             </div>
           )}
 
-          <div className="form-two-cols three">
+          <div className="form-two-cols people-count-grid">
             <div>
               <label className="field-label" htmlFor="contactAdults">{text(lang, 'adults')}</label>
               <input id="contactAdults" type="number" min="0" value={formState.adults || ''} onChange={(event) => update('adults', event.target.value)} />
@@ -1799,27 +2271,25 @@ function ContactForm({ lang, formState, setFormState }) {
               <label className="field-label" htmlFor="contactChildren">{text(lang, 'childrenCount')}</label>
               <input id="contactChildren" type="number" min="0" value={formState.children || ''} onChange={(event) => update('children', event.target.value)} />
             </div>
+            <div>
+              <label className="field-label" htmlFor="contactChildrenUnder3">{text(lang, 'childrenUnder3')}</label>
+              <input id="contactChildrenUnder3" type="number" min="0" max={children || undefined} value={formState.childrenUnder3Count || '0'} onChange={(event) => update('childrenUnder3Count', event.target.value)} />
+            </div>
             <div className="people-summary">
               <strong>{text(lang, 'totalPeople')}</strong>
               <span>{totalPeople}</span>
             </div>
           </div>
-
-          <div className="checkbox-stack inline-checkboxes">
-            <label><input type="checkbox" checked={Boolean(formState.childrenUnder3)} onChange={(event) => update('childrenUnder3', event.target.checked)} /> {text(lang, 'childrenUnder3')}</label>
-          </div>
           {over12 && <p className="form-status warning" role="status">{text(lang, 'contactGuideOver12')}</p>}
 
           <label className="field-label" htmlFor="contactMessage">{text(lang, 'message')}</label>
           <textarea id="contactMessage" value={message} onChange={(event) => update('message', event.target.value)} />
-          {selectedFixed && <p className="small-note">{text(lang, 'fixedExcursion')}: {fixedExcursionLabel(selectedFixed, lang)}</p>}
+          {selectedFixed && <p className="small-note">{text(lang, 'fixedExcursion')}: {fixedExcursionLabel(selectedFixed, lang)} · {adminExperienceLabel(selectedFixed.experience_id, lang)}</p>}
           {submitState.error && <p className="form-status error" role="alert">{submitState.error}</p>}
           {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
-          <div className="cta-row">
-            <button className="button primary" type="submit" disabled={submitState.loading}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitRequest')}</button>
-            <a className="button secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(fullMessage)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
-            <ContactActions lang={lang} compact contextMessage={fullMessage} />
-            <button className="button secondary" type="button" onClick={() => copyText(fullMessage)}>{text(lang, 'copyMessage')}</button>
+          <div className="request-action-row">
+            <button className="request-action-button request-action-button-primary" type="submit" disabled={submitState.loading}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitRequest')}</button>
+            <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(fullMessage)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
           </div>
         </form>
       </div>
@@ -1846,7 +2316,7 @@ function Footer({ lang }) {
     <footer className="footer">
       <div className="container footer-grid">
         <div>
-          <p><strong>Leonardo Chiavetta</strong><br />{PHONE_DISPLAY}<br /><a href={`mailto:${EMAIL}`}>{EMAIL}</a></p>
+          <p><strong>Leonardo Chiavetta</strong><br />{PHONE_DISPLAY}<br /><a href={buildMailto(EMAIL)}>{EMAIL}</a></p>
           <a className="inline-link" href={INSTAGRAM} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
         </div>
       </div>
@@ -1860,7 +2330,7 @@ function StickyMobileBar({ lang }) {
     <div className="mobile-sticky-bar" aria-label="Mobile contact actions">
       <a href={`tel:${PHONE_TEL}`}><Icon name="phone" />{lang === 'it' ? 'Chiama' : 'Call'}</a>
       <a href={`https://wa.me/${PHONE_WA}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer"><Icon name="chat" />WhatsApp</a>
-      <a href="#contact"><Icon name="mail" />Email</a>
+      <a href={buildMailto(EMAIL, text(lang, 'emailSubject'), message)} onClick={(event) => { event.preventDefault(); openDefaultEmailApp(EMAIL, text(lang, 'emailSubject'), message); }}><Icon name="mail" />Email</a>
     </div>
   );
 }
@@ -1988,9 +2458,6 @@ function AdminLogin({ lang, setLang, navigate }) {
   return (
     <main className="admin-login-shell">
       <section className="admin-login-card" aria-labelledby="adminLoginTitle">
-        <a className="brand admin-login-brand" href="/" aria-label="vulcanIQ home">
-          <BrandLogo compact />
-        </a>
         <div>
           <span className="kicker">{adminCopy(lang, 'Area owner', 'Owner area')}</span>
           <h1 id="adminLoginTitle">{adminCopy(lang, 'Accesso admin', 'Admin login')}</h1>
@@ -2114,9 +2581,6 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   return (
     <div className="admin-shell">
       <header className="admin-header">
-        <button className="brand admin-brand-button" type="button" onClick={() => navigate('/admin/today')} aria-label="vulcanIQ admin home">
-          <BrandLogo compact />
-        </button>
         <select className="admin-mobile-nav" value={currentAdminPath} onChange={(event) => navigate(event.target.value)} aria-label="Admin navigation">
           <option value="/admin/today">{adminCopy(lang, 'Oggi', 'Today')}</option>
           <option value="/admin/calendar">{adminCopy(lang, 'Calendario', 'Calendar')}</option>
@@ -2418,6 +2882,7 @@ function CalendarFixedModal({ lang, item, onClose, onSave }) {
 }
 
 const MEDIA_ADMIN_ITEMS = [
+  { key: 'brand_logo_main', it: 'Logo principale vulcanIQ', en: 'Main vulcanIQ logo', fallback: BRAND.logo, alt_it: 'Logo vulcanIQ — esperienze premium sull’Etna', alt_en: 'vulcanIQ logo — premium Etna experiences' },
   { key: 'home_hero_background', it: 'Sfondo hero homepage', en: 'Home hero background' },
   { key: 'home_hero_feature_image', it: 'Immagine hero homepage', en: 'Home hero image' },
   { key: 'home_hero_video', it: 'Video homepage', en: 'Home video' },
@@ -2431,25 +2896,375 @@ const MEDIA_ADMIN_ITEMS = [
   { key: 'default_experience_stories_image', it: 'Etna Stories', en: 'Etna Stories' }
 ];
 
+const EDITOR_PAGE_OPTIONS = [
+  { key: 'home', it: 'Home', en: 'Home' },
+  { key: 'experiences', it: 'Escursioni', en: 'Excursions' },
+  { key: 'partnerships', it: 'Collaborazioni', en: 'Partnerships' },
+  { key: 'about', it: 'Chi siamo', en: 'Who we are' },
+  { key: 'reviews', it: 'Recensioni', en: 'Reviews' },
+  { key: 'contact', it: 'Contatti', en: 'Contact' }
+];
+
+function buildEditorContentMap(items = [], drafts = {}) {
+  const stored = (items || []).reduce((acc, item) => ({ ...acc, [item.content_key]: item }), {});
+  const map = SITE_CONTENT_DEFINITIONS.reduce((acc, definition) => {
+    acc[definition.key] = editorContentItem(stored, definition.key, definition.default_it || definition.default_en || '');
+    return acc;
+  }, {});
+  Object.keys(stored).forEach((key) => {
+    if (!map[key]) map[key] = editorContentItem(stored, key, stored[key]?.default_it || stored[key]?.default_en || '');
+  });
+  return Object.keys(drafts || {}).reduce((acc, key) => ({ ...acc, [key]: { ...(acc[key] || {}), ...drafts[key] } }), map);
+}
+
+function buildEditorMediaMap(items = [], drafts = {}) {
+  const stored = (items || []).reduce((acc, item) => ({ ...acc, [item.media_key]: item }), {});
+  const map = MEDIA_ADMIN_ITEMS.reduce((acc, definition) => {
+    acc[definition.key] = editorMediaItem(stored, definition.key, definition.fallback || '', definition.alt_it || definition.alt_en || '');
+    return acc;
+  }, {});
+  Object.keys(stored).forEach((key) => {
+    if (!map[key]) map[key] = editorMediaItem(stored, key, stored[key]?.file_url || '', stored[key]?.alt_it || stored[key]?.alt_en || '');
+  });
+  return Object.keys(drafts || {}).reduce((acc, key) => ({ ...acc, [key]: { ...(acc[key] || {}), ...drafts[key] } }), map);
+}
+
 function WebsiteAdminPage({ lang, session }) {
-  const [tab, setTab] = useState('content');
+  const [page, setPage] = useState('home');
+  const [editorLang, setEditorLang] = useState(lang || 'it');
+  const [device, setDevice] = useState('desktop');
+  const [contentRows, setContentRows] = useState([]);
+  const [mediaRows, setMediaRows] = useState([]);
+  const [contentDrafts, setContentDrafts] = useState({});
+  const [mediaDrafts, setMediaDrafts] = useState({});
+  const [selected, setSelected] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [notice, setNotice] = useState('');
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    if (!isSupabaseConfigured) {
+      setContentRows([]);
+      setMediaRows([]);
+      setLoading(false);
+      setError(adminCopy(lang, 'Supabase non è configurato. Puoi vedere l’anteprima, ma non salvare modifiche.', 'Supabase is not configured. You can preview the site, but changes cannot be saved.'));
+      return;
+    }
+    try {
+      const [content, media] = await Promise.all([listSiteContent({ activeOnly: false }), listSiteMedia({ activeOnly: false })]);
+      setContentRows(content);
+      setMediaRows(media);
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Editor non caricato.', 'Editor not loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  const contentMap = useMemo(() => buildEditorContentMap(contentRows, contentDrafts), [contentRows, contentDrafts]);
+  const mediaMap = useMemo(() => buildEditorMediaMap(mediaRows, mediaDrafts), [mediaRows, mediaDrafts]);
+  const hasDrafts = Object.keys(contentDrafts).length > 0 || Object.keys(mediaDrafts).length > 0;
+  const editor = useMemo(() => ({ isEditing: true, lang: editorLang, selected, select: setSelected, contentMap, mediaMap }), [editorLang, selected, contentMap, mediaMap]);
+
+  function updateContentDraft(key, patch) {
+    setFeedback('');
+    setContentDrafts((current) => ({ ...current, [key]: { ...(contentMap[key] || editorContentItem({}, key)), ...(current[key] || {}), ...patch } }));
+  }
+
+  function updateMediaDraft(key, patch) {
+    setFeedback('');
+    setMediaDrafts((current) => ({ ...current, [key]: { ...(mediaMap[key] || editorMediaItem({}, key)), ...(current[key] || {}), ...patch } }));
+  }
+
+  async function saveContentItem(item) {
+    if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non è configurato.', 'Supabase is not configured.'));
+    await upsertSiteContent({
+      content_key: item.content_key || item.key,
+      section: item.section,
+      label_it: item.label_it,
+      label_en: item.label_en,
+      value_it: item.value_it,
+      value_en: item.value_en,
+      default_it: item.default_it,
+      default_en: item.default_en,
+      content_type: item.content_type || (item.type === 'textarea' ? 'textarea' : 'text'),
+      style_variant: item.style_variant || 'body',
+      text_size: item.text_size || 'normal',
+      text_align: item.text_align || 'left',
+      visible: item.visible !== false,
+      layout_variant: item.layout_variant || 'default',
+      sort_order: item.sort_order || 0,
+      active: item.active !== false,
+      updated_by: session.user.id
+    });
+  }
+
+  async function saveMediaItem(item) {
+    if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non è configurato.', 'Supabase is not configured.'));
+    const key = item.media_key || item.key;
+    const existing = mediaRows.find((row) => row.media_key === key);
+    const uploaded = item.file ? await uploadSiteMediaFile(item.file, key, session.user.id) : {};
+    if (item.file && existing?.file_path) await removeSiteMediaFile(existing.file_path);
+    await upsertSiteMedia({
+      media_key: key,
+      label_it: item.label_it || item.it || key,
+      label_en: item.label_en || item.en || key,
+      alt_it: item.alt_it || item.label_it || key,
+      alt_en: item.alt_en || item.label_en || key,
+      file_url: uploaded.file_url || item.file_url || null,
+      file_path: uploaded.file_path || item.file_path || null,
+      file_name: uploaded.file_name || item.file_name || null,
+      file_type: uploaded.file_type || item.file_type || null,
+      media_kind: uploaded.media_kind || item.media_kind || 'image',
+      active: item.active !== false,
+      updated_by: session.user.id
+    });
+  }
+
+  async function saveSelected() {
+    if (!selected) return;
+    setError('');
+    setFeedback('');
+    try {
+      if (selected.type === 'text') {
+        await saveContentItem(contentMap[selected.key]);
+        setContentDrafts((current) => {
+          const next = { ...current };
+          delete next[selected.key];
+          return next;
+        });
+      }
+      if (selected.type === 'image') {
+        await saveMediaItem(mediaMap[selected.key]);
+        setMediaDrafts((current) => {
+          const next = { ...current };
+          delete next[selected.key];
+          return next;
+        });
+      }
+      if (selected.type === 'card') {
+        setFeedback(adminCopy(lang, 'Card selezionata. Modifica i testi o immagini cliccabili dentro la card, oppure usa la sezione admin dedicata per dati strutturati.', 'Card selected. Edit the clickable text or images inside the card, or use the dedicated admin section for structured data.'));
+        return;
+      }
+      setFeedback(adminCopy(lang, 'Modifiche salvate.', 'Changes saved.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Impossibile salvare le modifiche. Riprova.', 'Unable to save changes. Please try again.'));
+    }
+  }
+
+  async function saveAll() {
+    setError('');
+    setFeedback('');
+    try {
+      const contentItems = Object.keys(contentDrafts).map((key) => contentMap[key]).filter(Boolean);
+      const mediaItems = Object.keys(mediaDrafts).map((key) => mediaMap[key]).filter(Boolean);
+      for (const item of contentItems) await saveContentItem(item);
+      for (const item of mediaItems) await saveMediaItem(item);
+      setContentDrafts({});
+      setMediaDrafts({});
+      setFeedback(adminCopy(lang, 'Tutte le modifiche sono state salvate.', 'All changes have been saved.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Impossibile salvare tutte le modifiche.', 'Unable to save all changes.'));
+    }
+  }
+
+  function discardDrafts() {
+    if (hasDrafts && !window.confirm(adminCopy(lang, 'Scartare le modifiche non salvate?', 'Discard unsaved changes?'))) return;
+    setContentDrafts({});
+    setMediaDrafts({});
+    setFeedback(adminCopy(lang, 'Modifiche locali scartate.', 'Local changes discarded.'));
+  }
+
+  function resetSelected() {
+    if (!selected) return;
+    if (!window.confirm(adminCopy(lang, 'Ripristinare il contenuto selezionato al valore predefinito?', 'Reset the selected item to its default value?'))) return;
+    if (selected.type === 'text') {
+      const item = contentMap[selected.key] || editorContentItem({}, selected.key);
+      updateContentDraft(selected.key, {
+        value_it: item.default_it || '',
+        value_en: item.default_en || '',
+        visible: true,
+        active: true,
+        text_size: getContentDefinition(selected.key).text_size || 'normal',
+        text_align: getContentDefinition(selected.key).text_align || 'left',
+        style_variant: getContentDefinition(selected.key).style_variant || 'body'
+      });
+    }
+    if (selected.type === 'image') {
+      const definition = getMediaDefinition(selected.key);
+      updateMediaDraft(selected.key, {
+        file: null,
+        file_url: definition.fallback || selected.fallbackSrc || '',
+        alt_it: definition.alt_it || definition.it || selected.fallbackAlt || '',
+        alt_en: definition.alt_en || definition.en || selected.fallbackAlt || '',
+        active: true
+      });
+    }
+  }
+
   return (
-    <section className="admin-page website-admin-page">
-      <div className="admin-page-header">
+    <section className="admin-page website-admin-page visual-editor-page">
+      <div className="visual-editor-toolbar">
         <div>
           <span className="kicker">{adminCopy(lang, 'Modifica sito', 'Edit website')}</span>
-          <h1>{adminCopy(lang, 'Testi e media del sito', 'Website texts and media')}</h1>
-          <p>{adminCopy(lang, 'Da qui puoi modificare i testi pubblici, immagini, video e file visibili sul sito.', 'Use this area to edit public website text, images, videos, and files.')}</p>
+          <h1>{adminCopy(lang, 'Editor visuale controllato', 'Controlled visual editor')}</h1>
         </div>
+        <label><span>{adminCopy(lang, 'Pagina', 'Page')}</span><select value={page} onChange={(event) => { setPage(event.target.value); setSelected(null); }}>
+          {EDITOR_PAGE_OPTIONS.map((item) => <option key={item.key} value={item.key}>{lang === 'it' ? item.it : item.en}</option>)}
+        </select></label>
+        <label><span>{adminCopy(lang, 'Lingua', 'Language')}</span><select value={editorLang} onChange={(event) => setEditorLang(event.target.value)}><option value="it">IT</option><option value="en">EN</option></select></label>
+        <label><span>{adminCopy(lang, 'Dispositivo', 'Device')}</span><select value={device} onChange={(event) => setDevice(event.target.value)}><option value="desktop">Desktop</option><option value="tablet">Tablet</option><option value="mobile">Mobile</option></select></label>
+        <button className="button secondary" type="button" onClick={() => window.open('/', '_blank', 'noopener,noreferrer')}>{adminCopy(lang, 'Apri sito pubblico', 'Open public site')}</button>
+        <button className="button secondary" type="button" onClick={resetSelected} disabled={!selected}>{adminCopy(lang, 'Ripristina selezione', 'Reset selected')}</button>
+        <button className="button secondary" type="button" onClick={discardDrafts} disabled={!hasDrafts}>{adminCopy(lang, 'Scarta', 'Discard')}</button>
+        <button className="button primary" type="button" onClick={saveAll} disabled={!hasDrafts || !isSupabaseConfigured}>{adminCopy(lang, 'Salva tutto', 'Save all')}</button>
       </div>
-      <div className="admin-tabs website-edit-tabs" role="tablist" aria-label={adminCopy(lang, 'Sezioni modifica sito', 'Website edit sections')}>
-        <button type="button" className={tab === 'content' ? 'active' : ''} onClick={() => setTab('content')}>{adminCopy(lang, 'Testi sito', 'Website text')}</button>
-        <button type="button" className={tab === 'media' ? 'active' : ''} onClick={() => setTab('media')}>{adminCopy(lang, 'Immagini e media', 'Images and media')}</button>
-      </div>
-      {tab === 'content' ? <ContentAdminPage lang={lang} session={session} compactHeader /> : <MediaAdminPage lang={lang} session={session} compactHeader />}
+
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {error && <div className="admin-alert error" role="alert">{error}</div>}
+      {notice && <div className="admin-alert warning" role="status">{notice}</div>}
+      {loading ? <p>{adminCopy(lang, 'Caricamento editor...', 'Loading editor...')}</p> : (
+        <div className="visual-editor-shell">
+          <VisualEditorPreview
+            page={page}
+            setPage={setPage}
+            lang={editorLang}
+            setLang={setEditorLang}
+            device={device}
+            siteMedia={mediaMap}
+            siteContent={contentMap}
+            editor={editor}
+            setNotice={setNotice}
+          />
+          <EditorInspector
+            lang={lang}
+            editorLang={editorLang}
+            selected={selected}
+            contentMap={contentMap}
+            mediaMap={mediaMap}
+            updateContentDraft={updateContentDraft}
+            updateMediaDraft={updateMediaDraft}
+            onSave={saveSelected}
+            onReset={resetSelected}
+            canSave={isSupabaseConfigured}
+          />
+        </div>
+      )}
     </section>
   );
 }
+
+function VisualEditorPreview({ page, setPage, lang, setLang, device, siteMedia, siteContent, editor, setNotice }) {
+  const [formState, setFormState] = useState({ language: lang, requestType: 'private', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', message: text(lang, 'defaultMessage') });
+
+  function disabledActionNotice() {
+    setNotice(lang === 'it' ? 'Azione disattivata durante la modifica del sito.' : 'This action is disabled while editing the website.');
+    window.setTimeout(() => setNotice(''), 2800);
+  }
+
+  function fillForm() {
+    disabledActionNotice();
+  }
+
+  function renderPage() {
+    switch (page) {
+      case 'experiences':
+        return <ExperienceAccordion lang={lang} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
+      case 'partnerships':
+        return <PartnershipsPage lang={lang} siteContent={siteContent} editor={editor} />;
+      case 'about':
+        return <Team lang={lang} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
+      case 'reviews':
+        return <ReviewsPage lang={lang} siteContent={siteContent} editor={editor} />;
+      case 'contact':
+        return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteContent={siteContent} editor={editor} />;
+      case 'home':
+      default:
+        return <Hero lang={lang} setActivePage={setPage} scrollToForm={disabledActionNotice} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
+    }
+  }
+
+  return (
+    <div className="visual-editor-canvas">
+      <div className={`visual-preview-frame ${device}`} onSubmitCapture={(event) => { event.preventDefault(); disabledActionNotice(); }} onClickCapture={(event) => {
+        const link = event.target.closest('a[href]');
+        if (link && !link.closest('.editor-selectable')) {
+          event.preventDefault();
+          event.stopPropagation();
+          disabledActionNotice();
+        }
+      }}>
+        <Header lang={lang} setLang={setLang} activePage={page} setActivePage={setPage} siteMedia={siteMedia} editor={editor} />
+        <main className="public-page-shell editor-preview-public">{renderPage()}</main>
+      </div>
+    </div>
+  );
+}
+
+function EditorInspector({ lang, editorLang, selected, contentMap, mediaMap, updateContentDraft, updateMediaDraft, onSave, onReset, canSave }) {
+  if (!selected) {
+    return (
+      <aside className="editor-inspector empty">
+        <span className="kicker">{adminCopy(lang, 'Ispettore', 'Inspector')}</span>
+        <h2>{adminCopy(lang, 'Seleziona un elemento', 'Select an element')}</h2>
+        <p>{adminCopy(lang, 'Seleziona un testo, un’immagine o una card nella preview per modificarla.', 'Select a text, image, or card in the preview to edit it.')}</p>
+      </aside>
+    );
+  }
+
+  if (selected.type === 'text') {
+    const item = contentMap[selected.key] || editorContentItem({}, selected.key);
+    const Field = item.content_type === 'textarea' || item.type === 'textarea' ? 'textarea' : 'input';
+    return (
+      <aside className="editor-inspector">
+        <div className="inspector-heading"><span className="kicker">{adminCopy(lang, 'Testo', 'Text')}</span><h2>{selected.label}</h2><p>{item.section} · {selected.key}</p></div>
+        <label className="admin-field full"><span>Italiano</span><Field rows={5} value={item.value_it ?? item.default_it ?? ''} onChange={(event) => updateContentDraft(selected.key, { value_it: event.target.value, active: true })} /></label>
+        <label className="admin-field full"><span>English</span><Field rows={5} value={item.value_en ?? item.default_en ?? ''} onChange={(event) => updateContentDraft(selected.key, { value_en: event.target.value, active: true })} /></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Dimensione testo', 'Text size')}</span><select value={item.text_size || 'normal'} onChange={(event) => updateContentDraft(selected.key, { text_size: event.target.value })}><option value="small">Small</option><option value="normal">Normal</option><option value="large">Large</option><option value="hero">Hero</option></select></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Stile testo', 'Text style')}</span><select value={item.style_variant || 'body'} onChange={(event) => updateContentDraft(selected.key, { style_variant: event.target.value })}><option value="label">Label</option><option value="body">Body</option><option value="heading">Heading</option><option value="display">Display heading</option></select></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Allineamento', 'Alignment')}</span><select value={item.text_align || 'left'} onChange={(event) => updateContentDraft(selected.key, { text_align: event.target.value })}><option value="left">Left</option><option value="center">Center</option></select></label>
+        <label className="check-field"><input type="checkbox" checked={item.visible !== false} onChange={(event) => updateContentDraft(selected.key, { visible: event.target.checked })} /> {adminCopy(lang, 'Visibile', 'Visible')}</label>
+        <div className="inspector-actions"><button className="button primary" type="button" onClick={onSave} disabled={!canSave}>{adminCopy(lang, 'Salva selezione', 'Save selected')}</button><button className="button secondary" type="button" onClick={onReset}>{adminCopy(lang, 'Ripristina default', 'Reset to default')}</button></div>
+      </aside>
+    );
+  }
+
+  if (selected.type === 'image') {
+    const item = mediaMap[selected.key] || editorMediaItem({}, selected.key, selected.fallbackSrc, selected.fallbackAlt);
+    return (
+      <aside className="editor-inspector">
+        <div className="inspector-heading"><span className="kicker">{adminCopy(lang, 'Immagine', 'Image')}</span><h2>{selected.label}</h2><p>{selected.key}</p></div>
+        {item.file_url && (item.media_kind === 'video' ? <video className="inspector-media-preview" src={item.file_url} controls /> : <img className="inspector-media-preview" src={item.file_url} alt={editorLang === 'it' ? item.alt_it : item.alt_en} />)}
+        <label className="admin-field full"><span>{adminCopy(lang, 'Sostituisci immagine', 'Replace image')}</span><input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,.jpg,.jpeg,.png,.webp,.mp4" onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (!file) return;
+          updateMediaDraft(selected.key, { file, file_url: URL.createObjectURL(file), file_name: file.name, file_type: file.type, media_kind: file.type.startsWith('video/') ? 'video' : 'image', active: true });
+        }} /></label>
+        <label className="admin-field full"><span>Alt text IT</span><input value={item.alt_it || ''} onChange={(event) => updateMediaDraft(selected.key, { alt_it: event.target.value })} /></label>
+        <label className="admin-field full"><span>Alt text EN</span><input value={item.alt_en || ''} onChange={(event) => updateMediaDraft(selected.key, { alt_en: event.target.value })} /></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Posizione immagine', 'Image position')}</span><select value={item.image_position || 'center'} onChange={(event) => updateMediaDraft(selected.key, { image_position: event.target.value })}><option value="center">Center</option><option value="top">Top</option><option value="bottom">Bottom</option></select></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Dimensione immagine', 'Image size')}</span><select value={item.image_size || 'normal'} onChange={(event) => updateMediaDraft(selected.key, { image_size: event.target.value })}><option value="compact">Compact</option><option value="normal">Normal</option><option value="large">Large</option></select></label>
+        <label className="check-field"><input type="checkbox" checked={item.active !== false} onChange={(event) => updateMediaDraft(selected.key, { active: event.target.checked })} /> {adminCopy(lang, 'Visibile', 'Visible')}</label>
+        <div className="inspector-actions"><button className="button primary" type="button" onClick={onSave} disabled={!canSave}>{adminCopy(lang, 'Salva selezione', 'Save selected')}</button><button className="button secondary" type="button" onClick={onReset}>{adminCopy(lang, 'Ripristina default', 'Reset to default')}</button></div>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="editor-inspector">
+      <div className="inspector-heading"><span className="kicker">{adminCopy(lang, 'Card', 'Card')}</span><h2>{selected.label}</h2><p>{selected.section} · {selected.key}</p></div>
+      <p>{adminCopy(lang, 'Questa card è selezionata. Per modificare contenuti visibili, clicca direttamente su titolo, descrizione o immagine dentro la card. Per dati strutturati come collaborazioni o escursioni fisse, usa la sezione admin dedicata.', 'This card is selected. To edit visible content, click directly on the title, description, or image inside the card. For structured data such as partnerships or fixed excursions, use the dedicated admin section.')}</p>
+    </aside>
+  );
+}
+
 
 function MediaAdminPage({ lang, session, compactHeader = false }) {
   const [items, setItems] = useState([]);
@@ -2542,20 +3357,44 @@ function MediaAdminPage({ lang, session, compactHeader = false }) {
   );
 }
 
+const EXPERIENCE_CONTENT_DEFINITIONS = experiences.flatMap((experience) => [
+  { key: `experiences.${experience.id}.title`, section: 'Esperienze', label_it: `${experience.title} · titolo`, label_en: `${experience.title} · title`, type: 'text', default_it: experience.title, default_en: experience.title, text_size: 'large', style_variant: 'heading' },
+  { key: `experiences.${experience.id}.summary`, section: 'Esperienze', label_it: `${experience.title} · sintesi`, label_en: `${experience.title} · summary`, type: 'textarea', default_it: experience.summary.it, default_en: experience.summary.en },
+  { key: `experiences.${experience.id}.best_for`, section: 'Esperienze', label_it: `${experience.title} · ideale per`, label_en: `${experience.title} · best for`, type: 'textarea', default_it: experience.bestFor.it, default_en: experience.bestFor.en },
+  { key: `experiences.${experience.id}.starting`, section: 'Esperienze', label_it: `${experience.title} · indicazione`, label_en: `${experience.title} · starting`, type: 'text', default_it: experience.starting.it, default_en: experience.starting.en },
+  { key: `experiences.${experience.id}.description`, section: 'Esperienze', label_it: `${experience.title} · descrizione`, label_en: `${experience.title} · description`, type: 'textarea', default_it: experience.description.it, default_en: experience.description.en },
+  { key: `experiences.${experience.id}.value`, section: 'Esperienze', label_it: `${experience.title} · valore`, label_en: `${experience.title} · value`, type: 'textarea', default_it: experience.value.it, default_en: experience.value.en },
+  { key: `experiences.${experience.id}.notes`, section: 'Esperienze', label_it: `${experience.title} · note pratiche`, label_en: `${experience.title} · practical notes`, type: 'textarea', default_it: experience.notes.it, default_en: experience.notes.en },
+  { key: `experiences.${experience.id}.safety`, section: 'Esperienze', label_it: `${experience.title} · sicurezza`, label_en: `${experience.title} · safety`, type: 'textarea', default_it: experience.safety.it, default_en: experience.safety.en }
+]);
+
 const SITE_CONTENT_DEFINITIONS = [
-  { key: 'home.hero.title', section: 'Homepage', label_it: 'Homepage hero title', label_en: 'Homepage hero title', type: 'textarea', default_it: "L'Etna non è solo uno scenario.", default_en: 'Etna is not just scenery.' },
-  { key: 'home.hero.subtitle', section: 'Homepage', label_it: 'Homepage hero subtitle', label_en: 'Homepage hero subtitle', type: 'textarea', default_it: 'Esperienze private e fisse sull’Etna per leggere il vulcano come territorio vivo: con conoscenza, sicurezza e relazione umana.', default_en: 'Private and fixed experiences on Mount Etna to read the volcano as a living territory: with knowledge, safety, and human connection.' },
-  { key: 'home.hero.primary_cta', section: 'Homepage', label_it: 'CTA principale', label_en: 'Primary CTA', type: 'text', default_it: "Trova l'esperienza giusta", default_en: 'Find the right experience' },
-  { key: 'home.hero.secondary_cta', section: 'Homepage', label_it: 'CTA secondaria', label_en: 'Secondary CTA', type: 'text', default_it: 'Guarda le disponibilità', default_en: 'View availability' },
-  { key: 'mission.mission.title', section: 'Missione', label_it: 'Titolo Missione', label_en: 'Mission title', type: 'text', default_it: 'Missione', default_en: 'Mission' },
-  { key: 'mission.mission.body', section: 'Missione', label_it: 'Testo Missione', label_en: 'Mission body', type: 'textarea', default_it: 'vulcanIQ nasce per trasformare il modo in cui le persone vivono l’Etna: non come una semplice destinazione da visitare, ma come un territorio da ascoltare, comprendere e ricordare.', default_en: 'vulcanIQ was created to transform the way people experience Etna: not as a simple destination to visit, but as a territory to listen to, understand and remember.' },
-  { key: 'mission.vision.title', section: 'Missione', label_it: 'Titolo Visione', label_en: 'Vision title', type: 'text', default_it: 'Visione', default_en: 'Vision' },
-  { key: 'mission.vision.body', section: 'Missione', label_it: 'Testo Visione', label_en: 'Vision body', type: 'textarea', default_it: 'Crediamo in un turismo che non consuma il territorio, ma lo ascolta. Un modo più autentico di vivere l’Etna, fatto di connessione, rispetto e ricordi che restano.', default_en: 'We believe in a form of tourism that does not consume the territory, but listens to it. A more authentic way to experience Etna, made of connection, respect and lasting memories.' },
-  { key: 'reviews.page.title', section: 'Recensioni', label_it: 'Titolo recensioni', label_en: 'Reviews title', type: 'textarea', default_it: 'Recensioni di chi ha vissuto l’Etna con noi.', default_en: 'Reviews from people who experienced Etna with us.' },
-  { key: 'reviews.page.intro', section: 'Recensioni', label_it: 'Intro recensioni', label_en: 'Reviews intro', type: 'textarea', default_it: '', default_en: '' },
-  { key: 'reviews.publish_button', section: 'Recensioni', label_it: 'Bottone recensione', label_en: 'Review button', type: 'text', default_it: 'Pubblica una recensione', default_en: 'Publish a review' },
-  { key: 'contact.page.title', section: 'Contatti', label_it: 'Titolo contatti', label_en: 'Contact title', type: 'text', default_it: 'Prepara la richiesta.', default_en: 'Prepare your request.' },
-  { key: 'contact.page.intro', section: 'Contatti', label_it: 'Intro contatti', label_en: 'Contact intro', type: 'textarea', default_it: 'Scegli una data fissa o una richiesta privata, indica il numero di persone e lascia un contatto: il team risponderà direttamente.', default_en: 'Choose a fixed date or a private request, indicate the number of people, and leave a contact: the team will reply directly.' }
+  { key: 'home.hero.title', section: 'Homepage', label_it: 'Homepage hero title', label_en: 'Homepage hero title', type: 'textarea', default_it: i18n.it.heroTitle, default_en: i18n.en.heroTitle, text_size: 'hero', style_variant: 'display' },
+  { key: 'home.hero.subtitle', section: 'Homepage', label_it: 'Homepage hero subtitle', label_en: 'Homepage hero subtitle', type: 'textarea', default_it: i18n.it.heroLead, default_en: i18n.en.heroLead, text_size: 'large', style_variant: 'body' },
+  { key: 'home.hero.primary_cta', section: 'Homepage', label_it: 'CTA principale', label_en: 'Primary CTA', type: 'text', default_it: i18n.it.findExperience, default_en: i18n.en.findExperience, style_variant: 'label' },
+  { key: 'home.hero.secondary_cta', section: 'Homepage', label_it: 'CTA secondaria', label_en: 'Secondary CTA', type: 'text', default_it: i18n.it.viewAvailability, default_en: i18n.en.viewAvailability, style_variant: 'label' },
+  { key: 'experiences.page.title', section: 'Esperienze', label_it: 'Titolo pagina esperienze', label_en: 'Experiences page title', type: 'textarea', default_it: i18n.it.experiencesTitle, default_en: i18n.en.experiencesTitle, text_size: 'hero', style_variant: 'display', text_align: 'center' },
+  { key: 'experiences.page.intro', section: 'Esperienze', label_it: 'Intro pagina esperienze', label_en: 'Experiences page intro', type: 'textarea', default_it: i18n.it.experiencesIntro, default_en: i18n.en.experiencesIntro, text_size: 'large', text_align: 'center' },
+  ...EXPERIENCE_CONTENT_DEFINITIONS,
+  { key: 'upcoming.page.title', section: 'Prossime escursioni', label_it: 'Titolo prossime escursioni', label_en: 'Upcoming excursions title', type: 'text', default_it: i18n.it.upcomingExcursions, default_en: i18n.en.upcomingExcursions, text_size: 'hero', style_variant: 'display', text_align: 'center' },
+  { key: 'upcoming.page.intro', section: 'Prossime escursioni', label_it: 'Intro prossime escursioni', label_en: 'Upcoming excursions intro', type: 'textarea', default_it: i18n.it.availabilityIntro, default_en: i18n.en.availabilityIntro, text_size: 'large', text_align: 'center' },
+  { key: 'partnerships.page.title', section: 'Collaborazioni', label_it: 'Titolo collaborazioni', label_en: 'Partnerships title', type: 'text', default_it: i18n.it.partnershipsTitle, default_en: i18n.en.partnershipsTitle, text_size: 'hero', style_variant: 'display', text_align: 'center' },
+  { key: 'partnerships.page.intro', section: 'Collaborazioni', label_it: 'Intro collaborazioni', label_en: 'Partnerships intro', type: 'textarea', default_it: '', default_en: '', text_size: 'large', text_align: 'center' },
+  { key: 'about.page.title', section: 'Chi siamo', label_it: 'Titolo chi siamo', label_en: 'About us title', type: 'textarea', default_it: i18n.it.teamTitle, default_en: i18n.en.teamTitle, text_size: 'hero', style_variant: 'display', text_align: 'center' },
+  { key: 'about.leonardo.role', section: 'Chi siamo', label_it: 'Ruolo Leonardo', label_en: 'Leonardo role', type: 'text', default_it: i18n.it.leonardoRole, default_en: i18n.en.leonardoRole, style_variant: 'label' },
+  { key: 'about.leonardo.bio', section: 'Chi siamo', label_it: 'Bio Leonardo', label_en: 'Leonardo bio', type: 'textarea', default_it: i18n.it.leonardoBio, default_en: i18n.en.leonardoBio },
+  { key: 'about.deborah.name', section: 'Chi siamo', label_it: 'Nome Deborah', label_en: 'Deborah name', type: 'text', default_it: i18n.it.coFounderName, default_en: i18n.en.coFounderName, text_size: 'large', style_variant: 'heading' },
+  { key: 'about.deborah.role', section: 'Chi siamo', label_it: 'Ruolo Deborah', label_en: 'Deborah role', type: 'text', default_it: i18n.it.coFounderRole, default_en: i18n.en.coFounderRole, style_variant: 'label' },
+  { key: 'about.deborah.bio', section: 'Chi siamo', label_it: 'Bio Deborah', label_en: 'Deborah bio', type: 'textarea', default_it: i18n.it.coFounderBio, default_en: i18n.en.coFounderBio },
+  { key: 'mission.mission.title', section: 'Missione', label_it: 'Titolo Missione', label_en: 'Mission title', type: 'text', default_it: i18n.it.mission, default_en: i18n.en.mission, text_size: 'hero', style_variant: 'display' },
+  { key: 'mission.mission.body', section: 'Missione', label_it: 'Testo Missione', label_en: 'Mission body', type: 'textarea', default_it: i18n.it.missionText, default_en: i18n.en.missionText, text_size: 'large' },
+  { key: 'mission.vision.title', section: 'Missione', label_it: 'Titolo Visione', label_en: 'Vision title', type: 'text', default_it: i18n.it.vision, default_en: i18n.en.vision, text_size: 'hero', style_variant: 'display' },
+  { key: 'mission.vision.body', section: 'Missione', label_it: 'Testo Visione', label_en: 'Vision body', type: 'textarea', default_it: i18n.it.visionText, default_en: i18n.en.visionText, text_size: 'large' },
+  { key: 'reviews.page.title', section: 'Recensioni', label_it: 'Titolo recensioni', label_en: 'Reviews title', type: 'textarea', default_it: i18n.it.reviewsTitle, default_en: i18n.en.reviewsTitle, text_size: 'hero', style_variant: 'display' },
+  { key: 'reviews.page.intro', section: 'Recensioni', label_it: 'Intro recensioni', label_en: 'Reviews intro', type: 'textarea', default_it: i18n.it.reviewsIntro || '', default_en: i18n.en.reviewsIntro || '' },
+  { key: 'reviews.publish_button', section: 'Recensioni', label_it: 'Bottone recensione', label_en: 'Review button', type: 'text', default_it: i18n.it.publishReview, default_en: i18n.en.publishReview, style_variant: 'label' },
+  { key: 'contact.page.title', section: 'Contatti', label_it: 'Titolo contatti', label_en: 'Contact title', type: 'text', default_it: i18n.it.formTitle, default_en: i18n.en.formTitle, text_size: 'hero', style_variant: 'display' },
+  { key: 'contact.page.intro', section: 'Contatti', label_it: 'Intro contatti', label_en: 'Contact intro', type: 'textarea', default_it: i18n.it.formIntro, default_en: i18n.en.formIntro, text_size: 'large' }
 ];
 
 function contentDefinitionMap() {
@@ -2940,15 +3779,20 @@ function TodayDashboard({ lang, session, navigate }) {
 
       <div className="admin-two-column">
         <section className="admin-panel">
-          <div className="admin-panel-header">
-            <h2>{adminCopy(lang, 'Richieste di oggi', 'Today requests')}</h2>
-            <button type="button" onClick={() => refreshAll()}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
-          </div>
-          {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : todayRequests.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta con data oggi.', 'No requests dated today.')}</p> : (
-            <div className="request-card-list">
-              {todayRequests.map((request) => <RequestCard key={request.id} request={request} lang={lang} onApprove={() => setDecision({ type: 'approve', request })} onDecline={() => setDecision({ type: 'decline', request })} />)}
+          <details className="admin-archive-details today-requests-details">
+            <summary><span>{adminCopy(lang, 'Richieste di oggi', 'Today requests')}</span><strong>{todayRequests.length}</strong></summary>
+            <div className="today-requests-collapsed-body">
+              <div className="admin-panel-header today-requests-inner-header">
+                <p className="small-note">{adminCopy(lang, 'Sezione chiusa di default. Aprila solo quando devi controllare le richieste con data oggi.', 'Collapsed by default. Open it only when you need to check requests dated today.')}</p>
+                <button type="button" onClick={() => refreshAll()}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+              </div>
+              {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : todayRequests.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta con data oggi.', 'No requests dated today.')}</p> : (
+                <div className="request-card-list">
+                  {todayRequests.map((request) => <RequestCard key={request.id} request={request} lang={lang} onApprove={() => setDecision({ type: 'approve', request })} onDecline={() => setDecision({ type: 'decline', request })} />)}
+                </div>
+              )}
             </div>
-          )}
+          </details>
 
           <div className="admin-panel-subsection">
             <div className="admin-panel-header">
@@ -3169,9 +4013,9 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
 function ReplyTools({ request, lang }) {
   const [copied, setCopied] = useState('');
   const [emailOpen, setEmailOpen] = useState(false);
-  const replyLang = request.language === 'en' ? 'en' : 'it';
-  const approval = buildApprovalReply(request);
-  const decline = buildDeclineReply(request);
+  const replyLang = requestLang(request, lang);
+  const approval = buildApprovalReply(request, lang);
+  const decline = buildDeclineReply(request, lang);
   const prepared = request.status === 'declined' ? decline : approval;
   const type = request.status === 'declined' ? 'decline' : 'approval';
   const customerEmail = request.customer_email || '';
@@ -3195,8 +4039,8 @@ function ReplyTools({ request, lang }) {
       {phoneNeedsCountry && <p className="small-note">{adminCopy(lang, 'Il numero potrebbe richiedere il prefisso internazionale prima di aprire WhatsApp.', 'Phone number may need country code before opening WhatsApp.')}</p>}
       {emailOpen && (
         <div className="admin-email-panel">
-          {customerEmail ? <a href={buildMailtoHref(customerEmail, { subject, body: prepared })}>{adminCopy(lang, 'Apri app email predefinita', 'Open default email app')}</a> : <span>{adminCopy(lang, 'Email cliente non disponibile.', 'Customer email unavailable.')}</span>}
-          {customerEmail && <a href={buildGmailComposeHref(customerEmail, { subject, body: prepared })} target="_blank" rel="noopener noreferrer">Gmail</a>}
+          {customerEmail ? <button type="button" onClick={() => openDefaultEmailApp(customerEmail, subject, prepared)}>{adminCopy(lang, 'Apri app email predefinita', 'Open default email app')}</button> : <span>{adminCopy(lang, 'Email cliente non disponibile.', 'Customer email unavailable.')}</span>}
+          {customerEmail && <a href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encode(customerEmail)}&su=${encode(subject)}&body=${encode(prepared)}`} target="_blank" rel="noopener noreferrer">Gmail</a>}
           {customerEmail && <button type="button" onClick={() => copy('email', customerEmail)}>{adminCopy(lang, 'Copia email cliente', 'Copy customer email')} {copied === 'email' ? '· ✓' : ''}</button>}
           <button type="button" onClick={() => copy('reply', prepared)}>{adminCopy(lang, 'Copia messaggio preparato', 'Copy prepared message')}</button>
         </div>
@@ -3408,19 +4252,20 @@ function RequestStatusAccordions({ requests, lang, onApprove, onDecline, onRemov
   );
 }
 
-function AdminReviewsPanel({ lang, session }) {
+function AdminReviewsPanel({ lang }) {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
-  const [editingReplyId, setEditingReplyId] = useState('');
+  const [confirmReview, setConfirmReview] = useState(null);
   const [replyDrafts, setReplyDrafts] = useState({});
+  const [savingReplyId, setSavingReplyId] = useState('');
 
   async function refresh() {
     setLoading(true);
     setError('');
     try {
-      setReviews(await listReviews());
+      setReviews(await listReviews({ activeOnly: false }));
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Recensioni non caricate.', 'Could not load reviews.'));
     } finally {
@@ -3436,96 +4281,117 @@ function AdminReviewsPanel({ lang, session }) {
     try {
       await updateReviewVisibility(review.id, { active, approved: active ? true : review.approved });
       await refresh();
-      setFeedback(active ? adminCopy(lang, 'Recensione ripubblicata.', 'Review republished.') : adminCopy(lang, 'Recensione nascosta.', 'Review hidden.'));
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Recensione non aggiornata.', 'Review not updated.'));
     }
   }
 
-  function startReply(review) {
-    setEditingReplyId(review.id);
-    setReplyDrafts((current) => ({ ...current, [review.id]: review.admin_reply || '' }));
-    setError('');
-    setFeedback('');
-  }
-
-  async function saveReply(review) {
-    const replyText = replyDrafts[review.id] || '';
-    if (!replyText.trim()) {
-      setError(adminCopy(lang, 'Scrivi una risposta prima di salvarla.', 'Write a response before saving.'));
-      return;
-    }
+  async function confirmDeleteReview() {
+    if (!confirmReview) return;
     setError('');
     setFeedback('');
     try {
-      await updateReviewAdminReply(review.id, replyText, session?.user?.id || '');
-      setEditingReplyId('');
+      await deleteReview(confirmReview.id);
+      setConfirmReview(null);
+      setFeedback(adminCopy(lang, 'Recensione eliminata.', 'Review deleted.'));
       await refresh();
-      setFeedback(adminCopy(lang, 'Risposta salvata.', 'Response saved.'));
     } catch (err) {
-      setError(err?.message || adminCopy(lang, 'Risposta non salvata.', 'Response not saved.'));
+      setError(err?.message || adminCopy(lang, 'Impossibile eliminare la recensione. Riprova.', 'Could not delete the review. Please try again.'));
+    }
+  }
+
+
+  function replyDraft(review) {
+    return replyDrafts[review.id] ?? review.admin_reply ?? '';
+  }
+
+  function updateReplyDraft(review, value) {
+    setReplyDrafts((current) => ({ ...current, [review.id]: value }));
+  }
+
+  async function saveReply(review) {
+    setError('');
+    setFeedback('');
+    setSavingReplyId(review.id);
+    try {
+      await updateReviewAdminReply(review.id, replyDraft(review));
+      setFeedback(adminCopy(lang, 'Risposta salvata.', 'Response saved.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Risposta non salvata. Controlla Supabase e riprova.', 'Response not saved. Check Supabase and try again.'));
+    } finally {
+      setSavingReplyId('');
     }
   }
 
   async function clearReply(review) {
-    const confirmed = window.confirm(adminCopy(lang, 'Eliminare la risposta vulcanIQ a questa recensione?', 'Delete the vulcanIQ response to this review?'));
-    if (!confirmed) return;
     setError('');
     setFeedback('');
+    setSavingReplyId(review.id);
     try {
       await deleteReviewAdminReply(review.id);
-      setEditingReplyId('');
-      await refresh();
+      setReplyDrafts((current) => ({ ...current, [review.id]: '' }));
       setFeedback(adminCopy(lang, 'Risposta eliminata.', 'Response deleted.'));
+      await refresh();
     } catch (err) {
-      setError(err?.message || adminCopy(lang, 'Risposta non eliminata.', 'Response not deleted.'));
+      setError(err?.message || adminCopy(lang, 'Risposta non eliminata. Riprova.', 'Response not deleted. Please try again.'));
+    } finally {
+      setSavingReplyId('');
     }
   }
 
   return (
     <section className="admin-panel admin-reviews-panel">
-      <div className="admin-panel-header"><h2>{adminCopy(lang, 'Recensioni pubbliche', 'Public reviews')}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
-      {error && <div className="admin-alert error" role="alert">{error}</div>}
+      <div className="admin-panel-header"><h2>{adminCopy(lang, 'Gestione recensioni', 'Review management')}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {error && <div className="admin-alert error" role="alert">{error}</div>}
       {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : reviews.length === 0 ? <p>{adminCopy(lang, 'Nessuna recensione ricevuta.', 'No reviews received.')}</p> : (
-        <div className="admin-review-list">
-          {reviews.map((review) => {
-            const isEditingReply = editingReplyId === review.id;
-            return (
+        <>
+          <p className="small-note admin-review-delete-note">{adminCopy(lang, 'Per eliminare una recensione pubblica, usa il pulsante rosso “Elimina definitivamente” sulla card della recensione.', 'To delete a public review, use the red “Delete permanently” button on that review card.')}</p>
+          <div className="admin-review-list">
+            {reviews.map((review) => (
               <article className={`admin-review-card ${review.active ? '' : 'inactive'}`} key={review.id}>
-                <div className="admin-review-content">
-                  <strong>{review.reviewer_name || 'Guest'} · {review.rating || '-'}/5</strong>
-                  <FormattedReviewText textValue={review.review_text} />
-                  <p className="small-note">{review.booking_code} · {review.language || '-'}{review.created_at ? ` · ${formatDateForMessage(String(review.created_at).slice(0, 10), lang)}` : ''}</p>
-                  {review.admin_reply && !isEditingReply && (
-                    <div className="admin-review-reply-preview">
+                <div>
+                  <div className="admin-review-title-row">
+                    <strong>{review.reviewer_name || 'Guest'} · {review.rating || '-'}/5</strong>
+                    <span className={`status-pill ${review.active && review.approved ? 'accepted' : 'cancelled'}`}>{review.active && review.approved ? adminCopy(lang, 'Pubblica sul sito', 'Public on website') : adminCopy(lang, 'Non pubblica', 'Not public')}</span>
+                  </div>
+                  <div className="admin-review-body">{normalizeReviewText(review.review_text).map((paragraph, index) => <p key={`${review.id}-body-${index}`}>{paragraph}</p>)}</div>
+                  {review.admin_reply && (
+                    <div className="admin-review-existing-reply">
                       <strong>{adminCopy(lang, 'Risposta vulcanIQ', 'vulcanIQ response')}</strong>
-                      <FormattedReviewText textValue={review.admin_reply} />
-                      {review.admin_reply_at && <p className="small-note">{formatDateForMessage(String(review.admin_reply_at).slice(0, 10), lang)}</p>}
+                      {normalizeReviewText(review.admin_reply).map((paragraph, index) => <p key={`${review.id}-reply-${index}`}>{paragraph}</p>)}
                     </div>
                   )}
-                  {isEditingReply && (
-                    <div className="admin-review-reply-editor">
-                      <label className="admin-field full">
-                        <span>{review.admin_reply ? adminCopy(lang, 'Modifica risposta', 'Edit response') : adminCopy(lang, 'Rispondi alla recensione', 'Reply to review')}</span>
-                        <textarea rows={4} value={replyDrafts[review.id] || ''} onChange={(event) => setReplyDrafts((current) => ({ ...current, [review.id]: event.target.value }))} />
-                      </label>
-                      <div className="request-actions">
-                        <button className="button primary" type="button" onClick={() => saveReply(review)}>{adminCopy(lang, 'Salva risposta', 'Save response')}</button>
-                        <button className="button secondary" type="button" onClick={() => setEditingReplyId('')}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>
-                        {review.admin_reply && <button className="button secondary danger" type="button" onClick={() => clearReply(review)}>{adminCopy(lang, 'Elimina risposta', 'Delete response')}</button>}
-                      </div>
-                    </div>
-                  )}
+                  <p className="small-note">{review.booking_code} · {review.language || '-'}</p>
+                  <label className="field-label" htmlFor={`reviewReply-${review.id}`}>{review.admin_reply ? adminCopy(lang, 'Modifica risposta', 'Edit response') : adminCopy(lang, 'Rispondi alla recensione', 'Reply to review')}</label>
+                  <textarea id={`reviewReply-${review.id}`} className="admin-review-reply-input" value={replyDraft(review)} onChange={(event) => updateReplyDraft(review, event.target.value)} placeholder={adminCopy(lang, 'Scrivi una risposta pubblica da mostrare sotto la recensione.', 'Write a public response to show below the review.')} />
                 </div>
                 <div className="admin-review-actions">
                   <button className="button secondary" type="button" onClick={() => setVisible(review, !review.active)}>{review.active ? adminCopy(lang, 'Nascondi', 'Hide') : adminCopy(lang, 'Ripubblica', 'Republish')}</button>
-                  {!isEditingReply && <button className="button secondary" type="button" onClick={() => startReply(review)}>{review.admin_reply ? adminCopy(lang, 'Modifica risposta', 'Edit response') : adminCopy(lang, 'Rispondi alla recensione', 'Reply to review')}</button>}
-                  {review.admin_reply && !isEditingReply && <button className="button secondary danger" type="button" onClick={() => clearReply(review)}>{adminCopy(lang, 'Elimina risposta', 'Delete response')}</button>}
+                  <button className="button primary" type="button" onClick={() => saveReply(review)} disabled={savingReplyId === review.id}>{savingReplyId === review.id ? adminCopy(lang, 'Salvataggio...', 'Saving...') : adminCopy(lang, 'Salva risposta', 'Save response')}</button>
+                  <button className="button secondary" type="button" onClick={() => clearReply(review)} disabled={savingReplyId === review.id || !replyDraft(review)}>{adminCopy(lang, 'Elimina risposta', 'Delete response')}</button>
+                  <button className="button primary danger" type="button" onClick={() => setConfirmReview(review)}>{adminCopy(lang, 'Elimina definitivamente', 'Delete permanently')}</button>
                 </div>
               </article>
-            );
-          })}
+            ))}
+          </div>
+        </>
+      )}
+      {confirmReview && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={adminCopy(lang, 'Conferma eliminazione', 'Confirm deletion')}>
+          <article className="admin-modal review-delete-modal">
+            <div className="admin-modal-header">
+              <h2>{adminCopy(lang, 'Conferma eliminazione', 'Confirm deletion')}</h2>
+              <button className="modal-close-button" type="button" onClick={() => setConfirmReview(null)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>
+            </div>
+            <p>{adminCopy(lang, 'Sei sicuro di voler eliminare questa recensione? Questa azione non può essere annullata.', 'Are you sure you want to delete this review? This action cannot be undone.')}</p>
+            <blockquote className="review-delete-preview">{confirmReview.review_text}</blockquote>
+            <div className="modal-actions">
+              <button className="button secondary" type="button" onClick={() => setConfirmReview(null)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>
+              <button className="button primary danger" type="button" onClick={confirmDeleteReview}>{adminCopy(lang, 'Conferma eliminazione', 'Confirm deletion')}</button>
+            </div>
+          </article>
         </div>
       )}
     </section>
@@ -3580,7 +4446,7 @@ function RequestsPage({ lang, session }) {
           />
         )}
       </section>
-      <AdminReviewsPanel lang={lang} session={session} />
+      <AdminReviewsPanel lang={lang} />
       {decision && <DecisionModal lang={lang} session={session} decision={decision} onClose={() => setDecision(null)} onDone={(message) => { setDecision(null); refreshWithFeedback(message); }} />}
       {manualOpen && <ManualRequestModal lang={lang} session={session} onClose={() => setManualOpen(false)} onSaved={() => { setManualOpen(false); refreshWithFeedback(adminCopy(lang, 'Richiesta manuale creata.', 'Manual request created.')); }} />}
     </section>
@@ -4155,7 +5021,7 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
             <div><dt>{adminCopy(lang, 'Posti residui', 'Remaining')}</dt><dd>{item.places_remaining}</dd></div>
             <div><dt>{adminCopy(lang, 'Aggiornata', 'Updated')}</dt><dd>{formatDateForMessage(String(item.updated_at || item.created_at || '').slice(0, 10), lang) || '-'}</dd></div>
           </dl>
-          {item.blocked_dates_file_url && <BlockedDatesAttachment item={item} lang={lang} />}
+          {item.blocked_dates_file_url && <BlockedDatesAttachment item={item} lang={lang} publicView={false} />}
           {(item.description_it || item.description_en || item.note_it || item.note_en) && <p>{fixedExcursionField(item, 'description', lang) || (lang === 'it' ? item.note_it || item.note_en : item.note_en || item.note_it)}</p>}
           {error && <div className="admin-alert error">{error}</div>}
           <div className="request-actions"><button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>{item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}</div>
@@ -4222,7 +5088,7 @@ function AvailabilityBlockCard({ block, lang, userId, onChanged }) {
 function App() {
   const [pathname, navigate] = usePathname();
   const [lang, setLang] = useState('it');
-  const [formState, setFormState] = useState({ language: 'it', requestType: 'private', partyType: 'solo', adults: '1', children: '0', message: i18n.it.defaultMessage });
+  const [formState, setFormState] = useState({ language: 'it', requestType: 'private', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', message: i18n.it.defaultMessage });
   const [activePage, setActivePage] = useState('home');
   const [siteMedia, setSiteMedia] = useState({});
   const [siteContent, setSiteContent] = useState({});
@@ -4260,13 +5126,16 @@ function App() {
     window.setTimeout(() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   }
 
-  function fillForm({ experienceId, message, requestType, fixedExcursionId, requestedDate, scroll = false }) {
+  function fillForm({ experienceId, message, requestType, fixedExcursionId, requestedDate, adults, children, childrenUnder3Count, scroll = false }) {
     setFormState((current) => ({
       ...current,
       experienceId: experienceId || current.experienceId,
       requestType: requestType || current.requestType || 'private',
-      fixedExcursionId: requestType === 'private' ? '' : (fixedExcursionId !== undefined ? fixedExcursionId : current.fixedExcursionId),
+      fixedExcursionId: fixedExcursionId !== undefined ? fixedExcursionId : current.fixedExcursionId,
       requestedDate: requestedDate || current.requestedDate,
+      adults: adults !== undefined ? adults : current.adults,
+      children: children !== undefined ? children : current.children,
+      childrenUnder3Count: childrenUnder3Count !== undefined ? childrenUnder3Count : current.childrenUnder3Count,
       privateExperience: requestType ? requestType === 'private' : current.privateExperience,
       message: message || current.message,
       language: lang
@@ -4277,19 +5146,15 @@ function App() {
   function renderPublicPage() {
     switch (activePage) {
       case 'experiences':
-        return <ExperienceAccordion lang={lang} fillForm={fillForm} siteMedia={siteMedia} />;
-      case 'upcoming':
-        return <PublicUpcomingExcursions lang={lang} fillForm={fillForm} />;
+        return <ExperienceAccordion lang={lang} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'partnerships':
-        return <PartnershipsPage lang={lang} />;
+        return <PartnershipsPage lang={lang} siteContent={siteContent} />;
       case 'about':
-        return <Team lang={lang} siteMedia={siteMedia} />;
-      case 'mission':
-        return <MissionPage lang={lang} siteMedia={siteMedia} siteContent={siteContent} />;
+        return <Team lang={lang} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'reviews':
         return <ReviewsPage lang={lang} siteContent={siteContent} />;
       case 'contact':
-        return <ContactForm lang={lang} formState={formState} setFormState={setFormState} />;
+        return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteContent={siteContent} />;
       case 'home':
       default:
         return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} siteMedia={siteMedia} siteContent={siteContent} />;
@@ -4302,8 +5167,8 @@ function App() {
 
   return (
     <>
-      <Header lang={lang} setLang={setLang} activePage={activePage} setActivePage={setActivePage} />
-      <main ref={contactRef} className="public-page-shell">
+      <Header lang={lang} setLang={setLang} activePage={activePage} setActivePage={setActivePage} siteMedia={siteMedia} />
+      <main ref={contactRef} className={`public-page-shell public-page-${activePage}`}>
         {renderPublicPage()}
       </main>
       <Footer lang={lang} />
