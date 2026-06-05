@@ -1,5 +1,9 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 
+const PUBLIC_SITE_CONTENT_FULL_COLUMNS = 'id, content_key, section, label_it, label_en, value_it, value_en, default_it, default_en, content_type, style_variant, text_size, text_align, visible, sort_order, image_url, image_alt_it, image_alt_en, image_position, layout_variant, active';
+const PUBLIC_SITE_CONTENT_MIN_COLUMNS = 'id, content_key, section, label_it, label_en, value_it, value_en, default_it, default_en, content_type, active';
+const SITE_CONTENT_ADMIN_COLUMNS = 'id, created_at, updated_at, content_key, section, label_it, label_en, value_it, value_en, default_it, default_en, content_type, style_variant, text_size, text_align, visible, sort_order, image_url, image_alt_it, image_alt_en, image_position, layout_variant, active, updated_by';
+
 function normalize(row) {
   return {
     id: row.id,
@@ -29,29 +33,45 @@ function normalize(row) {
   };
 }
 
-export async function loadPublicSiteContent() {
-  if (!isSupabaseConfigured) return [];
+async function selectContentRows(table, columns) {
   const { data, error } = await supabase
-    .from('public_site_content')
-    .select('id, content_key, section, label_it, label_en, value_it, value_en, default_it, default_en, content_type, style_variant, text_size, text_align, visible, sort_order, image_url, image_alt_it, image_alt_en, image_position, layout_variant, active')
+    .from(table)
+    .select(columns)
     .order('section', { ascending: true })
     .order('content_key', { ascending: true });
   if (error) throw error;
   return (data || []).map(normalize);
 }
 
+export async function loadPublicSiteContent() {
+  if (!isSupabaseConfigured) return [];
+
+  try {
+    return await selectContentRows('public_site_content', PUBLIC_SITE_CONTENT_FULL_COLUMNS);
+  } catch (fullViewError) {
+    try {
+      return await selectContentRows('public_site_content', PUBLIC_SITE_CONTENT_MIN_COLUMNS);
+    } catch (minimalViewError) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session) {
+        return selectContentRows('site_content', SITE_CONTENT_ADMIN_COLUMNS);
+      }
+      throw minimalViewError || fullViewError;
+    }
+  }
+}
+
 export async function listSiteContent({ activeOnly = false } = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-  let query = supabase
-    .from(activeOnly ? 'public_site_content' : 'site_content')
-    .select(activeOnly
-      ? 'id, content_key, section, label_it, label_en, value_it, value_en, default_it, default_en, content_type, style_variant, text_size, text_align, visible, sort_order, image_url, image_alt_it, image_alt_en, image_position, layout_variant, active'
-      : 'id, created_at, updated_at, content_key, section, label_it, label_en, value_it, value_en, default_it, default_en, content_type, style_variant, text_size, text_align, visible, sort_order, image_url, image_alt_it, image_alt_en, image_position, layout_variant, active, updated_by')
-    .order('section', { ascending: true })
-    .order('content_key', { ascending: true });
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data || []).map(normalize);
+  const table = activeOnly ? 'public_site_content' : 'site_content';
+  const columns = activeOnly ? PUBLIC_SITE_CONTENT_FULL_COLUMNS : SITE_CONTENT_ADMIN_COLUMNS;
+
+  try {
+    return await selectContentRows(table, columns);
+  } catch (error) {
+    if (activeOnly) return selectContentRows('public_site_content', PUBLIC_SITE_CONTENT_MIN_COLUMNS);
+    throw error;
+  }
 }
 
 export async function upsertSiteContent(input) {

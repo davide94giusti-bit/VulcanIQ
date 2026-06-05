@@ -658,12 +658,17 @@ function text(lang, key) {
   return i18n[lang][key];
 }
 
+function cleanEditableTextValue(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).replace(/\r\n/g, '\n').trim();
+}
+
 function contentText(siteContent, key, lang, fallback = '') {
   const item = siteContent?.[key];
-  if (!item || item.active === false) return fallback;
-  const primary = lang === 'it' ? item.value_it : item.value_en;
-  const secondary = lang === 'it' ? item.value_en : item.value_it;
-  return primary || secondary || fallback;
+  if (!item || item.active === false) return cleanEditableTextValue(fallback);
+  const value = lang === 'it' ? item.value_it : item.value_en;
+  const defaultValue = lang === 'it' ? item.default_it : item.default_en;
+  return cleanEditableTextValue(value) || cleanEditableTextValue(defaultValue) || cleanEditableTextValue(fallback);
 }
 
 function buildSiteContentMap(items = []) {
@@ -1098,7 +1103,7 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, edito
           <div className="hero-ctas">
             <button className="button primary" type="button" onClick={() => setActivePage('experiences')}><EditableText itemKey="home.hero.primary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'findExperience')} /></button>
             <button className="button secondary dark" type="button" onClick={() => setActivePage('experiences')}><EditableText itemKey="home.hero.secondary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'viewAvailability')} /></button>
-            <button className="button secondary dark" type="button" onClick={scrollToForm}>{text(lang, 'contact')}</button>
+            <button className="button secondary dark" type="button" onClick={scrollToForm}><EditableText itemKey="home.hero.contact_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'contact')} /></button>
           </div>
           <div className="trust-grid hero-trust-grid" aria-label="Trust points">
             <a
@@ -1110,7 +1115,7 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, edito
             >
               <span className="trust-check" aria-hidden="true">✓</span>
               <span>
-                <strong>{text(lang, 'trust')[0]}</strong>
+                <EditableText as="strong" itemKey="home.hero.guide_badge" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'trust')[0]} />
               </span>
             </a>
           </div>
@@ -2311,12 +2316,15 @@ function FinalCTA({ lang }) {
   );
 }
 
-function Footer({ lang }) {
+function Footer({ lang, siteContent, editor }) {
   return (
     <footer className="footer">
       <div className="container footer-grid">
         <div>
-          <p><strong>Leonardo Chiavetta</strong><br />{PHONE_DISPLAY}<br /><a href={buildMailto(EMAIL)}>{EMAIL}</a></p>
+          <p>
+            <EditableText as="strong" itemKey="footer.contact.name" lang={lang} siteContent={siteContent} editor={editor} fallback="Leonardo Chiavetta" />
+            <br />{PHONE_DISPLAY}<br /><a href={buildMailto(EMAIL)}>{EMAIL}</a>
+          </p>
           <a className="inline-link" href={INSTAGRAM} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
         </div>
       </div>
@@ -2954,6 +2962,7 @@ function WebsiteAdminPage({ lang, session }) {
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [notice, setNotice] = useState('');
+  const [saving, setSaving] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -3039,9 +3048,10 @@ function WebsiteAdminPage({ lang, session }) {
   }
 
   async function saveSelected() {
-    if (!selected) return;
+    if (!selected || saving) return;
     setError('');
     setFeedback('');
+    setSaving(true);
     try {
       if (selected.type === 'text') {
         await saveContentItem(contentMap[selected.key]);
@@ -3067,12 +3077,16 @@ function WebsiteAdminPage({ lang, session }) {
       await refresh();
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Impossibile salvare le modifiche. Riprova.', 'Unable to save changes. Please try again.'));
+    } finally {
+      setSaving(false);
     }
   }
 
   async function saveAll() {
+    if (saving) return;
     setError('');
     setFeedback('');
+    setSaving(true);
     try {
       const contentItems = Object.keys(contentDrafts).map((key) => contentMap[key]).filter(Boolean);
       const mediaItems = Object.keys(mediaDrafts).map((key) => mediaMap[key]).filter(Boolean);
@@ -3084,6 +3098,8 @@ function WebsiteAdminPage({ lang, session }) {
       await refresh();
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Impossibile salvare tutte le modifiche.', 'Unable to save all changes.'));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -3135,8 +3151,8 @@ function WebsiteAdminPage({ lang, session }) {
         <label><span>{adminCopy(lang, 'Dispositivo', 'Device')}</span><select value={device} onChange={(event) => setDevice(event.target.value)}><option value="desktop">Desktop</option><option value="tablet">Tablet</option><option value="mobile">Mobile</option></select></label>
         <button className="button secondary" type="button" onClick={() => window.open('/', '_blank', 'noopener,noreferrer')}>{adminCopy(lang, 'Apri sito pubblico', 'Open public site')}</button>
         <button className="button secondary" type="button" onClick={resetSelected} disabled={!selected}>{adminCopy(lang, 'Ripristina selezione', 'Reset selected')}</button>
-        <button className="button secondary" type="button" onClick={discardDrafts} disabled={!hasDrafts}>{adminCopy(lang, 'Scarta', 'Discard')}</button>
-        <button className="button primary" type="button" onClick={saveAll} disabled={!hasDrafts || !isSupabaseConfigured}>{adminCopy(lang, 'Salva tutto', 'Save all')}</button>
+        <button className="button secondary" type="button" onClick={discardDrafts} disabled={!hasDrafts || saving}>{adminCopy(lang, 'Scarta', 'Discard')}</button>
+        <button className="button primary" type="button" onClick={saveAll} disabled={!hasDrafts || !isSupabaseConfigured || saving}>{saving ? adminCopy(lang, 'Salvataggio...', 'Saving...') : adminCopy(lang, 'Salva tutto', 'Save all')}</button>
       </div>
 
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
@@ -3165,7 +3181,7 @@ function WebsiteAdminPage({ lang, session }) {
             updateMediaDraft={updateMediaDraft}
             onSave={saveSelected}
             onReset={resetSelected}
-            canSave={isSupabaseConfigured}
+            canSave={isSupabaseConfigured && !saving}
           />
         </div>
       )}
@@ -3408,6 +3424,8 @@ const SITE_CONTENT_DEFINITIONS = [
   { key: 'home.hero.subtitle', section: 'Homepage', label_it: 'Homepage hero subtitle', label_en: 'Homepage hero subtitle', type: 'textarea', default_it: i18n.it.heroLead, default_en: i18n.en.heroLead, text_size: 'large', style_variant: 'body' },
   { key: 'home.hero.primary_cta', section: 'Homepage', label_it: 'CTA principale', label_en: 'Primary CTA', type: 'text', default_it: i18n.it.findExperience, default_en: i18n.en.findExperience, style_variant: 'label' },
   { key: 'home.hero.secondary_cta', section: 'Homepage', label_it: 'CTA secondaria', label_en: 'Secondary CTA', type: 'text', default_it: i18n.it.viewAvailability, default_en: i18n.en.viewAvailability, style_variant: 'label' },
+  { key: 'home.hero.contact_cta', section: 'Homepage', label_it: 'CTA contatto', label_en: 'Contact CTA', type: 'text', default_it: i18n.it.contact, default_en: i18n.en.contact, style_variant: 'label' },
+  { key: 'home.hero.guide_badge', section: 'Homepage', label_it: 'Badge guida', label_en: 'Guide badge', type: 'text', default_it: i18n.it.trust[0], default_en: i18n.en.trust[0], style_variant: 'label' },
   { key: 'experiences.page.title', section: 'Esperienze', label_it: 'Titolo pagina esperienze', label_en: 'Experiences page title', type: 'textarea', default_it: i18n.it.experiencesTitle, default_en: i18n.en.experiencesTitle, text_size: 'hero', style_variant: 'display', text_align: 'center' },
   { key: 'experiences.page.intro', section: 'Esperienze', label_it: 'Intro pagina esperienze', label_en: 'Experiences page intro', type: 'textarea', default_it: i18n.it.experiencesIntro, default_en: i18n.en.experiencesIntro, text_size: 'large', text_align: 'center' },
   ...EXPERIENCE_CONTENT_DEFINITIONS,
@@ -3429,7 +3447,8 @@ const SITE_CONTENT_DEFINITIONS = [
   { key: 'reviews.page.intro', section: 'Recensioni', label_it: 'Intro recensioni', label_en: 'Reviews intro', type: 'textarea', default_it: i18n.it.reviewsIntro || '', default_en: i18n.en.reviewsIntro || '' },
   { key: 'reviews.publish_button', section: 'Recensioni', label_it: 'Bottone recensione', label_en: 'Review button', type: 'text', default_it: i18n.it.publishReview, default_en: i18n.en.publishReview, style_variant: 'label' },
   { key: 'contact.page.title', section: 'Contatti', label_it: 'Titolo contatti', label_en: 'Contact title', type: 'text', default_it: i18n.it.formTitle, default_en: i18n.en.formTitle, text_size: 'hero', style_variant: 'display' },
-  { key: 'contact.page.intro', section: 'Contatti', label_it: 'Intro contatti', label_en: 'Contact intro', type: 'textarea', default_it: i18n.it.formIntro, default_en: i18n.en.formIntro, text_size: 'large' }
+  { key: 'contact.page.intro', section: 'Contatti', label_it: 'Intro contatti', label_en: 'Contact intro', type: 'textarea', default_it: i18n.it.formIntro, default_en: i18n.en.formIntro, text_size: 'large' },
+  { key: 'footer.contact.name', section: 'Footer', label_it: 'Nome footer', label_en: 'Footer name', type: 'text', default_it: 'Leonardo Chiavetta', default_en: 'Leonardo Chiavetta', style_variant: 'heading' }
 ];
 
 function contentDefinitionMap() {
@@ -5197,16 +5216,11 @@ function App() {
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     let active = true;
-    Promise.all([listSiteMedia({ activeOnly: true }), loadPublicSiteContent()])
-      .then(([mediaItems, contentItems]) => {
+    Promise.allSettled([listSiteMedia({ activeOnly: true }), loadPublicSiteContent()])
+      .then(([mediaResult, contentResult]) => {
         if (!active) return;
-        setSiteMedia(buildMediaMap(mediaItems));
-        setSiteContent(buildSiteContentMap(contentItems));
-      })
-      .catch(() => {
-        if (!active) return;
-        setSiteMedia({});
-        setSiteContent({});
+        setSiteMedia(mediaResult.status === 'fulfilled' ? buildMediaMap(mediaResult.value) : {});
+        setSiteContent(contentResult.status === 'fulfilled' ? buildSiteContentMap(contentResult.value) : {});
       });
     return () => { active = false; };
   }, []);
@@ -5271,7 +5285,7 @@ function App() {
       <main ref={contactRef} className={`public-page-shell public-page-${activePage}`}>
         {renderPublicPage()}
       </main>
-      <Footer lang={lang} />
+      <Footer lang={lang} siteContent={siteContent} />
       <StickyMobileBar lang={lang} />
     </>
   );

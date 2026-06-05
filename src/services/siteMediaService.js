@@ -2,6 +2,9 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 
 const PUBLIC_ASSET_BUCKET = 'vulcaniq-public-assets';
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'application/pdf'];
+const PUBLIC_SITE_MEDIA_FULL_COLUMNS = 'id, media_key, label_it, label_en, file_url, file_path, file_name, file_type, media_kind, alt_it, alt_en, image_position, image_size, active';
+const PUBLIC_SITE_MEDIA_MIN_COLUMNS = 'id, media_key, label_it, label_en, file_url, file_type, media_kind, alt_it, alt_en, active';
+const SITE_MEDIA_ADMIN_COLUMNS = 'id, created_at, updated_at, media_key, label_it, label_en, file_url, file_path, file_name, file_type, media_kind, alt_it, alt_en, image_position, image_size, active, updated_by';
 
 function normalize(row) {
   return {
@@ -34,17 +37,26 @@ function safeFileName(file, fallback = 'site-media') {
     .slice(0, 90) || fallback;
 }
 
-export async function listSiteMedia({ activeOnly = false } = {}) {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-  let query = supabase
-    .from(activeOnly ? 'public_site_media' : 'site_media')
-    .select(activeOnly
-      ? 'id, media_key, label_it, label_en, file_url, file_path, file_name, file_type, media_kind, alt_it, alt_en, image_position, image_size, active'
-      : 'id, created_at, updated_at, media_key, label_it, label_en, file_url, file_path, file_name, file_type, media_kind, alt_it, alt_en, image_position, image_size, active, updated_by')
+async function selectMediaRows(table, columns) {
+  const { data, error } = await supabase
+    .from(table)
+    .select(columns)
     .order('media_key', { ascending: true });
-  const { data, error } = await query;
   if (error) throw error;
   return (data || []).map(normalize);
+}
+
+export async function listSiteMedia({ activeOnly = false } = {}) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const table = activeOnly ? 'public_site_media' : 'site_media';
+  const columns = activeOnly ? PUBLIC_SITE_MEDIA_FULL_COLUMNS : SITE_MEDIA_ADMIN_COLUMNS;
+
+  try {
+    return await selectMediaRows(table, columns);
+  } catch (error) {
+    if (activeOnly) return selectMediaRows('public_site_media', PUBLIC_SITE_MEDIA_MIN_COLUMNS);
+    throw error;
+  }
 }
 
 export async function upsertSiteMedia(input) {
