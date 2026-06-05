@@ -88,16 +88,9 @@ export async function removePartnershipImage(path) {
 export async function loadPublicPartnerships() {
   if (!isSupabaseConfigured) return [];
   try {
-    // Keep this public view query limited to the stable public columns.
-    // Some deployed Supabase projects still have an older public_partnerships
-    // view that does not expose storage-management fields such as image_path,
-    // image_name, or image_type. Selecting those fields causes PostgREST to
-    // return 400 and hides all public partnerships. The public UI only needs
-    // image_url; admin screens can still read storage fields from the private
-    // partnerships table.
     const { data, error } = await supabase
       .from('public_partnerships')
-      .select('id, name, description_it, description_en, website_url, image_url, category_it, category_en, active, display_order')
+      .select('id, name, description_it, description_en, website_url, image_url, image_path, image_name, image_type, category_it, category_en, active, display_order')
       .eq('active', true)
       .order('display_order', { ascending: true })
       .order('name', { ascending: true });

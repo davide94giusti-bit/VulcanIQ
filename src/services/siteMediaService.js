@@ -16,8 +16,6 @@ function normalize(row) {
     media_kind: row.media_kind || 'image',
     alt_it: row.alt_it || '',
     alt_en: row.alt_en || '',
-    image_position: row.image_position || 'center',
-    image_size: row.image_size || 'normal',
     active: row.active !== false,
     updated_by: row.updated_by || null,
     created_at: row.created_at,
@@ -39,8 +37,8 @@ export async function listSiteMedia({ activeOnly = false } = {}) {
   let query = supabase
     .from(activeOnly ? 'public_site_media' : 'site_media')
     .select(activeOnly
-      ? 'id, media_key, label_it, label_en, file_url, file_path, file_name, file_type, media_kind, alt_it, alt_en, image_position, image_size, active'
-      : 'id, created_at, updated_at, media_key, label_it, label_en, file_url, file_path, file_name, file_type, media_kind, alt_it, alt_en, image_position, image_size, active, updated_by')
+      ? 'id, media_key, label_it, label_en, file_url, file_path, file_name, file_type, media_kind, alt_it, alt_en, active'
+      : 'id, created_at, updated_at, media_key, label_it, label_en, file_url, file_path, file_name, file_type, media_kind, alt_it, alt_en, active, updated_by')
     .order('media_key', { ascending: true });
   const { data, error } = await query;
   if (error) throw error;
@@ -60,8 +58,6 @@ export async function upsertSiteMedia(input) {
     media_kind: input.media_kind || 'image',
     alt_it: input.alt_it || null,
     alt_en: input.alt_en || null,
-    image_position: input.image_position || 'center',
-    image_size: input.image_size || 'normal',
     active: input.active !== false,
     updated_by: input.updated_by || null,
     updated_at: new Date().toISOString()

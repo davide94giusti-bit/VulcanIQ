@@ -10,12 +10,15 @@ function normalizeRating(value) {
   return Math.min(5, Math.max(1, parsed));
 }
 
+const publicReviewFields = 'id, created_at, reviewer_name, review_text, rating, language, admin_reply, admin_reply_at';
+const adminReviewFields = 'id, created_at, updated_at, booking_request_id, booking_code, reviewer_name, review_text, rating, language, approved, active, admin_reply, admin_reply_at, admin_reply_by';
+
 export async function loadPublicReviews() {
   if (!isSupabaseConfigured) return [];
 
   const { data, error } = await supabase
     .from('public_reviews')
-    .select('id, created_at, reviewer_name, review_text, rating, language')
+    .select(publicReviewFields)
     .order('created_at', { ascending: false })
     .limit(12);
 
@@ -50,7 +53,7 @@ export async function listReviews({ activeOnly = false } = {}) {
 
   let query = supabase
     .from('reviews')
-    .select('id, created_at, booking_request_id, booking_code, reviewer_name, review_text, rating, language, approved, active')
+    .select(adminReviewFields)
     .order('created_at', { ascending: false })
     .limit(100);
 
@@ -72,22 +75,35 @@ export async function updateReviewVisibility(id, input) {
     .from('reviews')
     .update(payload)
     .eq('id', id)
-    .select('id, created_at, booking_request_id, booking_code, reviewer_name, review_text, rating, language, approved, active')
+    .select(adminReviewFields)
     .single();
 
   if (error) throw error;
   return data;
 }
 
-
-export async function deleteReview(id) {
+export async function updateReviewAdminReply(id, replyText, userId = '') {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
-  const { error } = await supabase
+  const cleanReply = cleanText(replyText);
+  const payload = {
+    admin_reply: cleanReply || null,
+    admin_reply_at: cleanReply ? new Date().toISOString() : null,
+    admin_reply_by: cleanReply ? cleanText(userId) || null : null,
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabase
     .from('reviews')
-    .delete()
-    .eq('id', id);
+    .update(payload)
+    .eq('id', id)
+    .select(adminReviewFields)
+    .single();
 
   if (error) throw error;
-  return true;
+  return data;
+}
+
+export async function deleteReviewAdminReply(id) {
+  return updateReviewAdminReply(id, '', '');
 }
