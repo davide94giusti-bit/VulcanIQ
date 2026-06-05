@@ -10,7 +10,7 @@ import { loadPublicReviews, submitPublicReview, listReviews, updateReviewVisibil
 import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFile } from './services/siteMediaService.js';
 import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
 import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
-import { buildApprovalReply, buildDeclineReply, replySubject, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
+import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import './styles.css';
 
 const PHONE_DISPLAY = '+39 334 929 8246';
@@ -3948,9 +3948,9 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
 function ReplyTools({ request, lang }) {
   const [copied, setCopied] = useState('');
   const [emailOpen, setEmailOpen] = useState(false);
-  const replyLang = request.language === 'en' ? 'en' : 'it';
-  const approval = buildApprovalReply(request);
-  const decline = buildDeclineReply(request);
+  const replyLang = requestLang(request, lang);
+  const approval = buildApprovalReply(request, lang);
+  const decline = buildDeclineReply(request, lang);
   const prepared = request.status === 'declined' ? decline : approval;
   const type = request.status === 'declined' ? 'decline' : 'approval';
   const customerEmail = request.customer_email || '';

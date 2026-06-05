@@ -17,14 +17,48 @@ function textOrNull(value) {
   return clean === '' || clean === undefined ? null : clean;
 }
 
-function makeBookingCode(date) {
-  const year = String(date || new Date().toISOString()).slice(0, 4);
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function compactDateForCode(value) {
+  const clean = String(value || '').trim();
+  const match = clean.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return '';
+  return `${match[1]}${match[2]}${match[3]}`;
+}
+
+function randomCodeSuffix() {
   let suffix = '';
   for (let index = 0; index < 4; index += 1) {
-    suffix += alphabet[Math.floor(Math.random() * alphabet.length)];
+    suffix += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
   }
-  return `VQ-${year}-${suffix}`;
+  return suffix;
+}
+
+function stableCodeSuffix(value) {
+  const clean = String(value || '').trim();
+  if (!clean) return '';
+  let hash = 0;
+  for (let index = 0; index < clean.length; index += 1) {
+    hash = ((hash << 5) - hash + clean.charCodeAt(index)) >>> 0;
+  }
+  let suffix = '';
+  for (let index = 0; index < 4; index += 1) {
+    suffix += CODE_ALPHABET[hash % CODE_ALPHABET.length];
+    hash = Math.floor(hash / CODE_ALPHABET.length) || (hash + index + 17);
+  }
+  return suffix;
+}
+
+function makeBookingCode(date) {
+  const datePart = compactDateForCode(date) || compactDateForCode(new Date().toISOString());
+  return `VUL-${datePart}-${randomCodeSuffix()}`;
+}
+
+function stableBookingCodeForRequest(request) {
+  if (request?.booking_code) return request.booking_code;
+  const datePart = compactDateForCode(request?.requested_date) || compactDateForCode(request?.created_at) || compactDateForCode(new Date().toISOString());
+  const suffix = stableCodeSuffix(`${request?.id || ''}|${datePart}|${request?.customer_email || ''}|${request?.customer_phone || ''}`);
+  return suffix ? `VUL-${datePart}-${suffix}` : makeBookingCode(datePart);
 }
 
 function intOrNull(value) {
@@ -34,18 +68,20 @@ function intOrNull(value) {
 }
 
 export function normalizeRequestInput(input, defaults = {}) {
+  const requestedDate = textOrNull(input.requested_date);
   return {
     customer_name: textOrNull(input.customer_name ?? input.name),
     customer_email: textOrNull(input.customer_email ?? input.email),
     customer_phone: textOrNull(input.customer_phone ?? input.phone),
     preferred_contact: textOrNull(input.preferred_contact) || defaults.preferred_contact || 'unknown',
     experience_id: textOrNull(input.experience_id) || 'unsure',
-    requested_date: textOrNull(input.requested_date),
+    requested_date: requestedDate,
     alternative_date: textOrNull(input.alternative_date),
     language: textOrNull(input.language) || defaults.language || 'it',
     party_type: textOrNull(input.party_type),
     request_type: textOrNull(input.request_type) || defaults.request_type || 'private',
     fixed_excursion_id: textOrNull(input.fixed_excursion_id),
+    booking_code: textOrNull(input.booking_code) || makeBookingCode(requestedDate || new Date().toISOString()),
     adults: intOrNull(input.adults),
     children: intOrNull(input.children),
     children_under_3: Boolean(input.children_under_3),
@@ -120,7 +156,23 @@ export async function listBookingRequests(filters = {}) {
 
   const { data, error } = await query;
   if (error) throw error;
-  return data || [];
+  const requests = data || [];
+  const fixedIds = [...new Set(requests.map((request) => request.fixed_excursion_id).filter(Boolean))];
+
+  if (!fixedIds.length) return requests;
+
+  const { data: fixedRows, error: fixedError } = await supabase
+    .from('fixed_excursions')
+    .select('id, date, start_time, end_time, experience_id, title_it, title_en')
+    .in('id', fixedIds);
+
+  if (fixedError) throw fixedError;
+  const fixedById = (fixedRows || []).reduce((acc, row) => ({ ...acc, [row.id]: row }), {});
+
+  return requests.map((request) => ({
+    ...request,
+    fixed_excursion: fixedById[request.fixed_excursion_id] || null
+  }));
 }
 
 export async function updateBookingRequest(id, payload) {
@@ -143,7 +195,7 @@ export async function updateBookingRequest(id, payload) {
 export async function approveBookingRequest({ request, userId, mode = 'accept-only', decisionNote = '', limitedScope = 'experience' }) {
   const accepted = await updateBookingRequest(request.id, {
     status: 'accepted',
-    booking_code: request.booking_code || makeBookingCode(request.requested_date),
+    booking_code: request.booking_code || stableBookingCodeForRequest(request),
     decision_note: decisionNote || null,
     decided_at: new Date().toISOString(),
     decided_by: userId
