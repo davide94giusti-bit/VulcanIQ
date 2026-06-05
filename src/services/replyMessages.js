@@ -22,6 +22,7 @@ export function requestLang(request) {
   return request?.language === 'en' ? 'en' : 'it';
 }
 
+<<<<<<< HEAD
 export function buildApprovalReply(request) {
   const lang = requestLang(request);
   const name = request.customer_name || (lang === 'it' ? 'ciao' : 'there');
@@ -32,6 +33,97 @@ export function buildApprovalReply(request) {
 ` : `Codice prenotazione per la recensione: ${request.booking_code}
 `)
     : '';
+=======
+function compactDateForCode(value) {
+  const parts = parseDateParts(value);
+  if (!parts) return '';
+  return `${parts.year}${String(parts.month).padStart(2, '0')}${String(parts.day).padStart(2, '0')}`;
+}
+
+function stableSuffix(value) {
+  const clean = cleanText(value);
+  if (!clean) return '';
+  let hash = 0;
+  for (let index = 0; index < clean.length; index += 1) {
+    hash = ((hash << 5) - hash + clean.charCodeAt(index)) >>> 0;
+  }
+  let suffix = '';
+  for (let index = 0; index < 4; index += 1) {
+    suffix += CODE_ALPHABET[hash % CODE_ALPHABET.length];
+    hash = Math.floor(hash / CODE_ALPHABET.length) || (hash + index + 17);
+  }
+  return suffix;
+}
+
+function getFixedExcursionTitle(request, lang) {
+  const fixed = request?.fixed_excursion || request?.fixedExcursion || request?.fixed_excursion_data || null;
+  if (!fixed) return '';
+  return firstValue(fixed, [
+    `title_${lang}`,
+    lang === 'it' ? 'title_en' : 'title_it',
+    ...TITLE_FIELDS,
+    'name',
+    'label'
+  ]);
+}
+
+function getFixedExcursionExperienceId(request) {
+  const fixed = request?.fixed_excursion || request?.fixedExcursion || request?.fixed_excursion_data || null;
+  return firstValue(fixed, ['experience_id', 'experienceId', 'experience', 'experience_name', 'experienceName']);
+}
+
+function extractFixedTitleFromMessage(message) {
+  const clean = cleanText(message);
+  if (!clean) return '';
+  const match = clean.match(/(?:escursione fissa|fixed excursion)\s+(.+?)\./i);
+  if (!match?.[1]) return '';
+  const label = match[1].trim();
+  const parts = label.split(' · ').map((part) => part.trim()).filter(Boolean);
+  return cleanText(parts[parts.length - 1] || label);
+}
+
+function requestExperienceName(request, lang) {
+  const fixedExperience = request?.request_type === 'fixed' ? getFixedExcursionExperienceId(request) : '';
+  const explicit = fixedExperience || firstValue(request, EXPERIENCE_FIELDS);
+  const fallback = lang === 'en' ? 'vulcanIQ experience' : 'Esperienza vulcanIQ';
+  if (!explicit) return fallback;
+  return getExperienceLabel(explicit, lang) || fallback;
+}
+
+function requestTitle(request, lang, experienceName) {
+  const explicit = firstValue(request, TITLE_FIELDS);
+  const fixedTitle = getFixedExcursionTitle(request, lang);
+  const messageTitle = extractFixedTitleFromMessage(request?.message);
+  return cleanText(explicit || fixedTitle || messageTitle || experienceName || (lang === 'en' ? 'vulcanIQ experience' : 'Esperienza vulcanIQ'));
+}
+
+function requestDate(request, lang) {
+  const raw = firstValue(request, DATE_FIELDS);
+  return formatReplyDate(raw, lang);
+}
+
+export function resolveBookingReference(request) {
+  const existing = firstValue(request, BOOKING_REFERENCE_FIELDS);
+  if (existing) return existing;
+
+  const id = firstValue(request, ['id', 'requestId', 'request_id']);
+  const datePart = compactDateForCode(firstValue(request, DATE_FIELDS)) || compactDateForCode(request?.created_at);
+  const suffix = stableSuffix(`${id}|${datePart}`);
+  if (!datePart || !suffix) return '';
+  return `VUL-${datePart}-${suffix}`;
+}
+
+export function buildApprovalReply(request, uiLang = 'it') {
+  const lang = requestLang(request, uiLang);
+  const name = firstValue(request, NAME_FIELDS);
+  const greeting = lang === 'en'
+    ? `Hello${name ? ` ${name}` : ''},`
+    : `Ciao${name ? ` ${name}` : ''},`;
+  const experience = requestExperienceName(request, lang);
+  const title = requestTitle(request, lang, experience);
+  const date = requestDate(request, lang);
+  const bookingReference = resolveBookingReference(request);
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
 
   if (lang === 'en') {
     return `Hi ${name},

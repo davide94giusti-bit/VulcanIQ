@@ -11,16 +11,36 @@ function normalizeRating(value) {
 }
 
 const publicReviewFields = 'id, created_at, reviewer_name, review_text, rating, language, admin_reply, admin_reply_at';
+<<<<<<< HEAD
 const adminReviewFields = 'id, created_at, updated_at, booking_request_id, booking_code, reviewer_name, review_text, rating, language, approved, active, admin_reply, admin_reply_at, admin_reply_by';
+=======
+const fallbackPublicReviewFields = 'id, created_at, reviewer_name, review_text, rating, language';
+const adminReviewFields = 'id, created_at, booking_request_id, booking_code, reviewer_name, review_text, rating, language, approved, active, admin_reply, admin_reply_at, admin_reply_by';
+const fallbackAdminReviewFields = 'id, created_at, booking_request_id, booking_code, reviewer_name, review_text, rating, language, approved, active';
+
+function isMissingAdminReplyColumn(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('admin_reply') || message.includes('admin reply') || message.includes('column') || message.includes('schema cache');
+}
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
 
 export async function loadPublicReviews() {
   if (!isSupabaseConfigured) return [];
 
-  const { data, error } = await supabase
+  const runQuery = (fields) => supabase
     .from('public_reviews')
+<<<<<<< HEAD
     .select(publicReviewFields)
+=======
+    .select(fields)
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
     .order('created_at', { ascending: false })
     .limit(12);
+
+  let { data, error } = await runQuery(publicReviewFields);
+  if (error && isMissingAdminReplyColumn(error)) {
+    ({ data, error } = await runQuery(fallbackPublicReviewFields));
+  }
 
   if (error) throw error;
   return data || [];
@@ -51,15 +71,30 @@ export async function submitPublicReview(input) {
 export async function listReviews({ activeOnly = false } = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
+<<<<<<< HEAD
   let query = supabase
     .from('reviews')
     .select(adminReviewFields)
     .order('created_at', { ascending: false })
     .limit(100);
+=======
+  const buildQuery = (fields) => {
+    let query = supabase
+      .from('reviews')
+      .select(fields)
+      .order('created_at', { ascending: false })
+      .limit(100);
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
 
-  if (activeOnly) query = query.eq('active', true).eq('approved', true);
+    if (activeOnly) query = query.eq('active', true).eq('approved', true);
+    return query;
+  };
 
-  const { data, error } = await query;
+  let { data, error } = await buildQuery(adminReviewFields);
+  if (error && isMissingAdminReplyColumn(error)) {
+    ({ data, error } = await buildQuery(fallbackAdminReviewFields));
+  }
+
   if (error) throw error;
   return data || [];
 }
@@ -70,6 +105,37 @@ export async function updateReviewVisibility(id, input) {
   const payload = { updated_at: new Date().toISOString() };
   if (typeof input.active === 'boolean') payload.active = input.active;
   if (typeof input.approved === 'boolean') payload.approved = input.approved;
+
+  let { data, error } = await supabase
+    .from('reviews')
+    .update(payload)
+    .eq('id', id)
+    .select(adminReviewFields)
+    .single();
+
+  if (error && isMissingAdminReplyColumn(error)) {
+    ({ data, error } = await supabase
+      .from('reviews')
+      .update(payload)
+      .eq('id', id)
+      .select(fallbackAdminReviewFields)
+      .single());
+  }
+
+  if (error) throw error;
+  return data;
+}
+
+export async function updateReviewAdminReply(id, replyText, userId = null) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+
+  const cleanReply = cleanText(replyText);
+  const payload = {
+    admin_reply: cleanReply || null,
+    admin_reply_at: cleanReply ? new Date().toISOString() : null,
+    admin_reply_by: cleanReply ? userId : null,
+    updated_at: new Date().toISOString()
+  };
 
   const { data, error } = await supabase
     .from('reviews')
@@ -82,7 +148,15 @@ export async function updateReviewVisibility(id, input) {
   return data;
 }
 
+<<<<<<< HEAD
 export async function updateReviewAdminReply(id, replyText, userId = '') {
+=======
+export async function deleteReviewAdminReply(id) {
+  return updateReviewAdminReply(id, '', null);
+}
+
+export async function deleteReview(id) {
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
   const cleanReply = cleanText(replyText);

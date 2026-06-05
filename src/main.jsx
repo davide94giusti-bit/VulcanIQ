@@ -6,7 +6,11 @@ import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.
 import { createPublicBookingRequest, createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
 import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
+<<<<<<< HEAD
 import { loadPublicReviews, submitPublicReview, listReviews, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply } from './services/reviewsService.js';
+=======
+import { loadPublicReviews, submitPublicReview, listReviews, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply, deleteReview } from './services/reviewsService.js';
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
 import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFile } from './services/siteMediaService.js';
 import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
 import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
@@ -575,8 +579,57 @@ function encode(value) {
   return encodeURIComponent(value || '');
 }
 
+<<<<<<< HEAD
 function encodeMailComponent(value) {
   return encodeURIComponent(String(value || '').replace(/\r?\n/g, '\r\n'));
+=======
+function buildMailto(to, subject = '', body = '') {
+  const params = [];
+  if (subject) params.push(`subject=${encodeURIComponent(subject)}`);
+  if (body) params.push(`body=${encodeURIComponent(body)}`);
+  return `mailto:${to}${params.length ? `?${params.join('&')}` : ''}`;
+}
+
+function formatReviewText(value = '') {
+  const original = String(value || '').trim();
+  if (!original) return [];
+
+  const normalized = original
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/([.!?])(?=[A-ZÀ-ÖØ-ÞAÈÉÌÍÎÒÓÙÚ]) /g, '$1 ')
+    .replace(/([.!?])(?=[A-ZÀ-ÖØ-ÞAÈÉÌÍÎÒÓÙÚ])/g, '$1 ')
+    .replace(/,([^\s])/g, ', $1')
+    .replace(/\s+\n/g, '\n')
+    .replace(/\n\s+/g, '\n')
+    .trim();
+
+  const explicitParagraphs = normalized
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.replace(/\n/g, ' ').trim())
+    .filter(Boolean);
+
+  if (explicitParagraphs.length > 1) return explicitParagraphs;
+
+  const single = explicitParagraphs[0] || normalized;
+  const sentences = single.match(/[^.!?]+[.!?]+[”’"']?|[^.!?]+$/g)?.map((part) => part.trim()).filter(Boolean) || [single];
+  const paragraphs = [];
+  let current = '';
+
+  sentences.forEach((sentence) => {
+    const proposed = current ? `${current} ${sentence}` : sentence;
+    if (current && proposed.length > 220) {
+      paragraphs.push(current);
+      current = sentence;
+    } else {
+      current = proposed;
+    }
+  });
+
+  if (current) paragraphs.push(current);
+  return paragraphs.length ? paragraphs : [single];
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
 }
 
 function buildMailtoHref(to, { subject = '', body = '' } = {}) {
@@ -905,6 +958,125 @@ function ExperienceAccordion({ lang, fillForm, siteMedia }) {
     });
   }
 
+<<<<<<< HEAD
+=======
+  function requestItem(item) {
+    const message = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
+    setDateModalOpen(false);
+    fillForm({
+      experienceId: item.experience_id,
+      requestType: 'fixed',
+      fixedExcursionId: item.id,
+      fixedExperienceId: item.experience_id,
+      requestedDate: item.date,
+      message,
+      scroll: true
+    });
+  }
+
+  function updateDateRequest(field, value) {
+    setDateRequest((current) => ({ ...current, [field]: value }));
+  }
+
+  function requestAvailableDate() {
+    const message = buildAvailableDateRequestMessage({ date: selectedDate, ...dateRequest }, lang);
+    setDateModalOpen(false);
+    fillForm({
+      experienceId: dateRequest.experienceId,
+      requestType: 'private',
+      requestedDate: selectedDate,
+      adults: dateRequest.adults,
+      children: dateRequest.children,
+      childrenUnder3Count: dateRequest.childrenUnder3Count,
+      message,
+      scroll: true
+    });
+  }
+
+  function monthlyLeafletButtonLabel() {
+    if (!visibleMonthLeaflet) return '';
+    const monthName = new Intl.DateTimeFormat(lang === 'it' ? 'it-IT' : 'en-GB', { month: 'long' }).format(monthDate);
+    return lang === 'it' ? `Apri programma di ${monthName}` : `Open ${monthName} program`;
+  }
+
+  function openLeafletModal(leaflet, label) {
+    if (!leaflet?.file_url) return;
+    setActiveLeaflet({ leaflet, label });
+  }
+
+  function renderDateModalFixedDetails(item) {
+    const title = fixedExcursionTitle(item, lang);
+    const description = fixedExcursionField(item, 'description', lang) || item[`note_${lang}`] || item.note_it || item.note_en || '';
+    const meeting = fixedExcursionField(item, 'meeting_point', lang);
+    const difficulty = fixedExcursionField(item, 'difficulty', lang);
+    const price = fixedExcursionField(item, 'price_note', lang);
+    const timeRange = item.start_time ? `${String(item.start_time).slice(0, 5)}${item.end_time ? `–${String(item.end_time).slice(0, 5)}` : ''}` : text(lang, 'onRequest');
+    const fixedMessage = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
+
+    return (
+      <article className="date-modal-fixed-card" key={item.id}>
+        <div className="selected-date-heading-row">
+          <h3>{title}</h3>
+          <span>{timeRange}</span>
+        </div>
+        <FormattedDescription textValue={description || experienceById(item.experience_id).summary[lang]} />
+        <dl className="public-details-grid date-modal-details-grid">
+          <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(item.date, lang)}</dd></div>
+          <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(item.experience_id, lang)}</dd></div>
+          {meeting && <div><dt>{text(lang, 'meetingPoint')}</dt><dd>{meeting}</dd></div>}
+          {difficulty && <div><dt>{text(lang, 'difficulty')}</dt><dd>{difficulty}</dd></div>}
+          {price && <div><dt>{text(lang, 'priceNote')}</dt><dd>{price}</dd></div>}
+          <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{item.places_remaining}/{item.capacity}</dd></div>
+        </dl>
+        <BlockedDatesAttachment item={item} lang={lang} onOpenFile={(file, label) => openLeafletModal(file, label || text(lang, 'openExcursionProgram'))} />
+        <div className="request-action-row date-modal-actions">
+          <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestInformation')}</button>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(fixedMessage)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
+          {selectedDateLeaflet && (
+            <button className="request-action-button request-action-button-secondary" type="button" onClick={() => openLeafletModal(selectedDateLeaflet, text(lang, 'openExcursionProgram'))}>{text(lang, 'openExcursionProgram')}</button>
+          )}
+        </div>
+      </article>
+    );
+  }
+
+  function renderAvailableDateRequest() {
+    const message = buildAvailableDateRequestMessage({ date: selectedDate, ...dateRequest }, lang);
+    return (
+      <div className="available-date-flow">
+        <div className="empty-state-card date-modal-empty-copy">
+          <p>{text(lang, 'noExcursionsOnDate')}</p>
+          <p>{text(lang, 'availableDatePrivateCopy')}</p>
+        </div>
+        <div className="date-request-grid" aria-label={lang === 'it' ? 'Richiesta data' : 'Date request'}>
+          <label>
+            <span>{text(lang, 'chooseExperience')}</span>
+            <select value={dateRequest.experienceId} onChange={(event) => updateDateRequest('experienceId', event.target.value)}>
+              {experiences.map((experience) => <option value={experience.id} key={experience.id}>{experience.title}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>{text(lang, 'adults')}</span>
+            <input type="number" min="0" value={dateRequest.adults} onChange={(event) => updateDateRequest('adults', event.target.value)} />
+          </label>
+          <label>
+            <span>{text(lang, 'childrenCount')}</span>
+            <input type="number" min="0" value={dateRequest.children} onChange={(event) => updateDateRequest('children', event.target.value)} />
+          </label>
+          <label>
+            <span>{text(lang, 'childrenUnder3')}</span>
+            <input type="number" min="0" value={dateRequest.childrenUnder3Count} onChange={(event) => updateDateRequest('childrenUnder3Count', event.target.value)} />
+          </label>
+        </div>
+        <div className="request-action-row date-modal-actions">
+          <button className="request-action-button request-action-button-primary" type="button" onClick={requestAvailableDate}>{text(lang, 'requestDate')}</button>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
+        </div>
+      </div>
+    );
+  }
+
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
   return (
     <section className="section page-section" id="experiences">
       <div className="container">
@@ -1160,6 +1332,7 @@ function PublicUpcomingExcursions({ lang, fillForm }) {
       experienceId: item.experience_id,
       requestType: 'fixed',
       fixedExcursionId: item.id,
+      fixedExperienceId: item.experience_id,
       requestedDate: item.date,
       message,
       scroll: true
@@ -1457,6 +1630,18 @@ function ReviewsPage({ lang, siteContent }) {
                   <strong>{adminCopy(lang, 'Risposta vulcanIQ', 'vulcanIQ response')}</strong>
                   <FormattedReviewText textValue={review.admin_reply} />
                 </div>
+<<<<<<< HEAD
+=======
+              </header>
+              <blockquote className="review-body">
+                {formatReviewText(review.review_text).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+              </blockquote>
+              {review.admin_reply && (
+                <div className="review-admin-reply">
+                  <strong>{adminCopy(lang, 'Risposta vulcanIQ', 'vulcanIQ response')}</strong>
+                  {formatReviewText(review.admin_reply).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+                </div>
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
               )}
             </article>
           ))}
@@ -1589,7 +1774,12 @@ function ContactForm({ lang, formState, setFormState }) {
   const message = formState.message || text(lang, 'defaultMessage');
   const experienceId = formState.experienceId || '';
   const selectedFixed = fixedExcursions.find((item) => item.id === formState.fixedExcursionId) || null;
+<<<<<<< HEAD
   const effectiveExperienceId = requestType === 'fixed' ? (selectedFixed?.experience_id || '') : experienceId;
+=======
+  const fixedExperienceId = selectedFixed?.experience_id || (requestType === 'fixed' ? formState.fixedExperienceId : '');
+  const effectiveExperienceId = requestType === 'fixed' ? (fixedExperienceId || experienceId || '') : experienceId;
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
   const adults = Number.parseInt(formState.adults || '0', 10) || 0;
   const children = Number.parseInt(formState.children || '0', 10) || 0;
   const totalPeople = adults + children;
@@ -1612,7 +1802,11 @@ function ContactForm({ lang, formState, setFormState }) {
       requestType: value,
       privateExperience: value === 'private',
       fixedExcursionId: value === 'fixed' ? current.fixedExcursionId : '',
+<<<<<<< HEAD
       experienceId: value === 'fixed' ? current.experienceId : current.experienceId,
+=======
+      fixedExperienceId: value === 'fixed' ? current.fixedExperienceId : '',
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
       requestedDate: value === 'private' ? current.requestedDate : current.requestedDate
     }));
   }
@@ -1624,8 +1818,14 @@ function ContactForm({ lang, formState, setFormState }) {
       requestType: 'fixed',
       fixedExcursionId: id,
       privateExperience: false,
+<<<<<<< HEAD
       experienceId: fixed?.experience_id || '',
       requestedDate: fixed?.date || current.requestedDate,
+=======
+      experienceId: fixed ? fixed.experience_id : '',
+      fixedExperienceId: fixed ? fixed.experience_id : '',
+      requestedDate: fixed ? fixed.date : '',
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
       message: fixed ? buildFixedExcursionMessage({ fixedExcursion: fixed, people: totalPeople || '' }, lang) : current.message
     }));
   }
@@ -1667,8 +1867,14 @@ function ContactForm({ lang, formState, setFormState }) {
         customer_email: email,
         customer_phone: phone,
         preferred_contact: formState.preferredContact || 'form',
+<<<<<<< HEAD
         experience_id: requestType === 'fixed' ? (selectedFixed?.experience_id || 'unsure') : (experienceId || 'unsure'),
         requested_date: requestType === 'fixed' ? selectedFixed?.date : formState.requestedDate,
+=======
+        experience_id: requestType === 'fixed' ? (selectedFixed?.experience_id || formState.fixedExperienceId || 'unsure') : (experienceId || 'unsure'),
+        fixed_excursion_experience_id: requestType === 'fixed' ? (selectedFixed?.experience_id || formState.fixedExperienceId || null) : null,
+        requested_date: selectedFixed?.date || formState.requestedDate,
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
         alternative_date: formState.alternativeDate,
         language: formState.language || lang,
         party_type: formState.partyType || (requestType === 'private' ? 'other' : 'group'),
@@ -1762,6 +1968,7 @@ function ContactForm({ lang, formState, setFormState }) {
               </select>
             </div>
             <div>
+<<<<<<< HEAD
               <label className="field-label" htmlFor="contactExperience">{text(lang, 'selectedExperience')}</label>
               {requestType === 'fixed' ? (
                 <div className="readonly-field locked-experience" id="contactExperience" aria-live="polite">
@@ -1773,6 +1980,22 @@ function ContactForm({ lang, formState, setFormState }) {
                   <option value="">{text(lang, 'selectExperience')}</option>
                   {experiences.map((experience) => <option value={experience.id} key={experience.id}>{experience.title}</option>)}
                 </select>
+=======
+              {requestType === 'fixed' ? (
+                <div className="readonly-selected-experience" aria-live="polite">
+                  <span className="field-label">{text(lang, 'selectedExperience')}</span>
+                  <strong>{effectiveExperienceId ? adminExperienceLabel(effectiveExperienceId, lang) : text(lang, 'chooseFixedExcursion')}</strong>
+                  <small>{adminCopy(lang, 'Definita dal programma scelto', 'Defined by the selected program')}</small>
+                </div>
+              ) : (
+                <>
+                  <label className="field-label" htmlFor="contactExperience">{text(lang, 'selectedExperience')}</label>
+                  <select id="contactExperience" value={experienceId} onChange={(event) => update('experienceId', event.target.value)}>
+                    <option value="">{text(lang, 'selectExperience')}</option>
+                    {experiences.map((experience) => <option value={experience.id} key={experience.id}>{experience.title}</option>)}
+                  </select>
+                </>
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
               )}
             </div>
           </div>
@@ -2356,7 +2579,7 @@ function AdminCalendarPage({ lang, session, navigate }) {
               {selected.bookings.map((request) => (
                 <article className="calendar-detail-item" key={request.id}>
                   <strong>{request.customer_name || '-'}</strong>
-                  <span>{adminExperienceLabel(request.experience_id, lang)} · {Number(request.adults || 0) + Number(request.children || 0) || '-'} {adminCopy(lang, 'ospiti', 'guests')}</span>
+                  <span>{adminExperienceLabel(effectiveRequestExperienceId(request), lang)} · {Number(request.adults || 0) + Number(request.children || 0) || '-'} {adminCopy(lang, 'ospiti', 'guests')}</span>
                   <button type="button" className="button secondary" onClick={() => setSelectedBooking(request)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
                 </article>
               ))}
@@ -2860,9 +3083,15 @@ function FinanceAdminPage({ lang, session }) {
   );
 }
 
+function effectiveRequestExperienceId(request) {
+  if (!request) return '';
+  if (request.request_type === 'fixed' && request.fixed_excursion?.experience_id) return request.fixed_excursion.experience_id;
+  return request.experience_id || '';
+}
+
 function requestFinanceLabel(request, lang) {
   if (!request) return '-';
-  return `${formatDateForMessage(request.requested_date, lang) || '-'} · ${request.customer_name || '-'} · ${adminExperienceLabel(request.experience_id, lang)}${request.booking_code ? ` · ${request.booking_code}` : ''}`;
+  return `${formatDateForMessage(request.requested_date, lang) || '-'} · ${request.customer_name || '-'} · ${adminExperienceLabel(effectiveRequestExperienceId(request), lang)}${request.booking_code ? ` · ${request.booking_code}` : ''}`;
 }
 
 function FinanceEntryCard({ entry, lang, onEdit, onArchive }) {
@@ -2968,7 +3197,7 @@ function TodayDashboard({ lang, session, navigate }) {
           <AdminMiniList
             items={operational}
             empty={adminCopy(lang, 'Nessuna conferma nei prossimi 7 giorni.', 'No accepted bookings in the next 7 days.')}
-            render={(request) => <span><strong>{formatDateForMessage(request.requested_date, lang)}</strong> · {request.customer_name || '-'} · {adminExperienceLabel(request.experience_id, lang)}</span>}
+            render={(request) => <span><strong>{formatDateForMessage(request.requested_date, lang)}</strong> · {request.customer_name || '-'} · {adminExperienceLabel(effectiveRequestExperienceId(request), lang)}</span>}
           />
           <button className="button secondary admin-inline-button" type="button" onClick={() => navigate('/admin/upcoming')}>{adminCopy(lang, 'Apri prossime prenotazioni', 'Open upcoming bookings')}</button>
           <h3>{adminCopy(lang, 'Blocchi prossimi', 'Near-term blocks')}</h3>
@@ -3134,7 +3363,7 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
         <div><dt>{adminCopy(lang, 'Tipo', 'Type')}</dt><dd>{request.request_type === 'fixed' ? adminCopy(lang, 'Escursione fissa', 'Fixed excursion') : adminCopy(lang, 'Escursione privata', 'Private excursion')}</dd></div>
         <div><dt>{adminCopy(lang, 'Fonte', 'Source')}</dt><dd>{request.source || '-'}</dd></div>
         <div><dt>{adminCopy(lang, 'Contatto', 'Contact')}</dt><dd>{request.preferred_contact || '-'}</dd></div>
-        <div><dt>{adminCopy(lang, 'Esperienza', 'Experience')}</dt><dd>{adminExperienceLabel(request.experience_id, lang)}</dd></div>
+        <div><dt>{adminCopy(lang, 'Esperienza', 'Experience')}</dt><dd>{adminExperienceLabel(effectiveRequestExperienceId(request), lang)}</dd></div>
         <div><dt>{adminCopy(lang, 'Data richiesta', 'Requested date')}</dt><dd>{formatDateForMessage(request.requested_date, lang) || '-'}</dd></div>
         <div><dt>{adminCopy(lang, 'Alternativa', 'Alternative')}</dt><dd>{formatDateForMessage(request.alternative_date, lang) || '-'}</dd></div>
         <div><dt>{adminCopy(lang, 'Lingua', 'Language')}</dt><dd>{request.language || 'it'}</dd></div>
@@ -3245,7 +3474,7 @@ function DecisionModal({ lang, session, decision, onClose, onDone }) {
           <h2 id="decisionTitle">{decision.type === 'approve' ? adminCopy(lang, 'Approva richiesta', 'Approve request') : decision.type === 'remove' ? adminCopy(lang, 'Rimuovi richiesta accettata', 'Remove accepted request') : adminCopy(lang, 'Rifiuta richiesta', 'Decline request')}</h2>
           <button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>×</button>
         </div>
-        <p>{decision.request.customer_name || adminCopy(lang, 'Cliente senza nome', 'Unnamed customer')} · {adminExperienceLabel(decision.request.experience_id, lang)} · {formatDateForMessage(decision.request.requested_date, lang) || '-'}</p>
+        <p>{decision.request.customer_name || adminCopy(lang, 'Cliente senza nome', 'Unnamed customer')} · {adminExperienceLabel(effectiveRequestExperienceId(decision.request), lang)} · {formatDateForMessage(decision.request.requested_date, lang) || '-'}</p>
         {decision.type === 'approve' ? (
           <>
             <label className="field-label" htmlFor="approvalMode">{adminCopy(lang, 'Opzione approvazione', 'Approval option')}</label>
@@ -3408,7 +3637,60 @@ function RequestStatusAccordions({ requests, lang, onApprove, onDecline, onRemov
   );
 }
 
+<<<<<<< HEAD
 function AdminReviewsPanel({ lang, session }) {
+=======
+function AdminReviewReplyEditor({ lang, review, onSave, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(review.admin_reply || '');
+
+  useEffect(() => {
+    setDraft(review.admin_reply || '');
+    setEditing(false);
+  }, [review.id, review.admin_reply]);
+
+  const hasReply = Boolean(String(review.admin_reply || '').trim());
+
+  if (!editing && !hasReply) {
+    return (
+      <div className="admin-review-reply-panel empty">
+        <button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Rispondi alla recensione', 'Reply to review')}</button>
+      </div>
+    );
+  }
+
+  if (!editing) {
+    return (
+      <div className="admin-review-reply-panel">
+        <strong>{adminCopy(lang, 'Risposta vulcanIQ', 'vulcanIQ response')}</strong>
+        <div className="admin-review-reply-text">
+          {formatReviewText(review.admin_reply).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+        </div>
+        <div className="admin-review-reply-actions">
+          <button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica risposta', 'Edit response')}</button>
+          <button className="button secondary danger" type="button" onClick={() => onDelete(review)}>{adminCopy(lang, 'Elimina risposta', 'Delete response')}</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="admin-review-reply-panel editing">
+      <label className="admin-field full">
+        <span>{adminCopy(lang, 'Risposta vulcanIQ', 'vulcanIQ response')}</span>
+        <textarea rows={4} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={adminCopy(lang, 'Scrivi una risposta pubblica alla recensione...', 'Write a public response to the review...')} />
+      </label>
+      <div className="admin-review-reply-actions">
+        <button className="button primary" type="button" onClick={() => onSave(review, draft)}>{adminCopy(lang, 'Salva risposta', 'Save response')}</button>
+        <button className="button secondary" type="button" onClick={() => { setDraft(review.admin_reply || ''); setEditing(false); }}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>
+        {hasReply && <button className="button secondary danger" type="button" onClick={() => onDelete(review)}>{adminCopy(lang, 'Elimina risposta', 'Delete response')}</button>}
+      </div>
+    </div>
+  );
+}
+
+function AdminReviewsPanel({ lang }) {
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -3442,6 +3724,7 @@ function AdminReviewsPanel({ lang, session }) {
     }
   }
 
+<<<<<<< HEAD
   function startReply(review) {
     setEditingReplyId(review.id);
     setReplyDrafts((current) => ({ ...current, [review.id]: review.admin_reply || '' }));
@@ -3455,6 +3738,34 @@ function AdminReviewsPanel({ lang, session }) {
       setError(adminCopy(lang, 'Scrivi una risposta prima di salvarla.', 'Write a response before saving.'));
       return;
     }
+=======
+  async function saveAdminReply(review, replyText) {
+    setError('');
+    setFeedback('');
+    try {
+      await updateReviewAdminReply(review.id, replyText);
+      setFeedback(adminCopy(lang, 'Risposta salvata.', 'Response saved.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Risposta non salvata. Controlla che le colonne Supabase admin_reply siano state aggiunte.', 'Response not saved. Check that the Supabase admin_reply columns have been added.'));
+    }
+  }
+
+  async function clearAdminReply(review) {
+    setError('');
+    setFeedback('');
+    try {
+      await deleteReviewAdminReply(review.id);
+      setFeedback(adminCopy(lang, 'Risposta eliminata.', 'Response deleted.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Risposta non eliminata.', 'Response not deleted.'));
+    }
+  }
+
+  async function confirmDeleteReview() {
+    if (!confirmReview) return;
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
     setError('');
     setFeedback('');
     try {
@@ -3488,6 +3799,7 @@ function AdminReviewsPanel({ lang, session }) {
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : reviews.length === 0 ? <p>{adminCopy(lang, 'Nessuna recensione ricevuta.', 'No reviews received.')}</p> : (
+<<<<<<< HEAD
         <div className="admin-review-list">
           {reviews.map((review) => {
             const isEditingReply = editingReplyId === review.id;
@@ -3517,6 +3829,23 @@ function AdminReviewsPanel({ lang, session }) {
                       </div>
                     </div>
                   )}
+=======
+        <>
+          <p className="small-note admin-review-delete-note">{adminCopy(lang, 'Per eliminare una recensione pubblica, usa il pulsante rosso “Elimina definitivamente” sulla card della recensione. Puoi anche aggiungere una risposta pubblica vulcanIQ sotto ogni recensione.', 'To delete a public review, use the red “Delete permanently” button on that review card. You can also add a public vulcanIQ response below each review.')}</p>
+          <div className="admin-review-list">
+            {reviews.map((review) => (
+              <article className={`admin-review-card ${review.active ? '' : 'inactive'}`} key={review.id}>
+                <div className="admin-review-main">
+                  <div className="admin-review-title-row">
+                    <strong>{review.reviewer_name || 'Guest'} · {review.rating || '-'}/5</strong>
+                    <span className={`status-pill ${review.active && review.approved ? 'accepted' : 'cancelled'}`}>{review.active && review.approved ? adminCopy(lang, 'Pubblica sul sito', 'Public on website') : adminCopy(lang, 'Non pubblica', 'Not public')}</span>
+                  </div>
+                  <div className="admin-review-body-preview">
+                    {formatReviewText(review.review_text).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+                  </div>
+                  <p className="small-note">{review.booking_code} · {review.language || '-'}</p>
+                  <AdminReviewReplyEditor lang={lang} review={review} onSave={saveAdminReply} onDelete={clearAdminReply} />
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
                 </div>
                 <div className="admin-review-actions">
                   <button className="button secondary" type="button" onClick={() => setVisible(review, !review.active)}>{review.active ? adminCopy(lang, 'Nascondi', 'Hide') : adminCopy(lang, 'Ripubblica', 'Republish')}</button>
@@ -4260,12 +4589,21 @@ function App() {
     window.setTimeout(() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   }
 
+<<<<<<< HEAD
   function fillForm({ experienceId, message, requestType, fixedExcursionId, requestedDate, scroll = false }) {
+=======
+  function fillForm({ experienceId, message, requestType, fixedExcursionId, fixedExperienceId, requestedDate, adults, children, childrenUnder3Count, scroll = false }) {
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
     setFormState((current) => ({
       ...current,
       experienceId: experienceId || current.experienceId,
       requestType: requestType || current.requestType || 'private',
+<<<<<<< HEAD
       fixedExcursionId: requestType === 'private' ? '' : (fixedExcursionId !== undefined ? fixedExcursionId : current.fixedExcursionId),
+=======
+      fixedExcursionId: fixedExcursionId !== undefined ? fixedExcursionId : current.fixedExcursionId,
+      fixedExperienceId: fixedExperienceId !== undefined ? fixedExperienceId : current.fixedExperienceId,
+>>>>>>> d61f755 (Improve reviews fixed bookings admin replies and email formatting)
       requestedDate: requestedDate || current.requestedDate,
       privateExperience: requestType ? requestType === 'private' : current.privateExperience,
       message: message || current.message,
