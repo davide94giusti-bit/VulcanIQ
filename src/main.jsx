@@ -1236,7 +1236,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
           {price && <div><dt>{text(lang, 'priceNote')}</dt><dd>{price}</dd></div>}
           <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{item.places_remaining}/{item.capacity}</dd></div>
         </dl>
-        <BlockedDatesAttachment item={item} lang={lang} />
+        <BlockedDatesAttachment item={item} lang={lang} onOpenFile={(file, label) => openLeafletModal(file, label || text(lang, 'openExcursionProgram'))} />
         <div className="request-action-row date-modal-actions">
           <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestInformation')}</button>
           <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(fixedMessage)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
@@ -1475,13 +1475,23 @@ function MissionPage({ lang, siteMedia, siteContent, editor }) {
 }
 
 
-function BlockedDatesAttachment({ item, lang, publicView = true }) {
+function BlockedDatesAttachment({ item, lang, publicView = true, onOpenFile }) {
   const url = item?.blocked_dates_file_url;
   if (!url) return null;
 
   const type = item.blocked_dates_file_type || '';
   const name = item.blocked_dates_file_name || text(lang, 'blockedDatesCalendar');
   const isImage = type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(url);
+  const label = publicView ? text(lang, 'openExcursionProgram') : text(lang, 'openCalendarFile');
+  const filePayload = { file_url: url, file_type: type, file_name: name, title_it: name, title_en: name };
+
+  const openFile = () => {
+    if (typeof onOpenFile === 'function') {
+      onOpenFile(filePayload, label);
+    } else if (typeof window !== 'undefined') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
 
   return (
     <div className="blocked-dates-attachment">
@@ -1492,11 +1502,11 @@ function BlockedDatesAttachment({ item, lang, publicView = true }) {
         </div>
       )}
       {isImage ? (
-        <a href={url} target="_blank" rel="noopener noreferrer" aria-label={text(lang, 'openCalendarFile')}>
+        <button className="blocked-dates-preview-button" type="button" onClick={openFile} aria-label={label}>
           <img src={url} alt={text(lang, 'blockedDatesCalendar')} loading="lazy" decoding="async" />
-        </a>
+        </button>
       ) : (
-        <a className="button secondary" href={url} target="_blank" rel="noopener noreferrer">{text(lang, 'openCalendarFile')}</a>
+        <button className="button secondary" type="button" onClick={openFile}>{label}</button>
       )}
     </div>
   );
@@ -1643,7 +1653,7 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
           {price && <div><dt>{text(lang, 'priceNote')}</dt><dd>{price}</dd></div>}
           <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{item.places_remaining}/{item.capacity}</dd></div>
         </dl>
-        <BlockedDatesAttachment item={item} lang={lang} />
+        <BlockedDatesAttachment item={item} lang={lang} onOpenFile={(file, label) => openLeafletModal(file, label || text(lang, 'openExcursionProgram'))} />
         <button className="button primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestAvailability')}</button>
       </article>
     );
@@ -3704,15 +3714,20 @@ function TodayDashboard({ lang, session, navigate }) {
 
       <div className="admin-two-column">
         <section className="admin-panel">
-          <div className="admin-panel-header">
-            <h2>{adminCopy(lang, 'Richieste di oggi', 'Today requests')}</h2>
-            <button type="button" onClick={() => refreshAll()}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
-          </div>
-          {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : todayRequests.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta con data oggi.', 'No requests dated today.')}</p> : (
-            <div className="request-card-list">
-              {todayRequests.map((request) => <RequestCard key={request.id} request={request} lang={lang} onApprove={() => setDecision({ type: 'approve', request })} onDecline={() => setDecision({ type: 'decline', request })} />)}
+          <details className="admin-archive-details today-requests-details">
+            <summary><span>{adminCopy(lang, 'Richieste di oggi', 'Today requests')}</span><strong>{todayRequests.length}</strong></summary>
+            <div className="today-requests-collapsed-body">
+              <div className="admin-panel-header today-requests-inner-header">
+                <p className="small-note">{adminCopy(lang, 'Sezione chiusa di default. Aprila solo quando devi controllare le richieste con data oggi.', 'Collapsed by default. Open it only when you need to check requests dated today.')}</p>
+                <button type="button" onClick={() => refreshAll()}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+              </div>
+              {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : todayRequests.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta con data oggi.', 'No requests dated today.')}</p> : (
+                <div className="request-card-list">
+                  {todayRequests.map((request) => <RequestCard key={request.id} request={request} lang={lang} onApprove={() => setDecision({ type: 'approve', request })} onDecline={() => setDecision({ type: 'decline', request })} />)}
+                </div>
+              )}
             </div>
-          )}
+          </details>
 
           <div className="admin-panel-subsection">
             <div className="admin-panel-header">
@@ -4224,21 +4239,27 @@ function AdminReviewsPanel({ lang }) {
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : reviews.length === 0 ? <p>{adminCopy(lang, 'Nessuna recensione ricevuta.', 'No reviews received.')}</p> : (
-        <div className="admin-review-list">
-          {reviews.map((review) => (
-            <article className={`admin-review-card ${review.active ? '' : 'inactive'}`} key={review.id}>
-              <div>
-                <strong>{review.reviewer_name || 'Guest'} · {review.rating || '-'}/5</strong>
-                <p>{review.review_text}</p>
-                <p className="small-note">{review.booking_code} · {review.language || '-'}</p>
-              </div>
-              <div className="admin-review-actions">
-                <button className="button secondary" type="button" onClick={() => setVisible(review, !review.active)}>{review.active ? adminCopy(lang, 'Nascondi', 'Hide') : adminCopy(lang, 'Ripubblica', 'Republish')}</button>
-                <button className="button secondary danger" type="button" onClick={() => setConfirmReview(review)}>{adminCopy(lang, 'Elimina recensione', 'Delete review')}</button>
-              </div>
-            </article>
-          ))}
-        </div>
+        <>
+          <p className="small-note admin-review-delete-note">{adminCopy(lang, 'Per eliminare una recensione pubblica, usa il pulsante rosso “Elimina definitivamente” sulla card della recensione.', 'To delete a public review, use the red “Delete permanently” button on that review card.')}</p>
+          <div className="admin-review-list">
+            {reviews.map((review) => (
+              <article className={`admin-review-card ${review.active ? '' : 'inactive'}`} key={review.id}>
+                <div>
+                  <div className="admin-review-title-row">
+                    <strong>{review.reviewer_name || 'Guest'} · {review.rating || '-'}/5</strong>
+                    <span className={`status-pill ${review.active && review.approved ? 'accepted' : 'cancelled'}`}>{review.active && review.approved ? adminCopy(lang, 'Pubblica sul sito', 'Public on website') : adminCopy(lang, 'Non pubblica', 'Not public')}</span>
+                  </div>
+                  <p>{review.review_text}</p>
+                  <p className="small-note">{review.booking_code} · {review.language || '-'}</p>
+                </div>
+                <div className="admin-review-actions">
+                  <button className="button secondary" type="button" onClick={() => setVisible(review, !review.active)}>{review.active ? adminCopy(lang, 'Nascondi', 'Hide') : adminCopy(lang, 'Ripubblica', 'Republish')}</button>
+                  <button className="button primary danger" type="button" onClick={() => setConfirmReview(review)}>{adminCopy(lang, 'Elimina definitivamente', 'Delete permanently')}</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
       )}
       {confirmReview && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={adminCopy(lang, 'Conferma eliminazione', 'Confirm deletion')}>
