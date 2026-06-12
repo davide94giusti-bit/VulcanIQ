@@ -109,7 +109,7 @@ create table if not exists public.booking_requests (
   constraint booking_requests_language_check check (language is null or language in ('it', 'en')),
   constraint booking_requests_party_type_check check (party_type is null or party_type in ('solo', 'couple', 'family', 'group', 'company', 'school', 'other')),
   constraint booking_requests_source_check check (source in ('website', 'whatsapp', 'phone', 'email', 'manual')),
-  constraint booking_requests_heard_about_us_check check (heard_about_us is null or heard_about_us in ('instagram', 'google', 'google_maps', 'facebook', 'whatsapp_or_friend', 'hotel_bnb_partner', 'previous_customer', 'guide_or_local_partner', 'other', 'not_specified')),
+  constraint booking_requests_heard_about_us_check check (heard_about_us is null or heard_about_us in ('instagram', 'google', 'google_maps', 'facebook', 'radio', 'whatsapp_or_friend', 'hotel_bnb_partner', 'previous_customer', 'guide_or_local_partner', 'other', 'not_specified')),
   constraint booking_requests_adults_check check (adults is null or adults >= 0),
   constraint booking_requests_children_check check (children is null or children >= 0)
 );

@@ -1340,7 +1340,7 @@ function ContactActions({ lang, contextMessage, compact = false, onUseForm, expe
   const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(message)}`;
   const className = compact ? 'contact-actions compact' : 'contact-actions';
   const metadata = buildBookingTrackingContext({ experienceId: experienceId || '', requestType: experienceId ? 'private' : 'contact', sourceSection: 'contact', sourceCta: 'contact_direct', ctaLocation: location, language: lang });
-  const emailMessage = appendHeardAboutUsToMessage(message, emailAttributionSource, emailAttributionDetail, lang);
+  const emailMessage = buildAttributionContactMessage(emailAttributionSource, emailAttributionDetail, lang);
 
   return (
     <div className={className} data-experience={experienceId || undefined}>
@@ -1360,7 +1360,7 @@ function ContactActions({ lang, contextMessage, compact = false, onUseForm, expe
           location,
           metadata: { ...metadata, source_cta: 'whatsapp_direct' },
           confirmLabel: contactActionConfirmLabel('whatsapp', lang),
-          buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(appendHeardAboutUsToMessage(message, source, detail, lang))}`
+          buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}`
         })}
       ><Icon name="chat" />{text(lang, 'whatsapp')}</a>
       <div className="email-action-wrap">
@@ -1377,6 +1377,7 @@ function ContactActions({ lang, contextMessage, compact = false, onUseForm, expe
               setEmailAttributionSource(source || '');
               setEmailAttributionDetail(detail || '');
               setEmailOpen(true);
+              return false;
             }
           })}
           aria-expanded={emailOpen}
@@ -1713,7 +1714,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         <BlockedDatesAttachment item={item} lang={lang} onOpenFile={(file, label) => openLeafletModal(file, label || text(lang, 'openExcursionProgram'))} />
         <div className="request-action-row date-modal-actions">
           <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestInformation')}</button>
-          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`, target: '_blank', location: 'calendar_modal', metadata: buildBookingTrackingContext({ experienceId: item.experience_id || '', requestType: 'fixed', sourceSection: 'calendar', sourceCta: 'whatsapp_direct', ctaLocation: 'calendar_modal', selectedDate: item.date || '', hasFixedExcursion: true, language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang) })}>{text(lang, 'sendWhatsapp')}</a>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`, target: '_blank', location: 'calendar_modal', metadata: buildBookingTrackingContext({ experienceId: item.experience_id || '', requestType: 'fixed', sourceSection: 'calendar', sourceCta: 'whatsapp_direct', ctaLocation: 'calendar_modal', selectedDate: item.date || '', hasFixedExcursion: true, language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
           {selectedDateLeaflet && (
             <button className="request-action-button request-action-button-secondary" type="button" onClick={() => openLeafletModal(selectedDateLeaflet, text(lang, 'openExcursionProgram'))}>{text(lang, 'openExcursionProgram')}</button>
           )}
@@ -1752,7 +1753,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         </div>
         <div className="request-action-row date-modal-actions">
           <button className="request-action-button request-action-button-primary" type="button" onClick={requestAvailableDate}>{text(lang, 'requestDate')}</button>
-          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(message)}`, target: '_blank', location: 'calendar_modal', metadata: buildBookingTrackingContext({ experienceId: dateRequest.experienceId || '', requestType: 'private', sourceSection: 'calendar', sourceCta: 'whatsapp_direct', ctaLocation: 'calendar_modal', selectedDate, language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang) })}>{text(lang, 'sendWhatsapp')}</a>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(message)}`, target: '_blank', location: 'calendar_modal', metadata: buildBookingTrackingContext({ experienceId: dateRequest.experienceId || '', requestType: 'private', sourceSection: 'calendar', sourceCta: 'whatsapp_direct', ctaLocation: 'calendar_modal', selectedDate, language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
         </div>
       </div>
     );
@@ -1860,7 +1861,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
                 </dl>
                 <div className="request-action-row experience-modal-actions">
                   <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestExperience(selectedExperience)}>{text(lang, 'request')}</button>
-                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: buildBookingTrackingContext({ experienceId: selectedExperience?.id || '', requestType: 'private', sourceSection: 'experiences', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang) })}>{text(lang, 'sendWhatsapp')}</a>
+                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: buildBookingTrackingContext({ experienceId: selectedExperience?.id || '', requestType: 'private', sourceSection: 'experiences', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
                 </div>
               </div>
             </div>
@@ -2848,7 +2849,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     if (!validateSelectedAttributionForDirectContact(trackedExperience, currentTrackingMetadata)) return;
     trackContactClick('whatsapp', 'booking_modal', { ...currentTrackingMetadata, source_cta: 'whatsapp_direct' });
     if (typeof window !== 'undefined') {
-      window.open(`https://wa.me/${contact.phoneWa}?text=${encode(fullMessage)}`, '_blank', 'noopener,noreferrer');
+      window.open(`https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(selectedHeardAboutUs, selectedHeardAboutUsDetail, lang))}`, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -3094,7 +3095,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
                 </dl>
                 <div className="request-action-row experience-modal-actions">
                   <button className="request-action-button request-action-button-primary" type="button" onClick={() => usePrivateExperienceInRequest(selectedPrivateExperience)}>{text(lang, 'useThisOptionInRequest')}</button>
-                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedPrivateExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedPrivateExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: { ...buildBookingTrackingContext({ experienceId: selectedPrivateExperience?.id || '', requestType: 'private', sourceSection: 'today', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), ...selectedHeardAboutUsMetadata }, defaultSource: formState.heardAboutUs || '', defaultDetail: formState.heardAboutUsDetail || '', confirmLabel: contactActionConfirmLabel('whatsapp', lang), afterConfirm: (selectedMetadata, source, detail) => setFormState((current) => ({ ...current, heardAboutUs: source || current.heardAboutUs, heardAboutUsDetail: detail || current.heardAboutUsDetail })) })}>{text(lang, 'sendWhatsapp')}</a>
+                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedPrivateExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedPrivateExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: { ...buildBookingTrackingContext({ experienceId: selectedPrivateExperience?.id || '', requestType: 'private', sourceSection: 'today', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), ...selectedHeardAboutUsMetadata }, defaultSource: formState.heardAboutUs || '', defaultDetail: formState.heardAboutUsDetail || '', confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}`, afterConfirm: (selectedMetadata, source, detail) => setFormState((current) => ({ ...current, heardAboutUs: source || current.heardAboutUs, heardAboutUsDetail: detail || current.heardAboutUsDetail })) })}>{text(lang, 'sendWhatsapp')}</a>
                 </div>
               </div>
             </div>
@@ -3141,8 +3142,30 @@ function FinalCTA({ lang, siteContent }) {
 function Footer({ lang, siteContent, editor }) {
   const contact = resolvePublicContactDetails(siteContent);
   const [phoneChoicesOpen, setPhoneChoicesOpen] = useState(false);
-  const message = text(lang, 'defaultMessage');
+  const phoneChoiceRef = useRef(null);
+  const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
   const baseMetadata = buildBookingTrackingContext({ requestType: 'contact', sourceSection: 'footer', sourceCta: 'contact_direct', ctaLocation: 'footer', language: lang });
+  const subject = text(lang, 'emailSubject');
+
+  useEffect(() => {
+    if (!phoneChoicesOpen) return undefined;
+    function closeMenu() {
+      setPhoneChoicesOpen(false);
+    }
+    function handlePointerDown(event) {
+      if (!phoneChoiceRef.current || phoneChoiceRef.current.contains(event.target)) return;
+      closeMenu();
+    }
+    document.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('hashchange', closeMenu);
+    window.addEventListener('popstate', closeMenu);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('hashchange', closeMenu);
+      window.removeEventListener('popstate', closeMenu);
+    };
+  }, [phoneChoicesOpen]);
+
   return (
     <footer className="footer">
       <div className="container footer-grid">
@@ -3150,7 +3173,7 @@ function Footer({ lang, siteContent, editor }) {
           <p>
             <EditableText as="strong" itemKey="footer.contact.name" lang={lang} siteContent={siteContent} editor={editor} fallback="Leonardo Chiavetta" />
             <br />
-            <span className="footer-phone-choice">
+            <span className="footer-phone-choice" ref={phoneChoiceRef}>
               <button
                 className="footer-phone-choice-trigger"
                 type="button"
@@ -3161,36 +3184,87 @@ function Footer({ lang, siteContent, editor }) {
               </button>
               {phoneChoicesOpen && (
                 <span className="footer-phone-choice-menu" role="group" aria-label={lang === 'it' ? 'Scegli come contattare Leonardo' : 'Choose how to contact Leonardo'}>
-                  <a href={`tel:${contact.phoneTel}`} onClick={() => trackContactClick('phone', 'footer_phone_menu', { ...baseMetadata, cta_location: 'footer_phone_menu', source_cta: 'phone_direct' })}>{lang === 'it' ? 'Chiama' : 'Call'}</a>
-                  <a href={`https://wa.me/${contact.phoneWa}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer" onClick={() => trackContactClick('whatsapp', 'footer_phone_menu', { ...baseMetadata, cta_location: 'footer_phone_menu', source_cta: 'whatsapp_direct' })}>WhatsApp</a>
+                  <a href={`tel:${contact.phoneTel}`} onClick={() => { setPhoneChoicesOpen(false); trackContactClick('phone', 'footer_phone_menu', { ...baseMetadata, cta_location: 'footer_phone_menu', source_cta: 'phone_direct' }); }}>{lang === 'it' ? 'Chiama' : 'Call'}</a>
+                  <a
+                    href={`https://wa.me/${contact.phoneWa}?text=${encode(text(lang, 'defaultMessage'))}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => {
+                      setPhoneChoicesOpen(false);
+                      requestContactAttribution(event, {
+                        type: 'whatsapp',
+                        target: '_blank',
+                        location: 'footer_phone_menu',
+                        metadata: { ...baseMetadata, cta_location: 'footer_phone_menu', source_cta: 'whatsapp_direct' },
+                        confirmLabel: contactActionConfirmLabel('whatsapp', lang),
+                        buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}`
+                      });
+                    }}
+                  >WhatsApp</a>
                 </span>
               )}
             </span>
-            <br /><a href={buildMailto(contact.email)} onClick={() => trackContactClick('email', 'footer', { ...baseMetadata, source_cta: 'email_direct' })}>{contact.email}</a>
+            <br />
+            <a
+              href={buildMailto(contact.email, subject, text(lang, 'defaultMessage'))}
+              onClick={(event) => requestContactAttribution(event, {
+                type: 'email',
+                location: 'footer',
+                metadata: { ...baseMetadata, source_cta: 'email_direct' },
+                confirmLabel: contactActionConfirmLabel('email', lang),
+                buildUrl: (_selectedMetadata, source, detail) => buildMailto(contact.email, subject, buildAttributionContactMessage(source, detail, lang))
+              })}
+            >{contact.email}</a>
           </p>
           <a className="inline-link" href={contact.instagram} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
         </div>
       </div>
+      {contactAttributionModal}
     </footer>
   );
 }
 
 function StickyMobileBar({ lang, siteContent }) {
   const contact = resolvePublicContactDetails(siteContent);
-  const message = text(lang, 'defaultMessage');
+  const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
   const metadata = buildBookingTrackingContext({ requestType: 'contact', sourceSection: 'sticky_contact_bar', sourceCta: 'contact_direct', ctaLocation: 'sticky_contact_bar', language: lang });
-  const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(message)}`;
-  const emailUrl = buildMailto(contact.email, text(lang, 'emailSubject'), message);
+  const subject = text(lang, 'emailSubject');
+  const fallbackMessage = text(lang, 'defaultMessage');
+  const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(fallbackMessage)}`;
+  const emailUrl = buildMailto(contact.email, subject, fallbackMessage);
   return (
     <>
       <div className="mobile-sticky-bar" aria-label="Mobile contact actions">
         <a href={`tel:${contact.phoneTel}`} onClick={() => trackContactClick('phone', 'sticky_contact_bar', { ...metadata, source_cta: 'phone_direct' })}><Icon name="phone" />{lang === 'it' ? 'Chiama' : 'Call'}</a>
-        <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackContactClick('whatsapp', 'sticky_contact_bar', { ...metadata, source_cta: 'whatsapp_direct' })}><Icon name="chat" />WhatsApp</a>
-        <a href={emailUrl} onClick={() => trackContactClick('email', 'sticky_contact_bar', { ...metadata, source_cta: 'email_direct' })}><Icon name="mail" />Email</a>
+        <a
+          href={whatsappUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => requestContactAttribution(event, {
+            type: 'whatsapp',
+            target: '_blank',
+            location: 'sticky_contact_bar',
+            metadata: { ...metadata, source_cta: 'whatsapp_direct' },
+            confirmLabel: contactActionConfirmLabel('whatsapp', lang),
+            buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}`
+          })}
+        ><Icon name="chat" />WhatsApp</a>
+        <a
+          href={emailUrl}
+          onClick={(event) => requestContactAttribution(event, {
+            type: 'email',
+            location: 'sticky_contact_bar',
+            metadata: { ...metadata, source_cta: 'email_direct' },
+            confirmLabel: contactActionConfirmLabel('email', lang),
+            buildUrl: (_selectedMetadata, source, detail) => buildMailto(contact.email, subject, buildAttributionContactMessage(source, detail, lang))
+          })}
+        ><Icon name="mail" />Email</a>
       </div>
+      {contactAttributionModal}
     </>
   );
 }
+
 
 const REQUEST_STATUSES = ['pending', 'accepted', 'declined', 'cancelled', 'archived'];
 const REQUEST_SOURCES = ['website', 'whatsapp', 'phone', 'email', 'manual'];
@@ -3220,6 +3294,7 @@ const HEARD_ABOUT_US_OPTIONS = [
   { value: 'google', it: 'Google', en: 'Google' },
   { value: 'google_maps', it: 'Google Maps', en: 'Google Maps' },
   { value: 'facebook', it: 'Facebook', en: 'Facebook' },
+  { value: 'radio', it: 'Radio', en: 'Radio' },
   { value: 'whatsapp_or_friend', it: 'WhatsApp / passaparola', en: 'WhatsApp / word of mouth' },
   { value: 'hotel_bnb_partner', it: 'Hotel, B&B o struttura partner', en: 'Hotel, B&B or partner accommodation' },
   { value: 'previous_customer', it: 'Cliente precedente', en: 'Previous customer' },
@@ -3283,6 +3358,15 @@ function heardAboutUsMessageLine(value, detail, lang) {
   return `${text(lang, 'heardAboutUsMessagePrefix')} ${display}.`;
 }
 
+function buildAttributionContactMessage(value, detail, lang) {
+  const display = heardAboutUsDisplay(value, detail, lang);
+  if (!display) return text(lang, 'defaultMessage');
+  if (lang === 'en') {
+    return `Hi Leonardo,\n\nI heard about vulcanIQ from "${display}" and I would like information about a vulcanIQ experience on Mount Etna.\n\nI would like to know availability, approximate duration, price and clothing recommendations.\n\nThank you!`;
+  }
+  return `Ciao Leonardo,\n\nHo sentito parlare di vulcanIQ da "${display}" e vorrei informazioni su un’esperienza vulcanIQ sull’Etna.\n\nVorrei sapere disponibilità, durata indicativa, prezzo e consigli sull’abbigliamento.\n\nGrazie!`;
+}
+
 function appendHeardAboutUsToMessage(message, value, detail, lang) {
   const base = String(message || text(lang, 'defaultMessage')).trimEnd();
   const line = heardAboutUsMessageLine(value, detail, lang);
@@ -3312,8 +3396,8 @@ function contactActionConfirmLabel(type, lang) {
 function openResolvedContactAction(action, selectedMetadata = {}, source = '', detail = '') {
   if (!action) return;
   if (typeof action.afterConfirm === 'function') {
-    action.afterConfirm(selectedMetadata, source, detail);
-    return;
+    const shouldContinue = action.afterConfirm(selectedMetadata, source, detail);
+    if (shouldContinue === false) return;
   }
   const resolvedUrl = typeof action.buildUrl === 'function' ? action.buildUrl(selectedMetadata, source, detail) : action.url;
   if (!resolvedUrl || typeof window === 'undefined') return;
@@ -3330,6 +3414,8 @@ function ContactAttributionModal({ lang, action, onClose, onConfirm }) {
   const [error, setError] = useState('');
   const selectRef = useRef(null);
   const isOtherSelected = needsHeardAboutUsDetail(selectedSource);
+  const cleanOtherDetail = cleanHeardAboutUsDetail(otherDetail);
+  const canConfirm = Boolean(selectedSource) && (!isOtherSelected || Boolean(cleanOtherDetail));
   useBodyScrollLock(true);
 
   useEffect(() => {
@@ -3393,7 +3479,7 @@ function ContactAttributionModal({ lang, action, onClose, onConfirm }) {
         )}
         {error && <p id="contactAttributionError" className="form-status error" role="alert">{error}</p>}
         <div className="contact-attribution-actions">
-          {selectedSource && <button className="button primary" type="button" onClick={confirm}>{action?.confirmLabel || contactActionConfirmLabel(action?.type, lang)}</button>}
+          {selectedSource && <button className="button primary" type="button" onClick={confirm} disabled={!canConfirm} aria-disabled={!canConfirm}>{action?.confirmLabel || contactActionConfirmLabel(action?.type, lang)}</button>}
           <button className="button secondary" type="button" onClick={onClose}>{text(lang, 'cancel')}</button>
         </div>
       </section>

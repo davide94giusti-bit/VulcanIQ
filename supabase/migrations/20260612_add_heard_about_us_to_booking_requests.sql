@@ -22,6 +22,7 @@ begin
           'google',
           'google_maps',
           'facebook',
+          'radio',
           'whatsapp_or_friend',
           'hotel_bnb_partner',
           'previous_customer',
