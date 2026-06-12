@@ -7,8 +7,10 @@ const requestFields = `
   customer_name, customer_email, customer_phone, preferred_contact,
   experience_id, requested_date, alternative_date, language,
   party_type, adults, children, children_under_3, private_experience,
-  main_interest, preferred_pace, message,
-  source, admin_note, decision_note, decided_at, decided_by,
+  main_interest, preferred_pace, message, heard_about_us, heard_about_us_label, heard_about_us_detail,
+  source, source_section, source_cta, cta_location, selected_date, has_fixed_excursion,
+  traffic_source, utm_source, utm_medium, utm_campaign, utm_content,
+  admin_note, decision_note, decided_at, decided_by,
   created_by_admin, availability_block_id
 `;
 
@@ -18,6 +20,26 @@ function textOrNull(value) {
 }
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+const HEARD_ABOUT_US_VALUES = new Set([
+  'instagram',
+  'google',
+  'google_maps',
+  'facebook',
+  'whatsapp_or_friend',
+  'hotel_bnb_partner',
+  'previous_customer',
+  'guide_or_local_partner',
+  'other',
+  'not_specified'
+]);
+
+function normalizeHeardAboutUsValue(value, { allowAdmin = false } = {}) {
+  const clean = typeof value === 'string' ? value.trim() : String(value || '').trim();
+  if (!clean || !HEARD_ABOUT_US_VALUES.has(clean)) return null;
+  if (clean === 'not_specified' && !allowAdmin) return null;
+  return clean;
+}
 
 function compactDateForCode(value) {
   const clean = String(value || '').trim();
@@ -70,6 +92,8 @@ function intOrNull(value) {
 export function normalizeRequestInput(input, defaults = {}) {
   const requestedDate = textOrNull(input.requested_date);
   const requestType = textOrNull(input.request_type) || defaults.request_type || 'private';
+  const sourceValue = textOrNull(input.source) || defaults.source || 'website';
+  const allowAdminHeardAboutUs = Boolean(input.created_by_admin || defaults.created_by_admin || sourceValue === 'manual');
   const fixedExcursionExperienceId = textOrNull(input.fixed_excursion_experience_id ?? input.fixedExperienceId);
   const resolvedExperienceId = requestType === 'fixed'
     ? (fixedExcursionExperienceId || textOrNull(input.experience_id) || 'unsure')
@@ -94,7 +118,20 @@ export function normalizeRequestInput(input, defaults = {}) {
     main_interest: textOrNull(input.main_interest),
     preferred_pace: textOrNull(input.preferred_pace),
     message: textOrNull(input.message),
-    source: textOrNull(input.source) || defaults.source || 'website',
+    heard_about_us: normalizeHeardAboutUsValue(input.heard_about_us ?? input.heardAboutUs, { allowAdmin: allowAdminHeardAboutUs }),
+    heard_about_us_label: textOrNull(input.heard_about_us_label ?? input.heardAboutUsLabel),
+    heard_about_us_detail: textOrNull(input.heard_about_us_detail ?? input.heardAboutUsDetail),
+    source: sourceValue,
+    source_section: textOrNull(input.source_section),
+    source_cta: textOrNull(input.source_cta),
+    cta_location: textOrNull(input.cta_location),
+    selected_date: textOrNull(input.selected_date || requestedDate),
+    has_fixed_excursion: input.has_fixed_excursion === undefined ? requestType === 'fixed' : Boolean(input.has_fixed_excursion),
+    traffic_source: textOrNull(input.traffic_source),
+    utm_source: textOrNull(input.utm_source),
+    utm_medium: textOrNull(input.utm_medium),
+    utm_campaign: textOrNull(input.utm_campaign),
+    utm_content: textOrNull(input.utm_content),
     admin_note: textOrNull(input.admin_note),
     status: defaults.status || input.status || 'pending',
     created_by_admin: input.created_by_admin || defaults.created_by_admin || null

@@ -15,7 +15,7 @@ In Supabase **Project Settings → API**, copy:
 - Project URL
 - anon public key
 
-Set these locally and in Netlify:
+Set these locally and in Cloudflare Pages:
 
 ```bash
 VITE_SUPABASE_URL=your-project-url
@@ -383,3 +383,28 @@ brand_logo_main
 ```
 
 If no Supabase override exists, the website uses the default local logo.
+
+## Privacy-first analytics tables
+
+Run the analytics migration after the base schema:
+
+```sql
+-- supabase/migrations/20260608_add_analytics_events.sql
+```
+
+The migration adds:
+
+- `public.analytics_events`
+- `public.analytics_sessions`
+- RLS policies that allow anonymous insert-only analytics writes, block public reads, and allow active admins to read/delete analytics rows.
+
+The analytics tables must not store customer names, emails, phone numbers, booking messages, IP addresses, precise coordinates, payment details, or other sensitive personal data. The frontend and server-side ingestion endpoint sanitize metadata before inserting rows.
+
+For full session duration updates, configure the server-side ingestion endpoint with:
+
+```bash
+SUPABASE_URL=your-project-url
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+```
+
+The service role key must only be stored as a Cloudflare Pages server-side environment variable.

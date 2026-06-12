@@ -10,6 +10,8 @@ import { loadPublicReviews, submitPublicReview, listReviews, updateReviewVisibil
 import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFile } from './services/siteMediaService.js';
 import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
 import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
+import { listAnalyticsEvents, listAnalyticsSessions } from './services/analyticsService.js';
+import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormFieldStart, trackBookingSubmitAttempt, trackBookingSubmitValidationError, trackBookingSubmitSuccess, trackBookingSubmitError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat } from './analytics.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import './styles.css';
 
@@ -24,6 +26,36 @@ const BRAND = {
   og: '/brand/vulcaniq/og-image.png'
 };
 
+const ADMIN_NAV_SECTIONS = [
+  { key: 'today', path: '/admin/today', labelIt: 'Oggi', labelEn: 'Today', editable: true },
+  { key: 'calendar', path: '/admin/calendar', labelIt: 'Calendario', labelEn: 'Calendar', editable: true },
+  { key: 'upcoming', path: '/admin/upcoming', labelIt: 'Prossime', labelEn: 'Upcoming', editable: true },
+  { key: 'requests', path: '/admin/requests', labelIt: 'Richieste', labelEn: 'Requests', editable: true },
+  { key: 'availability', path: '/admin/availability', labelIt: 'Disponibilità', labelEn: 'Availability', editable: true },
+  { key: 'partnerships', path: '/admin/partnerships', labelIt: 'Collaborazioni', labelEn: 'Collaborations', editable: true },
+  { key: 'edit', path: '/admin/edit', labelIt: 'Modifica', labelEn: 'Edit', editable: true },
+  { key: 'finance', path: '/admin/finance', labelIt: 'Finanze', labelEn: 'Finance', editable: true },
+  { key: 'analytics', path: '/admin/analytics', labelIt: 'Dati', labelEn: 'Analytics', editable: true },
+  { key: 'publicSite', path: '/', labelIt: 'Sito pubblico', labelEn: 'Public site', editable: true, external: true }
+];
+
+function adminNavLabel(section, lang) {
+  return lang === 'it' ? section.labelIt : section.labelEn;
+}
+
+function isAdminNavSectionActive(normalizedPath, section) {
+  if (!section || section.external) return false;
+  if (section.key === 'analytics') return normalizedPath.includes('/analytics') || normalizedPath.includes('/data');
+  if (section.key === 'edit') return normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media');
+  if (section.key === 'partnerships') return normalizedPath.includes('/partnerships');
+  return normalizedPath.includes(`/${section.key}`);
+}
+
+function adminPathFromLocation(pathname) {
+  const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
+  return ADMIN_NAV_SECTIONS.find((section) => !section.external && isAdminNavSectionActive(normalizedPath, section))?.path || '/admin/today';
+}
+
 const MEDIA = {
   premium: '/images/vulcaniq/etna-premium.jpeg',
   stories: '/images/vulcaniq/etna-stories.jpeg',
@@ -37,6 +69,57 @@ const MEDIA = {
   naturalLight: '/images/vulcaniq/natural-light.jpeg',
   introVideo: '/videos/vulcaniq/intro.mp4'
 };
+
+let bodyScrollLockCount = 0;
+let bodyScrollLockSnapshot = null;
+
+function useBodyScrollLock(isLocked) {
+  useEffect(() => {
+    if (!isLocked || typeof document === 'undefined') return undefined;
+
+    if (bodyScrollLockCount === 0) {
+      const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+      bodyScrollLockSnapshot = {
+        overflow: document.body.style.overflow,
+        paddingRight: document.body.style.paddingRight,
+        position: document.body.style.position,
+        top: document.body.style.top,
+        left: document.body.style.left,
+        right: document.body.style.right,
+        width: document.body.style.width,
+        scrollY
+      };
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollY}px`;
+      document.body.style.left = '0';
+      document.body.style.right = '0';
+      document.body.style.width = '100%';
+      document.body.classList.add('modal-scroll-lock');
+      if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
+    bodyScrollLockCount += 1;
+
+    return () => {
+      bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1);
+      if (bodyScrollLockCount === 0 && bodyScrollLockSnapshot) {
+        const restoreScrollY = bodyScrollLockSnapshot.scrollY || 0;
+        document.body.style.overflow = bodyScrollLockSnapshot.overflow;
+        document.body.style.paddingRight = bodyScrollLockSnapshot.paddingRight;
+        document.body.style.position = bodyScrollLockSnapshot.position;
+        document.body.style.top = bodyScrollLockSnapshot.top;
+        document.body.style.left = bodyScrollLockSnapshot.left;
+        document.body.style.right = bodyScrollLockSnapshot.right;
+        document.body.style.width = bodyScrollLockSnapshot.width;
+        document.body.classList.remove('modal-scroll-lock');
+        bodyScrollLockSnapshot = null;
+        window.scrollTo(0, restoreScrollY);
+      }
+    };
+  }, [isLocked]);
+}
 
 
 function buildMediaMap(items = []) {
@@ -174,6 +257,20 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     requestFallbackError: 'Non siamo riusciti a salvare la richiesta automaticamente. Puoi contattarci su WhatsApp o email.',
     contactRequired: 'Inserisci almeno telefono o email.',
     requestDetailsRequired: 'Inserisci un messaggio oppure seleziona esperienza o data.',
+    heardAboutUs: 'Dove hai sentito parlare di vulcanIQ?',
+    heardAboutUsAdmin: 'Dove ha sentito parlare di vulcanIQ?',
+    heardAboutUsPlaceholder: 'Seleziona qui',
+    heardAboutUsRequired: 'Seleziona dove hai sentito parlare di vulcanIQ.',
+    heardAboutUsModalIntro: 'Seleziona un’opzione prima di continuare.',
+    heardAboutUsOtherLabel: 'Specifica dove hai sentito parlare di vulcanIQ',
+    heardAboutUsOtherPlaceholder: 'Scrivi dove hai conosciuto vulcanIQ',
+    heardAboutUsOtherRequired: 'Specifica dove hai sentito parlare di vulcanIQ.',
+    heardAboutUsMessagePrefix: 'Ho sentito parlare di vulcanIQ da',
+    continue: 'Continua',
+    cancel: 'Annulla',
+    continueWhatsapp: 'Continua su WhatsApp',
+    callNow: 'Chiama ora',
+    writeEmail: 'Scrivi email',
     phone: 'Telefono / WhatsApp',
     contactEmail: 'Email',
     preferredContact: 'Contatto preferito',
@@ -200,6 +297,8 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     timeLabel: 'Orario',
     experienceLabel: 'Esperienza',
     meetingPoint: 'Punto d’incontro',
+    meetingPointDirections: 'Punto d’incontro - premi per indicazioni',
+    meetingPointDirectionsHint: 'Apri indicazioni su Google Maps',
     difficulty: 'Difficoltà',
     priceNote: 'Nota prezzo',
     requestAvailability: 'Richiedi disponibilità',
@@ -209,6 +308,16 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     visitWebsite: 'Visita il sito',
     activeCollaborations: 'Partnership attive',
     chooseFixedExcursion: 'Scegli escursione fissa',
+    viewFixedExcursionOptions: 'Vedi opzioni escursioni fisse',
+    viewPrivateExcursionOptions: 'Vedi opzioni escursioni private',
+    fixedExcursionOptionsTitle: 'Opzioni escursioni fisse',
+    privateExcursionOptionsTitle: 'Opzioni escursioni private',
+    fixedExcursionOptionsIntro: 'Sfoglia le escursioni programmate per il mese selezionato. Tocca un volantino per vedere tutti i dettagli.',
+    privateExcursionOptionsIntro: 'Esplora le esperienze private. Tocca una scheda per vedere tutti i dettagli.',
+    noFixedExcursionLeaflets: 'Non ci sono ancora volantini per escursioni fisse disponibili per questo mese.',
+    noPrivateExcursionOptions: 'Non ci sono ancora opzioni di escursione privata disponibili.',
+    currentMonth: 'Mese corrente',
+    useThisOptionInRequest: 'Usa questa opzione nella richiesta',
     noFixedExcursions: 'Nessuna escursione fissa attiva al momento.',
     placesRemaining: 'Posti disponibili',
     placesAvailable: 'Posti disponibili',
@@ -265,7 +374,7 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     noExcursionsOnDate: 'Nessuna escursione programmata per questa data.',
     availableDatePrivateCopy: 'Puoi richiedere un’esperienza privata o su misura.',
     requestInformation: 'Richiedi informazioni',
-    openExcursionProgram: 'Apri programma dell’escursione',
+    openExcursionProgram: 'Apri programma mensile',
     publishReview: 'Pubblica una recensione',
     missionHero: 'Non accompagniamo solo persone sull’Etna. Creiamo un modo più attento di incontrarlo.',
     missionShort: 'vulcanIQ nasce per trasformare l’escursione in un’esperienza di ascolto, conoscenza e relazione con il territorio.',
@@ -379,6 +488,20 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     requestFallbackError: 'We could not save the request automatically. You can contact us by WhatsApp or email.',
     contactRequired: 'Enter at least phone or email.',
     requestDetailsRequired: 'Enter a message or select an experience or date.',
+    heardAboutUs: 'Where did you hear about vulcanIQ?',
+    heardAboutUsAdmin: 'Where did the customer hear about vulcanIQ?',
+    heardAboutUsPlaceholder: 'Select here',
+    heardAboutUsRequired: 'Please select where you heard about vulcanIQ.',
+    heardAboutUsModalIntro: 'Select an option before continuing.',
+    heardAboutUsOtherLabel: 'Please specify where you heard about vulcanIQ',
+    heardAboutUsOtherPlaceholder: 'Write where you discovered vulcanIQ',
+    heardAboutUsOtherRequired: 'Please specify where you heard about vulcanIQ.',
+    heardAboutUsMessagePrefix: 'I heard about vulcanIQ from',
+    continue: 'Continue',
+    cancel: 'Cancel',
+    continueWhatsapp: 'Continue to WhatsApp',
+    callNow: 'Call now',
+    writeEmail: 'Write email',
     phone: 'Phone / WhatsApp',
     contactEmail: 'Email',
     preferredContact: 'Preferred contact',
@@ -405,6 +528,8 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     timeLabel: 'Time',
     experienceLabel: 'Experience',
     meetingPoint: 'Meeting point',
+    meetingPointDirections: 'Meeting point - tap for directions',
+    meetingPointDirectionsHint: 'Open directions in Google Maps',
     difficulty: 'Difficulty',
     priceNote: 'Price note',
     requestAvailability: 'Request availability',
@@ -414,6 +539,16 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     visitWebsite: 'Visit website',
     activeCollaborations: 'Active collaborations',
     chooseFixedExcursion: 'Choose fixed excursion',
+    viewFixedExcursionOptions: 'View fixed excursion options',
+    viewPrivateExcursionOptions: 'View private excursion options',
+    fixedExcursionOptionsTitle: 'Fixed excursion options',
+    privateExcursionOptionsTitle: 'Private excursion options',
+    fixedExcursionOptionsIntro: 'Browse the scheduled excursion options for the selected month. Tap a leaflet to view the full details.',
+    privateExcursionOptionsIntro: 'Explore the private excursion experiences. Tap a card to view the full details.',
+    noFixedExcursionLeaflets: 'No fixed excursion leaflets are available for this month yet.',
+    noPrivateExcursionOptions: 'No private excursion options are available yet.',
+    currentMonth: 'Current month',
+    useThisOptionInRequest: 'Use this option in my request',
     noFixedExcursions: 'No active fixed excursions at the moment.',
     placesRemaining: 'Places remaining',
     placesAvailable: 'Places available',
@@ -470,7 +605,7 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     noExcursionsOnDate: 'No scheduled excursion is currently planned for this date.',
     availableDatePrivateCopy: 'You can request a private or tailored experience.',
     requestInformation: 'Request information',
-    openExcursionProgram: 'Open excursion program',
+    openExcursionProgram: 'Open monthly schedule',
     publishReview: 'Publish a review',
     missionHero: 'We do not simply guide people on Etna. We create a more mindful way to encounter it.',
     missionShort: 'vulcanIQ was created to transform an excursion into an experience of listening, knowledge and connection with the territory.',
@@ -671,6 +806,46 @@ function contentText(siteContent, key, lang, fallback = '') {
   return cleanEditableTextValue(value) || cleanEditableTextValue(defaultValue) || cleanEditableTextValue(fallback);
 }
 
+
+function contentSettingValue(siteContent, key, fallback = '') {
+  const item = siteContent?.[key];
+  const direct = item?.value_it || item?.value_en || item?.default_it || item?.default_en || fallback;
+  return cleanEditableTextValue(direct) || cleanEditableTextValue(fallback);
+}
+
+function normalizePhoneDigits(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function normalizePhoneTel(value, fallback = PHONE_TEL) {
+  const clean = cleanEditableTextValue(value);
+  const digits = normalizePhoneDigits(clean || fallback);
+  if (!digits) return fallback;
+  if (clean.trim().startsWith('+')) return `+${digits}`;
+  return `+${digits}`;
+}
+
+function normalizeInstagramUrl(value) {
+  const clean = cleanEditableTextValue(value) || INSTAGRAM;
+  if (clean.startsWith('@')) return `https://www.instagram.com/${clean.slice(1).replace(/^\/+/, '')}`;
+  if (/^https?:\/\//i.test(clean)) return clean;
+  return `https://${clean.replace(/^\/+/, '')}`;
+}
+
+function resolvePublicContactDetails(siteContent) {
+  const phoneRaw = contentSettingValue(siteContent, 'contact.channels.phone', PHONE_DISPLAY);
+  const email = contentSettingValue(siteContent, 'contact.channels.email', EMAIL);
+  const instagramRaw = contentSettingValue(siteContent, 'contact.channels.instagram_url', INSTAGRAM);
+  const phoneDigits = normalizePhoneDigits(phoneRaw) || PHONE_WA;
+  return {
+    phoneDisplay: phoneRaw || PHONE_DISPLAY,
+    phoneTel: normalizePhoneTel(phoneRaw, PHONE_TEL),
+    phoneWa: phoneDigits,
+    email: email || EMAIL,
+    instagram: normalizeInstagramUrl(instagramRaw)
+  };
+}
+
 function buildSiteContentMap(items = []) {
   return (items || []).reduce((acc, item) => {
     if (item?.content_key) acc[item.content_key] = item;
@@ -681,16 +856,34 @@ function buildSiteContentMap(items = []) {
 
 
 function getContentDefinition(key) {
-  return SITE_CONTENT_DEFINITIONS.find((item) => item.key === key) || { key, content_key: key, section: 'General', label_it: key, label_en: key, type: 'text', default_it: '', default_en: '' };
+  return [...SITE_CONTENT_DEFINITIONS, ...ADMIN_CONTENT_DEFINITIONS].find((item) => item.key === key) || { key, content_key: key, section: 'General', label_it: key, label_en: key, type: 'text', default_it: '', default_en: '' };
 }
 
 function getMediaDefinition(key) {
   return MEDIA_ADMIN_ITEMS.find((item) => item.key === key) || { key, it: key, en: key, fallback: '' };
 }
 
+const DEFAULT_EDITABLE_TEXT_STYLES = {
+  'home.hero.title': {
+    text_size: 'hero',
+    style_variant: 'display',
+    text_align: 'left'
+  }
+};
+
+function resolveEditableTextStyle(key, stored = {}, definition = {}) {
+  const defaultStyle = DEFAULT_EDITABLE_TEXT_STYLES[key] || {};
+  return {
+    text_size: stored.text_size || definition.text_size || defaultStyle.text_size || 'normal',
+    text_align: stored.text_align || definition.text_align || defaultStyle.text_align || 'left',
+    style_variant: stored.style_variant || definition.style_variant || defaultStyle.style_variant || 'body'
+  };
+}
+
 function editorContentItem(siteContent, key, fallback = '') {
   const definition = getContentDefinition(key);
   const stored = siteContent?.[key] || {};
+  const style = resolveEditableTextStyle(key, stored, definition);
   return {
     ...definition,
     ...stored,
@@ -704,9 +897,9 @@ function editorContentItem(siteContent, key, fallback = '') {
     content_type: stored.content_type || (definition.type === 'textarea' ? 'textarea' : 'text'),
     active: stored.active !== false,
     visible: stored.visible !== false,
-    text_size: stored.text_size || definition.text_size || 'normal',
-    text_align: stored.text_align || definition.text_align || 'left',
-    style_variant: stored.style_variant || definition.style_variant || 'body',
+    text_size: style.text_size,
+    text_align: style.text_align,
+    style_variant: style.style_variant,
     layout_variant: stored.layout_variant || definition.layout_variant || 'default'
   };
 }
@@ -758,6 +951,31 @@ function EditableText({ as: Tag = 'span', itemKey, lang, siteContent, editor, fa
     </Tag>
   );
 }
+
+function AdminEditableText({ as: Tag = 'span', itemKey, lang, adminContent, editor, fallback = '', className = '', children }) {
+  const source = editor?.contentMap || adminContent || {};
+  const item = editorContentItem(source, itemKey, fallback || children || '');
+  const hidden = item.active === false || item.visible === false;
+  if (hidden && !editor?.isEditing) return null;
+  const resolved = contentText(source, itemKey, lang, fallback || children || item.default_it || item.default_en || '');
+  const isSelected = editor?.selected?.type === 'text' && editor.selected.key === itemKey;
+  return (
+    <Tag
+      className={`${className} admin-editable-text ${textStyleClass(item)} ${editor?.isEditing ? 'editor-selectable editor-selectable-text admin-editor-selectable-text' : ''} ${hidden ? 'editor-hidden-public' : ''} ${isSelected ? 'selected' : ''}`.trim()}
+      onClick={editor?.isEditing ? (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        editor.select({ type: 'text', key: itemKey, label: lang === 'it' ? item.label_it : item.label_en, section: item.section });
+      } : undefined}
+      role={editor?.isEditing ? 'button' : undefined}
+      tabIndex={editor?.isEditing ? 0 : undefined}
+    >
+      {editor?.isEditing && <span className="editor-badge">{lang === 'it' ? 'Modifica testo' : 'Edit text'}</span>}
+      {resolved || (editor?.isEditing ? (lang === 'it' ? 'Testo vuoto' : 'Empty text') : fallback || children || '')}
+    </Tag>
+  );
+}
+
 
 function EditableImage({ mediaKey, lang, siteMedia, editor, fallbackSrc, fallbackAlt, className = '', loading = 'lazy', decoding = 'async' }) {
   const source = editor?.mediaMap || siteMedia || {};
@@ -861,6 +1079,121 @@ function fixedExcursionLabel(item, lang) {
   const end = item.end_time ? String(item.end_time).slice(0, 5) : '';
   const time = start ? ` · ${start}${end ? `–${end}` : ''}` : '';
   return `${date}${time} · ${fixedExcursionTitle(item, lang)}`;
+}
+
+function leafletTitle(leaflet, lang) {
+  if (!leaflet) return '';
+  return (lang === 'it' ? leaflet.title_it || leaflet.title_en : leaflet.title_en || leaflet.title_it) || leaflet.file_name || text(lang, 'openProgram');
+}
+
+function sameCalendarMonth(value, monthDate) {
+  if (!value || !monthDate) return false;
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getFullYear() === monthDate.getFullYear() && date.getMonth() === monthDate.getMonth();
+}
+
+function monthKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function isCurrentOrFutureMonth(date) {
+  const current = startOfMonth(new Date());
+  const candidate = startOfMonth(date);
+  return candidate.getTime() >= current.getTime();
+}
+
+function monthlyOptionsLeaflets({ leaflets = [], fixedExcursions = [], monthDate, lang }) {
+  const month = monthDate.getMonth() + 1;
+  const year = monthDate.getFullYear();
+  const fixedInMonth = fixedExcursions.filter((item) => sameCalendarMonth(item.date, monthDate));
+  const linkedIds = new Set(fixedInMonth.map((item) => item.leaflet_id).filter(Boolean));
+  const seen = new Set();
+  const options = [];
+
+  function addOption(option) {
+    const key = option.leaflet?.id || option.leaflet?.file_url || option.id;
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    options.push(option);
+  }
+
+  leaflets
+    .filter((leaflet) => leaflet.file_url && Number(leaflet.month) === month && Number(leaflet.year) === year)
+    .forEach((leaflet) => addOption({
+      id: `monthly-${leaflet.id}`,
+      kind: 'monthly_leaflet',
+      leaflet,
+      title: leafletTitle(leaflet, lang),
+      subtitle: monthLabel(monthDate, lang)
+    }));
+
+  leaflets
+    .filter((leaflet) => leaflet.file_url && linkedIds.has(leaflet.id))
+    .forEach((leaflet) => addOption({
+      id: `linked-${leaflet.id}`,
+      kind: 'linked_leaflet',
+      leaflet,
+      title: leafletTitle(leaflet, lang),
+      subtitle: monthLabel(monthDate, lang)
+    }));
+
+  fixedInMonth.forEach((item) => {
+    if (!item.blocked_dates_file_url) return;
+    const leaflet = {
+      id: `fixed-file-${item.id}`,
+      file_url: item.blocked_dates_file_url,
+      file_type: item.blocked_dates_file_type || '',
+      file_name: item.blocked_dates_file_name || fixedExcursionTitle(item, lang),
+      title_it: item.blocked_dates_file_name || fixedExcursionTitle(item, 'it'),
+      title_en: item.blocked_dates_file_name || fixedExcursionTitle(item, 'en')
+    };
+    addOption({
+      id: `fixed-file-${item.id}`,
+      kind: 'fixed_excursion_file',
+      leaflet,
+      fixedExcursion: item,
+      title: fixedExcursionTitle(item, lang),
+      subtitle: fixedExcursionLabel(item, lang)
+    });
+  });
+
+  return options;
+}
+
+function normalizeGoogleMapsUrl(rawUrl) {
+  const raw = String(rawUrl || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    if (!['http:', 'https:'].includes(url.protocol)) return '';
+    const host = url.hostname.toLowerCase();
+    const path = url.pathname.toLowerCase();
+    const isGoogleHost = /(^|\.)google\.[a-z.]+$/.test(host) || host === 'maps.app.goo.gl' || host === 'goo.gl';
+    const isMapsPath = host.startsWith('maps.') || path === '/maps' || path.startsWith('/maps/') || path.startsWith('/maps/place') || path.startsWith('/maps/dir') || path.startsWith('/maps/search') || host === 'maps.app.goo.gl' || (host === 'goo.gl' && path.startsWith('/maps'));
+    return isGoogleHost && isMapsPath ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function MeetingPointDetailCard({ item, lang }) {
+  const meeting = fixedExcursionField(item, 'meeting_point', lang);
+  if (!meeting) return null;
+  const mapsUrl = normalizeGoogleMapsUrl(item?.meeting_point_maps_url);
+  const label = mapsUrl ? text(lang, 'meetingPointDirections') : text(lang, 'meetingPoint');
+  const ariaLabel = lang === 'it'
+    ? `Apri indicazioni Google Maps per ${meeting}`
+    : `Open Google Maps directions to ${meeting}`;
+
+  return (
+    <div className={`meeting-point-card ${mapsUrl ? 'is-clickable' : ''}`.trim()}>
+      <dt>{label}</dt>
+      <dd>{meeting}</dd>
+      {mapsUrl && <span className="meeting-point-card__hint">{text(lang, 'meetingPointDirectionsHint')}</span>}
+      {mapsUrl && <a className="meeting-point-card__hit" href={mapsUrl} target="_blank" rel="noopener noreferrer" aria-label={ariaLabel} onClick={() => trackMapsClick('meeting_point_card', buildBookingTrackingContext({ experienceId: item?.experience_id || '', requestType: 'fixed', sourceSection: 'calendar', sourceCta: 'google_maps_direct', ctaLocation: 'calendar_modal', selectedDate: item?.date || '', hasFixedExcursion: true, language: lang }))}><span className="sr-only">{ariaLabel}</span></a>}
+    </div>
+  );
 }
 
 function buildFixedExcursionMessage({ fixedExcursion, people }, lang) {
@@ -968,10 +1301,11 @@ function Icon({ name }) {
   );
 }
 
-function EmailPanel({ lang, message, subject, onClose, onUseForm }) {
+function EmailPanel({ lang, message, subject, contact, onClose, onUseForm, onEmailAction }) {
   const [copied, setCopied] = useState('');
-  const mailto = buildMailto(EMAIL, subject, message);
-  const gmail = `https://mail.google.com/mail/?view=cm&fs=1&to=${encode(EMAIL)}&su=${encode(subject)}&body=${encode(message)}`;
+  const recipientEmail = contact?.email || EMAIL;
+  const mailto = buildMailto(recipientEmail, subject, message);
+  const gmail = `https://mail.google.com/mail/?view=cm&fs=1&to=${encode(recipientEmail)}&su=${encode(subject)}&body=${encode(message)}`;
 
   async function handleCopy(kind, value) {
     await copyText(value);
@@ -985,38 +1319,81 @@ function EmailPanel({ lang, message, subject, onClose, onUseForm }) {
         <strong>{text(lang, 'emailOptions')}</strong>
         <button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>×</button>
       </div>
-      <button type="button" className="email-option" onClick={() => openDefaultEmailApp(EMAIL, subject, message)}>{text(lang, 'defaultEmail')}</button>
-      <a className="email-option" href={gmail} target="_blank" rel="noopener noreferrer">{text(lang, 'openGmail')}</a>
-      <button type="button" className="email-option" onClick={() => handleCopy('email', EMAIL)}>{text(lang, 'copyEmail')} {copied === 'email' ? `· ${text(lang, 'copied')}` : ''}</button>
-      <button type="button" className="email-option" onClick={() => handleCopy('message', message)}>{text(lang, 'copyMessage')} {copied === 'message' ? `· ${text(lang, 'copied')}` : ''}</button>
+      <button type="button" className="email-option" onClick={() => { onEmailAction?.('default_email_app'); openDefaultEmailApp(recipientEmail, subject, message); }}>{text(lang, 'defaultEmail')}</button>
+      <a className="email-option" href={gmail} target="_blank" rel="noopener noreferrer" onClick={() => onEmailAction?.('gmail')}>{text(lang, 'openGmail')}</a>
+      <button type="button" className="email-option" onClick={() => { onEmailAction?.('copy_email'); handleCopy('email', recipientEmail); }}>{text(lang, 'copyEmail')} {copied === 'email' ? `· ${text(lang, 'copied')}` : ''}</button>
+      <button type="button" className="email-option" onClick={() => { onEmailAction?.('copy_message'); handleCopy('message', message); }}>{text(lang, 'copyMessage')} {copied === 'message' ? `· ${text(lang, 'copied')}` : ''}</button>
       {onUseForm && <button type="button" className="email-option" onClick={onUseForm}>{text(lang, 'continueForm')}</button>}
     </div>
   );
 }
 
-function ContactActions({ lang, contextMessage, compact = false, onUseForm, experienceId }) {
+function ContactActions({ lang, contextMessage, compact = false, onUseForm, experienceId, location = 'contact_section', siteContent, contactDetails }) {
   const [emailOpen, setEmailOpen] = useState(false);
+  const [emailAttributionMetadata, setEmailAttributionMetadata] = useState({});
+  const [emailAttributionSource, setEmailAttributionSource] = useState('');
+  const [emailAttributionDetail, setEmailAttributionDetail] = useState('');
+  const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
+  const contact = contactDetails || resolvePublicContactDetails(siteContent);
   const message = contextMessage || text(lang, 'defaultMessage');
   const subject = text(lang, 'emailSubject');
-  const whatsappUrl = `https://wa.me/${PHONE_WA}?text=${encode(message)}`;
+  const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(message)}`;
   const className = compact ? 'contact-actions compact' : 'contact-actions';
+  const metadata = buildBookingTrackingContext({ experienceId: experienceId || '', requestType: experienceId ? 'private' : 'contact', sourceSection: 'contact', sourceCta: 'contact_direct', ctaLocation: location, language: lang });
+  const emailMessage = appendHeardAboutUsToMessage(message, emailAttributionSource, emailAttributionDetail, lang);
 
   return (
     <div className={className} data-experience={experienceId || undefined}>
-      <a className="pill-action" href={`tel:${PHONE_TEL}`}><Icon name="phone" />{text(lang, 'call')}</a>
-      <a className="pill-action" href={whatsappUrl} target="_blank" rel="noopener noreferrer"><Icon name="chat" />{text(lang, 'whatsapp')}</a>
+      <a
+        className="pill-action"
+        href={`tel:${contact.phoneTel}`}
+        onClick={() => trackContactClick('phone', location, { ...metadata, source_cta: 'phone_direct' })}
+      ><Icon name="phone" />{text(lang, 'call')}</a>
+      <a
+        className="pill-action"
+        href={whatsappUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(event) => requestContactAttribution(event, {
+          type: 'whatsapp',
+          target: '_blank',
+          location,
+          metadata: { ...metadata, source_cta: 'whatsapp_direct' },
+          confirmLabel: contactActionConfirmLabel('whatsapp', lang),
+          buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(appendHeardAboutUsToMessage(message, source, detail, lang))}`
+        })}
+      ><Icon name="chat" />{text(lang, 'whatsapp')}</a>
       <div className="email-action-wrap">
-        <button type="button" className="pill-action" onClick={() => setEmailOpen((open) => !open)} aria-expanded={emailOpen}><Icon name="mail" />{text(lang, 'email')}</button>
+        <button
+          type="button"
+          className="pill-action"
+          onClick={(event) => requestContactAttribution(event, {
+            type: 'email',
+            location,
+            metadata: { ...metadata, source_cta: 'email_direct', action: 'email_options_open' },
+            confirmLabel: contactActionConfirmLabel('email', lang),
+            afterConfirm: (selectedMetadata, source, detail) => {
+              setEmailAttributionMetadata(selectedMetadata || {});
+              setEmailAttributionSource(source || '');
+              setEmailAttributionDetail(detail || '');
+              setEmailOpen(true);
+            }
+          })}
+          aria-expanded={emailOpen}
+        ><Icon name="mail" />{text(lang, 'email')}</button>
         {emailOpen && (
           <EmailPanel
             lang={lang}
-            message={message}
+            message={emailMessage}
             subject={subject}
             onClose={() => setEmailOpen(false)}
+            contact={contact}
             onUseForm={onUseForm}
+            onEmailAction={(action) => trackContactClick('email', location, { ...metadata, ...emailAttributionMetadata, action })}
           />
         )}
       </div>
+      {contactAttributionModal}
     </div>
   );
 }
@@ -1098,7 +1475,7 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, edito
       <div className="hero-overlay" />
       <div className="container hero-grid">
         <div className="hero-copy">
-          <EditableText as="h1" itemKey="home.hero.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroTitle')} />
+          <EditableText as="h1" className="hero-title" itemKey="home.hero.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroTitle')} />
           <EditableText as="p" className="lead" itemKey="home.hero.subtitle" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroLead')} />
           <div className="hero-ctas">
             <button className="button primary" type="button" onClick={() => setActivePage('experiences')}><EditableText itemKey="home.hero.primary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'findExperience')} /></button>
@@ -1134,6 +1511,7 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, edito
 }
 
 function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor }) {
+  const contact = resolvePublicContactDetails(siteContent);
   const [items, setItems] = useState([]);
   const [leaflets, setLeaflets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1143,6 +1521,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
   const [activeLeaflet, setActiveLeaflet] = useState(null);
   const [dateModalOpen, setDateModalOpen] = useState(false);
   const [dateRequest, setDateRequest] = useState({ experienceId: 'etna-premium', adults: '1', children: '0', childrenUnder3Count: '0' });
+  const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
 
   useEffect(() => {
     let active = true;
@@ -1171,10 +1550,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
     return () => { active = false; };
   }, []);
 
-  useEffect(() => {
-    document.body.classList.toggle('modal-scroll-lock', Boolean(selectedExperience || activeLeaflet || dateModalOpen));
-    return () => document.body.classList.remove('modal-scroll-lock');
-  }, [selectedExperience, activeLeaflet, dateModalOpen]);
+  useBodyScrollLock(Boolean(selectedExperience || activeLeaflet || dateModalOpen));
 
   useEffect(() => {
     function closeOnEscape(event) {
@@ -1196,6 +1572,16 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
     const linkedId = selectedItems.find((item) => item.leaflet_id)?.leaflet_id;
     return linkedId ? leaflets.find((leaflet) => leaflet.id === linkedId && leaflet.file_url) : null;
   }, [leaflets, selectedItems]);
+  const trackedExperienceCardsRef = useRef(new Set());
+
+  useEffect(() => {
+    if (loading) return;
+    experiences.forEach((experience) => {
+      if (trackedExperienceCardsRef.current.has(experience.id)) return;
+      trackedExperienceCardsRef.current.add(experience.id);
+      trackExperienceCardView(experience);
+    });
+  }, [loading]);
 
   function changeMonth(delta) {
     setMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1));
@@ -1203,20 +1589,48 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
 
   function openDateModal(iso) {
     setSelectedDate(iso);
+    trackCalendarDateSelect(iso, { has_fixed_excursion: Boolean(byDate[iso]?.length), language: lang });
     setDateModalOpen(true);
   }
 
+  function openExperienceDetails(experience) {
+    trackExcursionView(experience);
+    trackExperienceDetailOpen(experience);
+    setSelectedExperience(experience);
+  }
+
   function requestExperience(experience) {
+    const trackingContext = buildBookingTrackingContext({
+      experienceId: experience?.id || '',
+      requestType: 'private',
+      sourceSection: 'experiences',
+      sourceCta: 'book_experience',
+      ctaLocation: 'experience_modal',
+      language: lang
+    });
+    trackBookingFormOpen(experience?.id || 'unsure', trackingContext);
     setSelectedExperience(null);
     fillForm({
       experienceId: experience.id,
       requestType: 'private',
       message: buildExperienceMessage(experience, lang),
+      trackingContext,
       scroll: true
     });
   }
 
   function requestItem(item) {
+    const trackingContext = buildBookingTrackingContext({
+      experienceId: item?.experience_id || '',
+      requestType: 'fixed',
+      sourceSection: 'calendar',
+      sourceCta: 'fixed_excursion',
+      ctaLocation: 'calendar_modal',
+      selectedDate: item?.date || '',
+      hasFixedExcursion: true,
+      language: lang
+    });
+    trackBookingFormOpen(item?.experience_id || 'fixed', trackingContext);
     const message = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
     setDateModalOpen(false);
     fillForm({
@@ -1225,6 +1639,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
       fixedExcursionId: item.id,
       requestedDate: item.date,
       message,
+      trackingContext,
       scroll: true
     });
   }
@@ -1234,6 +1649,17 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
   }
 
   function requestAvailableDate() {
+    const trackingContext = buildBookingTrackingContext({
+      experienceId: dateRequest.experienceId || '',
+      requestType: 'private',
+      sourceSection: 'calendar',
+      sourceCta: 'prepare_request',
+      ctaLocation: 'calendar_modal',
+      selectedDate,
+      hasFixedExcursion: false,
+      language: lang
+    });
+    trackBookingFormOpen(dateRequest.experienceId || 'private', trackingContext);
     const message = buildAvailableDateRequestMessage({ date: selectedDate, ...dateRequest }, lang);
     setDateModalOpen(false);
     fillForm({
@@ -1244,6 +1670,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
       children: dateRequest.children,
       childrenUnder3Count: dateRequest.childrenUnder3Count,
       message,
+      trackingContext,
       scroll: true
     });
   }
@@ -1278,7 +1705,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         <dl className="public-details-grid date-modal-details-grid">
           <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(item.date, lang)}</dd></div>
           <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(item.experience_id, lang)}</dd></div>
-          {meeting && <div><dt>{text(lang, 'meetingPoint')}</dt><dd>{meeting}</dd></div>}
+          <MeetingPointDetailCard item={item} lang={lang} />
           {difficulty && <div><dt>{text(lang, 'difficulty')}</dt><dd>{difficulty}</dd></div>}
           {price && <div><dt>{text(lang, 'priceNote')}</dt><dd>{price}</dd></div>}
           <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{item.places_remaining}/{item.capacity}</dd></div>
@@ -1286,7 +1713,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         <BlockedDatesAttachment item={item} lang={lang} onOpenFile={(file, label) => openLeafletModal(file, label || text(lang, 'openExcursionProgram'))} />
         <div className="request-action-row date-modal-actions">
           <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestInformation')}</button>
-          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(fixedMessage)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`, target: '_blank', location: 'calendar_modal', metadata: buildBookingTrackingContext({ experienceId: item.experience_id || '', requestType: 'fixed', sourceSection: 'calendar', sourceCta: 'whatsapp_direct', ctaLocation: 'calendar_modal', selectedDate: item.date || '', hasFixedExcursion: true, language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang) })}>{text(lang, 'sendWhatsapp')}</a>
           {selectedDateLeaflet && (
             <button className="request-action-button request-action-button-secondary" type="button" onClick={() => openLeafletModal(selectedDateLeaflet, text(lang, 'openExcursionProgram'))}>{text(lang, 'openExcursionProgram')}</button>
           )}
@@ -1325,7 +1752,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         </div>
         <div className="request-action-row date-modal-actions">
           <button className="request-action-button request-action-button-primary" type="button" onClick={requestAvailableDate}>{text(lang, 'requestDate')}</button>
-          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(message)}`, target: '_blank', location: 'calendar_modal', metadata: buildBookingTrackingContext({ experienceId: dateRequest.experienceId || '', requestType: 'private', sourceSection: 'calendar', sourceCta: 'whatsapp_direct', ctaLocation: 'calendar_modal', selectedDate, language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang) })}>{text(lang, 'sendWhatsapp')}</a>
         </div>
       </div>
     );
@@ -1384,7 +1811,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
             <div className="excursions-cards-column">
               {experiences.map((experience) => (
                 <EditableCardFrame editor={editor} cardKey={`experience.${experience.id}`} label={experience.title} section={lang === 'it' ? 'Escursioni' : 'Excursions'} key={experience.id}>
-                  <button className="experience-compact-card" type="button" onClick={() => setSelectedExperience(experience)}>
+                  <button className="experience-compact-card" type="button" onClick={() => openExperienceDetails(experience)}>
                     <EditableImage mediaKey={experienceMediaKey(experience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={experience.image} fallbackAlt={`${experience.title} vulcanIQ`} />
                     <span className="experience-compact-copy">
                       <EditableText as="strong" itemKey={`experiences.${experience.id}.title`} lang={lang} siteContent={siteContent} editor={editor} fallback={experience.title} />
@@ -1433,7 +1860,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
                 </dl>
                 <div className="request-action-row experience-modal-actions">
                   <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestExperience(selectedExperience)}>{text(lang, 'request')}</button>
-                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(buildExperienceMessage(selectedExperience, lang))}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
+                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: buildBookingTrackingContext({ experienceId: selectedExperience?.id || '', requestType: 'private', sourceSection: 'experiences', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang) })}>{text(lang, 'sendWhatsapp')}</a>
                 </div>
               </div>
             </div>
@@ -1458,6 +1885,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
           </article>
         </div>
       )}
+      {contactAttributionModal}
     </section>
   );
 }
@@ -1663,6 +2091,17 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
   const selectedItems = byDate[selectedDate] || [];
 
   function requestItem(item) {
+    const trackingContext = buildBookingTrackingContext({
+      experienceId: item?.experience_id || '',
+      requestType: 'fixed',
+      sourceSection: 'today',
+      sourceCta: 'fixed_excursion',
+      ctaLocation: 'today_section',
+      selectedDate: item?.date || '',
+      hasFixedExcursion: true,
+      language: lang
+    });
+    trackBookingFormOpen(item?.experience_id || 'fixed', trackingContext);
     const message = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
     fillForm({
       experienceId: item.experience_id,
@@ -1670,6 +2109,7 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
       fixedExcursionId: item.id,
       requestedDate: item.date,
       message,
+      trackingContext,
       scroll: true
     });
   }
@@ -1695,7 +2135,7 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
         <FormattedDescription textValue={description || experienceById(item.experience_id).summary[lang]} />
         <dl className="public-details-grid">
           <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(item.experience_id, lang)}</dd></div>
-          {meeting && <div><dt>{text(lang, 'meetingPoint')}</dt><dd>{meeting}</dd></div>}
+          <MeetingPointDetailCard item={item} lang={lang} />
           {difficulty && <div><dt>{text(lang, 'difficulty')}</dt><dd>{difficulty}</dd></div>}
           {price && <div><dt>{text(lang, 'priceNote')}</dt><dd>{price}</dd></div>}
           <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{item.places_remaining}/{item.capacity}</dd></div>
@@ -1750,7 +2190,11 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
               <span className="micro-label details-label">{text(lang, 'dateDetails')}</span>
               {selectedItems.length === 0 && <h3>{selectedDate ? formatDateForMessage(selectedDate, lang) : text(lang, 'dateDetails')}</h3>}
               {items.length === 0 ? (
-                <article className="empty-state-card"><p>{text(lang, 'upcomingEmpty')}</p><button className="button primary" type="button" onClick={() => fillForm({ requestType: 'private', scroll: true })}>{text(lang, 'contact')}</button></article>
+                <article className="empty-state-card"><p>{text(lang, 'upcomingEmpty')}</p><button className="button primary" type="button" onClick={() => {
+                  const trackingContext = buildBookingTrackingContext({ requestType: 'private', sourceSection: 'today', sourceCta: 'prepare_request', ctaLocation: 'today_section', language: lang });
+                  trackBookingFormOpen('private', trackingContext);
+                  fillForm({ requestType: 'private', trackingContext, scroll: true });
+                }}>{text(lang, 'contact')}</button></article>
               ) : selectedItems.length === 0 ? (
                 <p>{text(lang, 'noExcursionsOnDate')}</p>
               ) : (
@@ -1822,6 +2266,8 @@ function ReviewsPage({ lang, siteContent, editor }) {
   const [form, setForm] = useState({ booking_code: '', reviewer_name: '', review_text: '', rating: '5' });
   const [submitState, setSubmitState] = useState({ loading: false, error: '', success: '' });
 
+  useBodyScrollLock(modalOpen);
+
   async function refreshReviews() {
     setLoading(true);
     try {
@@ -1834,7 +2280,7 @@ function ReviewsPage({ lang, siteContent, editor }) {
     }
   }
 
-  useEffect(() => { refreshReviews(); }, []);
+  useEffect(() => { trackReviewView(); refreshReviews(); }, []);
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -2020,6 +2466,7 @@ function WearReviewsSafety({ lang }) {
 }
 
 function Team({ lang, siteMedia, siteContent, editor }) {
+  const contact = resolvePublicContactDetails(siteContent);
   return (
     <section className="section" id="team">
       <div className="container about-mission-section">
@@ -2033,7 +2480,7 @@ function Team({ lang, siteMedia, siteContent, editor }) {
               <h3>Leonardo Chiavetta</h3>
               <EditableText as="p" className="role" itemKey="about.leonardo.role" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'leonardoRole')} />
               <EditableText as="p" itemKey="about.leonardo.bio" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'leonardoBio')} />
-              <a className="inline-link" href={INSTAGRAM} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
+              <a className="inline-link" href={contact.instagram} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
             </div>
           </article>
           <article className="team-card">
@@ -2060,7 +2507,59 @@ function Team({ lang, siteMedia, siteContent, editor }) {
   );
 }
 
-function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
+function currentBrowserAttribution() {
+  if (typeof window === 'undefined') return {};
+  const params = new URLSearchParams(window.location.search || '');
+  const utm = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].reduce((acc, key) => {
+    const value = String(params.get(key) || '').trim();
+    if (value) acc[key] = value.slice(0, 120);
+    return acc;
+  }, {});
+  const source = String(utm.utm_source || '').toLowerCase();
+  const trafficSource = source.includes('instagram') ? 'instagram'
+    : source.includes('whatsapp') ? 'whatsapp'
+      : source.includes('facebook') || source === 'fb' ? 'facebook'
+        : source.includes('google') ? 'google'
+          : source ? 'other' : 'direct';
+  return { traffic_source: trafficSource, ...utm };
+}
+
+function buildBookingTrackingContext({
+  experienceId = '',
+  requestType = 'private',
+  sourceSection = 'contact',
+  sourceCta = 'prepare_request',
+  ctaLocation = 'contact_section',
+  selectedDate = '',
+  hasFixedExcursion = false,
+  language = 'it'
+} = {}) {
+  const knownExperience = experiences.find((experience) => experience.id === experienceId) || null;
+  const normalizedRequestType = requestType || (knownExperience ? 'experience' : 'private');
+  return {
+    ...currentBrowserAttribution(),
+    ...(knownExperience ? {
+      experience_slug: knownExperience.id,
+      experience_id: knownExperience.id,
+      experience_name: knownExperience.title
+    } : {}),
+    request_type: normalizedRequestType,
+    source_section: sourceSection || 'unknown',
+    source_cta: sourceCta || 'unknown',
+    cta_location: ctaLocation || 'unknown',
+    selected_date: selectedDate || '',
+    has_fixed_excursion: Boolean(hasFixedExcursion),
+    language: language || 'it'
+  };
+}
+
+function mergeTrackingContext(base = {}, override = {}) {
+  return { ...(base || {}), ...(override || {}) };
+}
+
+function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, editor }) {
+  const contact = resolvePublicContactDetails(siteContent);
+  const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
   const [submitState, setSubmitState] = useState({ loading: false, error: '', success: '' });
   const [fixedExcursions, setFixedExcursions] = useState([]);
   const requestType = formState.requestType || 'private';
@@ -2074,14 +2573,74 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
   const childrenUnder3Count = Number.parseInt(formState.childrenUnder3Count || '0', 10) || 0;
   const totalPeople = adults + children;
   const over12 = totalPeople > 12;
-  const fullMessage = appendUnder3CountToMessage(message, childrenUnder3Count, lang);
+  const selectedHeardAboutUs = normalizeHeardAboutUs(formState.heardAboutUs);
+  const selectedHeardAboutUsDetail = cleanHeardAboutUsDetail(formState.heardAboutUsDetail);
+  const selectedHeardAboutUsNeedsDetail = needsHeardAboutUsDetail(selectedHeardAboutUs);
+  const fullMessage = appendHeardAboutUsToMessage(appendUnder3CountToMessage(message, childrenUnder3Count, lang), selectedHeardAboutUs, selectedHeardAboutUsDetail, lang);
+  const preferredContactValue = ['whatsapp', 'phone', 'email'].includes(formState.preferredContact) ? formState.preferredContact : 'whatsapp';
+  const selectedHeardAboutUsMetadata = heardAboutUsMetadata(selectedHeardAboutUs, lang, selectedHeardAboutUsDetail);
+  const trackedFormOpenRef = useRef(new Set());
+  const [leaflets, setLeaflets] = useState([]);
+  const [fixedOptionsOpen, setFixedOptionsOpen] = useState(false);
+  const [privateOptionsOpen, setPrivateOptionsOpen] = useState(false);
+  const [detailsMonthDate, setDetailsMonthDate] = useState(startOfMonth(new Date()));
+  const [activeLeaflet, setActiveLeaflet] = useState(null);
+  const [selectedPrivateExperience, setSelectedPrivateExperience] = useState(null);
 
   useEffect(() => {
-    loadPublicFixedExcursions().then(setFixedExcursions);
+    let active = true;
+    Promise.all([
+      loadPublicFixedExcursions(),
+      loadPublicMonthlyLeaflets().catch(() => [])
+    ]).then(([fixedRows, leafletRows]) => {
+      if (!active) return;
+      setFixedExcursions(fixedRows || []);
+      setLeaflets(leafletRows || []);
+    }).catch(() => {
+      if (!active) return;
+      setFixedExcursions([]);
+      setLeaflets([]);
+    });
+    return () => { active = false; };
   }, []);
 
+  useBodyScrollLock(Boolean(fixedOptionsOpen || privateOptionsOpen || activeLeaflet || selectedPrivateExperience));
+
+  useEffect(() => {
+    function closeOnEscape(event) {
+      if (event.key !== 'Escape') return;
+      if (activeLeaflet) { setActiveLeaflet(null); return; }
+      if (selectedPrivateExperience) { setSelectedPrivateExperience(null); return; }
+      setFixedOptionsOpen(false);
+      setPrivateOptionsOpen(false);
+    }
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [activeLeaflet, selectedPrivateExperience]);
+
+  const fixedOptions = useMemo(() => monthlyOptionsLeaflets({ leaflets, fixedExcursions, monthDate: detailsMonthDate, lang }), [leaflets, fixedExcursions, detailsMonthDate, lang]);
+  const canGoPreviousDetailsMonth = isCurrentOrFutureMonth(new Date(detailsMonthDate.getFullYear(), detailsMonthDate.getMonth() - 1, 1));
+
   function update(field, value) {
-    setFormState((current) => ({ ...current, [field]: value }));
+    if (!trackedFormOpenRef.current.has('field_start')) {
+      trackedFormOpenRef.current.add('field_start');
+      trackBookingFormFieldStart(effectiveExperienceId || requestType || 'unsure', mergeTrackingContext(mergeTrackingContext(buildBookingTrackingContext({
+        experienceId: effectiveExperienceId,
+        requestType,
+        sourceSection: 'contact',
+        sourceCta: 'prepare_request',
+        ctaLocation: 'booking_modal',
+        selectedDate: selectedFixed?.date || formState.requestedDate || '',
+        hasFixedExcursion: requestType === 'fixed',
+        language: formState.language || lang
+      }), formState.trackingContext), heardAboutUsMetadata(field === 'heardAboutUs' ? value : formState.heardAboutUs, lang, field === 'heardAboutUsDetail' ? value : formState.heardAboutUsDetail)));
+    }
+    setFormState((current) => {
+      if (field === 'heardAboutUs') {
+        return { ...current, heardAboutUs: value, heardAboutUsDetail: needsHeardAboutUsDetail(value) ? current.heardAboutUsDetail : '' };
+      }
+      return { ...current, [field]: value };
+    });
   }
 
   function updateRequestType(value) {
@@ -2107,6 +2666,76 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
     }));
   }
 
+  function changeDetailsMonth(delta) {
+    setDetailsMonthDate((current) => {
+      const next = startOfMonth(new Date(current.getFullYear(), current.getMonth() + delta, 1));
+      return isCurrentOrFutureMonth(next) ? next : startOfMonth(new Date());
+    });
+  }
+
+  function openRequestDetails() {
+    if (requestType === 'fixed') {
+      setDetailsMonthDate(startOfMonth(new Date()));
+      setFixedOptionsOpen(true);
+      trackEvent('fixed_excursion_options_open', { request_type: 'fixed', selected_month: monthKey(new Date()), language: lang, source_section: 'today_request_flow' }, { dedupe: false });
+      trackEvent('request_details_open', { request_type: 'fixed', language: lang, source_section: 'today_request_flow' }, { dedupe: false });
+      return;
+    }
+    setPrivateOptionsOpen(true);
+    trackEvent('private_excursion_options_open', { request_type: 'private', language: lang, source_section: 'today_request_flow' }, { dedupe: false });
+    trackEvent('request_details_open', { request_type: 'private', language: lang, source_section: 'today_request_flow' }, { dedupe: false });
+  }
+
+  function openRequestLeaflet(option) {
+    if (!option?.leaflet?.file_url) return;
+    const selectedMonth = monthKey(detailsMonthDate);
+    trackEvent('fixed_leaflet_open_from_request', {
+      request_type: 'fixed',
+      selected_month: selectedMonth,
+      excursion_id: option.fixedExcursion?.id || '',
+      excursion_slug: option.fixedExcursion?.experience_id || '',
+      language: lang,
+      source_section: 'today_request_flow'
+    }, { dedupe: false });
+    setActiveLeaflet({ leaflet: option.leaflet, label: option.title || leafletTitle(option.leaflet, lang) });
+  }
+
+  function openPrivateExperienceDetails(experience) {
+    trackEvent('private_excursion_detail_open_from_request', {
+      request_type: 'private',
+      excursion_id: experience?.id || '',
+      excursion_slug: experience?.id || '',
+      language: lang,
+      source_section: 'today_request_flow'
+    }, { dedupe: false });
+    trackExperienceDetailOpen(experience);
+    setSelectedPrivateExperience(experience);
+  }
+
+  const currentTrackingMetadata = mergeTrackingContext(mergeTrackingContext(buildBookingTrackingContext({
+    experienceId: effectiveExperienceId,
+    requestType,
+    sourceSection: 'contact',
+    sourceCta: 'prepare_request',
+    ctaLocation: 'booking_modal',
+    selectedDate: selectedFixed?.date || formState.requestedDate || '',
+    hasFixedExcursion: requestType === 'fixed',
+    language: formState.language || lang
+  }), formState.trackingContext), selectedHeardAboutUsMetadata);
+
+  function usePrivateExperienceInRequest(experience) {
+    setFormState((current) => ({
+      ...current,
+      requestType: 'private',
+      privateExperience: true,
+      experienceId: experience?.id || current.experienceId,
+      message: experience ? buildExperienceMessage(experience, lang) : current.message,
+      language: current.language || lang
+    }));
+    setSelectedPrivateExperience(null);
+    setPrivateOptionsOpen(false);
+  }
+
   async function submitRequest(event) {
     event.preventDefault();
     setSubmitState({ loading: false, error: '', success: '' });
@@ -2115,35 +2744,54 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
     const phone = (formState.phone || '').trim();
     const selectedDate = (formState.requestedDate || '').trim();
     const hasMessage = (message || '').trim() && message !== text(lang, 'defaultMessage');
+    const trackedExperience = effectiveExperienceId || requestType || 'unsure';
+    const trackingMetadata = currentTrackingMetadata;
 
     if (!email && !phone) {
+      trackBookingSubmitValidationError(trackedExperience, 'missing_contact', trackingMetadata);
       setSubmitState({ loading: false, error: text(lang, 'contactRequired'), success: '' });
       return;
     }
 
     if (!totalPeople) {
+      trackBookingSubmitValidationError(trackedExperience, 'missing_people', trackingMetadata);
       setSubmitState({ loading: false, error: text(lang, 'peopleRequired'), success: '' });
       return;
     }
 
     if (requestType === 'fixed' && !formState.fixedExcursionId) {
+      trackBookingSubmitValidationError(trackedExperience, 'missing_fixed_excursion', trackingMetadata);
       setSubmitState({ loading: false, error: text(lang, 'fixedDateRequired'), success: '' });
       return;
     }
 
+    if (!selectedHeardAboutUs) {
+      trackBookingSubmitValidationError(trackedExperience, 'missing_heard_about_us', trackingMetadata);
+      setSubmitState({ loading: false, error: text(lang, 'heardAboutUsRequired'), success: '' });
+      return;
+    }
+
+    if (selectedHeardAboutUsNeedsDetail && !selectedHeardAboutUsDetail) {
+      trackBookingSubmitValidationError(trackedExperience, 'missing_heard_about_us_detail', trackingMetadata);
+      setSubmitState({ loading: false, error: text(lang, 'heardAboutUsOtherRequired'), success: '' });
+      return;
+    }
+
     if (!hasMessage && !effectiveExperienceId && !selectedDate) {
+      trackBookingSubmitValidationError(trackedExperience, 'missing_request_details', trackingMetadata);
       setSubmitState({ loading: false, error: text(lang, 'requestDetailsRequired'), success: '' });
       return;
     }
 
+    trackBookingSubmitAttempt(trackedExperience, adults, children, trackingMetadata);
     setSubmitState({ loading: true, error: '', success: '' });
 
     try {
-      await createPublicBookingRequest({
+      const request = await createPublicBookingRequest({
         customer_name: formState.name,
         customer_email: email,
         customer_phone: phone,
-        preferred_contact: formState.preferredContact || 'form',
+        preferred_contact: preferredContactValue,
         experience_id: requestType === 'fixed' ? (selectedFixed?.experience_id || 'unsure') : (experienceId || 'unsure'),
         fixed_excursion_experience_id: selectedFixed?.experience_id || null,
         requested_date: selectedFixed?.date || formState.requestedDate,
@@ -2157,11 +2805,50 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
         children_under_3: childrenUnder3Count > 0,
         private_experience: requestType === 'private',
         message: fullMessage,
-        source: 'website'
+        heard_about_us: selectedHeardAboutUs,
+        heard_about_us_label: heardAboutUsLabel(selectedHeardAboutUs, lang),
+        heard_about_us_detail: selectedHeardAboutUsNeedsDetail ? selectedHeardAboutUsDetail : null,
+        source: 'website',
+        source_section: trackingMetadata.source_section,
+        source_cta: trackingMetadata.source_cta,
+        cta_location: trackingMetadata.cta_location,
+        selected_date: trackingMetadata.selected_date || selectedFixed?.date || formState.requestedDate || null,
+        has_fixed_excursion: trackingMetadata.has_fixed_excursion,
+        traffic_source: trackingMetadata.traffic_source,
+        utm_source: trackingMetadata.utm_source,
+        utm_medium: trackingMetadata.utm_medium,
+        utm_campaign: trackingMetadata.utm_campaign,
+        utm_content: trackingMetadata.utm_content
       });
+      trackBookingSubmitSuccess(trackedExperience, adults, children, { ...trackingMetadata, request_id: request?.id || '' });
       setSubmitState({ loading: false, error: '', success: text(lang, 'requestSent') });
     } catch (error) {
+      trackBookingSubmitError(trackedExperience, 'supabase_insert_error', trackingMetadata);
       setSubmitState({ loading: false, error: text(lang, 'requestFallbackError'), success: '' });
+    }
+  }
+
+
+  function validateSelectedAttributionForDirectContact(trackedExperience, trackingMetadata) {
+    if (!selectedHeardAboutUs) {
+      trackBookingSubmitValidationError(trackedExperience, 'missing_heard_about_us', trackingMetadata);
+      setSubmitState({ loading: false, error: text(lang, 'heardAboutUsRequired'), success: '' });
+      return false;
+    }
+    if (selectedHeardAboutUsNeedsDetail && !selectedHeardAboutUsDetail) {
+      trackBookingSubmitValidationError(trackedExperience, 'missing_heard_about_us_detail', trackingMetadata);
+      setSubmitState({ loading: false, error: text(lang, 'heardAboutUsOtherRequired'), success: '' });
+      return false;
+    }
+    return true;
+  }
+
+  function openFormWhatsapp() {
+    const trackedExperience = effectiveExperienceId || requestType || 'unsure';
+    if (!validateSelectedAttributionForDirectContact(trackedExperience, currentTrackingMetadata)) return;
+    trackContactClick('whatsapp', 'booking_modal', { ...currentTrackingMetadata, source_cta: 'whatsapp_direct' });
+    if (typeof window !== 'undefined') {
+      window.open(`https://wa.me/${contact.phoneWa}?text=${encode(fullMessage)}`, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -2171,8 +2858,8 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
         <div>
           <EditableText as="h2" itemKey="contact.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formTitle')} />
           <EditableText as="p" itemKey="contact.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formIntro')} />
-          <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={null} />
-          <a className="instagram-link" href={INSTAGRAM} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
+          <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={null} siteContent={siteContent} contactDetails={contact} />
+          <a className="instagram-link" href={contact.instagram} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
         </div>
         <form className="contact-form" onSubmit={submitRequest}>
           <label className="field-label">{text(lang, 'requestMode')}</label>
@@ -2180,6 +2867,10 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
             <button type="button" className={requestType === 'fixed' ? 'active' : ''} onClick={() => updateRequestType('fixed')}>{text(lang, 'fixedExcursion')}</button>
             <button type="button" className={requestType === 'private' ? 'active' : ''} onClick={() => updateRequestType('private')}>{text(lang, 'privateExcursion')}</button>
           </div>
+
+          <button className="request-details-button" type="button" onClick={openRequestDetails}>
+            {requestType === 'fixed' ? text(lang, 'viewFixedExcursionOptions') : text(lang, 'viewPrivateExcursionOptions')}
+          </button>
 
           {requestType === 'fixed' && (
             <>
@@ -2209,8 +2900,7 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
           <div className="form-two-cols">
             <div>
               <label className="field-label" htmlFor="contactPreferred">{text(lang, 'preferredContact')}</label>
-              <select id="contactPreferred" value={formState.preferredContact || 'form'} onChange={(event) => update('preferredContact', event.target.value)}>
-                <option value="form">Form</option>
+              <select id="contactPreferred" value={preferredContactValue} onChange={(event) => update('preferredContact', event.target.value)}>
                 <option value="whatsapp">WhatsApp</option>
                 <option value="phone">{lang === 'it' ? 'Telefono' : 'Phone'}</option>
                 <option value="email">Email</option>
@@ -2224,6 +2914,23 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
               </select>
             </div>
           </div>
+
+          <label className="field-label" htmlFor="contactHeardAboutUs">{text(lang, 'heardAboutUs')}</label>
+          <ContactAttributionSelect id="contactHeardAboutUs" lang={lang} value={formState.heardAboutUs || ''} onChange={(value) => update('heardAboutUs', value)} />
+          {selectedHeardAboutUsNeedsDetail && (
+            <label className="field-label full" htmlFor="contactHeardAboutUsDetail">
+              {text(lang, 'heardAboutUsOtherLabel')}
+              <textarea
+                id="contactHeardAboutUsDetail"
+                value={formState.heardAboutUsDetail || ''}
+                onChange={(event) => update('heardAboutUsDetail', event.target.value)}
+                placeholder={text(lang, 'heardAboutUsOtherPlaceholder')}
+                rows={3}
+                maxLength={240}
+                required
+              />
+            </label>
+          )}
 
           <div className="form-two-cols">
             <div>
@@ -2294,15 +3001,130 @@ function ContactForm({ lang, formState, setFormState, siteContent, editor }) {
           {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
           <div className="request-action-row">
             <button className="request-action-button request-action-button-primary" type="submit" disabled={submitState.loading}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitRequest')}</button>
-            <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${PHONE_WA}?text=${encode(fullMessage)}`} target="_blank" rel="noopener noreferrer">{text(lang, 'sendWhatsapp')}</a>
+            <button className="request-action-button request-action-button-secondary" type="button" onClick={openFormWhatsapp}>{text(lang, 'sendWhatsapp')}</button>
           </div>
         </form>
       </div>
+
+      {fixedOptionsOpen && (
+        <div className="date-modal-overlay request-options-overlay" role="dialog" aria-modal="true" aria-labelledby="fixed-options-title" onClick={() => setFixedOptionsOpen(false)}>
+          <article className="date-modal request-options-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="date-modal-header">
+              <div>
+                <h2 id="fixed-options-title">{text(lang, 'fixedExcursionOptionsTitle')}</h2>
+                <p>{text(lang, 'fixedExcursionOptionsIntro')}</p>
+              </div>
+              <button className="date-modal-close" type="button" onClick={() => setFixedOptionsOpen(false)}>{text(lang, 'close')}</button>
+            </div>
+            <div className="request-options-monthbar" aria-label={text(lang, 'fixedExcursionOptionsTitle')}>
+              <button type="button" onClick={() => changeDetailsMonth(-1)} disabled={!canGoPreviousDetailsMonth} aria-label={text(lang, 'previousMonth')}>‹</button>
+              <strong>{monthLabel(detailsMonthDate, lang)}</strong>
+              <button type="button" onClick={() => changeDetailsMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
+            </div>
+            {fixedOptions.length ? (
+              <div className="request-leaflet-grid">
+                {fixedOptions.map((option) => {
+                  const isImage = String(option.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(option.leaflet.file_url || '');
+                  return (
+                    <button className="request-leaflet-tile" type="button" key={option.id} onClick={() => openRequestLeaflet(option)}>
+                      {isImage ? (
+                        <img src={option.leaflet.file_url} alt={option.title} loading="lazy" decoding="async" />
+                      ) : (
+                        <span className="request-leaflet-file">{text(lang, 'openProgram')}</span>
+                      )}
+                      <span className="request-leaflet-copy">
+                        <strong>{option.title}</strong>
+                        {option.subtitle && <small>{option.subtitle}</small>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="empty-state-card request-options-empty">{text(lang, 'noFixedExcursionLeaflets')}</p>
+            )}
+          </article>
+        </div>
+      )}
+
+      {privateOptionsOpen && (
+        <div className="date-modal-overlay request-options-overlay" role="dialog" aria-modal="true" aria-labelledby="private-options-title" onClick={() => setPrivateOptionsOpen(false)}>
+          <article className="date-modal request-options-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="date-modal-header">
+              <div>
+                <h2 id="private-options-title">{text(lang, 'privateExcursionOptionsTitle')}</h2>
+                <p>{text(lang, 'privateExcursionOptionsIntro')}</p>
+              </div>
+              <button className="date-modal-close" type="button" onClick={() => setPrivateOptionsOpen(false)}>{text(lang, 'close')}</button>
+            </div>
+            {experiences.length ? (
+              <div className="request-private-grid">
+                {experiences.map((experience) => (
+                  <button className="experience-compact-card request-private-card" type="button" key={experience.id} onClick={() => openPrivateExperienceDetails(experience)}>
+                    <EditableImage mediaKey={experienceMediaKey(experience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={experience.image} fallbackAlt={`${experience.title} vulcanIQ`} />
+                    <span className="experience-compact-copy">
+                      <strong>{experience.title}</strong>
+                      <small>{experience.summary[lang]}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-state-card request-options-empty">{text(lang, 'noPrivateExcursionOptions')}</p>
+            )}
+          </article>
+        </div>
+      )}
+
+      {selectedPrivateExperience && (
+        <div className="experience-modal-overlay request-private-detail-overlay" role="dialog" aria-modal="true" aria-labelledby="request-private-detail-title" onClick={() => setSelectedPrivateExperience(null)}>
+          <article className="experience-modal request-private-detail-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="experience-modal-header">
+              <h2 id="request-private-detail-title">{selectedPrivateExperience.title}</h2>
+              <button className="experience-modal-close" type="button" onClick={() => setSelectedPrivateExperience(null)}>{text(lang, 'close')}</button>
+            </div>
+            <div className="experience-detail-content">
+              <EditableImage mediaKey={experienceMediaKey(selectedPrivateExperience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={selectedPrivateExperience.image} fallbackAlt={`${selectedPrivateExperience.title} vulcanIQ`} className="experience-modal-image" />
+              <div className="experience-detail-copy">
+                <p>{selectedPrivateExperience.description[lang]}</p>
+                <dl>
+                  <div><dt>{text(lang, 'bestFor')}</dt><dd>{selectedPrivateExperience.bestFor[lang]}</dd></div>
+                  <div><dt>{text(lang, 'practical')}</dt><dd>{selectedPrivateExperience.notes[lang]}</dd></div>
+                  <div><dt>{text(lang, 'safety')}</dt><dd>{selectedPrivateExperience.safety[lang]}</dd></div>
+                </dl>
+                <div className="request-action-row experience-modal-actions">
+                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => usePrivateExperienceInRequest(selectedPrivateExperience)}>{text(lang, 'useThisOptionInRequest')}</button>
+                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedPrivateExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedPrivateExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: { ...buildBookingTrackingContext({ experienceId: selectedPrivateExperience?.id || '', requestType: 'private', sourceSection: 'today', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), ...selectedHeardAboutUsMetadata }, defaultSource: formState.heardAboutUs || '', defaultDetail: formState.heardAboutUsDetail || '', confirmLabel: contactActionConfirmLabel('whatsapp', lang), afterConfirm: (selectedMetadata, source, detail) => setFormState((current) => ({ ...current, heardAboutUs: source || current.heardAboutUs, heardAboutUsDetail: detail || current.heardAboutUsDetail })) })}>{text(lang, 'sendWhatsapp')}</a>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      )}
+
+      {activeLeaflet?.leaflet && (
+        <div className="leaflet-fullscreen-overlay request-leaflet-overlay" role="dialog" aria-modal="true" aria-label={activeLeaflet.label || text(lang, 'openProgram')} onClick={() => setActiveLeaflet(null)}>
+          <article className="leaflet-fullscreen-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="leaflet-fullscreen-header">
+              <h2>{activeLeaflet.label || text(lang, 'openProgram')}</h2>
+              <button className="date-modal-close" type="button" onClick={() => setActiveLeaflet(null)}>{text(lang, 'close')}</button>
+            </div>
+            <div className="leaflet-fullscreen-body">
+              {String(activeLeaflet.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(activeLeaflet.leaflet.file_url) ? (
+                <img className="leaflet-fullscreen-image" src={activeLeaflet.leaflet.file_url} alt={activeLeaflet.label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
+              ) : (
+                <iframe className="leaflet-fullscreen-frame" src={activeLeaflet.leaflet.file_url} title={activeLeaflet.label || text(lang, 'openProgram')} />
+              )}
+            </div>
+          </article>
+        </div>
+      )}
+      {contactAttributionModal}
     </section>
   );
 }
 
-function FinalCTA({ lang }) {
+function FinalCTA({ lang, siteContent }) {
   return (
     <section className="section final-cta">
       <div className="container final-panel">
@@ -2310,36 +3132,63 @@ function FinalCTA({ lang }) {
           <h2>{text(lang, 'finalTitle')}</h2>
           <p>{text(lang, 'finalText')}</p>
         </div>
-        <ContactActions lang={lang} compact />
+        <ContactActions lang={lang} compact siteContent={siteContent} />
       </div>
     </section>
   );
 }
 
 function Footer({ lang, siteContent, editor }) {
+  const contact = resolvePublicContactDetails(siteContent);
+  const [phoneChoicesOpen, setPhoneChoicesOpen] = useState(false);
+  const message = text(lang, 'defaultMessage');
+  const baseMetadata = buildBookingTrackingContext({ requestType: 'contact', sourceSection: 'footer', sourceCta: 'contact_direct', ctaLocation: 'footer', language: lang });
   return (
     <footer className="footer">
       <div className="container footer-grid">
         <div>
           <p>
             <EditableText as="strong" itemKey="footer.contact.name" lang={lang} siteContent={siteContent} editor={editor} fallback="Leonardo Chiavetta" />
-            <br />{PHONE_DISPLAY}<br /><a href={buildMailto(EMAIL)}>{EMAIL}</a>
+            <br />
+            <span className="footer-phone-choice">
+              <button
+                className="footer-phone-choice-trigger"
+                type="button"
+                onClick={() => setPhoneChoicesOpen((open) => !open)}
+                aria-expanded={phoneChoicesOpen}
+              >
+                {contact.phoneDisplay}
+              </button>
+              {phoneChoicesOpen && (
+                <span className="footer-phone-choice-menu" role="group" aria-label={lang === 'it' ? 'Scegli come contattare Leonardo' : 'Choose how to contact Leonardo'}>
+                  <a href={`tel:${contact.phoneTel}`} onClick={() => trackContactClick('phone', 'footer_phone_menu', { ...baseMetadata, cta_location: 'footer_phone_menu', source_cta: 'phone_direct' })}>{lang === 'it' ? 'Chiama' : 'Call'}</a>
+                  <a href={`https://wa.me/${contact.phoneWa}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer" onClick={() => trackContactClick('whatsapp', 'footer_phone_menu', { ...baseMetadata, cta_location: 'footer_phone_menu', source_cta: 'whatsapp_direct' })}>WhatsApp</a>
+                </span>
+              )}
+            </span>
+            <br /><a href={buildMailto(contact.email)} onClick={() => trackContactClick('email', 'footer', { ...baseMetadata, source_cta: 'email_direct' })}>{contact.email}</a>
           </p>
-          <a className="inline-link" href={INSTAGRAM} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
+          <a className="inline-link" href={contact.instagram} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
         </div>
       </div>
     </footer>
   );
 }
 
-function StickyMobileBar({ lang }) {
+function StickyMobileBar({ lang, siteContent }) {
+  const contact = resolvePublicContactDetails(siteContent);
   const message = text(lang, 'defaultMessage');
+  const metadata = buildBookingTrackingContext({ requestType: 'contact', sourceSection: 'sticky_contact_bar', sourceCta: 'contact_direct', ctaLocation: 'sticky_contact_bar', language: lang });
+  const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(message)}`;
+  const emailUrl = buildMailto(contact.email, text(lang, 'emailSubject'), message);
   return (
-    <div className="mobile-sticky-bar" aria-label="Mobile contact actions">
-      <a href={`tel:${PHONE_TEL}`}><Icon name="phone" />{lang === 'it' ? 'Chiama' : 'Call'}</a>
-      <a href={`https://wa.me/${PHONE_WA}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer"><Icon name="chat" />WhatsApp</a>
-      <a href={buildMailto(EMAIL, text(lang, 'emailSubject'), message)} onClick={(event) => { event.preventDefault(); openDefaultEmailApp(EMAIL, text(lang, 'emailSubject'), message); }}><Icon name="mail" />Email</a>
-    </div>
+    <>
+      <div className="mobile-sticky-bar" aria-label="Mobile contact actions">
+        <a href={`tel:${contact.phoneTel}`} onClick={() => trackContactClick('phone', 'sticky_contact_bar', { ...metadata, source_cta: 'phone_direct' })}><Icon name="phone" />{lang === 'it' ? 'Chiama' : 'Call'}</a>
+        <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackContactClick('whatsapp', 'sticky_contact_bar', { ...metadata, source_cta: 'whatsapp_direct' })}><Icon name="chat" />WhatsApp</a>
+        <a href={emailUrl} onClick={() => trackContactClick('email', 'sticky_contact_bar', { ...metadata, source_cta: 'email_direct' })}><Icon name="mail" />Email</a>
+      </div>
+    </>
   );
 }
 
@@ -2364,6 +3213,221 @@ const adminAvailabilityStatusLabels = {
 
 function adminCopy(lang, it, en) {
   return lang === 'en' ? en : it;
+}
+
+const HEARD_ABOUT_US_OPTIONS = [
+  { value: 'instagram', it: 'Instagram', en: 'Instagram' },
+  { value: 'google', it: 'Google', en: 'Google' },
+  { value: 'google_maps', it: 'Google Maps', en: 'Google Maps' },
+  { value: 'facebook', it: 'Facebook', en: 'Facebook' },
+  { value: 'whatsapp_or_friend', it: 'WhatsApp / passaparola', en: 'WhatsApp / word of mouth' },
+  { value: 'hotel_bnb_partner', it: 'Hotel, B&B o struttura partner', en: 'Hotel, B&B or partner accommodation' },
+  { value: 'previous_customer', it: 'Cliente precedente', en: 'Previous customer' },
+  { value: 'guide_or_local_partner', it: 'Guida o partner locale', en: 'Guide or local partner' },
+  { value: 'other', it: 'Altro', en: 'Other' }
+];
+
+const HEARD_ABOUT_US_ADMIN_OPTION = { value: 'not_specified', it: 'Non specificato', en: 'Not specified' };
+const HEARD_ABOUT_US_VALUES = new Set([...HEARD_ABOUT_US_OPTIONS.map((option) => option.value), HEARD_ABOUT_US_ADMIN_OPTION.value]);
+
+function heardAboutUsOptions({ includeAdmin = false } = {}) {
+  return includeAdmin ? [...HEARD_ABOUT_US_OPTIONS, HEARD_ABOUT_US_ADMIN_OPTION] : HEARD_ABOUT_US_OPTIONS;
+}
+
+function normalizeHeardAboutUs(value, { allowAdmin = false } = {}) {
+  const clean = String(value || '').trim();
+  if (!clean) return '';
+  if (!HEARD_ABOUT_US_VALUES.has(clean)) return '';
+  if (clean === HEARD_ABOUT_US_ADMIN_OPTION.value && !allowAdmin) return '';
+  return clean;
+}
+
+function cleanHeardAboutUsDetail(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 240);
+}
+
+function needsHeardAboutUsDetail(value) {
+  return normalizeHeardAboutUs(value, { allowAdmin: true }) === 'other';
+}
+
+function heardAboutUsLabel(value, lang, { fallback = '' } = {}) {
+  const clean = normalizeHeardAboutUs(value, { allowAdmin: true });
+  if (!clean) return fallback;
+  const option = heardAboutUsOptions({ includeAdmin: true }).find((item) => item.value === clean);
+  return option ? option[lang === 'en' ? 'en' : 'it'] : fallback || clean;
+}
+
+function heardAboutUsDisplay(value, detail, lang, { fallback = '' } = {}) {
+  const clean = normalizeHeardAboutUs(value, { allowAdmin: true });
+  if (!clean) return fallback;
+  const label = heardAboutUsLabel(clean, lang, { fallback });
+  const cleanDetail = cleanHeardAboutUsDetail(detail);
+  if (clean === 'other' && cleanDetail) return `${label}: ${cleanDetail}`;
+  return label;
+}
+
+function heardAboutUsMetadata(value, lang, detail = '') {
+  const clean = normalizeHeardAboutUs(value, { allowAdmin: true });
+  if (!clean) return {};
+  const cleanDetail = clean === 'other' ? cleanHeardAboutUsDetail(detail) : '';
+  return {
+    heard_about_us: clean,
+    heard_about_us_label: heardAboutUsLabel(clean, lang),
+    ...(cleanDetail ? { heard_about_us_detail: cleanDetail, heard_about_us_display: heardAboutUsDisplay(clean, cleanDetail, lang) } : {})
+  };
+}
+
+function heardAboutUsMessageLine(value, detail, lang) {
+  const display = heardAboutUsDisplay(value, detail, lang);
+  if (!display) return '';
+  return `${text(lang, 'heardAboutUsMessagePrefix')} ${display}.`;
+}
+
+function appendHeardAboutUsToMessage(message, value, detail, lang) {
+  const base = String(message || text(lang, 'defaultMessage')).trimEnd();
+  const line = heardAboutUsMessageLine(value, detail, lang);
+  if (!line) return base;
+  if (base.includes(line)) return base;
+  return `${base}\n\n${line}`;
+}
+
+function ContactAttributionSelect({ lang, value, onChange, includeAdmin = false, id = 'heardAboutUs' }) {
+  return (
+    <select id={id} value={value || ''} onChange={(event) => onChange(event.target.value)} required={!includeAdmin}>
+      <option value="">{text(lang, 'heardAboutUsPlaceholder')}</option>
+      {heardAboutUsOptions({ includeAdmin }).map((option) => (
+        <option key={option.value} value={option.value}>{option[lang === 'en' ? 'en' : 'it']}</option>
+      ))}
+    </select>
+  );
+}
+
+function contactActionConfirmLabel(type, lang) {
+  if (type === 'whatsapp') return text(lang, 'continueWhatsapp');
+  if (type === 'phone') return text(lang, 'callNow');
+  if (type === 'email') return text(lang, 'writeEmail');
+  return text(lang, 'continue');
+}
+
+function openResolvedContactAction(action, selectedMetadata = {}, source = '', detail = '') {
+  if (!action) return;
+  if (typeof action.afterConfirm === 'function') {
+    action.afterConfirm(selectedMetadata, source, detail);
+    return;
+  }
+  const resolvedUrl = typeof action.buildUrl === 'function' ? action.buildUrl(selectedMetadata, source, detail) : action.url;
+  if (!resolvedUrl || typeof window === 'undefined') return;
+  if (action.target === '_blank') {
+    window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  window.location.href = resolvedUrl;
+}
+
+function ContactAttributionModal({ lang, action, onClose, onConfirm }) {
+  const [selectedSource, setSelectedSource] = useState(normalizeHeardAboutUs(action?.defaultSource));
+  const [otherDetail, setOtherDetail] = useState(cleanHeardAboutUsDetail(action?.defaultDetail));
+  const [error, setError] = useState('');
+  const selectRef = useRef(null);
+  const isOtherSelected = needsHeardAboutUsDetail(selectedSource);
+  useBodyScrollLock(true);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => selectRef.current?.focus(), 0);
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  function confirm() {
+    const clean = normalizeHeardAboutUs(selectedSource);
+    const cleanDetail = cleanHeardAboutUsDetail(otherDetail);
+    if (!clean) {
+      setError(text(lang, 'heardAboutUsRequired'));
+      return;
+    }
+    if (clean === 'other' && !cleanDetail) {
+      setError(text(lang, 'heardAboutUsOtherRequired'));
+      return;
+    }
+    onConfirm(clean, clean === 'other' ? cleanDetail : '');
+  }
+
+  return (
+    <div className="contact-attribution-backdrop" role="presentation" onClick={onClose}>
+      <section className="contact-attribution-modal" role="dialog" aria-modal="true" aria-labelledby="contactAttributionTitle" onClick={(event) => event.stopPropagation()}>
+        <div className="contact-attribution-header">
+          <h2 id="contactAttributionTitle">{text(lang, 'heardAboutUs')}</h2>
+          <button className="modal-close-button" type="button" onClick={onClose}>{text(lang, 'cancel')}</button>
+        </div>
+        <p>{text(lang, 'heardAboutUsModalIntro')}</p>
+        <label className="field-label" htmlFor="contactAttributionSource">{text(lang, 'heardAboutUs')}</label>
+        <select
+          id="contactAttributionSource"
+          ref={selectRef}
+          value={selectedSource}
+          onChange={(event) => { setSelectedSource(event.target.value); setError(''); }}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? 'contactAttributionError' : undefined}
+        >
+          <option value="">{text(lang, 'heardAboutUsPlaceholder')}</option>
+          {heardAboutUsOptions().map((option) => <option key={option.value} value={option.value}>{option[lang === 'en' ? 'en' : 'it']}</option>)}
+        </select>
+        {isOtherSelected && (
+          <label className="field-label contact-attribution-other" htmlFor="contactAttributionOther">
+            {text(lang, 'heardAboutUsOtherLabel')}
+            <textarea
+              id="contactAttributionOther"
+              value={otherDetail}
+              onChange={(event) => { setOtherDetail(event.target.value); setError(''); }}
+              placeholder={text(lang, 'heardAboutUsOtherPlaceholder')}
+              rows={3}
+              maxLength={240}
+            />
+          </label>
+        )}
+        {error && <p id="contactAttributionError" className="form-status error" role="alert">{error}</p>}
+        <div className="contact-attribution-actions">
+          {selectedSource && <button className="button primary" type="button" onClick={confirm}>{action?.confirmLabel || contactActionConfirmLabel(action?.type, lang)}</button>}
+          <button className="button secondary" type="button" onClick={onClose}>{text(lang, 'cancel')}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function useContactAttributionGate(lang) {
+  const [pendingAction, setPendingAction] = useState(null);
+
+  function requestContactAttribution(event, action) {
+    if (event?.preventDefault) event.preventDefault();
+    if (event?.stopPropagation) event.stopPropagation();
+    setPendingAction(action);
+  }
+
+  function closeAttribution() {
+    setPendingAction(null);
+  }
+
+  function confirmAttribution(source, detail = '') {
+    const action = pendingAction;
+    if (!action) return;
+    const selectedMetadata = heardAboutUsMetadata(source, lang, detail);
+    setPendingAction(null);
+    trackContactClick(action.type, action.location, { ...(action.metadata || {}), ...selectedMetadata });
+    openResolvedContactAction(action, selectedMetadata, source, detail);
+  }
+
+  const contactAttributionModal = pendingAction ? (
+    <ContactAttributionModal lang={lang} action={pendingAction} onClose={closeAttribution} onConfirm={confirmAttribution} />
+  ) : null;
+
+  return { requestContactAttribution, contactAttributionModal };
 }
 
 function dateToIso(date) {
@@ -2539,7 +3603,7 @@ function ProtectedAdminArea({ pathname, navigate, lang, setLang }) {
       <main className="admin-loading">
         <span className="kicker">Setup</span>
         <h1>{adminCopy(lang, 'Supabase non configurato', 'Supabase is not configured')}</h1>
-        <p>{adminCopy(lang, 'Aggiungi le variabili VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY in Netlify e in locale.', 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Netlify and locally.')}</p>
+        <p>{adminCopy(lang, 'Aggiungi le variabili VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY in Cloudflare Pages e in locale.', 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Cloudflare Pages and locally.')}</p>
         <a className="button primary" href="/">{adminCopy(lang, 'Torna al sito', 'Back to public site')}</a>
       </main>
     );
@@ -2561,25 +3625,40 @@ function ProtectedAdminArea({ pathname, navigate, lang, setLang }) {
 
 function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
-  const currentAdminPath = normalizedPath.includes('/calendar')
-    ? '/admin/calendar'
-    : normalizedPath.includes('/finance')
-      ? '/admin/finance'
-      : normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media')
-        ? '/admin/edit'
-        : normalizedPath.includes('/partnerships')
-            ? '/admin/partnerships'
-            : normalizedPath.includes('/upcoming')
-              ? '/admin/upcoming'
-              : normalizedPath.includes('/requests')
-                ? '/admin/requests'
-                : normalizedPath.includes('/availability')
-                  ? '/admin/availability'
-                  : '/admin/today';
+  const currentAdminPath = adminPathFromLocation(pathname);
+
+  const [adminContentRows, setAdminContentRows] = useState([]);
 
   useEffect(() => {
     if (pathname === '/admin') navigate('/admin/today');
   }, [pathname, navigate]);
+
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      if (!isSupabaseConfigured) {
+        if (alive) setAdminContentRows([]);
+        return;
+      }
+      try {
+        const rows = await listSiteContent({ activeOnly: false });
+        if (alive) setAdminContentRows(rows.filter((row) => String(row.content_key || '').startsWith('admin.')));
+      } catch (err) {
+        if (alive) setAdminContentRows([]);
+      }
+    }
+    function handleAdminContentUpdated() {
+      load();
+    }
+    load();
+    window.addEventListener('vulcaniq-admin-content-updated', handleAdminContentUpdated);
+    return () => {
+      alive = false;
+      window.removeEventListener('vulcaniq-admin-content-updated', handleAdminContentUpdated);
+    };
+  }, []);
+
+  const adminContent = useMemo(() => buildSiteContentMap(adminContentRows), [adminContentRows]);
 
   async function logout() {
     await signOutOwner();
@@ -2590,49 +3669,42 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
     <div className="admin-shell">
       <header className="admin-header">
         <select className="admin-mobile-nav" value={currentAdminPath} onChange={(event) => navigate(event.target.value)} aria-label="Admin navigation">
-          <option value="/admin/today">{adminCopy(lang, 'Oggi', 'Today')}</option>
-          <option value="/admin/calendar">{adminCopy(lang, 'Calendario', 'Calendar')}</option>
-          <option value="/admin/upcoming">{adminCopy(lang, 'Prossime', 'Upcoming')}</option>
-          <option value="/admin/requests">{adminCopy(lang, 'Richieste', 'Requests')}</option>
-          <option value="/admin/availability">{adminCopy(lang, 'Disponibilità', 'Availability')}</option>
-          <option value="/admin/partnerships">{adminCopy(lang, 'Collaborazioni', 'Partnerships')}</option>
-          <option value="/admin/edit">{adminCopy(lang, 'Modifica', 'Edit')}</option>
-          <option value="/admin/finance">{adminCopy(lang, 'Finanze', 'Finance')}</option>
+          {ADMIN_NAV_SECTIONS.map((section) => <option key={section.key} value={section.path}>{adminNavLabel(section, lang)}</option>)}
         </select>
         <nav className="admin-nav" aria-label="Admin navigation">
-          <button type="button" className={normalizedPath.includes('/today') ? 'active' : ''} onClick={() => navigate('/admin/today')}>{adminCopy(lang, 'Oggi', 'Today')}</button>
-          <button type="button" className={normalizedPath.includes('/calendar') ? 'active' : ''} onClick={() => navigate('/admin/calendar')}>{adminCopy(lang, 'Calendario', 'Calendar')}</button>
-          <button type="button" className={normalizedPath.includes('/upcoming') ? 'active' : ''} onClick={() => navigate('/admin/upcoming')}>{adminCopy(lang, 'Prossime', 'Upcoming')}</button>
-          <button type="button" className={normalizedPath.includes('/requests') ? 'active' : ''} onClick={() => navigate('/admin/requests')}>{adminCopy(lang, 'Richieste', 'Requests')}</button>
-          <button type="button" className={normalizedPath.includes('/availability') ? 'active' : ''} onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Disponibilità', 'Availability')}</button>
-          <button type="button" className={normalizedPath.includes('/partnerships') ? 'active' : ''} onClick={() => navigate('/admin/partnerships')}>{adminCopy(lang, 'Collaborazioni', 'Partnerships')}</button>
-          <button type="button" className={normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media') ? 'active' : ''} onClick={() => navigate('/admin/edit')}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
-          <button type="button" className={normalizedPath.includes('/finance') ? 'active' : ''} onClick={() => navigate('/admin/finance')}>{adminCopy(lang, 'Finanze', 'Finance')}</button>
-          <a href="/" target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Sito pubblico', 'Public site')}</a>
+          {ADMIN_NAV_SECTIONS.map((section) => section.external ? (
+            <a key={section.key} href={section.path} target="_blank" rel="noopener noreferrer">{adminNavLabel(section, lang)}</a>
+          ) : (
+            <button key={section.key} type="button" className={isAdminNavSectionActive(normalizedPath, section) ? 'active' : ''} onClick={() => navigate(section.path)}>{adminNavLabel(section, lang)}</button>
+          ))}
         </nav>
         <div className="admin-userbox">
-          <span>{ownerDisplayName(profile, lang)}</span>
-          <button type="button" onClick={() => setLang(lang === 'it' ? 'en' : 'it')}>{lang === 'it' ? 'EN' : 'IT'}</button>
-          <button type="button" onClick={logout}>{adminCopy(lang, 'Esci', 'Logout')}</button>
+          <span className="admin-userbox-name">{ownerDisplayName(profile, lang)}</span>
+          <span className="admin-userbox-actions">
+            <button type="button" onClick={() => setLang(lang === 'it' ? 'en' : 'it')}>{lang === 'it' ? 'EN' : 'IT'}</button>
+            <button type="button" onClick={logout}>{adminCopy(lang, 'Esci', 'Logout')}</button>
+          </span>
         </div>
       </header>
       <main className="admin-main">
         {normalizedPath.includes('/calendar') ? (
-          <AdminCalendarPage lang={lang} session={session} navigate={navigate} />
+          <AdminCalendarPage lang={lang} session={session} navigate={navigate} adminContent={adminContent} />
         ) : normalizedPath.includes('/finance') ? (
-          <FinanceAdminPage lang={lang} session={session} />
+          <FinanceAdminPage lang={lang} session={session} adminContent={adminContent} />
+        ) : normalizedPath.includes('/analytics') || normalizedPath.includes('/data') ? (
+          <AdminAnalyticsPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media') ? (
-          <AdminEditPage lang={lang} session={session} />
+          <AdminEditPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/partnerships') ? (
-          <PartnershipsAdminPage lang={lang} session={session} />
+          <PartnershipsAdminPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/upcoming') ? (
-          <UpcomingPage lang={lang} session={session} navigate={navigate} />
+          <UpcomingPage lang={lang} session={session} navigate={navigate} adminContent={adminContent} />
         ) : normalizedPath.includes('/requests') ? (
-          <RequestsPage lang={lang} session={session} />
+          <RequestsPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/availability') ? (
-          <AvailabilityPage lang={lang} session={session} />
+          <AvailabilityPage lang={lang} session={session} adminContent={adminContent} />
         ) : (
-          <TodayDashboard lang={lang} session={session} navigate={navigate} />
+          <TodayDashboard lang={lang} session={session} navigate={navigate} adminContent={adminContent} />
         )}
       </main>
     </div>
@@ -2686,7 +3758,7 @@ function calendarItemsByDate({ fixedExcursions = [], requests = [], blocks = [] 
   return map;
 }
 
-function AdminCalendarPage({ lang, session, navigate }) {
+function AdminCalendarPage({ lang, session, navigate, adminContent = {} }) {
   const { requests, loading: requestsLoading, error: requestsError, refresh: refreshRequests } = useAdminRequests({ status: 'accepted', limit: 500 });
   const [fixedExcursions, setFixedExcursions] = useState([]);
   const [blocks, setBlocks] = useState([]);
@@ -2752,8 +3824,8 @@ function AdminCalendarPage({ lang, session, navigate }) {
       <div className="admin-page-header">
         <div>
           <span className="kicker">{adminCopy(lang, 'Calendario', 'Calendar')}</span>
-          <h1>{adminCopy(lang, 'Calendario disponibilità', 'Availability calendar')}</h1>
-          <p>{adminCopy(lang, 'Verde: escursione fissa. Rosso: esperienza prenotata. Grigio: data bloccata o non disponibile.', 'Green: fixed excursion. Red: booked experience. Grey: blocked or unavailable date.')}</p>
+          <AdminEditableText as="h1" itemKey="admin.calendar.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Calendario disponibilità', 'Availability calendar')} />
+          <AdminEditableText as="p" itemKey="admin.calendar.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Verde: escursione fissa. Rosso: esperienza prenotata. Grigio: data bloccata o non disponibile.', 'Green: fixed excursion. Red: booked experience. Grey: blocked or unavailable date.')} />
         </div>
         <div className="admin-header-actions">
           <button className="button secondary" type="button" onClick={refreshCalendar}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
@@ -2804,6 +3876,7 @@ function AdminCalendarPage({ lang, session, navigate }) {
               {selected.fixed.length > 0 && (
                 <details className="admin-archive-details admin-calendar-detail-group">
                   <summary><span>{adminCopy(lang, 'Escursioni fisse', 'Fixed excursions')}</span><strong>{selected.fixed.length}</strong></summary>
+                  <div className="calendar-detail-list">
                   {selected.fixed.map((item) => {
                     const bookedGuests = requests.filter((request) => request.fixed_excursion_id === item.id && request.status === 'accepted');
                     return (
@@ -2826,11 +3899,13 @@ function AdminCalendarPage({ lang, session, navigate }) {
                       </article>
                     );
                   })}
+                  </div>
                 </details>
               )}
               {selected.bookings.length > 0 && (
                 <details className="admin-archive-details admin-calendar-detail-group">
                   <summary><span>{adminCopy(lang, 'Esperienze prenotate', 'Booked experiences')}</span><strong>{selected.bookings.length}</strong></summary>
+                  <div className="calendar-detail-list">
                   {selected.bookings.map((request) => (
                     <article className="calendar-detail-item" key={request.id}>
                       <strong>{request.customer_name || '-'}</strong>
@@ -2838,6 +3913,7 @@ function AdminCalendarPage({ lang, session, navigate }) {
                       <button type="button" className="button secondary" onClick={() => setSelectedBooking(request)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
                     </article>
                   ))}
+                  </div>
                 </details>
               )}
               {selected.blocks.length > 0 && (
@@ -2857,19 +3933,22 @@ function AdminCalendarPage({ lang, session, navigate }) {
 }
 
 function CalendarBookingModal({ lang, request, onClose, onSave }) {
-  const [form, setForm] = useState({ status: request.status, requested_date: request.requested_date || '', adults: String(request.adults || ''), children: String(request.children || ''), admin_note: request.admin_note || '', decision_note: request.decision_note || '' });
+  const [form, setForm] = useState({ status: request.status, requested_date: request.requested_date || '', adults: String(request.adults || ''), children: String(request.children || ''), heard_about_us: request.heard_about_us || 'not_specified', heard_about_us_detail: request.heard_about_us_detail || '', admin_note: request.admin_note || '', decision_note: request.decision_note || '' });
+  useBodyScrollLock(true);
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <div className="admin-modal wide" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-        <div className="admin-modal-header"><div><h2>{request.customer_name || adminCopy(lang, 'Prenotazione', 'Booking')}</h2><p>{request.customer_email || '-'} · {request.customer_phone || '-'}</p></div><button className="round-button" type="button" onClick={onClose}>{text(lang, 'close')}</button></div>
-        <div className="admin-form-grid">
+      <div className="admin-modal wide booking-edit-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="admin-modal-header booking-edit-modal-header"><div><h2>{request.customer_name || adminCopy(lang, 'Prenotazione', 'Booking')}</h2><p>{request.customer_email || '-'} · {request.customer_phone || '-'}</p></div><button className="modal-close-button booking-modal-close-button" type="button" aria-label={adminCopy(lang, 'Chiudi', 'Close')} onClick={onClose}>{adminCopy(lang, 'Chiudi', 'Close')}</button></div>
+        <div className="admin-form-grid booking-edit-modal-grid">
           <AdminSelect label={adminCopy(lang, 'Stato', 'Status')} value={form.status} onChange={(value) => setForm((current) => ({ ...current, status: value }))} options={REQUEST_STATUSES} formatter={(value) => requestStatusLabels[value]?.[lang] || value} />
-          <AdminInput label={adminCopy(lang, 'Data confermata', 'Confirmed date')} type="date" value={form.requested_date} onChange={(value) => setForm((current) => ({ ...current, requested_date: value }))} />
+          <label className="admin-field confirmed-date-section"><span>{adminCopy(lang, 'Data confermata', 'Confirmed date')}</span><input type="date" value={form.requested_date || ''} onChange={(event) => setForm((current) => ({ ...current, requested_date: event.target.value }))} /></label>
           <AdminInput label={adminCopy(lang, 'Adulti', 'Adults')} type="number" value={form.adults} onChange={(value) => setForm((current) => ({ ...current, adults: value }))} />
           <AdminInput label={adminCopy(lang, 'Bambini', 'Children')} type="number" value={form.children} onChange={(value) => setForm((current) => ({ ...current, children: value }))} />
+          <AdminSelect label={text(lang, 'heardAboutUsAdmin')} value={form.heard_about_us || 'not_specified'} onChange={(value) => setForm((current) => ({ ...current, heard_about_us: value, heard_about_us_label: heardAboutUsLabel(value, lang), heard_about_us_detail: needsHeardAboutUsDetail(value) ? current.heard_about_us_detail : '' }))} options={heardAboutUsOptions({ includeAdmin: true }).map((option) => option.value)} formatter={(value) => heardAboutUsLabel(value, lang)} />
+          {needsHeardAboutUsDetail(form.heard_about_us) && <AdminInput label={text(lang, 'heardAboutUsOtherLabel')} value={form.heard_about_us_detail || ''} onChange={(value) => setForm((current) => ({ ...current, heard_about_us_detail: value }))} />}
           <label className="admin-field full"><span>{adminCopy(lang, 'Nota interna', 'Internal note')}</span><textarea rows={3} value={form.admin_note} onChange={(event) => setForm((current) => ({ ...current, admin_note: event.target.value }))} /></label>
           <label className="admin-field full"><span>{adminCopy(lang, 'Nota decisione', 'Decision note')}</span><textarea rows={3} value={form.decision_note} onChange={(event) => setForm((current) => ({ ...current, decision_note: event.target.value }))} /></label>
-          <div className="modal-actions full"><button className="button primary" type="button" onClick={() => onSave(request, { ...form, adults: Number.parseInt(form.adults || '0', 10), children: Number.parseInt(form.children || '0', 10) })}>{adminCopy(lang, 'Salva modifiche', 'Save changes')}</button><button className="button secondary" type="button" onClick={onClose}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
+          <div className="modal-actions full"><button className="button primary" type="button" onClick={() => onSave(request, { ...form, heard_about_us: form.heard_about_us || 'not_specified', heard_about_us_label: heardAboutUsLabel(form.heard_about_us || 'not_specified', lang), heard_about_us_detail: needsHeardAboutUsDetail(form.heard_about_us) ? cleanHeardAboutUsDetail(form.heard_about_us_detail) : null, adults: Number.parseInt(form.adults || '0', 10), children: Number.parseInt(form.children || '0', 10) })}>{adminCopy(lang, 'Salva modifiche', 'Save changes')}</button><button className="button secondary" type="button" onClick={onClose}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
         </div>
       </div>
     </div>
@@ -2877,7 +3956,8 @@ function CalendarBookingModal({ lang, request, onClose, onSave }) {
 }
 
 function CalendarFixedModal({ lang, item, onClose, onSave }) {
-  const [form, setForm] = useState({ date: item.date || '', start_time: item.start_time || '', end_time: item.end_time || '', title_it: item.title_it || '', title_en: item.title_en || '', description_it: item.description_it || item.note_it || '', description_en: item.description_en || item.note_en || '', meeting_point_it: item.meeting_point_it || '', meeting_point_en: item.meeting_point_en || '', capacity: String(item.capacity || 12), active: item.active !== false });
+  const [form, setForm] = useState({ date: item.date || '', start_time: item.start_time || '', end_time: item.end_time || '', title_it: item.title_it || '', title_en: item.title_en || '', description_it: item.description_it || item.note_it || '', description_en: item.description_en || item.note_en || '', meeting_point_it: item.meeting_point_it || '', meeting_point_en: item.meeting_point_en || '', meeting_point_maps_url: item.meeting_point_maps_url || '', capacity: String(item.capacity || 12), active: item.active !== false });
+  useBodyScrollLock(true);
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <div className="admin-modal wide" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
@@ -2893,6 +3973,7 @@ function CalendarFixedModal({ lang, item, onClose, onSave }) {
           <label className="admin-field full"><span>Description EN</span><textarea rows={3} value={form.description_en} onChange={(event) => setForm((current) => ({ ...current, description_en: event.target.value }))} /></label>
           <AdminInput label="Meeting point IT" value={form.meeting_point_it} onChange={(value) => setForm((current) => ({ ...current, meeting_point_it: value }))} />
           <AdminInput label="Meeting point EN" value={form.meeting_point_en} onChange={(value) => setForm((current) => ({ ...current, meeting_point_en: value }))} />
+          <AdminInput label={adminCopy(lang, 'Link Google Maps del punto d’incontro', 'Google Maps meeting point link')} value={form.meeting_point_maps_url} placeholder="https://maps.google.com/..." onChange={(value) => setForm((current) => ({ ...current, meeting_point_maps_url: value }))} />
           <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
           <div className="modal-actions full"><button className="button primary" type="button" onClick={() => onSave(item, { ...form, capacity: Number.parseInt(form.capacity || '12', 10) })}>{adminCopy(lang, 'Salva modifiche', 'Save changes')}</button><button className="button secondary" type="button" onClick={onClose}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
         </div>
@@ -2937,6 +4018,19 @@ function buildEditorContentMap(items = [], drafts = {}) {
   return Object.keys(drafts || {}).reduce((acc, key) => ({ ...acc, [key]: { ...(acc[key] || {}), ...drafts[key] } }), map);
 }
 
+
+function buildAdminEditorContentMap(items = [], drafts = {}) {
+  const stored = (items || []).reduce((acc, item) => ({ ...acc, [item.content_key]: item }), {});
+  const map = ADMIN_CONTENT_DEFINITIONS.reduce((acc, definition) => {
+    acc[definition.key] = editorContentItem(stored, definition.key, definition.default_it || definition.default_en || '');
+    return acc;
+  }, {});
+  Object.keys(stored).forEach((key) => {
+    if (String(key).startsWith('admin.') && !map[key]) map[key] = editorContentItem(stored, key, stored[key]?.default_it || stored[key]?.default_en || '');
+  });
+  return Object.keys(drafts || {}).reduce((acc, key) => ({ ...acc, [key]: { ...(acc[key] || {}), ...drafts[key] } }), map);
+}
+
 function buildEditorMediaMap(items = [], drafts = {}) {
   const stored = (items || []).reduce((acc, item) => ({ ...acc, [item.media_key]: item }), {});
   const map = MEDIA_ADMIN_ITEMS.reduce((acc, definition) => {
@@ -2947,6 +4041,50 @@ function buildEditorMediaMap(items = [], drafts = {}) {
     if (!map[key]) map[key] = editorMediaItem(stored, key, stored[key]?.file_url || '', stored[key]?.alt_it || stored[key]?.alt_en || '');
   });
   return Object.keys(drafts || {}).reduce((acc, key) => ({ ...acc, [key]: { ...(acc[key] || {}), ...drafts[key] } }), map);
+}
+
+
+function ContactChannelsEditor({ lang, contentMap, onSave, disabled }) {
+  const contactDefinitions = SITE_CONTENT_DEFINITIONS.filter((item) => String(item.key || '').startsWith('contact.channels.'));
+  const [values, setValues] = useState({});
+
+  useEffect(() => {
+    const next = {};
+    contactDefinitions.forEach((definition) => {
+      const item = contentMap?.[definition.key] || editorContentItem({}, definition.key, definition.default_it || definition.default_en || '');
+      next[definition.key] = contentSettingValue({ [definition.key]: item }, definition.key, definition.default_it || definition.default_en || '');
+    });
+    setValues(next);
+  }, [contentMap]);
+
+  function update(key, value) {
+    setValues((current) => ({ ...current, [key]: value }));
+  }
+
+  return (
+    <details className="admin-archive-details edit-workspace-section contact-channels-editor" open>
+      <summary>
+        <span>{adminCopy(lang, 'Contatti pubblici', 'Public contact details')}</span>
+        <strong>{adminCopy(lang, 'Telefono, email, Instagram', 'Phone, email, Instagram')}</strong>
+      </summary>
+      <div className="admin-form-grid contact-channel-grid">
+        {contactDefinitions.map((definition) => {
+          const item = contentMap?.[definition.key] || editorContentItem({}, definition.key, definition.default_it || definition.default_en || '');
+          const value = values[definition.key] ?? contentSettingValue({ [definition.key]: item }, definition.key, definition.default_it || definition.default_en || '');
+          return (
+            <label className="admin-field full" key={definition.key}>
+              <span>{lang === 'it' ? definition.label_it : definition.label_en}</span>
+              <input value={value} onChange={(event) => update(definition.key, event.target.value)} placeholder={definition.default_it || definition.default_en || ''} />
+              <small>{definition.key}</small>
+            </label>
+          );
+        })}
+        <div className="modal-actions full">
+          <button className="button primary" type="button" disabled={disabled} onClick={() => onSave(values)}>{adminCopy(lang, 'Salva contatti pubblici', 'Save public contacts')}</button>
+        </div>
+      </div>
+    </details>
+  );
 }
 
 function WebsiteAdminPage({ lang, session }) {
@@ -2990,6 +4128,10 @@ function WebsiteAdminPage({ lang, session }) {
   const contentMap = useMemo(() => buildEditorContentMap(contentRows, contentDrafts), [contentRows, contentDrafts]);
   const mediaMap = useMemo(() => buildEditorMediaMap(mediaRows, mediaDrafts), [mediaRows, mediaDrafts]);
   const hasDrafts = Object.keys(contentDrafts).length > 0 || Object.keys(mediaDrafts).length > 0;
+  const selectedHasDraft = Boolean(selected && (
+    (selected.type === 'text' && contentDrafts[selected.key]) ||
+    (selected.type === 'image' && mediaDrafts[selected.key])
+  ));
   const editor = useMemo(() => ({ isEditing: true, lang: editorLang, selected, select: setSelected, contentMap, mediaMap }), [editorLang, selected, contentMap, mediaMap]);
 
   function updateContentDraft(key, patch) {
@@ -3075,6 +4217,7 @@ function WebsiteAdminPage({ lang, session }) {
       }
       setFeedback(adminCopy(lang, 'Modifiche salvate.', 'Changes saved.'));
       await refresh();
+      setSelected(null);
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Impossibile salvare le modifiche. Riprova.', 'Unable to save changes. Please try again.'));
     } finally {
@@ -3110,6 +4253,30 @@ function WebsiteAdminPage({ lang, session }) {
     setFeedback(adminCopy(lang, 'Modifiche locali scartate.', 'Local changes discarded.'));
   }
 
+  function discardSelectedDraft() {
+    if (!selected) return;
+    if (selected.type === 'text') {
+      setContentDrafts((current) => {
+        const next = { ...current };
+        delete next[selected.key];
+        return next;
+      });
+    }
+    if (selected.type === 'image') {
+      setMediaDrafts((current) => {
+        const next = { ...current };
+        delete next[selected.key];
+        return next;
+      });
+    }
+  }
+
+  function closeSelectedEditor() {
+    if (selectedHasDraft && !window.confirm(adminCopy(lang, 'Chiudere senza salvare questa modifica?', 'Close without saving this change?'))) return;
+    discardSelectedDraft();
+    setSelected(null);
+  }
+
   function resetSelected() {
     if (!selected) return;
     if (!window.confirm(adminCopy(lang, 'Ripristinare il contenuto selezionato al valore predefinito?', 'Reset the selected item to its default value?'))) return;
@@ -3137,6 +4304,50 @@ function WebsiteAdminPage({ lang, session }) {
     }
   }
 
+
+  async function saveContactChannels(values) {
+    if (saving) return;
+    setError('');
+    setFeedback('');
+    setSaving(true);
+    try {
+      const definitions = SITE_CONTENT_DEFINITIONS.filter((item) => String(item.key || '').startsWith('contact.channels.'));
+      for (const definition of definitions) {
+        const item = contentMap[definition.key] || editorContentItem({}, definition.key, definition.default_it || definition.default_en || '');
+        const value = values?.[definition.key] ?? contentSettingValue({ [definition.key]: item }, definition.key, definition.default_it || definition.default_en || '');
+        await saveContentItem({
+          ...item,
+          content_key: definition.key,
+          key: definition.key,
+          section: definition.section,
+          label_it: definition.label_it,
+          label_en: definition.label_en,
+          value_it: value,
+          value_en: value,
+          default_it: definition.default_it,
+          default_en: definition.default_en,
+          content_type: 'text',
+          style_variant: 'body',
+          text_size: 'normal',
+          text_align: 'left',
+          visible: true,
+          active: true
+        });
+      }
+      setContentDrafts((current) => {
+        const next = { ...current };
+        definitions.forEach((definition) => delete next[definition.key]);
+        return next;
+      });
+      setFeedback(adminCopy(lang, 'Contatti pubblici salvati.', 'Public contact details saved.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Contatti pubblici non salvati.', 'Public contact details not saved.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <section className="admin-page website-admin-page visual-editor-page">
       <div className="visual-editor-toolbar">
@@ -3158,62 +4369,112 @@ function WebsiteAdminPage({ lang, session }) {
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       {notice && <div className="admin-alert warning" role="status">{notice}</div>}
+      {!loading && page === 'contact' && <ContactChannelsEditor lang={lang} contentMap={contentMap} onSave={saveContactChannels} disabled={!isSupabaseConfigured || saving} />}
       {loading ? <p>{adminCopy(lang, 'Caricamento editor...', 'Loading editor...')}</p> : (
-        <div className="visual-editor-shell">
-          <VisualEditorPreview
-            page={page}
-            setPage={setPage}
-            lang={editorLang}
-            setLang={setEditorLang}
-            device={device}
-            siteMedia={mediaMap}
-            siteContent={contentMap}
-            editor={editor}
-            setNotice={setNotice}
-          />
-          <EditorInspector
-            lang={lang}
-            editorLang={editorLang}
-            selected={selected}
-            contentMap={contentMap}
-            mediaMap={mediaMap}
-            updateContentDraft={updateContentDraft}
-            updateMediaDraft={updateMediaDraft}
-            onSave={saveSelected}
-            onReset={resetSelected}
-            canSave={isSupabaseConfigured && !saving}
-          />
-        </div>
+        <>
+          <div className="visual-editor-shell">
+            <VisualEditorPreview
+              page={page}
+              setPage={setPage}
+              lang={editorLang}
+              setLang={setEditorLang}
+              device={device}
+              siteMedia={mediaMap}
+              siteContent={contentMap}
+              editor={editor}
+              setNotice={setNotice}
+            />
+          </div>
+          {selected && (
+            <EditorFullscreenModal
+              lang={lang}
+              editorLang={editorLang}
+              selected={selected}
+              contentMap={contentMap}
+              mediaMap={mediaMap}
+              updateContentDraft={updateContentDraft}
+              updateMediaDraft={updateMediaDraft}
+              onSave={saveSelected}
+              onReset={resetSelected}
+              onClose={closeSelectedEditor}
+              canSave={isSupabaseConfigured && !saving}
+            />
+          )}
+        </>
       )}
     </section>
   );
 }
 
 
-function AdminEditPage({ lang, session }) {
+function AdminEditPage({ lang, session, adminContent = {} }) {
   return (
     <section className="admin-page admin-edit-page">
       <div className="admin-page-header">
         <div>
           <span className="kicker">{adminCopy(lang, 'Modifica', 'Edit')}</span>
-          <h1>{adminCopy(lang, 'Modifica sito e recensioni', 'Edit website and reviews')}</h1>
-          <p>{adminCopy(lang, 'Gestisci contenuti, media e recensioni pubbliche da un’unica area.', 'Manage public content, media, and reviews from one area.')}</p>
+          <AdminEditableText as="h1" itemKey="admin.edit.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Modifica sito e recensioni', 'Edit website and reviews')} />
+          <AdminEditableText as="p" itemKey="admin.edit.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestisci contenuti, media e recensioni pubbliche da un’unica area.', 'Manage public content, media, and reviews from one area.')} />
         </div>
       </div>
-      <details className="admin-archive-details edit-workspace-section" open>
-        <summary><span>{adminCopy(lang, 'Sito pubblico', 'Public website')}</span><strong>{adminCopy(lang, 'Testi e media', 'Text and media')}</strong></summary>
+      <details className="admin-archive-details edit-workspace-section">
+        <summary><AdminEditableText itemKey="admin.edit.publicSite.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Sito pubblico', 'Public website')} /><AdminEditableText as="strong" itemKey="admin.edit.publicSite.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Testi e media', 'Text and media')} /></summary>
         <WebsiteAdminPage lang={lang} session={session} />
       </details>
       <details className="admin-archive-details edit-workspace-section">
-        <summary><span>{adminCopy(lang, 'Recensioni', 'Reviews')}</span><strong>{adminCopy(lang, 'Gestione', 'Management')}</strong></summary>
-        <AdminReviewsPanel lang={lang} />
+        <summary><AdminEditableText itemKey="admin.edit.adminSite.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Sito admin', 'Admin website')} /><AdminEditableText as="strong" itemKey="admin.edit.adminSite.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Testi pannello', 'Panel text')} /></summary>
+        <AdminSiteContentPage lang={lang} session={session} adminContent={adminContent} />
+      </details>
+      <details className="admin-archive-details edit-workspace-section">
+        <summary><AdminEditableText itemKey="admin.edit.reviews.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Recensioni', 'Reviews')} /><AdminEditableText as="strong" itemKey="admin.edit.reviews.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestione', 'Management')} /></summary>
+        <AdminReviewsPanel lang={lang} adminContent={adminContent} />
       </details>
     </section>
   );
 }
 
+function EditorFullscreenModal({ lang, editorLang, selected, contentMap, mediaMap, updateContentDraft, updateMediaDraft, onSave, onReset, onClose, canSave }) {
+  useBodyScrollLock(true);
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="editor-fullscreen-backdrop" role="presentation">
+      <section className="editor-fullscreen-modal" role="dialog" aria-modal="true" aria-labelledby="editorFullscreenTitle">
+        <div className="editor-fullscreen-header">
+          <div>
+            <span className="kicker">{adminCopy(lang, 'Editor elemento', 'Element editor')}</span>
+            <h2 id="editorFullscreenTitle">{selected.label || selected.key}</h2>
+            <p>{selected.section || selected.type} · {selected.key}</p>
+          </div>
+          <button className="button secondary" type="button" onClick={onClose}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>
+        </div>
+        <EditorInspector
+          lang={lang}
+          editorLang={editorLang}
+          selected={selected}
+          contentMap={contentMap}
+          mediaMap={mediaMap}
+          updateContentDraft={updateContentDraft}
+          updateMediaDraft={updateMediaDraft}
+          onSave={onSave}
+          onReset={onReset}
+          canSave={canSave}
+        />
+      </section>
+    </div>
+  );
+}
+
+
 function VisualEditorPreview({ page, setPage, lang, setLang, device, siteMedia, siteContent, editor, setNotice }) {
-  const [formState, setFormState] = useState({ language: lang, requestType: 'private', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', message: text(lang, 'defaultMessage') });
+  const [formState, setFormState] = useState({ language: lang, requestType: 'private', preferredContact: 'whatsapp', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', heardAboutUs: '', heardAboutUsDetail: '', message: text(lang, 'defaultMessage') });
 
   function disabledActionNotice() {
     setNotice(lang === 'it' ? 'Azione disattivata durante la modifica del sito.' : 'This action is disabled while editing the website.');
@@ -3235,7 +4496,7 @@ function VisualEditorPreview({ page, setPage, lang, setLang, device, siteMedia, 
       case 'reviews':
         return <ReviewsPage lang={lang} siteContent={siteContent} editor={editor} />;
       case 'contact':
-        return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteContent={siteContent} editor={editor} />;
+        return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
       case 'home':
       default:
         return <Hero lang={lang} setActivePage={setPage} scrollToForm={disabledActionNotice} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
@@ -3278,9 +4539,9 @@ function EditorInspector({ lang, editorLang, selected, contentMap, mediaMap, upd
         <div className="inspector-heading"><span className="kicker">{adminCopy(lang, 'Testo', 'Text')}</span><h2>{selected.label}</h2><p>{item.section} · {selected.key}</p></div>
         <label className="admin-field full"><span>Italiano</span><Field rows={5} value={item.value_it ?? item.default_it ?? ''} onChange={(event) => updateContentDraft(selected.key, { value_it: event.target.value, active: true })} /></label>
         <label className="admin-field full"><span>English</span><Field rows={5} value={item.value_en ?? item.default_en ?? ''} onChange={(event) => updateContentDraft(selected.key, { value_en: event.target.value, active: true })} /></label>
-        <label className="admin-field"><span>{adminCopy(lang, 'Dimensione testo', 'Text size')}</span><select value={item.text_size || 'normal'} onChange={(event) => updateContentDraft(selected.key, { text_size: event.target.value })}><option value="small">Small</option><option value="normal">Normal</option><option value="large">Large</option><option value="hero">Hero</option></select></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Dimensione testo', 'Text size')}</span><select value={item.text_size || 'normal'} onChange={(event) => updateContentDraft(selected.key, { text_size: event.target.value })}><option value="small">Small</option><option value="normal">Normal</option><option value="large">Large</option><option value="hero">Hero</option><option value="display">Display</option></select></label>
         <label className="admin-field"><span>{adminCopy(lang, 'Stile testo', 'Text style')}</span><select value={item.style_variant || 'body'} onChange={(event) => updateContentDraft(selected.key, { style_variant: event.target.value })}><option value="label">Label</option><option value="body">Body</option><option value="heading">Heading</option><option value="display">Display heading</option></select></label>
-        <label className="admin-field"><span>{adminCopy(lang, 'Allineamento', 'Alignment')}</span><select value={item.text_align || 'left'} onChange={(event) => updateContentDraft(selected.key, { text_align: event.target.value })}><option value="left">Left</option><option value="center">Center</option></select></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Allineamento', 'Alignment')}</span><select value={item.text_align || 'left'} onChange={(event) => updateContentDraft(selected.key, { text_align: event.target.value })}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
         <label className="check-field"><input type="checkbox" checked={item.visible !== false} onChange={(event) => updateContentDraft(selected.key, { visible: event.target.checked })} /> {adminCopy(lang, 'Visibile', 'Visible')}</label>
         <div className="inspector-actions"><button className="button primary" type="button" onClick={onSave} disabled={!canSave}>{adminCopy(lang, 'Salva selezione', 'Save selected')}</button><button className="button secondary" type="button" onClick={onReset}>{adminCopy(lang, 'Ripristina default', 'Reset to default')}</button></div>
       </aside>
@@ -3448,11 +4709,583 @@ const SITE_CONTENT_DEFINITIONS = [
   { key: 'reviews.publish_button', section: 'Recensioni', label_it: 'Bottone recensione', label_en: 'Review button', type: 'text', default_it: i18n.it.publishReview, default_en: i18n.en.publishReview, style_variant: 'label' },
   { key: 'contact.page.title', section: 'Contatti', label_it: 'Titolo contatti', label_en: 'Contact title', type: 'text', default_it: i18n.it.formTitle, default_en: i18n.en.formTitle, text_size: 'hero', style_variant: 'display' },
   { key: 'contact.page.intro', section: 'Contatti', label_it: 'Intro contatti', label_en: 'Contact intro', type: 'textarea', default_it: i18n.it.formIntro, default_en: i18n.en.formIntro, text_size: 'large' },
+  { key: 'contact.channels.phone', section: 'Contatti', label_it: 'Telefono pubblico / WhatsApp', label_en: 'Public phone / WhatsApp', type: 'text', default_it: PHONE_DISPLAY, default_en: PHONE_DISPLAY },
+  { key: 'contact.channels.email', section: 'Contatti', label_it: 'Email pubblica', label_en: 'Public email', type: 'text', default_it: EMAIL, default_en: EMAIL },
+  { key: 'contact.channels.instagram_url', section: 'Contatti', label_it: 'Link Instagram pubblico', label_en: 'Public Instagram link', type: 'text', default_it: INSTAGRAM, default_en: INSTAGRAM },
   { key: 'footer.contact.name', section: 'Footer', label_it: 'Nome footer', label_en: 'Footer name', type: 'text', default_it: 'Leonardo Chiavetta', default_en: 'Leonardo Chiavetta', style_variant: 'heading' }
+];
+
+const ADMIN_CONTENT_DEFINITIONS = [
+  { key: 'admin.today.title', section: 'Oggi', label_it: 'Titolo pannello operativo', label_en: 'Operations dashboard title', type: 'text', default_it: 'Pannello operativo', default_en: 'Operations', text_size: 'display', style_variant: 'display' },
+  { key: 'admin.today.helper', section: 'Oggi', label_it: 'Descrizione oggi', label_en: 'Today helper', type: 'textarea', default_it: 'Stato operativo rapido, richieste e attività da controllare oggi.', default_en: 'Fast operational status, requests, and activity to review today.', text_size: 'normal', style_variant: 'body' },
+  { key: 'admin.today.pendingToday.label', section: 'Oggi', label_it: 'Scheda pending oggi', label_en: 'Pending today card', type: 'text', default_it: 'Pending oggi', default_en: 'Pending today', style_variant: 'label' },
+  { key: 'admin.today.pendingToday.helper', section: 'Oggi', label_it: 'Aiuto pending oggi', label_en: 'Pending today helper', type: 'text', default_it: 'Apri richieste di oggi', default_en: 'Open today requests' },
+  { key: 'admin.today.pendingTotal.label', section: 'Oggi', label_it: 'Scheda pending totale', label_en: 'Pending total card', type: 'text', default_it: 'Pending totale', default_en: 'Pending total', style_variant: 'label' },
+  { key: 'admin.today.pendingTotal.helper', section: 'Oggi', label_it: 'Aiuto pending totale', label_en: 'Pending total helper', type: 'text', default_it: 'Vai alle richieste', default_en: 'Go to requests' },
+  { key: 'admin.today.acceptedToday.label', section: 'Oggi', label_it: 'Scheda accettate oggi', label_en: 'Accepted today card', type: 'text', default_it: 'Accettate oggi', default_en: 'Accepted today', style_variant: 'label' },
+  { key: 'admin.today.acceptedToday.helper', section: 'Oggi', label_it: 'Aiuto accettate oggi', label_en: 'Accepted today helper', type: 'text', default_it: 'Vedi confermate', default_en: 'View accepted' },
+  { key: 'admin.today.availabilityToday.label', section: 'Oggi', label_it: 'Scheda disponibilità oggi', label_en: 'Availability today card', type: 'text', default_it: 'Disponibilità oggi', default_en: 'Availability issues today', style_variant: 'label' },
+  { key: 'admin.today.availabilityToday.helper', section: 'Oggi', label_it: 'Aiuto disponibilità oggi', label_en: 'Availability today helper', type: 'text', default_it: 'Gestisci calendario', default_en: 'Manage calendar' },
+  { key: 'admin.today.todayRequests.title', section: 'Oggi', label_it: 'Titolo richieste di oggi', label_en: 'Today requests title', type: 'text', default_it: 'Richieste di oggi', default_en: 'Today requests', style_variant: 'heading' },
+  { key: 'admin.today.pendingRequests.title', section: 'Oggi', label_it: 'Titolo richieste pending', label_en: 'Pending requests title', type: 'text', default_it: 'Richieste pending da confermare', default_en: 'Pending requests needing attention', style_variant: 'heading' },
+  { key: 'admin.today.upcomingOperations.title', section: 'Oggi', label_it: 'Titolo operazioni imminenti', label_en: 'Upcoming operations title', type: 'text', default_it: 'Operazioni imminenti', default_en: 'Upcoming operations', style_variant: 'heading' },
+  { key: 'admin.today.acceptedBookings.title', section: 'Oggi', label_it: 'Riga prenotazioni accettate', label_en: 'Accepted bookings row', type: 'text', default_it: 'Prenotazioni accettate', default_en: 'Accepted bookings', style_variant: 'heading' },
+  { key: 'admin.today.nearTermBlocks.title', section: 'Oggi', label_it: 'Riga blocchi prossimi', label_en: 'Near-term blocks row', type: 'text', default_it: 'Blocchi prossimi', default_en: 'Near-term blocks', style_variant: 'heading' },
+  { key: 'admin.today.recentDecisions.title', section: 'Oggi', label_it: 'Riga decisioni recenti', label_en: 'Recent decisions row', type: 'text', default_it: 'Decisioni recenti', default_en: 'Recent decisions', style_variant: 'heading' },
+  { key: 'admin.calendar.title', section: 'Calendar', label_it: 'Titolo calendario', label_en: 'Calendar title', type: 'text', default_it: 'Calendario disponibilità', default_en: 'Availability calendar', text_size: 'display', style_variant: 'display' },
+  { key: 'admin.calendar.helper', section: 'Calendar', label_it: 'Descrizione calendario', label_en: 'Calendar helper', type: 'textarea', default_it: 'Verde: escursione fissa. Rosso: esperienza prenotata. Grigio: data bloccata o non disponibile.', default_en: 'Green: fixed excursion. Red: booked experience. Grey: blocked or unavailable date.', text_size: 'normal', style_variant: 'body' },
+  { key: 'admin.calendar.selected.title', section: 'Calendar', label_it: 'Titolo dettagli data', label_en: 'Selected date title', type: 'text', default_it: 'Dettagli data', default_en: 'Date details', style_variant: 'heading' },
+  { key: 'admin.finance.title', section: 'Finance', label_it: 'Titolo finanze', label_en: 'Finance title', type: 'text', default_it: 'Finanze', default_en: 'Finance', style_variant: 'heading' },
+  { key: 'admin.finance.profitLoss.title', section: 'Finance', label_it: 'Titolo profitti e perdite', label_en: 'Profit & Loss title', type: 'text', default_it: 'Profitti e perdite', default_en: 'Profit & Loss', style_variant: 'heading' },
+  { key: 'admin.finance.addEntry.title', section: 'Finance', label_it: 'Titolo aggiungi voce', label_en: 'Add entry title', type: 'text', default_it: 'Aggiungi voce', default_en: 'Add entry', style_variant: 'heading' },
+  { key: 'admin.finance.editEntry.title', section: 'Finance', label_it: 'Titolo modifica voce', label_en: 'Edit entry title', type: 'text', default_it: 'Modifica voce', default_en: 'Edit entry', style_variant: 'heading' },
+  { key: 'admin.finance.entries.title', section: 'Finance', label_it: 'Titolo voci finanziarie', label_en: 'Financial entries title', type: 'text', default_it: 'Voci finanziarie', default_en: 'Financial entries', style_variant: 'heading' },
+  { key: 'admin.analytics.title', section: 'Analytics', label_it: 'Titolo dati', label_en: 'Analytics title', type: 'text', default_it: 'Dati', default_en: 'Analytics', style_variant: 'heading' },
+  { key: 'admin.analytics.helper', section: 'Analytics', label_it: 'Descrizione dati', label_en: 'Analytics helper', type: 'textarea', default_it: 'Metriche anonime e privacy-first sulle visite pubbliche, le azioni e il percorso verso la prenotazione.', default_en: 'Anonymous privacy-first metrics about public visits, actions, and movement toward booking.' },
+  { key: 'admin.analytics.overview.title', section: 'Analytics', label_it: 'Titolo panoramica', label_en: 'Overview title', type: 'text', default_it: 'Panoramica', default_en: 'Overview', style_variant: 'heading' },
+  { key: 'admin.analytics.bookingFunnel.title', section: 'Analytics', label_it: 'Titolo funnel prenotazione', label_en: 'Booking funnel title', type: 'text', default_it: 'Funnel prenotazione', default_en: 'Booking funnel', style_variant: 'heading' },
+  { key: 'admin.analytics.contactIntent.title', section: 'Analytics', label_it: 'Titolo intento contatto', label_en: 'Contact intent title', type: 'text', default_it: 'Intento di contatto', default_en: 'Contact intent', style_variant: 'heading' },
+  { key: 'admin.analytics.audienceUx.title', section: 'Analytics', label_it: 'Titolo pubblico e UX', label_en: 'Audience and UX title', type: 'text', default_it: 'Pubblico e UX', default_en: 'Audience and UX', style_variant: 'heading' },
+  { key: 'admin.analytics.geography.title', section: 'Analytics', label_it: 'Titolo geografia', label_en: 'Geography title', type: 'text', default_it: 'Geografia', default_en: 'Geography', style_variant: 'heading' },
+  { key: 'admin.analytics.flow.title', section: 'Analytics', label_it: 'Titolo flusso sito', label_en: 'Website flow title', type: 'text', default_it: 'Flusso sito', default_en: 'Website flow', style_variant: 'heading' },
+  { key: 'admin.analytics.sources.title', section: 'Analytics', label_it: 'Titolo fonti traffico', label_en: 'Traffic sources title', type: 'text', default_it: 'Fonti traffico', default_en: 'Traffic sources', style_variant: 'heading' },
+  { key: 'admin.analytics.devices.title', section: 'Analytics', label_it: 'Titolo dispositivi', label_en: 'Devices title', type: 'text', default_it: 'Dispositivi', default_en: 'Devices', style_variant: 'heading' },
+  { key: 'admin.analytics.language.title', section: 'Analytics', label_it: 'Titolo lingua', label_en: 'Language title', type: 'text', default_it: 'Lingua', default_en: 'Language', style_variant: 'heading' },
+  { key: 'admin.requests.title', section: 'Requests', label_it: 'Titolo richieste', label_en: 'Requests title', type: 'text', default_it: 'Richieste', default_en: 'Requests', style_variant: 'heading' },
+  { key: 'admin.requests.helper', section: 'Requests', label_it: 'Descrizione richieste', label_en: 'Requests helper', type: 'textarea', default_it: 'Cerca e filtra richieste da sito, WhatsApp, telefono o email.', default_en: 'Search and filter requests from the website, WhatsApp, phone, or email.' },
+  { key: 'admin.requests.results.title', section: 'Requests', label_it: 'Titolo risultati richieste', label_en: 'Request results title', type: 'text', default_it: 'Risultati', default_en: 'Results', style_variant: 'heading' },
+  { key: 'admin.upcoming.title', section: 'Upcoming', label_it: 'Titolo prossime prenotazioni', label_en: 'Upcoming bookings title', type: 'text', default_it: 'Prossime prenotazioni', default_en: 'Upcoming bookings', text_size: 'display', style_variant: 'display' },
+  { key: 'admin.upcoming.helper', section: 'Upcoming', label_it: 'Descrizione prossime prenotazioni', label_en: 'Upcoming bookings helper', type: 'textarea', default_it: 'Richieste accettate e blocchi attivi, organizzati per giorno. Nessuna statistica: solo operatività.', default_en: 'Accepted requests and active blocks, organized by date. No analytics: just operations.', text_size: 'normal', style_variant: 'body' },
+  { key: 'admin.upcoming.accepted.title', section: 'Upcoming', label_it: 'Titolo prenotazioni accettate', label_en: 'Accepted bookings title', type: 'text', default_it: 'Prenotazioni accettate', default_en: 'Accepted bookings', style_variant: 'heading' },
+  { key: 'admin.upcoming.past.title', section: 'Upcoming', label_it: 'Titolo esperienze passate', label_en: 'Past experiences title', type: 'text', default_it: 'Esperienze passate', default_en: 'Past experiences', style_variant: 'heading' },
+  { key: 'admin.upcoming.blocks.title', section: 'Upcoming', label_it: 'Titolo blocchi prossimi', label_en: 'Near-term blocks title', type: 'text', default_it: 'Blocchi prossimi', default_en: 'Near-term blocks', style_variant: 'heading' },
+  { key: 'admin.availability.title', section: 'Availability', label_it: 'Titolo disponibilità', label_en: 'Availability title', type: 'text', default_it: 'Disponibilità', default_en: 'Availability', style_variant: 'heading' },
+  { key: 'admin.availability.helper', section: 'Availability', label_it: 'Descrizione disponibilità', label_en: 'Availability helper', type: 'textarea', default_it: 'Gestisci disponibilità privata e date fisse prenotabili fino a 12 persone.', default_en: 'Manage private availability and fixed excursion dates bookable up to 12 people.' },
+  { key: 'admin.availability.addBlock.title', section: 'Availability', label_it: 'Titolo aggiungi blocco', label_en: 'Add block title', type: 'text', default_it: 'Aggiungi blocco disponibilità', default_en: 'Add availability block', style_variant: 'heading' },
+  { key: 'admin.availability.existingBlocks.title', section: 'Availability', label_it: 'Titolo blocchi esistenti', label_en: 'Existing blocks title', type: 'text', default_it: 'Blocchi esistenti', default_en: 'Existing blocks', style_variant: 'heading' },
+  { key: 'admin.reviews.title', section: 'Reviews', label_it: 'Titolo gestione recensioni', label_en: 'Review management title', type: 'text', default_it: 'Gestione recensioni', default_en: 'Review management', style_variant: 'heading' },
+  { key: 'admin.partnerships.title', section: 'Collaborations', label_it: 'Titolo collaborazioni', label_en: 'Partnerships title', type: 'text', default_it: 'Collaborazioni', default_en: 'Partnerships', style_variant: 'heading' },
+  { key: 'admin.partnerships.helper', section: 'Collaborations', label_it: 'Descrizione collaborazioni', label_en: 'Partnerships helper', type: 'textarea', default_it: 'Crea, modifica e disattiva le collaborazioni visibili sul sito pubblico.', default_en: 'Create, edit, and deactivate collaborations visible on the public website.' },
+  { key: 'admin.partnerships.create.title', section: 'Collaborations', label_it: 'Titolo crea collaborazione', label_en: 'Create partnership title', type: 'text', default_it: 'Crea collaborazione', default_en: 'Create partnership', style_variant: 'heading' },
+  { key: 'admin.partnerships.saved.title', section: 'Collaborations', label_it: 'Titolo collaborazioni salvate', label_en: 'Saved partnerships title', type: 'text', default_it: 'Collaborazioni salvate', default_en: 'Saved partnerships', style_variant: 'heading' },
+  { key: 'admin.reviews.helper', section: 'Reviews', label_it: 'Descrizione gestione recensioni', label_en: 'Review management helper', type: 'textarea', default_it: 'Approva, nascondi, rispondi o elimina recensioni pubbliche.', default_en: 'Approve, hide, reply to, or delete public reviews.' },
+  { key: 'admin.edit.title', section: 'Edit', label_it: 'Titolo modifica', label_en: 'Edit page title', type: 'text', default_it: 'Modifica sito e recensioni', default_en: 'Edit website and reviews', text_size: 'display', style_variant: 'display' },
+  { key: 'admin.edit.helper', section: 'Edit', label_it: 'Descrizione modifica', label_en: 'Edit page helper', type: 'textarea', default_it: 'Gestisci contenuti, media e recensioni pubbliche da un’unica area.', default_en: 'Manage public content, media, and reviews from one area.', text_size: 'normal', style_variant: 'body' },
+  { key: 'admin.edit.publicSite.title', section: 'Edit', label_it: 'Titolo pannello sito pubblico', label_en: 'Public website panel title', type: 'text', default_it: 'Sito pubblico', default_en: 'Public website', style_variant: 'heading' },
+  { key: 'admin.edit.publicSite.helper', section: 'Edit', label_it: 'Descrizione pannello sito pubblico', label_en: 'Public website panel helper', type: 'text', default_it: 'Testi e media', default_en: 'Text and media', style_variant: 'label' },
+  { key: 'admin.edit.adminSite.title', section: 'Edit', label_it: 'Titolo pannello sito admin', label_en: 'Admin website panel title', type: 'text', default_it: 'Sito admin', default_en: 'Admin website', style_variant: 'heading' },
+  { key: 'admin.edit.adminSite.helper', section: 'Edit', label_it: 'Descrizione pannello sito admin', label_en: 'Admin website panel helper', type: 'text', default_it: 'Testi pannello', default_en: 'Panel text', style_variant: 'label' },
+  { key: 'admin.edit.reviews.title', section: 'Edit', label_it: 'Titolo pannello recensioni', label_en: 'Reviews panel title', type: 'text', default_it: 'Recensioni', default_en: 'Reviews', style_variant: 'heading' },
+  { key: 'admin.edit.reviews.helper', section: 'Edit', label_it: 'Descrizione pannello recensioni', label_en: 'Reviews panel helper', type: 'text', default_it: 'Gestione', default_en: 'Management', style_variant: 'label' },
+  { key: 'admin.publicSite.title', section: 'Public site', label_it: 'Titolo scorciatoia sito pubblico', label_en: 'Public site shortcut title', type: 'text', default_it: 'Sito pubblico', default_en: 'Public site', text_size: 'display', style_variant: 'display' },
+  { key: 'admin.publicSite.helper', section: 'Public site', label_it: 'Descrizione scorciatoia sito pubblico', label_en: 'Public site shortcut helper', type: 'textarea', default_it: 'Scorciatoia admin verso il sito pubblico. Usa il pannello Sito pubblico in Modifica per modificare testi, media e sezioni pubbliche.', default_en: 'Admin shortcut to the public website. Use the Public website panel in Edit to modify public copy, media, and sections.', text_size: 'normal', style_variant: 'body' }
 ];
 
 function contentDefinitionMap() {
   return SITE_CONTENT_DEFINITIONS.reduce((acc, item) => ({ ...acc, [item.key]: item }), {});
+}
+
+function AdminSiteContentPage({ lang, session }) {
+  const [section, setSection] = useState('today');
+  const [editorLang, setEditorLang] = useState(lang || 'it');
+  const [device, setDevice] = useState('desktop');
+  const [contentRows, setContentRows] = useState([]);
+  const [contentDrafts, setContentDrafts] = useState({});
+  const [selected, setSelected] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [notice, setNotice] = useState('');
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    if (!isSupabaseConfigured) {
+      setContentRows([]);
+      setLoading(false);
+      setError(adminCopy(lang, 'Supabase non è configurato. Puoi vedere l’anteprima, ma non salvare modifiche.', 'Supabase is not configured. You can preview the dashboard, but changes cannot be saved.'));
+      return;
+    }
+    try {
+      const rows = await listSiteContent({ activeOnly: false });
+      setContentRows(rows.filter((row) => String(row.content_key || '').startsWith('admin.')));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Editor admin non caricato.', 'Admin editor not loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  const contentMap = useMemo(() => buildAdminEditorContentMap(contentRows, contentDrafts), [contentRows, contentDrafts]);
+  const hasDrafts = Object.keys(contentDrafts).length > 0;
+  const selectedHasDraft = Boolean(selected && selected.type === 'text' && contentDrafts[selected.key]);
+  const editor = useMemo(() => ({ isEditing: true, lang: editorLang, selected, select: setSelected, contentMap, mediaMap: {} }), [editorLang, selected, contentMap]);
+
+  function updateContentDraft(key, patch) {
+    setFeedback('');
+    setContentDrafts((current) => ({ ...current, [key]: { ...(contentMap[key] || editorContentItem({}, key)), ...(current[key] || {}), ...patch } }));
+  }
+
+  function updateMediaDraft() {}
+
+  async function saveContentItem(item) {
+    if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non è configurato.', 'Supabase is not configured.'));
+    await upsertSiteContent({
+      content_key: item.content_key || item.key,
+      section: item.section,
+      label_it: item.label_it,
+      label_en: item.label_en,
+      value_it: item.value_it,
+      value_en: item.value_en,
+      default_it: item.default_it,
+      default_en: item.default_en,
+      content_type: item.content_type || (item.type === 'textarea' ? 'textarea' : 'text'),
+      style_variant: item.style_variant || 'body',
+      text_size: item.text_size || 'normal',
+      text_align: item.text_align || 'left',
+      visible: item.visible !== false,
+      layout_variant: item.layout_variant || 'default',
+      sort_order: item.sort_order || 0,
+      active: item.active !== false,
+      updated_by: session.user.id
+    });
+  }
+
+  async function saveSelected() {
+    if (!selected || saving) return;
+    setError('');
+    setFeedback('');
+    setSaving(true);
+    try {
+      await saveContentItem(contentMap[selected.key]);
+      setContentDrafts((current) => {
+        const next = { ...current };
+        delete next[selected.key];
+        return next;
+      });
+      setFeedback(adminCopy(lang, 'Modifica admin salvata.', 'Admin change saved.'));
+      await refresh();
+      window.dispatchEvent(new Event('vulcaniq-admin-content-updated'));
+      setSelected(null);
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Contenuto admin non salvato.', 'Admin content not saved.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveAll() {
+    if (saving) return;
+    setError('');
+    setFeedback('');
+    setSaving(true);
+    try {
+      const items = Object.keys(contentDrafts).map((key) => contentMap[key]).filter(Boolean);
+      for (const item of items) await saveContentItem(item);
+      setContentDrafts({});
+      setFeedback(adminCopy(lang, 'Tutte le modifiche admin sono state salvate.', 'All admin changes have been saved.'));
+      await refresh();
+      window.dispatchEvent(new Event('vulcaniq-admin-content-updated'));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Impossibile salvare tutte le modifiche admin.', 'Unable to save all admin changes.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function discardDrafts() {
+    if (hasDrafts && !window.confirm(adminCopy(lang, 'Scartare le modifiche admin non salvate?', 'Discard unsaved admin changes?'))) return;
+    setContentDrafts({});
+    setFeedback(adminCopy(lang, 'Modifiche admin locali scartate.', 'Local admin changes discarded.'));
+  }
+
+  function discardSelectedDraft() {
+    if (!selected || selected.type !== 'text') return;
+    setContentDrafts((current) => {
+      const next = { ...current };
+      delete next[selected.key];
+      return next;
+    });
+  }
+
+  function closeSelectedEditor() {
+    if (selectedHasDraft && !window.confirm(adminCopy(lang, 'Chiudere senza salvare questa modifica?', 'Close without saving this change?'))) return;
+    discardSelectedDraft();
+    setSelected(null);
+  }
+
+  function resetSelected() {
+    if (!selected || selected.type !== 'text') return;
+    if (!window.confirm(adminCopy(lang, 'Ripristinare il testo admin selezionato al valore predefinito?', 'Reset the selected admin text to its default value?'))) return;
+    const definition = getContentDefinition(selected.key);
+    const item = contentMap[selected.key] || editorContentItem({}, selected.key);
+    updateContentDraft(selected.key, {
+      value_it: item.default_it || definition.default_it || '',
+      value_en: item.default_en || definition.default_en || '',
+      visible: true,
+      active: true,
+      text_size: definition.text_size || 'normal',
+      text_align: definition.text_align || 'left',
+      style_variant: definition.style_variant || 'body'
+    });
+  }
+
+  return (
+    <section className="admin-subpage admin-site-content-page admin-visual-editor-page visual-editor-page">
+      <div className="visual-editor-toolbar admin-visual-editor-toolbar">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'Modifica pannello', 'Edit admin panel')}</span>
+          <h1>{adminCopy(lang, 'Editor visuale pannello', 'Admin visual editor')}</h1>
+        </div>
+        <label><span>{adminCopy(lang, 'Sezione', 'Section')}</span><select value={section} onChange={(event) => { setSection(event.target.value); setSelected(null); }}>
+          {ADMIN_EDITOR_SECTION_OPTIONS.map((item) => <option key={item.key} value={item.key}>{lang === 'it' ? item.it : item.en}</option>)}
+        </select></label>
+        <label><span>{adminCopy(lang, 'Lingua', 'Language')}</span><select value={editorLang} onChange={(event) => setEditorLang(event.target.value)}><option value="it">IT</option><option value="en">EN</option></select></label>
+        <label><span>{adminCopy(lang, 'Dispositivo', 'Device')}</span><select value={device} onChange={(event) => setDevice(event.target.value)}><option value="desktop">Desktop</option><option value="tablet">Tablet</option><option value="mobile">Mobile</option></select></label>
+        <button className="button secondary" type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna anteprima', 'Refresh preview')}</button>
+        <button className="button secondary" type="button" onClick={resetSelected} disabled={!selected}>{adminCopy(lang, 'Ripristina selezione', 'Reset selected')}</button>
+        <button className="button secondary" type="button" onClick={discardDrafts} disabled={!hasDrafts || saving}>{adminCopy(lang, 'Scarta', 'Discard')}</button>
+        <button className="button primary" type="button" onClick={saveAll} disabled={!hasDrafts || !isSupabaseConfigured || saving}>{saving ? adminCopy(lang, 'Salvataggio...', 'Saving...') : adminCopy(lang, 'Salva tutto', 'Save all')}</button>
+      </div>
+
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {error && <div className="admin-alert error" role="alert">{error}</div>}
+      {notice && <div className="admin-alert warning" role="status">{notice}</div>}
+      {loading ? <p>{adminCopy(lang, 'Caricamento editor admin...', 'Loading admin editor...')}</p> : (
+        <>
+          <div className="visual-editor-shell admin-visual-editor-shell">
+            <AdminVisualEditorPreview
+              section={section}
+              lang={editorLang}
+              device={device}
+              adminContent={contentMap}
+              editor={editor}
+              setNotice={setNotice}
+            />
+          </div>
+          {selected && (
+            <EditorFullscreenModal
+              lang={lang}
+              editorLang={editorLang}
+              selected={selected}
+              contentMap={contentMap}
+              mediaMap={{}}
+              updateContentDraft={updateContentDraft}
+              updateMediaDraft={updateMediaDraft}
+              onSave={saveSelected}
+              onReset={resetSelected}
+              onClose={closeSelectedEditor}
+              canSave={isSupabaseConfigured && !saving}
+            />
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+
+const ADMIN_EDITOR_SECTION_OPTIONS = [
+  ...ADMIN_NAV_SECTIONS.filter((section) => section.editable).map((section) => ({ key: section.key, it: section.labelIt, en: section.labelEn })),
+  { key: 'reviews', it: 'Recensioni', en: 'Reviews' }
+];
+
+function AdminVisualEditorPreview({ section, lang, device, adminContent, editor, setNotice }) {
+  function disabledActionNotice() {
+    setNotice(lang === 'it' ? 'Azione disattivata durante la modifica del pannello admin.' : 'This action is disabled while editing the admin panel.');
+    window.setTimeout(() => setNotice(''), 2800);
+  }
+
+  function handlePreviewClick(event) {
+    if (event.target.closest('.editor-selectable')) return;
+    if (event.target.closest('button, a, input, select, textarea, summary')) {
+      event.preventDefault();
+      event.stopPropagation();
+      disabledActionNotice();
+    }
+  }
+
+  function renderSection() {
+    switch (section) {
+      case 'calendar':
+        return <AdminCalendarPreview lang={lang} adminContent={adminContent} editor={editor} />;
+      case 'upcoming':
+        return <AdminUpcomingPreview lang={lang} adminContent={adminContent} editor={editor} />;
+      case 'requests':
+      case 'bookings':
+        return <AdminRequestsPreview lang={lang} adminContent={adminContent} editor={editor} />;
+      case 'availability':
+        return <AdminAvailabilityPreview lang={lang} adminContent={adminContent} editor={editor} />;
+      case 'partnerships':
+        return <AdminPartnershipsPreview lang={lang} adminContent={adminContent} editor={editor} />;
+      case 'edit':
+        return <AdminEditPreview lang={lang} adminContent={adminContent} editor={editor} />;
+      case 'finance':
+        return <AdminFinancePreview lang={lang} adminContent={adminContent} editor={editor} />;
+      case 'analytics':
+        return <AdminAnalyticsPreview lang={lang} adminContent={adminContent} editor={editor} />;
+      case 'publicSite':
+        return <AdminPublicSitePreview lang={lang} adminContent={adminContent} editor={editor} />;
+      case 'reviews':
+        return <AdminReviewsPreview lang={lang} adminContent={adminContent} editor={editor} />;
+      case 'today':
+      case 'dashboard':
+      default:
+        return <AdminDashboardPreview lang={lang} adminContent={adminContent} editor={editor} />;
+    }
+  }
+
+  return (
+    <div className="visual-editor-canvas admin-visual-editor-canvas">
+      <div className={`visual-preview-frame admin-dashboard-preview-frame ${device}`} onClickCapture={handlePreviewClick}>
+        <div className="admin-preview-browserbar">
+          <span>{adminCopy(lang, 'Anteprima pannello admin', 'Admin panel preview')}</span>
+          <strong>vulcanIQ</strong>
+        </div>
+        <div className="admin-preview-surface">
+          {renderSection()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminPreviewSummaryCard({ value, labelKey, helperKey, lang, adminContent, editor, labelFallback, helperFallback }) {
+  return (
+    <article className="summary-card admin-preview-summary-card">
+      <strong>{value}</strong>
+      <AdminEditableText itemKey={labelKey} lang={lang} adminContent={adminContent} editor={editor} fallback={labelFallback} />
+      {helperKey && <AdminEditableText as="small" itemKey={helperKey} lang={lang} adminContent={adminContent} editor={editor} fallback={helperFallback} />}
+    </article>
+  );
+}
+
+function AdminDashboardPreview({ lang, adminContent, editor }) {
+  return (
+    <section className="admin-page admin-preview-page">
+      <div className="admin-page-header">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'Oggi', 'Today')}</span>
+          <AdminEditableText as="h1" itemKey="admin.today.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Pannello operativo', 'Operations')} />
+          <AdminEditableText as="p" itemKey="admin.today.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Stato operativo rapido, richieste e attività da controllare oggi.', 'Fast operational status, requests, and activity to review today.')} />
+        </div>
+        <div className="admin-header-actions"><button className="button primary" type="button">{adminCopy(lang, 'Aggiungi richiesta manuale', 'Add manual request')}</button></div>
+      </div>
+      <div className="admin-summary-grid admin-primary-stat-grid">
+        <AdminPreviewSummaryCard value="2" labelKey="admin.today.pendingToday.label" helperKey="admin.today.pendingToday.helper" lang={lang} adminContent={adminContent} editor={editor} labelFallback={adminCopy(lang, 'Pending oggi', 'Pending today')} helperFallback={adminCopy(lang, 'Apri richieste di oggi', 'Open today requests')} />
+        <AdminPreviewSummaryCard value="5" labelKey="admin.today.pendingTotal.label" helperKey="admin.today.pendingTotal.helper" lang={lang} adminContent={adminContent} editor={editor} labelFallback={adminCopy(lang, 'Pending totale', 'Pending total')} helperFallback={adminCopy(lang, 'Vai alle richieste', 'Go to requests')} />
+        <AdminPreviewSummaryCard value="3" labelKey="admin.today.acceptedToday.label" helperKey="admin.today.acceptedToday.helper" lang={lang} adminContent={adminContent} editor={editor} labelFallback={adminCopy(lang, 'Accettate oggi', 'Accepted today')} helperFallback={adminCopy(lang, 'Vedi confermate', 'View accepted')} />
+        <AdminPreviewSummaryCard value="1" labelKey="admin.today.availabilityToday.label" helperKey="admin.today.availabilityToday.helper" lang={lang} adminContent={adminContent} editor={editor} labelFallback={adminCopy(lang, 'Disponibilità oggi', 'Availability issues today')} helperFallback={adminCopy(lang, 'Gestisci calendario', 'Manage calendar')} />
+      </div>
+      <div className="admin-two-column">
+        <section className="admin-panel">
+          <details className="admin-archive-details today-requests-details" open>
+            <summary><AdminEditableText itemKey="admin.today.todayRequests.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Richieste di oggi', 'Today requests')} /><strong>2</strong></summary>
+            <div className="request-card-list compact-list">
+              <article className="request-card compact"><div className="request-card-head"><div><h3>Rita</h3><p>Etna Learning · 12/06/2026</p></div><span className="status-pill pending">pending</span></div></article>
+            </div>
+          </details>
+          <div className="admin-panel-subsection">
+            <div className="admin-panel-header"><AdminEditableText as="h2" itemKey="admin.today.pendingRequests.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Richieste pending da confermare', 'Pending requests needing attention')} /></div>
+            <p className="small-note">{adminCopy(lang, 'Anteprima contenuto richieste.', 'Request content preview.')}</p>
+          </div>
+        </section>
+        <aside className="admin-panel compact-panel admin-operations-panel">
+          <div className="admin-panel-header"><AdminEditableText as="h2" itemKey="admin.today.upcomingOperations.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Operazioni imminenti', 'Upcoming operations')} /></div>
+          <details className="admin-archive-details admin-operation-group" open><summary><AdminEditableText itemKey="admin.today.acceptedBookings.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Prenotazioni accettate', 'Accepted bookings')} /><strong>5</strong></summary></details>
+          <details className="admin-archive-details admin-operation-group"><summary><AdminEditableText itemKey="admin.today.nearTermBlocks.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Blocchi prossimi', 'Near-term blocks')} /><strong>0</strong></summary></details>
+          <details className="admin-archive-details admin-operation-group"><summary><AdminEditableText itemKey="admin.today.recentDecisions.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Decisioni recenti', 'Recent decisions')} /><strong>8</strong></summary></details>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function AdminCalendarPreview({ lang, adminContent, editor }) {
+  return (
+    <section className="admin-page admin-preview-page">
+      <div className="admin-page-header">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'Calendario', 'Calendar')}</span>
+          <AdminEditableText as="h1" itemKey="admin.calendar.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Calendario disponibilità', 'Availability calendar')} />
+          <AdminEditableText as="p" itemKey="admin.calendar.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Verde: escursione fissa. Rosso: esperienza prenotata. Grigio: data bloccata o non disponibile.', 'Green: fixed excursion. Red: booked experience. Grey: blocked or unavailable date.')} />
+        </div>
+      </div>
+      <div className="admin-calendar-layout">
+        <article className="calendar-card admin-calendar-card">
+          <div className="calendar-topline"><button type="button">‹</button><h2>Giugno 2026</h2><button type="button">›</button></div>
+          <div className="calendar-legend compact-legend">
+            <span><i className="legend-dot fixed" />{adminCopy(lang, 'Verde: escursione fissa', 'Green: fixed excursion')}</span>
+            <span><i className="legend-dot booked" />{adminCopy(lang, 'Rosso: esperienza prenotata', 'Red: booked experience')}</span>
+            <span><i className="legend-dot blocked" />{adminCopy(lang, 'Grigio: bloccata', 'Grey: blocked')}</span>
+          </div>
+          <div className="calendar-grid admin-calendar-grid">{[9, 10, 11, 12, 13, 14].map((day) => <button key={day} className={day === 12 ? 'has-fixed' : day === 14 ? 'has-booking' : ''} type="button"><span>{day}</span></button>)}</div>
+        </article>
+        <aside className="admin-panel"><AdminEditableText as="h2" itemKey="admin.calendar.selected.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Dettagli data', 'Date details')} /><p className="small-note">Etna Live · 12/06/2026</p></aside>
+      </div>
+    </section>
+  );
+}
+
+function AdminUpcomingPreview({ lang, adminContent, editor }) {
+  return (
+    <section className="admin-page admin-preview-page">
+      <div className="admin-page-header">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'Conferme owner', 'Owner confirmations')}</span>
+          <AdminEditableText as="h1" itemKey="admin.upcoming.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Prossime prenotazioni', 'Upcoming bookings')} />
+          <AdminEditableText as="p" itemKey="admin.upcoming.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Richieste accettate e blocchi attivi, organizzati per giorno. Nessuna statistica: solo operatività.', 'Accepted requests and active blocks, organized by date. No analytics: just operations.')} />
+        </div>
+      </div>
+      <div className="admin-two-column">
+        <section className="admin-panel upcoming-collapsed-panel">
+          <details className="admin-archive-details admin-upcoming-group" open><summary><AdminEditableText itemKey="admin.upcoming.accepted.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Prenotazioni accettate', 'Accepted bookings')} /><strong>3</strong></summary></details>
+          <details className="admin-archive-details admin-upcoming-group"><summary><AdminEditableText itemKey="admin.upcoming.past.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Esperienze passate', 'Past experiences')} /><strong>8</strong></summary></details>
+        </section>
+        <aside className="admin-panel compact-panel"><AdminEditableText as="h2" itemKey="admin.upcoming.blocks.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Blocchi prossimi', 'Near-term blocks')} /></aside>
+      </div>
+    </section>
+  );
+}
+
+function AdminEditPreview({ lang, adminContent, editor }) {
+  return (
+    <section className="admin-page admin-preview-page admin-edit-page">
+      <div className="admin-page-header"><div><span className="kicker">{adminCopy(lang, 'Modifica', 'Edit')}</span><AdminEditableText as="h1" itemKey="admin.edit.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Modifica sito e recensioni', 'Edit website and reviews')} /><AdminEditableText as="p" itemKey="admin.edit.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Gestisci contenuti, media e recensioni pubbliche da un’unica area.', 'Manage public content, media, and reviews from one area.')} /></div></div>
+      <details className="admin-archive-details edit-workspace-section" open><summary><AdminEditableText itemKey="admin.edit.publicSite.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Sito pubblico', 'Public website')} /><AdminEditableText as="strong" itemKey="admin.edit.publicSite.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Testi e media', 'Text and media')} /></summary></details>
+      <details className="admin-archive-details edit-workspace-section"><summary><AdminEditableText itemKey="admin.edit.adminSite.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Sito admin', 'Admin website')} /><AdminEditableText as="strong" itemKey="admin.edit.adminSite.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Testi pannello', 'Panel text')} /></summary></details>
+      <details className="admin-archive-details edit-workspace-section"><summary><AdminEditableText itemKey="admin.edit.reviews.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Recensioni', 'Reviews')} /><AdminEditableText as="strong" itemKey="admin.edit.reviews.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Gestione', 'Management')} /></summary></details>
+    </section>
+  );
+}
+
+function AdminPublicSitePreview({ lang, adminContent, editor }) {
+  return (
+    <section className="admin-page admin-preview-page">
+      <div className="admin-page-header"><div><span className="kicker">vulcanIQ</span><AdminEditableText as="h1" itemKey="admin.publicSite.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Sito pubblico', 'Public site')} /><AdminEditableText as="p" itemKey="admin.publicSite.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Scorciatoia admin verso il sito pubblico. Usa il pannello Sito pubblico in Modifica per modificare testi, media e sezioni pubbliche.', 'Admin shortcut to the public website. Use the Public website panel in Edit to modify public copy, media, and sections.')} /></div></div>
+      <section className="admin-panel"><p className="small-note">{adminCopy(lang, 'Questa voce rappresenta il pulsante Sito pubblico nella navigazione admin.', 'This item represents the Public site button in the admin navigation.')}</p></section>
+    </section>
+  );
+}
+
+function AdminFinancePreview({ lang, adminContent, editor }) {
+  return (
+    <section className="admin-page admin-preview-page finance-preview-page">
+      <div className="admin-page-header">
+        <div><span className="kicker">{adminCopy(lang, 'Finanze', 'Finance')}</span><AdminEditableText as="h1" itemKey="admin.finance.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Finanze', 'Finance')} /></div>
+        <button className="button secondary" type="button">{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+      </div>
+      <div className="admin-summary-grid finance-summary-grid">
+        <SummaryCard label={adminCopy(lang, 'Entrate totali', 'Total earnings')} value="40,00 €" helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Uscite totali', 'Total expenses')} value="0,00 €" helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Utile netto', 'Net profit')} value="40,00 €" helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
+      </div>
+      <div className="admin-filter-bar finance-filter-bar"><select><option>{adminCopy(lang, 'Tutte le date', 'All dates')}</option></select><select><option>{adminCopy(lang, 'Tutti i tipi', 'All types')}</option></select><label className="finance-archive-filter"><input type="checkbox" readOnly /> <span>{adminCopy(lang, 'Includi archivio', 'Include archive')}</span></label></div>
+      <details className="admin-panel finance-collapsible-panel finance-overview-panel" open><summary className="finance-collapsible-summary"><strong>{adminCopy(lang, 'Tutte le date', 'All dates')}</strong></summary></details>
+      <details className="admin-panel finance-collapsible-panel finance-pl-panel" open><summary className="finance-collapsible-summary"><AdminEditableText as="strong" itemKey="admin.finance.profitLoss.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Profitti e perdite', 'Profit & Loss')} /></summary></details>
+      <div className="admin-two-column finance-layout">
+        <details className="admin-panel finance-collapsible-panel finance-form-panel" open><summary className="finance-collapsible-summary"><AdminEditableText as="strong" itemKey="admin.finance.addEntry.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Aggiungi voce', 'Add entry')} /></summary></details>
+        <details className="admin-panel finance-collapsible-panel finance-entries-panel" open><summary className="finance-collapsible-summary"><AdminEditableText as="strong" itemKey="admin.finance.entries.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Voci finanziarie', 'Financial entries')} /><em>1</em></summary></details>
+      </div>
+    </section>
+  );
+}
+
+function AdminAvailabilityPreview({ lang, adminContent, editor }) {
+  return (
+    <section className="admin-page admin-preview-page">
+      <div className="admin-page-header"><div><span className="kicker">{adminCopy(lang, 'Calendario pubblico', 'Public calendar')}</span><AdminEditableText as="h1" itemKey="admin.availability.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Disponibilità', 'Availability')} /><AdminEditableText as="p" itemKey="admin.availability.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Gestisci disponibilità privata e date fisse prenotabili fino a 12 persone.', 'Manage private availability and fixed excursion dates bookable up to 12 people.')} /></div></div>
+      <div className="admin-two-column availability-columns"><section className="admin-panel"><AdminEditableText as="h2" itemKey="admin.availability.addBlock.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Aggiungi blocco disponibilità', 'Add availability block')} /></section><section className="admin-panel"><div className="admin-panel-header"><AdminEditableText as="h2" itemKey="admin.availability.existingBlocks.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Blocchi esistenti', 'Existing blocks')} /></div></section></div>
+    </section>
+  );
+}
+
+function AdminRequestsPreview({ lang, adminContent, editor }) {
+  return (
+    <section className="admin-page admin-preview-page">
+      <div className="admin-page-header"><div><span className="kicker">{adminCopy(lang, 'Gestione richieste', 'Request management')}</span><AdminEditableText as="h1" itemKey="admin.requests.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Richieste', 'Requests')} /><AdminEditableText as="p" itemKey="admin.requests.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Cerca e filtra richieste da sito, WhatsApp, telefono o email.', 'Search and filter requests from the website, WhatsApp, phone, or email.')} /></div></div>
+      <section className="admin-panel"><div className="admin-panel-header"><AdminEditableText as="h2" itemKey="admin.requests.results.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Risultati', 'Results')} /><strong>4</strong></div></section>
+      <aside className="admin-panel compact-panel"><AdminEditableText as="h2" itemKey="admin.upcoming.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Prossime prenotazioni', 'Upcoming bookings')} /></aside>
+    </section>
+  );
+}
+
+function AdminReviewsPreview({ lang, adminContent, editor }) {
+  return (
+    <section className="admin-page admin-preview-page"><section className="admin-panel admin-reviews-panel"><div className="admin-panel-header"><AdminEditableText as="h2" itemKey="admin.reviews.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Gestione recensioni', 'Review management')} /><button type="button">{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div><AdminEditableText as="p" itemKey="admin.reviews.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Approva, nascondi, rispondi o elimina recensioni pubbliche.', 'Approve, hide, reply to, or delete public reviews.')} /></section></section>
+  );
+}
+
+function AdminPartnershipsPreview({ lang, adminContent, editor }) {
+  return (
+    <section className="admin-page admin-preview-page"><div className="admin-page-header"><div><span className="kicker">{adminCopy(lang, 'Network', 'Network')}</span><AdminEditableText as="h1" itemKey="admin.partnerships.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Collaborazioni', 'Partnerships')} /><AdminEditableText as="p" itemKey="admin.partnerships.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Crea, modifica e disattiva le collaborazioni visibili sul sito pubblico.', 'Create, edit, and deactivate collaborations visible on the public website.')} /></div></div><div className="admin-two-column availability-columns"><section className="admin-panel"><AdminEditableText as="h2" itemKey="admin.partnerships.create.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Crea collaborazione', 'Create partnership')} /></section><section className="admin-panel"><div className="admin-panel-header"><AdminEditableText as="h2" itemKey="admin.partnerships.saved.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Collaborazioni salvate', 'Saved partnerships')} /></div></section></div></section>
+  );
+}
+
+function AdminContentEditorModal({ lang, item, onClose, onSave, saving }) {
+  useBodyScrollLock(true);
+  const [form, setForm] = useState({
+    value_it: item.value_it ?? item.default_it ?? '',
+    value_en: item.value_en ?? item.default_en ?? '',
+    text_size: item.text_size || 'normal',
+    style_variant: item.style_variant || 'body',
+    text_align: item.text_align || 'left',
+    active: item.active !== false,
+    visible: item.visible !== false
+  });
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  function update(key, value) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  const TextFieldIt = item.content_type === 'textarea' || item.type === 'textarea'
+    ? <textarea rows={5} value={form.value_it} onChange={(event) => update('value_it', event.target.value)} />
+    : <input value={form.value_it} onChange={(event) => update('value_it', event.target.value)} />;
+  const TextFieldEn = item.content_type === 'textarea' || item.type === 'textarea'
+    ? <textarea rows={5} value={form.value_en} onChange={(event) => update('value_en', event.target.value)} />
+    : <input value={form.value_en} onChange={(event) => update('value_en', event.target.value)} />;
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="admin-modal wide full-screen-admin-modal admin-content-modal" role="dialog" aria-modal="true" aria-labelledby="adminContentEditorTitle">
+        <div className="admin-modal-header">
+          <div>
+            <span className="kicker">{adminCopy(lang, 'Sito admin', 'Admin website')}</span>
+            <h2 id="adminContentEditorTitle">{lang === 'it' ? item.label_it : item.label_en}</h2>
+            <p className="small-note">{item.key}</p>
+          </div>
+          <button className="modal-close-button" type="button" aria-label={adminCopy(lang, 'Chiudi', 'Close')} onClick={onClose}>{adminCopy(lang, 'Chiudi', 'Close')}</button>
+        </div>
+        <form className="admin-form-grid" onSubmit={(event) => { event.preventDefault(); onSave(item, form); }}>
+          <label className="admin-field full"><span>Italiano</span>{TextFieldIt}</label>
+          <label className="admin-field full"><span>English</span>{TextFieldEn}</label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Dimensione testo', 'Text size')}</span><select value={form.text_size} onChange={(event) => update('text_size', event.target.value)}><option value="small">Small</option><option value="normal">Normal</option><option value="large">Large</option><option value="display">Display</option></select></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Stile', 'Style')}</span><select value={form.style_variant} onChange={(event) => update('style_variant', event.target.value)}><option value="body">Body</option><option value="heading">Heading</option><option value="label">Label</option><option value="display">Display</option></select></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Allineamento', 'Alignment')}</span><select value={form.text_align} onChange={(event) => update('text_align', event.target.value)}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
+          <div className="admin-field admin-content-toggle-group">
+            <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => update('active', event.target.checked)} /> {adminCopy(lang, 'Attivo', 'Active')}</label>
+            <label className="check-field"><input type="checkbox" checked={form.visible} onChange={(event) => update('visible', event.target.checked)} /> {adminCopy(lang, 'Visibile', 'Visible')}</label>
+          </div>
+          <div className="modal-actions full">
+            <button className="button primary" type="submit" disabled={saving || !isSupabaseConfigured}>{saving ? adminCopy(lang, 'Salvataggio...', 'Saving...') : adminCopy(lang, 'Salva', 'Save')}</button>
+            <button className="button secondary" type="button" onClick={() => setForm((current) => ({ ...current, value_it: item.default_it || '', value_en: item.default_en || '', active: true, visible: true }))}>{adminCopy(lang, 'Ripristina fallback', 'Restore fallback')}</button>
+            <button className="button secondary" type="button" onClick={onClose}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function ContentAdminPage({ lang, session, compactHeader = false }) {
@@ -3485,6 +5318,7 @@ function ContentAdminPage({ lang, session, compactHeader = false }) {
     setError('');
     setFeedback('');
     try {
+      const style = resolveEditableTextStyle(definition.key, definition, definition);
       await upsertSiteContent({
         content_key: definition.key,
         section: definition.section,
@@ -3495,6 +5329,11 @@ function ContentAdminPage({ lang, session, compactHeader = false }) {
         default_it: definition.default_it,
         default_en: definition.default_en,
         content_type: definition.type === 'textarea' ? 'textarea' : 'text',
+        style_variant: style.style_variant,
+        text_size: style.text_size,
+        text_align: style.text_align,
+        visible: definition.visible !== false,
+        layout_variant: definition.layout_variant || 'default',
         active: values.active,
         updated_by: session.user.id
       });
@@ -3581,21 +5420,1412 @@ const FINANCE_CATEGORIES = {
   ]
 };
 
+const FINANCE_DATE_FILTERS = [
+  ['all', 'Tutte le date', 'All dates'],
+  ['specific-date', 'Data specifica', 'Specific date'],
+  ['specific-month', 'Mese specifico', 'Specific month'],
+  ['last-month', 'Mese scorso', 'Last month'],
+  ['next-month', 'Mese prossimo', 'Next month'],
+  ['last-3-months', 'Ultimi 3 mesi', 'Last 3 months'],
+  ['next-3-months', 'Prossimi 3 mesi', 'Next 3 months'],
+  ['last-6-months', 'Ultimi 6 mesi', 'Last 6 months'],
+  ['next-6-months', 'Prossimi 6 mesi', 'Next 6 months'],
+  ['last-year', 'Anno scorso', 'Last year'],
+  ['current-year', 'Anno corrente', 'Current year'],
+  ['next-year', 'Anno prossimo', 'Next year'],
+  ['custom', 'Intervallo personalizzato', 'Custom range']
+];
+
 function financeCategoryLabel(value, lang) {
   const found = [...FINANCE_CATEGORIES.income, ...FINANCE_CATEGORIES.expense].find(([key]) => key === value);
   return found ? (lang === 'it' ? found[1] : found[2]) : value || '-';
+}
+
+function financeDateFilterLabel(value, lang) {
+  const found = FINANCE_DATE_FILTERS.find(([key]) => key === value);
+  return found ? (lang === 'it' ? found[1] : found[2]) : value || '';
 }
 
 function formatMoney(amount, currency = 'EUR') {
   return new Intl.NumberFormat('it-IT', { style: 'currency', currency: currency || 'EUR' }).format(Number(amount || 0));
 }
 
-function FinanceAdminPage({ lang, session }) {
+function parseLocalIsoDate(value) {
+  const clean = String(value || '').trim();
+  const match = clean.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0, 0);
+}
+
+function monthValueFromDate(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function firstDayOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1, 12, 0, 0, 0);
+}
+
+function lastDayOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 12, 0, 0, 0);
+}
+
+function addMonthsDate(date, amount) {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1, 12, 0, 0, 0);
+}
+
+function financeRangeLabel(startDate, endDate, lang, fallback = '') {
+  if (!startDate && !endDate) return fallback || adminCopy(lang, 'Tutte le date', 'All dates');
+  if (startDate && endDate && startDate === endDate) return formatDateForMessage(startDate, lang);
+  if (startDate && endDate) return `${formatDateForMessage(startDate, lang)} – ${formatDateForMessage(endDate, lang)}`;
+  if (startDate) return `${adminCopy(lang, 'Da', 'From')} ${formatDateForMessage(startDate, lang)}`;
+  return `${adminCopy(lang, 'Fino a', 'Until')} ${formatDateForMessage(endDate, lang)}`;
+}
+
+function resolveFinanceDateRange(filters, lang) {
+  const mode = filters.dateMode || 'all';
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+  const isoRange = (start, end, fallback = '') => {
+    const startDate = start ? dateToIso(start) : '';
+    const endDate = end ? dateToIso(end) : '';
+    return { startDate, endDate, label: financeRangeLabel(startDate, endDate, lang, fallback) };
+  };
+
+  if (mode === 'specific-date') {
+    const date = parseLocalIsoDate(filters.specificDate);
+    return date ? isoRange(date, date) : { startDate: '', endDate: '', label: adminCopy(lang, 'Scegli una data', 'Choose a date') };
+  }
+
+  if (mode === 'specific-month') {
+    const [year, month] = String(filters.specificMonth || '').split('-').map(Number);
+    if (!year || !month) return { startDate: '', endDate: '', label: adminCopy(lang, 'Scegli un mese', 'Choose a month') };
+    const start = new Date(year, month - 1, 1, 12, 0, 0, 0);
+    const end = lastDayOfMonth(start);
+    return isoRange(start, end, monthLabel(start, lang));
+  }
+
+  if (mode === 'last-month') {
+    const month = addMonthsDate(today, -1);
+    return isoRange(firstDayOfMonth(month), lastDayOfMonth(month), monthLabel(month, lang));
+  }
+
+  if (mode === 'next-month') {
+    const month = addMonthsDate(today, 1);
+    return isoRange(firstDayOfMonth(month), lastDayOfMonth(month), monthLabel(month, lang));
+  }
+
+  if (mode === 'last-3-months') {
+    return isoRange(firstDayOfMonth(addMonthsDate(today, -2)), lastDayOfMonth(today));
+  }
+
+  if (mode === 'next-3-months') {
+    return isoRange(firstDayOfMonth(today), lastDayOfMonth(addMonthsDate(today, 2)));
+  }
+
+  if (mode === 'last-6-months') {
+    return isoRange(firstDayOfMonth(addMonthsDate(today, -5)), lastDayOfMonth(today));
+  }
+
+  if (mode === 'next-6-months') {
+    return isoRange(firstDayOfMonth(today), lastDayOfMonth(addMonthsDate(today, 5)));
+  }
+
+  if (mode === 'last-year') {
+    const year = today.getFullYear() - 1;
+    return isoRange(new Date(year, 0, 1, 12, 0, 0, 0), new Date(year, 11, 31, 12, 0, 0, 0), String(year));
+  }
+
+  if (mode === 'current-year') {
+    const year = today.getFullYear();
+    return isoRange(new Date(year, 0, 1, 12, 0, 0, 0), new Date(year, 11, 31, 12, 0, 0, 0), String(year));
+  }
+
+  if (mode === 'next-year') {
+    const year = today.getFullYear() + 1;
+    return isoRange(new Date(year, 0, 1, 12, 0, 0, 0), new Date(year, 11, 31, 12, 0, 0, 0), String(year));
+  }
+
+  if (mode === 'custom') {
+    return {
+      startDate: filters.fromDate || '',
+      endDate: filters.toDate || '',
+      label: financeRangeLabel(filters.fromDate || '', filters.toDate || '', lang, adminCopy(lang, 'Intervallo personalizzato', 'Custom range'))
+    };
+  }
+
+  return { startDate: '', endDate: '', label: adminCopy(lang, 'Tutte le date', 'All dates') };
+}
+
+function financeEntryIsLinked(entry) {
+  return Boolean(entry.booking_request_id || entry.fixed_excursion_id || entry.leaflet_id || entry.linkedBooking || entry.linkedFixedExcursion || entry.linkedLeaflet);
+}
+
+function financeEntryCustomerName(entry) {
+  return entry?.linkedBooking?.customer_name || '';
+}
+
+function enrichFinanceEntry(entry, { requestById, fixedById, leafletById }) {
+  const linkedBooking = entry.booking_request_id ? requestById.get(entry.booking_request_id) || null : null;
+  const fixedId = entry.fixed_excursion_id || linkedBooking?.fixed_excursion_id || '';
+  const linkedFixedExcursion = fixedId ? fixedById.get(fixedId) || linkedBooking?.fixed_excursion || null : null;
+  const linkedLeaflet = entry.leaflet_id ? leafletById.get(entry.leaflet_id) || null : null;
+  return {
+    ...entry,
+    linkedBooking,
+    linkedFixedExcursion,
+    linkedLeaflet,
+    isLinked: Boolean(linkedBooking || linkedFixedExcursion || linkedLeaflet || entry.booking_request_id || entry.fixed_excursion_id || entry.leaflet_id)
+  };
+}
+
+function groupFinanceEntriesByCategory(entries, type) {
+  const filtered = entries.filter((entry) => entry.type === type);
+  const total = filtered.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const map = new Map();
+  filtered.forEach((entry) => {
+    const key = entry.category || (type === 'income' ? 'other_income' : 'other_expense');
+    const current = map.get(key) || { key, type, entries: [], total: 0 };
+    current.entries.push(entry);
+    current.total += Number(entry.amount || 0);
+    map.set(key, current);
+  });
+  return [...map.values()]
+    .sort((a, b) => b.total - a.total)
+    .map((item) => ({ ...item, percentage: total > 0 ? Math.round((item.total / total) * 100) : 0 }));
+}
+
+function calculateFinanceSummary(entries) {
+  const incomeEntries = entries.filter((entry) => entry.type === 'income');
+  const expenseEntries = entries.filter((entry) => entry.type === 'expense');
+  const linkedBookingEntries = entries.filter((entry) => entry.booking_request_id || entry.linkedBooking);
+  const linkedFixedEntries = entries.filter((entry) => entry.fixed_excursion_id || entry.linkedFixedExcursion);
+  const unlinkedEntries = entries.filter((entry) => !financeEntryIsLinked(entry));
+  const income = incomeEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const expenses = expenseEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  return {
+    income,
+    expenses,
+    net: income - expenses,
+    incomeEntries,
+    expenseEntries,
+    linkedBookingEntries,
+    linkedFixedEntries,
+    unlinkedEntries,
+    incomeCategories: groupFinanceEntriesByCategory(entries, 'income'),
+    expenseCategories: groupFinanceEntriesByCategory(entries, 'expense')
+  };
+}
+
+const ANALYTICS_PERIODS = [
+  ['today', { it: 'Oggi', en: 'Today' }],
+  ['7d', { it: 'Ultimi 7 giorni', en: 'Last 7 days' }],
+  ['30d', { it: 'Ultimi 30 giorni', en: 'Last 30 days' }],
+  ['90d', { it: 'Ultimi 90 giorni', en: 'Last 90 days' }],
+  ['all', { it: 'Tutte le date', en: 'All dates' }]
+];
+
+function analyticsPeriodLabel(key, lang) {
+  return ANALYTICS_PERIODS.find(([value]) => value === key)?.[1]?.[lang] || key;
+}
+
+function analyticsDateRange(period) {
+  if (period === 'all') return { from: '', to: '', label: 'All dates' };
+  const now = new Date();
+  const start = new Date(now);
+  if (period === 'today') {
+    start.setHours(0, 0, 0, 0);
+  } else {
+    const days = period === '7d' ? 7 : period === '90d' ? 90 : 30;
+    start.setDate(now.getDate() - days + 1);
+    start.setHours(0, 0, 0, 0);
+  }
+  return { from: start.toISOString(), to: now.toISOString() };
+}
+
+function valueOrUnknown(value, lang) {
+  const clean = String(value || '').trim();
+  return clean || adminCopy(lang, 'Non disponibile', 'Unknown');
+}
+
+function eventCount(events, name) {
+  return events.filter((event) => event.event_name === name).length;
+}
+
+
+const SUBMIT_ATTEMPT_EVENTS = ['booking_form_submit_attempt', 'booking_submit_attempt'];
+const VALIDATION_ERROR_EVENTS = ['booking_form_validation_error', 'booking_submit_validation_error'];
+const SUBMIT_SUCCESS_EVENTS = ['booking_form_submit_success', 'booking_submit_success', 'booking_submit'];
+const SUBMIT_ERROR_EVENTS = ['booking_form_submit_error', 'booking_submit_error'];
+const MAP_CLICK_EVENTS = ['google_maps_click', 'maps_click'];
+const CONTACT_ACTION_EVENTS = ['whatsapp_click', 'email_click', 'phone_click', 'google_maps_click', 'maps_click'];
+
+function eventCountAny(events, names = []) {
+  const preferred = names[0];
+  const preferredCount = preferred ? eventCount(events, preferred) : 0;
+  if (preferredCount) return preferredCount;
+  return events.filter((event) => names.includes(event.event_name)).length;
+}
+
+function isEventName(event, names = []) {
+  return names.includes(event?.event_name);
+}
+
+function normalizeAnalyticsPath(path = '') {
+  const clean = `/${String(path || '/').split('?')[0]}`.replace(/\/{2,}/g, '/');
+  return clean === '//' ? '/' : clean;
+}
+
+function isInternalAnalyticsRow(row = {}) {
+  const path = normalizeAnalyticsPath(row.path || row.entry_path || row.exit_path || '');
+  const section = String(row.section || row.metadata?.source_section || '').toLowerCase();
+  if (path.startsWith('/admin') || path.startsWith('/api/')) return true;
+  if (path === '/api/analytics/event') return true;
+  if (section.includes('admin') || section.includes('finance') || section.includes('analytics') || section.includes('cms') || section.includes('editor')) return true;
+  if (row.metadata?.cta_location === 'admin_preview_excluded') return true;
+  return false;
+}
+
+function normalizedTrafficSourceForAnalytics(row = {}) {
+  const metadata = row.metadata || {};
+  const raw = String(metadata.utm_source || row.traffic_source || row.referrer_domain || '').toLowerCase();
+  const medium = String(metadata.utm_medium || '').toLowerCase();
+  if (raw.includes('instagram') || raw === 'ig') return 'instagram';
+  if (raw.includes('whatsapp') || raw === 'wa') return 'whatsapp';
+  if (raw.includes('facebook') || raw === 'fb') return 'facebook';
+  if (raw.includes('google')) return 'google';
+  if (!raw || raw === 'direct') return 'direct';
+  if (medium === 'message' && raw.includes('whatsapp')) return 'whatsapp';
+  return 'other';
+}
+
+function trafficSourceLabel(source, lang) {
+  if (source === 'direct') return adminCopy(lang, 'Diretto', 'Direct');
+  if (source === 'whatsapp') return adminCopy(lang, 'WhatsApp condiviso', 'WhatsApp share');
+  if (source === 'other') return adminCopy(lang, 'Altri referrer', 'Other referrers');
+  return source[0].toUpperCase() + source.slice(1);
+}
+
+function rawUnknown(value) {
+  const clean = String(value || '').trim();
+  return clean || 'unknown';
+}
+
+function uniqueCount(rows, key = 'visitor_id') {
+  return new Set((rows || []).map((row) => row?.[key]).filter(Boolean)).size;
+}
+
+function percent(numerator, denominator) {
+  if (!denominator) return '—';
+  return `${Math.round((numerator / denominator) * 1000) / 10}%`;
+}
+
+function formatDuration(seconds) {
+  const value = Math.round(Number(seconds || 0));
+  if (!value) return '—';
+  if (value < 60) return `${value}s`;
+  const minutes = Math.floor(value / 60);
+  const remaining = value % 60;
+  return remaining ? `${minutes}m ${remaining}s` : `${minutes}m`;
+}
+
+function rowPercent(count, total) {
+  return total ? `${Math.round((Number(count || 0) / total) * 100)}%` : '0%';
+}
+
+function topRows(rows, getKey, limit = 6, lang = 'it') {
+  const counts = new Map();
+  rows.forEach((row) => {
+    const key = valueOrUnknown(getKey(row), lang);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  return [...counts.entries()]
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+    .slice(0, limit);
+}
+
+function periodContains(row, range) {
+  if (!range?.from && !range?.to) return true;
+  const raw = row?.created_at || row?.occurred_at || row?.started_at;
+  if (!raw) return false;
+  const time = new Date(raw).getTime();
+  if (Number.isNaN(time)) return false;
+  if (range.from && time < new Date(range.from).getTime()) return false;
+  if (range.to && time > new Date(range.to).getTime()) return false;
+  return true;
+}
+
+function averageEngagementSeconds(sessions, events) {
+  const durations = (sessions || [])
+    .map((session) => Math.min(1800, Number(session.duration_seconds || 0)))
+    .filter((seconds) => seconds >= 2);
+  if (durations.length) return durations.reduce((sum, value) => sum + value, 0) / durations.length;
+
+  const grouped = new Map();
+  (events || []).forEach((event) => {
+    if (!event.session_id || !event.occurred_at) return;
+    const time = new Date(event.occurred_at).getTime();
+    if (Number.isNaN(time)) return;
+    const current = grouped.get(event.session_id) || { min: time, max: time };
+    current.min = Math.min(current.min, time);
+    current.max = Math.max(current.max, time);
+    grouped.set(event.session_id, current);
+  });
+  const derived = [...grouped.values()]
+    .map((item) => Math.min(1800, Math.round((item.max - item.min) / 1000)))
+    .filter((seconds) => seconds >= 2);
+  if (!derived.length) return 0;
+  return derived.reduce((sum, value) => sum + value, 0) / derived.length;
+}
+
+function eventMeta(event, key) {
+  return event?.metadata && Object.prototype.hasOwnProperty.call(event.metadata, key) ? event.metadata[key] : '';
+}
+
+function normalizedExperienceKey(value, lang) {
+  const clean = String(value || '').trim();
+  if (!clean || clean === 'unknown' || clean === 'unsure') return adminCopy(lang, 'Non specificata', 'Unspecified');
+  return clean;
+}
+
+function eventExperienceKey(event, lang) {
+  const key = eventMeta(event, 'experience_slug') || eventMeta(event, 'experience_id') || eventMeta(event, 'experience') || eventMeta(event, 'slug');
+  if (key) return normalizedExperienceKey(key, lang);
+  const requestType = String(eventMeta(event, 'request_type') || '').trim();
+  if (['private', 'fixed', 'contact'].includes(requestType)) return requestType;
+  return normalizedExperienceKey('', lang);
+}
+
+function requestExperienceKeyFromRequest(request, lang) {
+  const key = request?.experience_slug || request?.experience_id || '';
+  if (key && key !== 'unsure') return normalizedExperienceKey(key, lang);
+  return normalizedExperienceKey(request?.request_type || '', lang);
+}
+
+function displayExperienceLabel(key, lang) {
+  if (!key || key === adminCopy(lang, 'Non specificata', 'Unspecified')) return key || adminCopy(lang, 'Non specificata', 'Unspecified');
+  const raw = String(key);
+  if (raw === 'private') return adminCopy(lang, 'Privata', 'Private');
+  if (raw === 'fixed') return adminCopy(lang, 'Escursione fissa', 'Fixed scheduled excursion');
+  if (raw === 'contact') return adminCopy(lang, 'Contatto generico', 'Generic contact');
+  const known = experiences.find((experience) => experience.id === raw || experience.slug === raw || experience.title === raw);
+  return known ? known.title : raw.replace(/[-_]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function analyticsDropoff(current, previous, lang) {
+  if (!previous) return '—';
+  const rate = Math.max(0, 1 - (Number(current || 0) / Number(previous || 0)));
+  return `${Math.round(rate * 1000) / 10}%`;
+}
+
+function groupKey(...parts) {
+  return parts.map((part) => String(part || 'unknown').trim() || 'unknown').join('||');
+}
+
+function browserDeviceGroup(row) {
+  const os = String(row?.operating_system || '').toLowerCase();
+  const browser = String(row?.browser || '').toLowerCase();
+  const device = String(row?.device_type || '').toLowerCase();
+  if (os.includes('ios') && browser.includes('safari')) return 'iOS Safari';
+  if (os.includes('android') && browser.includes('chrome')) return 'Android Chrome';
+  if (device === 'desktop' && browser.includes('chrome')) return 'Desktop Chrome';
+  return 'Other';
+}
+
+function sectionLabelForPath(event, lang) {
+  const section = String(event?.section || '').trim();
+  if (section) return section[0].toUpperCase() + section.slice(1);
+  const path = String(event?.path || '').toLowerCase();
+  if (path.includes('experience')) return adminCopy(lang, 'Esperienze', 'Experiences');
+  if (path.includes('contact')) return adminCopy(lang, 'Contatti', 'Contact');
+  if (path.includes('review')) return adminCopy(lang, 'Recensioni', 'Reviews');
+  if (path === '/' || path.includes('#top')) return 'Home';
+  return adminCopy(lang, 'Sconosciuto', 'Unknown');
+}
+
+function actionLabelForEvent(event, lang) {
+  const name = event?.event_name;
+  if (name === 'whatsapp_click') return 'WhatsApp';
+  if (name === 'email_click') return 'Email';
+  if (name === 'phone_click') return adminCopy(lang, 'Telefono', 'Phone');
+  if (name === 'google_maps_click' || name === 'maps_click') return 'Google Maps';
+  if (name === 'booking_form_open') return adminCopy(lang, 'Modulo', 'Booking form');
+  if (name === 'booking_form_submit_success' || name === 'booking_submit_success' || name === 'booking_submit') return adminCopy(lang, 'Invio riuscito', 'Submit success');
+  return sectionLabelForPath(event, lang);
+}
+
+function buildSessionPaths(events, lang) {
+  const grouped = new Map();
+  (events || []).forEach((event) => {
+    if (!event.session_id) return;
+    const list = grouped.get(event.session_id) || [];
+    list.push(event);
+    grouped.set(event.session_id, list);
+  });
+  const pathCounts = new Map();
+  grouped.forEach((list) => {
+    const ordered = list.slice().sort((a, b) => new Date(a.occurred_at || 0) - new Date(b.occurred_at || 0));
+    const labels = [];
+    ordered.forEach((event) => {
+      const isAction = ['whatsapp_click', 'email_click', 'phone_click', 'google_maps_click', 'maps_click', 'booking_form_open', 'booking_form_submit_success', 'booking_submit_success', 'booking_submit'].includes(event.event_name);
+      if (event.event_name !== 'page_view' && !isAction) return;
+      const label = isAction ? actionLabelForEvent(event, lang) : sectionLabelForPath(event, lang);
+      if (labels[labels.length - 1] !== label) labels.push(label);
+    });
+    if (!labels.length) return;
+    const path = labels.slice(0, 6).join(' → ');
+    const current = pathCounts.get(path) || { path, sessions: 0, contact_actions: 0, booking_form_opens: 0 };
+    current.sessions += 1;
+    current.contact_actions += ordered.filter((event) => ['whatsapp_click', 'email_click', 'phone_click'].includes(event.event_name)).length;
+    current.booking_form_opens += ordered.filter((event) => event.event_name === 'booking_form_open').length;
+    pathCounts.set(path, current);
+  });
+  return [...pathCounts.values()].sort((a, b) => b.sessions - a.sessions || b.contact_actions - a.contact_actions).slice(0, 5);
+}
+
+function bookingRequestsInPeriod(requests, range) {
+  return (requests || []).filter((request) => {
+    const source = request.source || 'unknown';
+    return periodContains(request, range) && (source === 'website' || source === 'unknown' || !source);
+  }).length;
+}
+
+function confirmedBookingRequestsInPeriod(requests, range) {
+  return (requests || []).filter((request) => periodContains(request, range) && ['accepted', 'confirmed', 'completed'].includes(request.status)).length;
+}
+
+
+function buildDeclaredAttributionRows({ events = [], bookingRequests = [], range, lang }) {
+  const map = new Map();
+  function ensure(source) {
+    const normalized = normalizeHeardAboutUs(source, { allowAdmin: true });
+    const key = normalized || 'missing';
+    const row = map.get(key) || {
+      key,
+      source: key === 'missing' ? adminCopy(lang, 'Non disponibile', 'Not available') : heardAboutUsLabel(key, lang),
+      booking_requests: 0,
+      confirmed_bookings: 0,
+      contact_events: 0,
+      form_events: 0,
+      detail_values: new Set()
+    };
+    map.set(key, row);
+    return row;
+  }
+
+  function addDetail(row, detail) {
+    const clean = cleanHeardAboutUsDetail(detail);
+    if (clean && row.detail_values.size < 5) row.detail_values.add(clean);
+  }
+
+  (bookingRequests || []).filter((request) => periodContains(request, range)).forEach((request) => {
+    const row = ensure(request.heard_about_us);
+    row.booking_requests += 1;
+    addDetail(row, request.heard_about_us_detail);
+    if (['accepted', 'confirmed', 'completed'].includes(request.status)) row.confirmed_bookings += 1;
+  });
+
+  (events || []).forEach((event) => {
+    const source = eventMeta(event, 'heard_about_us');
+    if (!source) return;
+    const row = ensure(source);
+    addDetail(row, eventMeta(event, 'heard_about_us_detail'));
+    if (['whatsapp_click', 'email_click', 'phone_click'].includes(event.event_name)) row.contact_events += 1;
+    if (['booking_form_field_start', 'booking_form_submit_attempt', 'booking_form_submit_success', 'booking_request_created'].includes(event.event_name)) row.form_events += 1;
+  });
+
+  return [...map.values()]
+    .filter((row) => row.booking_requests || row.confirmed_bookings || row.contact_events || row.form_events)
+    .map((row) => ({ ...row, details: row.detail_values.size ? [...row.detail_values].join(' · ') : '—', detail_values: undefined }))
+    .sort((a, b) => (b.booking_requests + b.contact_events + b.form_events) - (a.booking_requests + a.contact_events + a.form_events));
+}
+
+function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions = [], bookingRequests = [], range, lang }) {
+  const rawEvents = inputEvents || [];
+  const rawSessions = inputSessions || [];
+  const internalEventsExcluded = rawEvents.filter(isInternalAnalyticsRow).length;
+  const internalSessionsExcluded = rawSessions.filter(isInternalAnalyticsRow).length;
+  const events = rawEvents.filter((event) => !isInternalAnalyticsRow(event));
+  const sessions = rawSessions.filter((session) => !isInternalAnalyticsRow(session));
+  const pageViews = eventCount(events, 'page_view');
+  const formOpens = eventCount(events, 'booking_form_open');
+  const fieldStarts = eventCount(events, 'booking_form_field_start');
+  const hasNewSubmitAttempts = eventCount(events, 'booking_form_submit_attempt') > 0;
+  const hasNewValidationErrors = eventCount(events, 'booking_form_validation_error') > 0;
+  const hasNewSubmitSuccesses = eventCount(events, 'booking_form_submit_success') > 0;
+  const hasNewSubmitErrors = eventCount(events, 'booking_form_submit_error') > 0;
+  const hasNewMapClicks = eventCount(events, 'google_maps_click') > 0;
+  const submitAttempts = eventCountAny(events, SUBMIT_ATTEMPT_EVENTS);
+  const validationErrors = eventCountAny(events, VALIDATION_ERROR_EVENTS);
+  const submitSuccesses = eventCountAny(events, SUBMIT_SUCCESS_EVENTS);
+  const submitErrors = eventCountAny(events, SUBMIT_ERROR_EVENTS);
+  const bookingRequestCreatedEvents = eventCount(events, 'booking_request_created');
+  const websiteRequestRows = (bookingRequests || []).filter((request) => {
+    const source = request.source || 'unknown';
+    return periodContains(request, range) && (source === 'website' || source === 'unknown' || !source);
+  });
+  const websiteRequests = websiteRequestRows.length;
+  const bookingRequestCount = Math.max(websiteRequests, bookingRequestCreatedEvents, submitSuccesses);
+  const confirmedRequests = confirmedBookingRequestsInPeriod(bookingRequests, range);
+  const visitors = uniqueCount(events, 'visitor_id') || uniqueCount(sessions, 'visitor_id');
+  const whatsappClicks = eventCount(events, 'whatsapp_click');
+  const emailClicks = eventCount(events, 'email_click');
+  const phoneClicks = eventCount(events, 'phone_click');
+  const mapsClicks = eventCountAny(events, MAP_CLICK_EVENTS);
+  const contactClicks = whatsappClicks + emailClicks + phoneClicks;
+  const conversionBase = visitors || pageViews;
+  const averageSeconds = averageEngagementSeconds(sessions, events);
+  const pageViewEvents = events.filter((event) => event.event_name === 'page_view');
+  const experienceViews = eventCount(events, 'experience_card_view') + eventCount(events, 'excursion_view') + eventCount(events, 'experience_detail_open');
+  const sourceTotal = pageViewEvents.length || events.length || 1;
+  const directTrafficCount = pageViewEvents.filter((event) => normalizedTrafficSourceForAnalytics(event) === 'direct').length;
+  const directTrafficShare = sourceTotal ? directTrafficCount / sourceTotal : 0;
+  const mobileCount = events.filter((event) => event.device_type === 'mobile').length;
+  const mobileShare = events.length ? mobileCount / events.length : 0;
+
+  function isSubmitAttemptEvent(event) { return event.event_name === 'booking_form_submit_attempt' || (!hasNewSubmitAttempts && event.event_name === 'booking_submit_attempt'); }
+  function isValidationErrorEvent(event) { return event.event_name === 'booking_form_validation_error' || (!hasNewValidationErrors && event.event_name === 'booking_submit_validation_error'); }
+  function isSubmitSuccessEvent(event) { return event.event_name === 'booking_form_submit_success' || (!hasNewSubmitSuccesses && ['booking_submit_success', 'booking_submit'].includes(event.event_name)); }
+  function isSubmitErrorEvent(event) { return event.event_name === 'booking_form_submit_error' || (!hasNewSubmitErrors && event.event_name === 'booking_submit_error'); }
+  function isMapClickEvent(event) { return event.event_name === 'google_maps_click' || (!hasNewMapClicks && event.event_name === 'maps_click'); }
+
+  const sourceRows = ['direct', 'instagram', 'whatsapp', 'google', 'facebook', 'other'].map((source) => ({
+    label: trafficSourceLabel(source, lang),
+    count: pageViewEvents.filter((event) => normalizedTrafficSourceForAnalytics(event) === source).length
+  }));
+  const countryRows = topRows(events, (event) => event.country_name || event.country_code, 6, lang);
+  const cityRows = topRows(events, (event) => event.city, 6, lang);
+  const topPageRows = topRows(pageViewEvents, (event) => normalizeAnalyticsPath(event.section || event.path), 7, lang);
+  const experienceRows = topRows(events.filter((event) => ['experience_card_view', 'excursion_view', 'experience_detail_open'].includes(event.event_name)), (event) => event.metadata?.experience_slug || event.metadata?.experience_id || event.metadata?.experience || event.metadata?.slug, 6, lang);
+  const deviceRows = topRows(events, (event) => event.device_type, 5, lang);
+  const browserRows = topRows(events, (event) => event.browser, 5, lang);
+  const osRows = topRows(events, (event) => event.operating_system, 5, lang);
+  const languageRows = [
+    { label: adminCopy(lang, 'Azioni in italiano', 'Italian visitors/actions'), count: events.filter((event) => event.language === 'it').length, helper: uniqueCount(events.filter((event) => event.language === 'it'), 'visitor_id') },
+    { label: adminCopy(lang, 'Azioni in inglese', 'English visitors/actions'), count: events.filter((event) => event.language === 'en').length, helper: uniqueCount(events.filter((event) => event.language === 'en'), 'visitor_id') },
+    { label: adminCopy(lang, 'Cambi lingua', 'Language switches'), count: eventCount(events, 'language_switch') }
+  ];
+  const flowRows = [
+    { label: adminCopy(lang, 'Visualizzazioni pagina', 'Page views'), count: pageViews },
+    { label: adminCopy(lang, 'Visualizzazioni esperienze', 'Experience views'), count: experienceViews },
+    { label: adminCopy(lang, 'Aperture modulo prenotazione', 'Booking form starts'), count: formOpens },
+    { label: adminCopy(lang, 'Avvii compilazione modulo', 'Booking form field starts'), count: fieldStarts },
+    { label: adminCopy(lang, 'Tentativi invio modulo', 'Booking form submit attempts'), count: submitAttempts },
+    { label: adminCopy(lang, 'Invii riusciti tracciati', 'Tracked successful submissions'), count: submitSuccesses },
+    { label: adminCopy(lang, 'Richieste create', 'Created requests'), count: bookingRequestCount },
+    { label: adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks'), count: whatsappClicks },
+    { label: adminCopy(lang, 'Click email', 'Email clicks'), count: emailClicks },
+    { label: adminCopy(lang, 'Click telefono', 'Phone clicks'), count: phoneClicks },
+    { label: adminCopy(lang, 'Click Google Maps', 'Google Maps clicks'), count: mapsClicks }
+  ];
+
+  const mainFunnelSteps = [
+    { label: adminCopy(lang, 'Visualizzazioni pagina', 'Page views'), count: pageViews },
+    { label: adminCopy(lang, 'Visualizzazioni esperienze', 'Experience views'), count: experienceViews },
+    { label: adminCopy(lang, 'Aperture modulo prenotazione', 'Booking form opens'), count: formOpens },
+    { label: adminCopy(lang, 'Avvii compilazione', 'Field starts'), count: fieldStarts },
+    { label: adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts'), count: submitAttempts },
+    { label: adminCopy(lang, 'Errori validazione', 'Validation errors'), count: validationErrors },
+    { label: adminCopy(lang, 'Invii riusciti tracciati', 'Tracked successful submissions'), count: submitSuccesses },
+    { label: adminCopy(lang, 'Errori invio', 'Submit errors'), count: submitErrors },
+    { label: adminCopy(lang, 'Richieste create', 'Booking requests created'), count: bookingRequestCount }
+  ];
+  const funnelDiagnostics = mainFunnelSteps.map((step, index) => ({
+    step: step.label,
+    count: step.count,
+    dropoff: index === 0 ? '—' : analyticsDropoff(step.count, mainFunnelSteps[index - 1].count, lang)
+  })).concat([
+    { step: adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks'), count: whatsappClicks, dropoff: adminCopy(lang, 'Percorso contatto separato', 'Separate contact path') },
+    { step: adminCopy(lang, 'Click email', 'Email clicks'), count: emailClicks, dropoff: adminCopy(lang, 'Percorso contatto separato', 'Separate contact path') },
+    { step: adminCopy(lang, 'Click telefono', 'Phone clicks'), count: phoneClicks, dropoff: adminCopy(lang, 'Percorso contatto separato', 'Separate contact path') }
+  ]);
+
+  const formByExperienceMap = new Map();
+  function ensureExperienceRow(key) {
+    const normalized = normalizedExperienceKey(key, lang);
+    const existing = formByExperienceMap.get(normalized) || {
+      experience: displayExperienceLabel(normalized, lang),
+      experience_views: 0,
+      detail_opens: 0,
+      form_opens: 0,
+      submit_attempts: 0,
+      submit_successes: 0,
+      submit_errors: 0,
+      booking_requests: 0,
+      confirmed_bookings: 0,
+      whatsapp_clicks: 0,
+      email_clicks: 0,
+      phone_clicks: 0,
+      view_to_request: '—',
+      form_to_request: '—'
+    };
+    formByExperienceMap.set(normalized, existing);
+    return existing;
+  }
+  events.forEach((event) => {
+    const key = eventExperienceKey(event, lang);
+    const row = ensureExperienceRow(key);
+    if (['experience_card_view', 'excursion_view'].includes(event.event_name)) row.experience_views += 1;
+    if (event.event_name === 'experience_detail_open') row.detail_opens += 1;
+    if (event.event_name === 'booking_form_open') row.form_opens += 1;
+    if (isSubmitAttemptEvent(event)) row.submit_attempts += 1;
+    if (isSubmitSuccessEvent(event)) row.submit_successes += 1;
+    if (isSubmitErrorEvent(event)) row.submit_errors += 1;
+    if (event.event_name === 'booking_request_created') row.booking_requests += 1;
+    if (event.event_name === 'whatsapp_click') row.whatsapp_clicks += 1;
+    if (event.event_name === 'email_click') row.email_clicks += 1;
+    if (event.event_name === 'phone_click') row.phone_clicks += 1;
+  });
+  websiteRequestRows.forEach((request) => {
+    const row = ensureExperienceRow(requestExperienceKeyFromRequest(request, lang));
+    row.booking_requests += 1;
+    if (['accepted', 'confirmed', 'completed'].includes(request.status)) row.confirmed_bookings += 1;
+  });
+  const formByExperience = [...formByExperienceMap.values()]
+    .map((row) => ({
+      ...row,
+      view_to_request: percent(row.booking_requests, row.experience_views || row.detail_opens),
+      form_to_request: percent(row.booking_requests, row.form_opens)
+    }))
+    .filter((row) => row.experience_views || row.detail_opens || row.form_opens || row.submit_attempts || row.submit_successes || row.booking_requests || row.whatsapp_clicks || row.email_clicks || row.phone_clicks)
+    .sort((a, b) => (b.booking_requests + b.form_opens + b.whatsapp_clicks + b.email_clicks + b.phone_clicks) - (a.booking_requests + a.form_opens + a.whatsapp_clicks + a.email_clicks + a.phone_clicks))
+    .slice(0, 14);
+
+  const requestsWithoutTrackedFormOpen = formByExperience.filter((row) => row.booking_requests > 0 && row.form_opens === 0).map((row) => ({ experience: row.experience, booking_requests: row.booking_requests }));
+  const formOpenMissingCtaCount = events.filter((event) => event.event_name === 'booking_form_open' && !eventMeta(event, 'cta_location') && !eventMeta(event, 'location')).length;
+
+  const contactMap = new Map();
+  events.filter((event) => CONTACT_ACTION_EVENTS.includes(event.event_name) || event.event_name === 'booking_form_open').forEach((event) => {
+    const actionType = event.event_name === 'booking_form_open' ? adminCopy(lang, 'Modulo richiesta', 'Booking form')
+      : event.event_name === 'whatsapp_click' ? 'WhatsApp'
+        : event.event_name === 'email_click' ? 'Email'
+          : event.event_name === 'phone_click' ? adminCopy(lang, 'Telefono', 'Phone')
+            : 'Google Maps';
+    if (event.event_name === 'maps_click' && hasNewMapClicks) return;
+    const location = rawUnknown(eventMeta(event, 'cta_location') || eventMeta(event, 'location'));
+    const device = rawUnknown(event.device_type);
+    const language = String(event.language || '').toUpperCase() || 'unknown';
+    const previous = rawUnknown(eventMeta(event, 'top_previous_section') || eventMeta(event, 'previous_section') || event.section);
+    const key = groupKey(location, actionType, device, language, previous);
+    const row = contactMap.get(key) || { cta_location: location, action_type: actionType, count: 0, device, language, top_previous_section: previous };
+    row.count += 1;
+    contactMap.set(key, row);
+  });
+  const contactPaths = [...contactMap.values()].sort((a, b) => b.count - a.count).slice(0, 12);
+
+  const mobileMap = new Map();
+  ['iOS Safari', 'Android Chrome', 'Desktop Chrome', 'Other'].forEach((group) => mobileMap.set(group, {
+    device_browser: group,
+    page_views: 0,
+    experience_views: 0,
+    detail_opens: 0,
+    calendar_date_selections: 0,
+    form_opens: 0,
+    field_starts: 0,
+    submit_attempts: 0,
+    validation_errors: 0,
+    submit_successes: 0,
+    submit_errors: 0,
+    booking_requests: 0,
+    whatsapp_clicks: 0,
+    email_clicks: 0,
+    phone_clicks: 0
+  }));
+  events.forEach((event) => {
+    const group = browserDeviceGroup(event);
+    const row = mobileMap.get(group) || mobileMap.get('Other');
+    if (event.event_name === 'page_view') row.page_views += 1;
+    if (['experience_card_view', 'excursion_view'].includes(event.event_name)) row.experience_views += 1;
+    if (event.event_name === 'experience_detail_open') row.detail_opens += 1;
+    if (event.event_name === 'calendar_date_select') row.calendar_date_selections += 1;
+    if (event.event_name === 'booking_form_open') row.form_opens += 1;
+    if (event.event_name === 'booking_form_field_start') row.field_starts += 1;
+    if (isSubmitAttemptEvent(event)) row.submit_attempts += 1;
+    if (isValidationErrorEvent(event)) row.validation_errors += 1;
+    if (isSubmitSuccessEvent(event)) row.submit_successes += 1;
+    if (isSubmitErrorEvent(event)) row.submit_errors += 1;
+    if (event.event_name === 'booking_request_created') row.booking_requests += 1;
+    if (event.event_name === 'whatsapp_click') row.whatsapp_clicks += 1;
+    if (event.event_name === 'email_click') row.email_clicks += 1;
+    if (event.event_name === 'phone_click') row.phone_clicks += 1;
+  });
+  const mobileFunnel = [...mobileMap.values()].filter((row) => Object.entries(row).some(([key, value]) => key !== 'device_browser' && Number(value) > 0));
+
+  const languageConversion = ['it', 'en'].map((language) => {
+    const rows = events.filter((event) => event.language === language);
+    return {
+      language: language.toUpperCase(),
+      actions: rows.length,
+      page_views: rows.filter((event) => event.event_name === 'page_view').length,
+      form_opens: rows.filter((event) => event.event_name === 'booking_form_open').length,
+      submit_attempts: rows.filter(isSubmitAttemptEvent).length,
+      submit_successes: rows.filter(isSubmitSuccessEvent).length,
+      whatsapp_clicks: rows.filter((event) => event.event_name === 'whatsapp_click').length,
+      email_clicks: rows.filter((event) => event.event_name === 'email_click').length,
+      language_switches: rows.filter((event) => event.event_name === 'language_switch').length
+    };
+  });
+
+  const geoMap = new Map();
+  events.forEach((event) => {
+    const countryCity = [event.country_name || event.country_code, event.city].filter(Boolean).join(' / ') || 'unknown';
+    const language = String(event.language || '').toUpperCase() || 'unknown';
+    const device = rawUnknown(event.device_type);
+    const key = groupKey(countryCity, language, device);
+    const row = geoMap.get(key) || { country_city: countryCity, actions: 0, language, form_opens: 0, contact_clicks: 0, device };
+    row.actions += 1;
+    if (event.event_name === 'booking_form_open') row.form_opens += 1;
+    if (['whatsapp_click', 'email_click', 'phone_click'].includes(event.event_name)) row.contact_clicks += 1;
+    geoMap.set(key, row);
+  });
+  const geographyHypotheses = [...geoMap.values()].sort((a, b) => b.actions - a.actions).slice(0, 12);
+
+  const declaredAttributionRows = buildDeclaredAttributionRows({ events, bookingRequests, range, lang });
+
+  const trafficAttributionQuality = ['direct', 'instagram', 'whatsapp', 'google', 'facebook', 'other'].map((source) => ({
+    source: trafficSourceLabel(source, lang),
+    count: pageViewEvents.filter((event) => normalizedTrafficSourceForAnalytics(event) === source).length,
+    notes: source === 'direct'
+      ? adminCopy(lang, 'Solo sessioni senza UTM o referrer utile', 'Only sessions with no UTM or useful referrer')
+      : source === 'whatsapp'
+        ? adminCopy(lang, 'Da utm_source=whatsapp o referrer WhatsApp', 'From utm_source=whatsapp or WhatsApp referrer')
+        : source === 'other'
+          ? adminCopy(lang, 'Referrer esterni non classificati', 'Unclassified external referrers')
+          : adminCopy(lang, 'Da UTM o referrer riconosciuto', 'From recognized UTM or referrer')
+  }));
+
+  const dataQualityRows = [
+    { check: adminCopy(lang, 'Richieste senza apertura modulo tracciata', 'Requests without tracked form open'), count: requestsWithoutTrackedFormOpen.reduce((sum, row) => sum + row.booking_requests, 0), detail: requestsWithoutTrackedFormOpen.map((row) => `${row.experience}: ${row.booking_requests}`).join(', ') || '—' },
+    { check: adminCopy(lang, 'Aperture modulo senza posizione CTA', 'Form opens without CTA location'), count: formOpenMissingCtaCount, detail: formOpenMissingCtaCount ? adminCopy(lang, 'Aggiornare i CTA che non inviano cta_location.', 'Update CTAs that do not send cta_location.') : '—' },
+    { check: adminCopy(lang, 'Traffico interno escluso', 'Internal traffic excluded'), count: internalEventsExcluded + internalSessionsExcluded, detail: adminCopy(lang, 'Admin, API, CMS/editor, finanze e dashboard analytics esclusi dalle metriche pubbliche.', 'Admin, API, CMS/editor, finance, and analytics dashboard rows excluded from public metrics.') },
+    { check: adminCopy(lang, 'Campione insufficiente per conclusioni marketing', 'Sample too small for marketing conclusions'), count: visitors < 50 ? visitors : 0, detail: visitors < 50 ? adminCopy(lang, 'Usare come diagnostica, non come prova marketing.', 'Use as diagnostics, not as marketing proof.') : '—' }
+  ];
+
+  const warnings = [];
+  if (visitors < 50) warnings.push(adminCopy(lang, 'Campione dati ridotto: interpreta questi numeri come diagnostica, non come prova statistica.', 'Small data sample: interpret these numbers as diagnostics, not statistical proof.'));
+  if (websiteRequests > 0 && submitSuccesses === 0) warnings.push(adminCopy(lang, 'Possibile problema di tracciamento: esistono richieste nel database, ma nessun invio riuscito è stato registrato negli eventi analytics.', 'Possible tracking issue: booking requests exist in the database, but no successful submission was recorded in analytics events.'));
+  if (requestsWithoutTrackedFormOpen.length) warnings.push(adminCopy(lang, 'Alcune richieste non hanno una apertura modulo tracciata nella stessa esperienza/tipologia.', 'Some requests have no tracked form open for the same experience/request type.'));
+  if (formOpenMissingCtaCount) warnings.push(adminCopy(lang, 'Alcune aperture modulo non hanno cta_location.', 'Some form opens have no cta_location.'));
+  if (internalEventsExcluded || internalSessionsExcluded) warnings.push(adminCopy(lang, 'Traffico interno/admin escluso dalle metriche pubbliche.', 'Internal/admin traffic was excluded from public metrics.'));
+  if (directTrafficShare > 0.8) warnings.push(adminCopy(lang, 'Attribuzione limitata: gran parte del traffico risulta Diretto. Usa link UTM per leggere meglio le sorgenti.', 'Limited attribution: most traffic appears as Direct. Use UTM links to read sources more accurately.'));
+  if (mobileShare > 0.7) warnings.push(adminCopy(lang, 'Il traffico è prevalentemente mobile: testa prima il percorso su iPhone Safari e Android Chrome.', 'Traffic is mostly mobile: test the journey first on iPhone Safari and Android Chrome.'));
+
+  const conversionMetrics = {
+    websiteRequestConversion: percent(websiteRequests, conversionBase),
+    trackedSubmissionConversion: percent(submitSuccesses, conversionBase),
+    contactIntentConversion: percent(websiteRequests + whatsappClicks + emailClicks, conversionBase),
+    confirmedBookingConversion: confirmedRequests ? percent(confirmedRequests, conversionBase) : adminCopy(lang, 'Dati insufficienti', 'Insufficient data')
+  };
+
+  return {
+    visitors,
+    pageViews,
+    experienceViews,
+    formOpens,
+    fieldStarts,
+    submitAttempts,
+    submitSuccesses,
+    submitErrors,
+    validationErrors,
+    bookingRequests: bookingRequestCount,
+    websiteRequests,
+    confirmedRequests,
+    whatsappClicks,
+    emailClicks,
+    phoneClicks,
+    mapsClicks,
+    bookingConversion: conversionMetrics.websiteRequestConversion,
+    conversionMetrics,
+    averageEngagement: averageSeconds ? formatDuration(averageSeconds) : '—',
+    countryRows,
+    cityRows,
+    topPageRows,
+    experienceRows,
+    sourceRows,
+    deviceRows,
+    browserRows,
+    osRows,
+    languageRows,
+    flowRows,
+    funnelRows: flowRows.slice(0, 7),
+    funnelDiagnostics,
+    formByExperience,
+    requestsWithoutTrackedFormOpen,
+    contactPaths,
+    mobileFunnel,
+    sessionPaths: buildSessionPaths(events, lang),
+    languageConversion,
+    geographyHypotheses,
+    trafficAttributionQuality,
+    declaredAttributionRows,
+    dataQualityRows,
+    warnings,
+    lowSampleNote: visitors < 50,
+    internalEventsExcluded,
+    internalSessionsExcluded,
+    directTrafficShare: rowPercent(directTrafficCount, sourceTotal),
+    mobileShare: rowPercent(mobileCount, events.length || 1)
+  };
+}
+
+function AnalyticsRowList({ rows, total, empty, helperLabel }) {
+  if (!rows.length || rows.every((row) => !row.count)) return <p className="small-note analytics-empty-row">{empty}</p>;
+  const max = Math.max(...rows.map((row) => Number(row.count || 0)), 1);
+  return (
+    <div className="analytics-row-list">
+      {rows.map((row) => (
+        <div className="analytics-row" key={row.label}>
+          <span>{row.label}{row.helper !== undefined && <small>{helperLabel}: {row.helper}</small>}</span>
+          <strong>{row.count}</strong>
+          <em>{rowPercent(row.count, total)}</em>
+          <i><b style={{ width: `${Math.max(3, (Number(row.count || 0) / max) * 100)}%` }} /></i>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AnalyticsWarningList({ warnings = [] }) {
+  if (!warnings.length) return null;
+  return (
+    <div className="analytics-warning-list" role="status">
+      {warnings.map((warning) => <p key={warning}>{warning}</p>)}
+    </div>
+  );
+}
+
+function AnalyticsHelperNote({ children }) {
+  if (!children) return null;
+  return <p className="small-note analytics-helper-note">{children}</p>;
+}
+
+function AnalyticsTable({ columns = [], rows = [], empty }) {
+  if (!rows.length) return <p className="small-note analytics-empty-row">{empty}</p>;
+  return (
+    <div className="analytics-table-scroll" role="region" tabIndex="0">
+      <table className="analytics-drilldown-table">
+        <thead>
+          <tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={row.id || row.path || row.experience || row.step || `${index}-${columns.map((column) => row[column.key]).join('-')}`}>
+              {columns.map((column) => <td key={column.key}>{row[column.key] ?? '—'}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AnalyticsPanel({ title, children }) {
+  return (
+    <details className="admin-panel analytics-panel analytics-collapsible-panel">
+      <summary className="analytics-collapsible-summary"><h2>{title}</h2></summary>
+      <div className="analytics-collapsible-body">{children}</div>
+    </details>
+  );
+}
+
+function AnalyticsStaticPanel({ title, children }) {
+  return (
+    <section className="admin-panel analytics-panel analytics-static-panel">
+      <header className="analytics-static-header"><h2>{title}</h2></header>
+      <div className="analytics-static-body">{children}</div>
+    </section>
+  );
+}
+
+function AnalyticsSubsection({ title, children }) {
+  return (
+    <section className="analytics-subsection">
+      <h3>{title}</h3>
+      <div className="analytics-subsection-body">{children}</div>
+    </section>
+  );
+}
+
+
+function safeBookingRequestRows(requests = [], range, lang) {
+  return (requests || [])
+    .filter((request) => periodContains(request, range))
+    .map((request) => ({
+      created_at: request.created_at,
+      status: request.status,
+      request_type: request.request_type,
+      source: request.source,
+      traffic_source: request.traffic_source,
+      source_section: request.source_section,
+      source_cta: request.source_cta,
+      cta_location: request.cta_location,
+      experience_id: request.experience_id,
+      requested_date_present: Boolean(request.requested_date),
+      heard_about_us: normalizeHeardAboutUs(request.heard_about_us, { allowAdmin: true }) || null,
+      heard_about_us_label: heardAboutUsLabel(request.heard_about_us, lang, { fallback: '' }) || null,
+      heard_about_us_detail: cleanHeardAboutUsDetail(request.heard_about_us_detail) || null,
+      heard_about_us_display: heardAboutUsDisplay(request.heard_about_us, request.heard_about_us_detail, lang, { fallback: '' }) || null,
+      has_fixed_excursion: Boolean(request.has_fixed_excursion || request.fixed_excursion_id),
+      adults_bucket: request.adults ? (Number(request.adults) > 6 ? '7+' : String(request.adults)) : null,
+      children_present: Boolean(request.children)
+    }));
+}
+
+function safeAnalyticsRows(rows = [], kind = 'event') {
+  return rows.map((row) => {
+    if (kind === 'session') {
+      return {
+        started_at: row.started_at,
+        last_seen_at: row.last_seen_at,
+        duration_seconds: row.duration_seconds,
+        pageview_count: row.pageview_count,
+        entry_path: row.entry_path,
+        exit_path: row.exit_path,
+        traffic_source: row.traffic_source,
+        referrer_domain: row.referrer_domain,
+        country_code: row.country_code,
+        country_name: row.country_name,
+        city: row.city,
+        language: row.language,
+        device_type: row.device_type,
+        browser: row.browser,
+        operating_system: row.operating_system
+      };
+    }
+    return {
+      event_name: row.event_name,
+      occurred_at: row.occurred_at,
+      path: row.path,
+      section: row.section,
+      language: row.language,
+      traffic_source: row.traffic_source,
+      referrer_domain: row.referrer_domain,
+      country_code: row.country_code,
+      country_name: row.country_name,
+      city: row.city,
+      device_type: row.device_type,
+      browser: row.browser,
+      operating_system: row.operating_system,
+      metadata: row.metadata || {}
+    };
+  });
+}
+
+function downloadAnalyticsExport({ lang, period, range, model, events, sessions, bookingRequests }) {
+  const generatedAt = new Date().toISOString();
+  const payload = {
+    export_type: 'vulcaniq_analytics_metrics',
+    generated_at: generatedAt,
+    language: lang,
+    period,
+    period_label: analyticsPeriodLabel(period, lang),
+    range,
+    chatgpt_prompt: lang === 'it'
+      ? 'Analizza queste metriche del sito vulcanIQ. Concentrati su integrità del funnel, comportamento form vs WhatsApp/email, UX mobile, domanda per esperienza, qualità attribuzione sorgenti e se il campione è sufficiente per conclusioni marketing.'
+      : 'Analyze these vulcanIQ website metrics. Focus on funnel integrity, form vs WhatsApp/email behavior, mobile UX, experience demand, source attribution quality, and whether the sample size is sufficient for marketing conclusions.',
+    summary: {
+      visitors: model.visitors,
+      page_views: model.pageViews,
+      booking_requests: model.bookingRequests,
+      website_booking_requests: model.websiteRequests,
+      tracked_submit_successes: model.submitSuccesses,
+      submit_attempts: model.submitAttempts,
+      submit_errors: model.submitErrors,
+      validation_errors: model.validationErrors,
+      whatsapp_clicks: model.whatsappClicks,
+      email_clicks: model.emailClicks,
+      booking_conversion_rate: model.bookingConversion,
+      website_request_conversion: model.conversionMetrics.websiteRequestConversion,
+      tracked_submission_conversion: model.conversionMetrics.trackedSubmissionConversion,
+      contact_intent_conversion: model.conversionMetrics.contactIntentConversion,
+      confirmed_booking_conversion: model.conversionMetrics.confirmedBookingConversion,
+      average_engagement_time: model.averageEngagement,
+      internal_events_excluded: model.internalEventsExcluded,
+      internal_sessions_excluded: model.internalSessionsExcluded,
+      website_booking_requests_in_period: bookingRequestsInPeriod(bookingRequests, range)
+    },
+    tables: {
+      countries: model.countryRows,
+      cities: model.cityRows,
+      top_pages: model.topPageRows,
+      excursion_views: model.experienceRows,
+      traffic_sources: model.sourceRows,
+      devices: model.deviceRows,
+      browsers: model.browserRows,
+      operating_systems: model.osRows,
+      languages: model.languageRows,
+      website_flow: model.flowRows,
+      booking_funnel: model.funnelRows,
+      data_quality: model.dataQualityRows,
+      customer_declared_sources: model.declaredAttributionRows
+    },
+    drilldowns: {
+      funnel_diagnostics: model.funnelDiagnostics,
+      form_by_experience: model.formByExperience,
+      contact_paths: model.contactPaths,
+      mobile_funnel: model.mobileFunnel,
+      session_paths: model.sessionPaths,
+      language_conversion: model.languageConversion,
+      geography_hypotheses: model.geographyHypotheses,
+      traffic_attribution_quality: model.trafficAttributionQuality,
+      customer_declared_sources: model.declaredAttributionRows,
+      requests_without_tracked_form_open: model.requestsWithoutTrackedFormOpen
+    },
+    anonymized_samples: {
+      events: safeAnalyticsRows(events, 'event'),
+      sessions: safeAnalyticsRows(sessions, 'session'),
+      booking_requests: safeBookingRequestRows(bookingRequests, range, lang)
+    },
+    privacy_note: 'Visitor IDs, session IDs, names, emails, phone numbers, message text, precise coordinates, payment data, and raw booking-request personal details are intentionally excluded from this export.'
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  const dateStamp = generatedAt.slice(0, 10);
+  anchor.href = url;
+  anchor.download = `vulcaniq-analytics-${period}-${dateStamp}.json`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function AdminAnalyticsPage({ lang, adminContent = {} }) {
+  const [period, setPeriod] = useState('30d');
+  const [state, setState] = useState({ loading: true, error: '', events: [], sessions: [], bookingRequests: [] });
+  const range = useMemo(() => analyticsDateRange(period), [period]);
+
+  useEffect(() => {
+    let alive = true;
+    async function loadAnalytics() {
+      setState((current) => ({ ...current, loading: true, error: '' }));
+      try {
+        const [events, sessions, requests] = await Promise.all([
+          listAnalyticsEvents({ ...range, limit: 10000 }),
+          listAnalyticsSessions({ ...range, limit: 10000 }),
+          listBookingRequests({ limit: 1000 }).catch(() => [])
+        ]);
+        if (!alive) return;
+        setState({ loading: false, error: '', events, sessions, bookingRequests: requests || [] });
+      } catch (error) {
+        if (!alive) return;
+        setState({ loading: false, error: error?.message || adminCopy(lang, 'Analytics non disponibili.', 'Analytics are not available.'), events: [], sessions: [], bookingRequests: [] });
+      }
+    }
+    loadAnalytics();
+    return () => { alive = false; };
+  }, [period]);
+
+  const model = useMemo(() => buildAnalyticsModel({ events: state.events, sessions: state.sessions, bookingRequests: state.bookingRequests, range, lang }), [state.events, state.sessions, state.bookingRequests, range, lang]);
+  const hasData = state.events.length > 0 || state.sessions.length > 0;
+  const emptyText = adminCopy(lang, 'Nessun dato disponibile per il periodo selezionato.', 'No analytics data available for the selected period.');
+  const setupText = adminCopy(lang, 'I dati inizieranno a comparire dopo le prime visite pubbliche al sito.', 'Data will start appearing after public visitors browse the website.');
+
+  return (
+    <section className="admin-subpage analytics-admin-page">
+      <div className="admin-page-header analytics-page-header">
+        <div>
+          <span className="kicker">vulcanIQ</span>
+          <AdminEditableText as="h1" itemKey="admin.analytics.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Dati', 'Analytics')} />
+          <AdminEditableText as="p" itemKey="admin.analytics.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Metriche anonime e privacy-first sulle visite pubbliche, le azioni e il percorso verso la prenotazione.', 'Anonymous privacy-first metrics about public visits, actions, and movement toward booking.')} />
+        </div>
+        <div className="analytics-header-actions">
+          <label className="analytics-period-filter">
+            <span>{adminCopy(lang, 'Periodo', 'Period')}</span>
+            <select value={period} onChange={(event) => setPeriod(event.target.value)}>
+              {ANALYTICS_PERIODS.map(([key]) => <option key={key} value={key}>{analyticsPeriodLabel(key, lang)}</option>)}
+            </select>
+          </label>
+          <button className="button secondary analytics-export-button" type="button" disabled={state.loading} onClick={() => downloadAnalyticsExport({ lang, period, range, model, events: state.events, sessions: state.sessions, bookingRequests: state.bookingRequests })}>{adminCopy(lang, 'Esporta metriche', 'Export metrics')}</button>
+        </div>
+      </div>
+
+      {state.error && <div className="admin-alert warning" role="status">{state.error}<br />{setupText}</div>}
+      {state.loading ? <p>{adminCopy(lang, 'Caricamento dati...', 'Loading analytics...')}</p> : (
+        <>
+          {!hasData && <div className="admin-alert warning" role="status">{emptyText}<br />{setupText}</div>}
+          {state.events.length >= 10000 && <p className="small-note analytics-limit-note">{adminCopy(lang, 'Risultati limitati ai primi 10.000 eventi del periodo.', 'Results are capped at the first 10,000 events in this period.')}</p>}
+
+          <AnalyticsStaticPanel title={<AdminEditableText itemKey="admin.analytics.overview.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Panoramica', 'Overview')} />}>
+            <AnalyticsWarningList warnings={model.warnings} />
+            <div className="admin-summary-grid analytics-summary-grid">
+              <SummaryCard label={adminCopy(lang, 'Visitatori', 'Visitors')} value={model.visitors || '—'} helper={adminCopy(lang, 'ID visitatore anonimi', 'Anonymous visitor IDs')} />
+              <SummaryCard label={adminCopy(lang, 'Visualizzazioni pagina', 'Page views')} value={model.pageViews} helper="page_view" />
+              <SummaryCard label={adminCopy(lang, 'Aperture modulo', 'Form opens')} value={model.formOpens} helper="booking_form_open" />
+              <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} helper="booking_form_submit_attempt" />
+              <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model.websiteRequests} helper={adminCopy(lang, 'booking_requests source=website', 'booking_requests source=website')} />
+              <SummaryCard label={adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks')} value={model.whatsappClicks} helper="whatsapp_click" />
+              <SummaryCard label={adminCopy(lang, 'Click email', 'Email clicks')} value={model.emailClicks} helper="email_click" />
+              <SummaryCard label={adminCopy(lang, 'Conversione richieste sito', 'Website request conversion')} value={model.conversionMetrics.websiteRequestConversion} helper={adminCopy(lang, 'Richieste sito / visitatori', 'Website requests / visitors')} />
+              <SummaryCard label={adminCopy(lang, 'Tempo medio di coinvolgimento', 'Average engagement time')} value={model.averageEngagement} helper={adminCopy(lang, 'Stimato dalle sessioni anonime.', 'Estimated from anonymous sessions.')} />
+            </div>
+          </AnalyticsStaticPanel>
+
+          <AnalyticsPanel title={adminCopy(lang, 'Qualità dati', 'Data quality')}>
+            <AnalyticsHelperNote>{adminCopy(lang, 'Avvisi diagnostici per capire quando il funnel non è internamente coerente. Le metriche pubbliche escludono traffico admin/API.', 'Diagnostic warnings for identifying when the funnel is not internally coherent. Public metrics exclude admin/API traffic.')}</AnalyticsHelperNote>
+            <AnalyticsTable
+              columns={[
+                { key: 'check', label: adminCopy(lang, 'Controllo', 'Check') },
+                { key: 'count', label: adminCopy(lang, 'Conteggio', 'Count') },
+                { key: 'detail', label: adminCopy(lang, 'Dettaglio', 'Detail') }
+              ]}
+              rows={model.dataQualityRows}
+              empty={emptyText}
+            />
+          </AnalyticsPanel>
+
+          <AnalyticsPanel title={<AdminEditableText itemKey="admin.analytics.bookingFunnel.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Funnel prenotazione', 'Booking funnel')} />}>
+            <AnalyticsHelperNote>{adminCopy(lang, 'Controlla se gli utenti passano da visita ad apertura modulo, tentativo di invio e richiesta creata. Questa sezione concentra le anomalie di tracciamento del form.', 'Check whether visitors move from visit to form open, submit attempt, and created request. This section concentrates form tracking anomalies.')}</AnalyticsHelperNote>
+            {model.lowSampleNote && <AnalyticsHelperNote>{adminCopy(lang, 'Campione dati ridotto: usa questi numeri per diagnosticare tracciamento e UX, non per conclusioni marketing definitive.', 'Small data sample: use these numbers to diagnose tracking and UX, not for definitive marketing conclusions.')}</AnalyticsHelperNote>}
+            <AnalyticsSubsection title={adminCopy(lang, 'Diagnostica funnel', 'Funnel diagnostics')}>
+              <AnalyticsTable
+                columns={[
+                  { key: 'step', label: adminCopy(lang, 'Step', 'Step') },
+                  { key: 'count', label: adminCopy(lang, 'Conteggio', 'Count') },
+                  { key: 'dropoff', label: 'Drop-off' }
+                ]}
+                rows={model.funnelDiagnostics}
+                empty={emptyText}
+              />
+            </AnalyticsSubsection>
+            <div className="analytics-two-column-grid">
+              <AnalyticsSubsection title={adminCopy(lang, 'Modulo per esperienza', 'Booking form by experience')}>
+                <AnalyticsTable
+                  columns={[
+                    { key: 'experience', label: adminCopy(lang, 'Esperienza/tipologia', 'Experience/type') },
+                    { key: 'experience_views', label: adminCopy(lang, 'Viste esperienza', 'Experience views') },
+                    { key: 'detail_opens', label: adminCopy(lang, 'Dettagli aperti', 'Detail opens') },
+                    { key: 'form_opens', label: adminCopy(lang, 'Aperture modulo', 'Form opens') },
+                    { key: 'submit_attempts', label: adminCopy(lang, 'Tentativi invio', 'Submit attempts') },
+                    { key: 'submit_successes', label: adminCopy(lang, 'Invii riusciti', 'Submit successes') },
+                    { key: 'booking_requests', label: adminCopy(lang, 'Richieste create', 'Created requests') },
+                    { key: 'confirmed_bookings', label: adminCopy(lang, 'Confermate', 'Confirmed') },
+                    { key: 'whatsapp_clicks', label: 'WhatsApp' },
+                    { key: 'email_clicks', label: 'Email' },
+                    { key: 'phone_clicks', label: adminCopy(lang, 'Telefono', 'Phone') },
+                    { key: 'view_to_request', label: adminCopy(lang, 'Vista → richiesta', 'View → request') },
+                    { key: 'form_to_request', label: adminCopy(lang, 'Modulo → richiesta', 'Form → request') }
+                  ]}
+                  rows={model.formByExperience}
+                  empty={adminCopy(lang, 'Nessuna esperienza specificata nei dati del periodo.', 'No experience specified in this period’s data.')}
+                />
+              </AnalyticsSubsection>
+              <AnalyticsSubsection title={adminCopy(lang, 'Conversioni principali', 'Core conversions')}>
+                <div className="admin-summary-grid analytics-mini-summary-grid">
+                  <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} helper="booking_form_submit_attempt" />
+                  <SummaryCard label={adminCopy(lang, 'Invii riusciti tracciati', 'Tracked successful submissions')} value={model.submitSuccesses} helper="booking_form_submit_success" />
+                  <SummaryCard label={adminCopy(lang, 'Errori invio', 'Submit errors')} value={model.submitErrors} helper="booking_form_submit_error" />
+                  <SummaryCard label={adminCopy(lang, 'Conversione invii', 'Tracked conversion')} value={model.conversionMetrics.trackedSubmissionConversion} helper={adminCopy(lang, 'Invii analytics / visitatori', 'Analytics successes / visitors')} />
+                </div>
+              </AnalyticsSubsection>
+            </div>
+          </AnalyticsPanel>
+
+          <AnalyticsPanel title={<AdminEditableText itemKey="admin.analytics.contactIntent.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Intento di contatto', 'Contact intent')} />}>
+            <AnalyticsHelperNote>{adminCopy(lang, 'Raggruppa le azioni con cui un visitatore prova a contattare vulcanIQ senza necessariamente completare il modulo.', 'Groups the actions where a visitor tries to contact vulcanIQ without necessarily completing the form.')}</AnalyticsHelperNote>
+            <div className="admin-summary-grid analytics-mini-summary-grid">
+              <SummaryCard label={adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks')} value={model.whatsappClicks} helper="whatsapp_click" />
+              <SummaryCard label={adminCopy(lang, 'Click email', 'Email clicks')} value={model.emailClicks} helper="email_click" />
+              <SummaryCard label={adminCopy(lang, 'Click telefono', 'Phone clicks')} value={model.phoneClicks} helper="phone_click" />
+              <SummaryCard label={adminCopy(lang, 'Click Google Maps', 'Google Maps clicks')} value={model.mapsClicks} helper="google_maps_click" />
+            </div>
+            <AnalyticsSubsection title={adminCopy(lang, 'Percorsi di contatto', 'Contact paths')}>
+              <AnalyticsTable
+                columns={[
+                  { key: 'cta_location', label: adminCopy(lang, 'Posizione CTA', 'CTA location') },
+                  { key: 'action_type', label: adminCopy(lang, 'Azione', 'Action type') },
+                  { key: 'count', label: adminCopy(lang, 'Conteggio', 'Count') },
+                  { key: 'device', label: adminCopy(lang, 'Dispositivo', 'Device') },
+                  { key: 'language', label: adminCopy(lang, 'Lingua', 'Language') },
+                  { key: 'top_previous_section', label: adminCopy(lang, 'Sezione precedente', 'Top previous section') }
+                ]}
+                rows={model.contactPaths}
+                empty={emptyText}
+              />
+            </AnalyticsSubsection>
+          </AnalyticsPanel>
+
+          <AnalyticsPanel title={<AdminEditableText itemKey="admin.analytics.sources.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Fonti traffico', 'Traffic sources')} />}>
+            {model.directTrafficShare !== '0%' && <AnalyticsHelperNote>{adminCopy(lang, 'Molto traffico risulta Diretto. Usa link UTM per Instagram, WhatsApp, QR code, biglietti da visita e partner per capire da dove arrivano gli utenti.', 'Most traffic appears as Direct. Use UTM links for Instagram, WhatsApp, QR codes, business cards, and partners to understand where users come from.')}</AnalyticsHelperNote>}
+            <div className="analytics-two-column-grid">
+              <AnalyticsSubsection title={adminCopy(lang, 'Qualità attribuzione', 'Attribution quality')}>
+                <AnalyticsTable
+                  columns={[
+                    { key: 'source', label: adminCopy(lang, 'Sorgente', 'Source') },
+                    { key: 'count', label: adminCopy(lang, 'Conteggio', 'Count') },
+                    { key: 'notes', label: adminCopy(lang, 'Note', 'Notes') }
+                  ]}
+                  rows={model.trafficAttributionQuality}
+                  empty={emptyText}
+                />
+              </AnalyticsSubsection>
+              <AnalyticsSubsection title={adminCopy(lang, 'Sorgenti principali', 'Top sources')}>
+                <AnalyticsRowList rows={model.sourceRows} total={Math.max(1, model.sourceRows.reduce((sum, row) => sum + row.count, 0))} empty={emptyText} />
+              </AnalyticsSubsection>
+            </div>
+            <AnalyticsSubsection title={adminCopy(lang, 'Dove ci hanno scoperto', 'Where customers found us')}>
+              <AnalyticsHelperNote>{adminCopy(lang, 'Dato dichiarato dal cliente. Non sostituisce traffic_source, che resta attribuzione tecnica da referrer/UTM/sessione.', 'Customer-declared source. This does not replace traffic_source, which remains technical attribution from referrer/UTM/session data.')}</AnalyticsHelperNote>
+              <AnalyticsTable
+                columns={[
+                  { key: 'source', label: adminCopy(lang, 'Fonte conoscenza', 'Discovery source') },
+                  { key: 'details', label: adminCopy(lang, 'Dettagli Altro', 'Other details') },
+                  { key: 'booking_requests', label: adminCopy(lang, 'Richieste', 'Requests') },
+                  { key: 'confirmed_bookings', label: adminCopy(lang, 'Confermate', 'Confirmed') },
+                  { key: 'contact_events', label: adminCopy(lang, 'Contatti diretti', 'Direct contacts') },
+                  { key: 'form_events', label: adminCopy(lang, 'Eventi modulo', 'Form events') }
+                ]}
+                rows={model.declaredAttributionRows}
+                empty={emptyText}
+              />
+            </AnalyticsSubsection>
+          </AnalyticsPanel>
+
+          <AnalyticsPanel title={<AdminEditableText itemKey="admin.analytics.audienceUx.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Pubblico e UX', 'Audience and UX')} />}>
+            <AnalyticsHelperNote>{adminCopy(lang, 'Raggruppa dispositivo, lingua, geografia e percorsi di navigazione per capire dove testare prima il sito.', 'Groups device, language, geography, and navigation paths to understand where to test the site first.')}</AnalyticsHelperNote>
+            <div className="analytics-two-column-grid">
+              <AnalyticsSubsection title={adminCopy(lang, 'Funnel mobile', 'Mobile funnel')}>
+                <AnalyticsTable
+                  columns={[
+                    { key: 'device_browser', label: adminCopy(lang, 'Dispositivo/browser', 'Device/browser') },
+                    { key: 'page_views', label: adminCopy(lang, 'Page views', 'Page views') },
+                    { key: 'experience_views', label: adminCopy(lang, 'Viste esperienza', 'Experience views') },
+                    { key: 'detail_opens', label: adminCopy(lang, 'Dettagli', 'Details') },
+                    { key: 'calendar_date_selections', label: adminCopy(lang, 'Date calendario', 'Calendar dates') },
+                    { key: 'form_opens', label: adminCopy(lang, 'Aperture modulo', 'Form opens') },
+                    { key: 'field_starts', label: adminCopy(lang, 'Avvii compilazione', 'Field starts') },
+                    { key: 'submit_attempts', label: adminCopy(lang, 'Tentativi invio', 'Submit attempts') },
+                    { key: 'validation_errors', label: adminCopy(lang, 'Errori validazione', 'Validation errors') },
+                    { key: 'submit_successes', label: adminCopy(lang, 'Invii riusciti', 'Submit successes') },
+                    { key: 'submit_errors', label: adminCopy(lang, 'Errori invio', 'Submit errors') },
+                    { key: 'booking_requests', label: adminCopy(lang, 'Richieste', 'Requests') },
+                    { key: 'whatsapp_clicks', label: 'WhatsApp' },
+                    { key: 'email_clicks', label: 'Email' },
+                    { key: 'phone_clicks', label: adminCopy(lang, 'Telefono', 'Phone') }
+                  ]}
+                  rows={model.mobileFunnel}
+                  empty={emptyText}
+                />
+              </AnalyticsSubsection>
+              <AnalyticsSubsection title={adminCopy(lang, 'Dispositivi', 'Devices')}>
+                <h4>{adminCopy(lang, 'Mobile / Desktop / Tablet', 'Mobile / Desktop / Tablet')}</h4>
+                <AnalyticsRowList rows={model.deviceRows} total={state.events.length || 1} empty={emptyText} />
+                <h4>{adminCopy(lang, 'Browser', 'Browser')}</h4>
+                <AnalyticsRowList rows={model.browserRows} total={state.events.length || 1} empty={emptyText} />
+                <h4>{adminCopy(lang, 'Sistema operativo', 'Operating system')}</h4>
+                <AnalyticsRowList rows={model.osRows} total={state.events.length || 1} empty={emptyText} />
+              </AnalyticsSubsection>
+            </div>
+            <div className="analytics-two-column-grid">
+              <AnalyticsSubsection title={adminCopy(lang, 'Lingua e conversione', 'Language and conversion')}>
+                <AnalyticsTable
+                  columns={[
+                    { key: 'language', label: adminCopy(lang, 'Lingua', 'Language') },
+                    { key: 'actions', label: adminCopy(lang, 'Azioni', 'Actions') },
+                    { key: 'page_views', label: adminCopy(lang, 'Page views', 'Page views') },
+                    { key: 'form_opens', label: adminCopy(lang, 'Aperture modulo', 'Form opens') },
+                    { key: 'submit_attempts', label: adminCopy(lang, 'Tentativi invio', 'Submit attempts') },
+                    { key: 'submit_successes', label: adminCopy(lang, 'Invii riusciti', 'Submit successes') },
+                    { key: 'whatsapp_clicks', label: 'WhatsApp' },
+                    { key: 'email_clicks', label: 'Email' },
+                    { key: 'language_switches', label: adminCopy(lang, 'Cambi lingua', 'Language switches') }
+                  ]}
+                  rows={model.languageConversion}
+                  empty={emptyText}
+                />
+              </AnalyticsSubsection>
+              <AnalyticsSubsection title={adminCopy(lang, 'Lingua', 'Language')}>
+                <AnalyticsRowList rows={model.languageRows} total={state.events.length || 1} empty={emptyText} helperLabel={adminCopy(lang, 'visitatori', 'visitors')} />
+              </AnalyticsSubsection>
+            </div>
+            <div className="analytics-two-column-grid">
+              <AnalyticsSubsection title={adminCopy(lang, 'Geografia: ipotesi', 'Geography: hypotheses')}>
+                <AnalyticsTable
+                  columns={[
+                    { key: 'country_city', label: adminCopy(lang, 'Paese/città', 'Country/city') },
+                    { key: 'actions', label: adminCopy(lang, 'Azioni', 'Actions') },
+                    { key: 'language', label: adminCopy(lang, 'Lingua', 'Language') },
+                    { key: 'form_opens', label: adminCopy(lang, 'Aperture modulo', 'Form opens') },
+                    { key: 'contact_clicks', label: adminCopy(lang, 'Click contatto', 'Contact clicks') },
+                    { key: 'device', label: adminCopy(lang, 'Dispositivo', 'Device') }
+                  ]}
+                  rows={model.geographyHypotheses}
+                  empty={emptyText}
+                />
+              </AnalyticsSubsection>
+              <AnalyticsSubsection title={adminCopy(lang, 'Geografia', 'Geography')}>
+                <h4>{adminCopy(lang, 'Paesi principali', 'Top countries')}</h4>
+                <AnalyticsRowList rows={model.countryRows} total={state.events.length || 1} empty={emptyText} />
+                <h4>{adminCopy(lang, 'Città principali', 'Top cities')}</h4>
+                <AnalyticsRowList rows={model.cityRows} total={state.events.length || 1} empty={adminCopy(lang, 'Città non disponibile se Cloudflare non la fornisce.', 'City is unavailable if Cloudflare does not provide it.')} />
+              </AnalyticsSubsection>
+            </div>
+            <div className="analytics-two-column-grid">
+              <AnalyticsSubsection title={adminCopy(lang, 'Percorsi sessione', 'Session paths')}>
+                <AnalyticsTable
+                  columns={[
+                    { key: 'path', label: adminCopy(lang, 'Percorso', 'Path') },
+                    { key: 'sessions', label: adminCopy(lang, 'Sessioni', 'Sessions') },
+                    { key: 'contact_actions', label: adminCopy(lang, 'Azioni contatto', 'Contact actions') },
+                    { key: 'booking_form_opens', label: adminCopy(lang, 'Aperture modulo', 'Booking form opens') }
+                  ]}
+                  rows={model.sessionPaths}
+                  empty={adminCopy(lang, 'Servono più eventi ordinati per mostrare i percorsi sessione.', 'More ordered events are needed to show session paths.')}
+                />
+              </AnalyticsSubsection>
+              <AnalyticsSubsection title={adminCopy(lang, 'Flusso sito', 'Website flow')}>
+                <h4>{adminCopy(lang, 'Azioni principali', 'Key actions')}</h4>
+                <AnalyticsRowList rows={model.flowRows} total={Math.max(1, model.flowRows.reduce((sum, row) => sum + row.count, 0))} empty={emptyText} />
+                <h4>{adminCopy(lang, 'Pagine principali', 'Top pages')}</h4>
+                <AnalyticsRowList rows={model.topPageRows} total={model.pageViews || 1} empty={emptyText} />
+                <h4>{adminCopy(lang, 'Visualizzazioni esperienze', 'Excursion detail views')}</h4>
+                <AnalyticsRowList rows={model.experienceRows} total={model.experienceViews || 1} empty={emptyText} />
+              </AnalyticsSubsection>
+            </div>
+          </AnalyticsPanel>
+        </>
+      )}
+    </section>
+  );
+}
+
+function AdminAnalyticsPreview({ lang, adminContent, editor }) {
+  return (
+    <section className="admin-subpage analytics-admin-page admin-preview-page">
+      <div className="admin-page-header analytics-page-header">
+        <div>
+          <span className="kicker">vulcanIQ</span>
+          <AdminEditableText as="h1" itemKey="admin.analytics.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Dati', 'Analytics')} />
+          <AdminEditableText as="p" itemKey="admin.analytics.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Metriche anonime e privacy-first sulle visite pubbliche, le azioni e il percorso verso la prenotazione.', 'Anonymous privacy-first metrics about public visits, actions, and movement toward booking.')} />
+        </div>
+      </div>
+      <AnalyticsStaticPanel title={<AdminEditableText itemKey="admin.analytics.overview.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Panoramica', 'Overview')} />}>
+        <div className="admin-summary-grid analytics-summary-grid">
+          <SummaryCard label={adminCopy(lang, 'Visitatori', 'Visitors')} value="128" />
+          <SummaryCard label={adminCopy(lang, 'Visualizzazioni pagina', 'Page views')} value="412" />
+          <SummaryCard label={adminCopy(lang, 'Richieste prenotazione', 'Booking requests')} value="18" />
+          <SummaryCard label={adminCopy(lang, 'Tasso conversione prenotazione', 'Booking conversion rate')} value="14%" />
+        </div>
+      </AnalyticsStaticPanel>
+    </section>
+  );
+}
+
+function FinanceAdminPage({ lang, session, adminContent = {} }) {
   const [entries, setEntries] = useState([]);
   const [requests, setRequests] = useState([]);
   const [fixedExcursions, setFixedExcursions] = useState([]);
   const [leaflets, setLeaflets] = useState([]);
-  const [filters, setFilters] = useState({ type: 'all', fromDate: '', toDate: '', category: 'all', linked: 'all', includeArchived: false });
+  const [filters, setFilters] = useState({
+    type: 'all',
+    dateMode: 'all',
+    specificDate: todayIso(),
+    specificMonth: monthValueFromDate(),
+    fromDate: '',
+    toDate: '',
+    category: 'all',
+    linked: 'all',
+    includeArchived: false
+  });
   const [form, setForm] = useState({ entry_date: todayIso(), type: 'income', amount: '', currency: 'EUR', title: '', description: '', category: 'booking_payment', payment_method: '', booking_request_id: '', fixed_excursion_id: '', leaflet_id: '' });
   const [editing, setEditing] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -3603,12 +6833,15 @@ function FinanceAdminPage({ lang, session }) {
   const [feedback, setFeedback] = useState('');
   const [activeFinanceDetail, setActiveFinanceDetail] = useState(null);
 
+  const resolvedDateRange = useMemo(() => resolveFinanceDateRange(filters, lang), [filters, lang]);
+
   async function refresh() {
     setLoading(true);
     setError('');
+    const dateRange = resolveFinanceDateRange(filters, lang);
     try {
       const [entryData, requestData, fixedData, leafletData] = await Promise.all([
-        listFinanceEntries(filters),
+        listFinanceEntries({ ...filters, fromDate: dateRange.startDate, toDate: dateRange.endDate }),
         listBookingRequests({ limit: 250 }),
         listFixedExcursions({ activeOnly: false }),
         listMonthlyLeaflets({ activeOnly: false })
@@ -3624,7 +6857,7 @@ function FinanceAdminPage({ lang, session }) {
     }
   }
 
-  useEffect(() => { refresh(); }, [filters.type, filters.fromDate, filters.toDate, filters.category, filters.linked, filters.includeArchived]);
+  useEffect(() => { refresh(); }, [filters.type, filters.dateMode, filters.specificDate, filters.specificMonth, filters.fromDate, filters.toDate, filters.category, filters.linked, filters.includeArchived]);
 
   function update(field, value) {
     setForm((current) => ({
@@ -3635,7 +6868,11 @@ function FinanceAdminPage({ lang, session }) {
   }
 
   function updateFilter(field, value) {
-    setFilters((current) => ({ ...current, [field]: value }));
+    setFilters((current) => ({
+      ...current,
+      [field]: value,
+      ...(field === 'type' ? { category: 'all' } : {})
+    }));
   }
 
   function startEdit(entry) {
@@ -3690,47 +6927,55 @@ function FinanceAdminPage({ lang, session }) {
     }
   }
 
-  const activeEntries = entries.filter((entry) => entry.active !== false);
-  const incomeEntries = activeEntries.filter((entry) => entry.type === 'income');
-  const expenseEntries = activeEntries.filter((entry) => entry.type === 'expense');
-  const linkedEntries = activeEntries.filter((entry) => entry.booking_request_id || entry.fixed_excursion_id || entry.leaflet_id);
-  const unlinkedExpenseEntries = expenseEntries.filter((entry) => !entry.booking_request_id && !entry.fixed_excursion_id && !entry.leaflet_id);
-  const income = incomeEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const expenses = expenseEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-  const linked = linkedEntries.length;
-  const unlinkedExpenses = unlinkedExpenseEntries.length;
+  const requestById = useMemo(() => new Map(requests.map((request) => [request.id, request])), [requests]);
+  const fixedById = useMemo(() => new Map(fixedExcursions.map((item) => [item.id, item])), [fixedExcursions]);
+  const leafletById = useMemo(() => new Map(leaflets.map((item) => [item.id, item])), [leaflets]);
+  const enrichedEntries = useMemo(() => entries.map((entry) => enrichFinanceEntry(entry, { requestById, fixedById, leafletById })), [entries, requestById, fixedById, leafletById]);
+  const reportEntries = filters.includeArchived ? enrichedEntries : enrichedEntries.filter((entry) => entry.active !== false);
+  const financeSummary = calculateFinanceSummary(reportEntries);
+  const linkedEntries = reportEntries.filter(financeEntryIsLinked);
+  const unlinkedExpenseEntries = financeSummary.expenseEntries.filter((entry) => !financeEntryIsLinked(entry));
   const categories = filters.type === 'expense' ? FINANCE_CATEGORIES.expense : filters.type === 'income' ? FINANCE_CATEGORIES.income : [...FINANCE_CATEGORIES.income, ...FINANCE_CATEGORIES.expense];
 
   return (
     <section className="admin-page">
       <div className="admin-page-header">
         <div>
-          <span className="kicker">{adminCopy(lang, 'Tracker economico', 'Money tracker')}</span>
-          <h1>{adminCopy(lang, 'Finanze', 'Finance')}</h1>
-          <p>{adminCopy(lang, 'Registro interno per entrate, uscite e collegamenti a prenotazioni o escursioni. Non è un sistema di pagamento.', 'Internal ledger for income, expenses, and links to bookings or excursions. This is not a payment system.')}</p>
+          <AdminEditableText as="h1" itemKey="admin.finance.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Finanze', 'Finance')} />
         </div>
         <button className="button secondary" type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
       </div>
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       <div className="admin-summary-grid finance-summary-grid">
-        <SummaryCard label={adminCopy(lang, 'Entrate totali', 'Total earnings')} value={formatMoney(income)} onClick={() => setActiveFinanceDetail({ key: 'income', title: adminCopy(lang, 'Entrate', 'Income'), entries: incomeEntries, total: income })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
-        <SummaryCard label={adminCopy(lang, 'Uscite totali', 'Total expenses')} value={formatMoney(expenses)} onClick={() => setActiveFinanceDetail({ key: 'expenses', title: adminCopy(lang, 'Uscite', 'Expenses'), entries: expenseEntries, total: expenses })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
-        <SummaryCard label={adminCopy(lang, 'Utile netto', 'Net profit')} value={formatMoney(income - expenses)} onClick={() => setActiveFinanceDetail({ key: 'net', title: adminCopy(lang, 'Utile netto', 'Net profit'), entries: activeEntries, total: income - expenses })} helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
-        <SummaryCard label={adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings')} value={linked} onClick={() => setActiveFinanceDetail({ key: 'linked', title: adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings'), entries: linkedEntries, total: linked })} helper={adminCopy(lang, 'Vedi movimenti', 'View entries')} />
-        <SummaryCard label={adminCopy(lang, 'Spese non collegate', 'Unlinked expenses')} value={unlinkedExpenses} onClick={() => setActiveFinanceDetail({ key: 'unlinked-expenses', title: adminCopy(lang, 'Spese non collegate', 'Unlinked expenses'), entries: unlinkedExpenseEntries, total: unlinkedExpenses })} helper={adminCopy(lang, 'Vedi spese', 'View expenses')} />
+        <SummaryCard label={adminCopy(lang, 'Entrate totali', 'Total earnings')} value={formatMoney(financeSummary.income)} onClick={() => setActiveFinanceDetail({ key: 'income', title: adminCopy(lang, 'Entrate', 'Income'), entries: financeSummary.incomeEntries, total: financeSummary.income })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Uscite totali', 'Total expenses')} value={formatMoney(financeSummary.expenses)} onClick={() => setActiveFinanceDetail({ key: 'expenses', title: adminCopy(lang, 'Uscite', 'Expenses'), entries: financeSummary.expenseEntries, total: financeSummary.expenses })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Utile netto', 'Net profit')} value={formatMoney(financeSummary.net)} onClick={() => setActiveFinanceDetail({ key: 'net', title: adminCopy(lang, 'Utile netto', 'Net profit'), entries: reportEntries, total: financeSummary.net })} helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
+        <SummaryCard label={adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings')} value={linkedEntries.length} onClick={() => setActiveFinanceDetail({ key: 'linked', title: adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings'), entries: linkedEntries, total: linkedEntries.length })} helper={adminCopy(lang, 'Vedi movimenti', 'View entries')} />
+        <SummaryCard label={adminCopy(lang, 'Spese non collegate', 'Unlinked expenses')} value={unlinkedExpenseEntries.length} onClick={() => setActiveFinanceDetail({ key: 'unlinked-expenses', title: adminCopy(lang, 'Spese non collegate', 'Unlinked expenses'), entries: unlinkedExpenseEntries, total: unlinkedExpenseEntries.length })} helper={adminCopy(lang, 'Vedi spese', 'View expenses')} />
       </div>
       <div className="admin-filter-bar finance-filter-bar">
+        <select value={filters.dateMode} onChange={(event) => updateFilter('dateMode', event.target.value)} aria-label={adminCopy(lang, 'Filtro date', 'Date filter')}>
+          {FINANCE_DATE_FILTERS.map(([key]) => <option key={key} value={key}>{financeDateFilterLabel(key, lang)}</option>)}
+        </select>
+        {filters.dateMode === 'specific-date' && <input type="date" value={filters.specificDate} onChange={(event) => updateFilter('specificDate', event.target.value)} aria-label={adminCopy(lang, 'Data specifica', 'Specific date')} />}
+        {filters.dateMode === 'specific-month' && <input type="month" value={filters.specificMonth} onChange={(event) => updateFilter('specificMonth', event.target.value)} aria-label={adminCopy(lang, 'Mese specifico', 'Specific month')} />}
+        {filters.dateMode === 'custom' && <input type="date" value={filters.fromDate} onChange={(event) => updateFilter('fromDate', event.target.value)} aria-label={adminCopy(lang, 'Da data', 'From date')} />}
+        {filters.dateMode === 'custom' && <input type="date" value={filters.toDate} onChange={(event) => updateFilter('toDate', event.target.value)} aria-label={adminCopy(lang, 'A data', 'To date')} />}
         <select value={filters.type} onChange={(event) => updateFilter('type', event.target.value)}><option value="all">{adminCopy(lang, 'Tutti i tipi', 'All types')}</option><option value="income">{adminCopy(lang, 'Entrate', 'Income')}</option><option value="expense">{adminCopy(lang, 'Uscite', 'Expenses')}</option></select>
         <select value={filters.category} onChange={(event) => updateFilter('category', event.target.value)}><option value="all">{adminCopy(lang, 'Tutte le categorie', 'All categories')}</option>{categories.map(([key]) => <option key={key} value={key}>{financeCategoryLabel(key, lang)}</option>)}</select>
         <select value={filters.linked} onChange={(event) => updateFilter('linked', event.target.value)}><option value="all">{adminCopy(lang, 'Collegate e libere', 'Linked and unlinked')}</option><option value="linked">{adminCopy(lang, 'Solo collegate', 'Linked only')}</option><option value="unlinked">{adminCopy(lang, 'Solo non collegate', 'Unlinked only')}</option></select>
-        <input type="date" value={filters.fromDate} onChange={(event) => updateFilter('fromDate', event.target.value)} />
-        <input type="date" value={filters.toDate} onChange={(event) => updateFilter('toDate', event.target.value)} />
-        <label className="check-field compact-check"><input type="checkbox" checked={filters.includeArchived} onChange={(event) => updateFilter('includeArchived', event.target.checked)} /> {adminCopy(lang, 'Includi archivio', 'Include archive')}</label>
+        <label className="finance-archive-filter"><input type="checkbox" checked={filters.includeArchived} onChange={(event) => updateFilter('includeArchived', event.target.checked)} /><span>{adminCopy(lang, 'Includi archivio', 'Include archive')}</span></label>
+        <p className="small-note finance-filter-range-note">{adminCopy(lang, 'Periodo', 'Period')}: {resolvedDateRange.label}</p>
       </div>
+      <FinanceOverview lang={lang} summary={financeSummary} rangeLabel={resolvedDateRange.label} onOpen={setActiveFinanceDetail} />
+      <FinanceProfitLoss lang={lang} summary={financeSummary} adminContent={adminContent} />
       <div className="admin-two-column finance-layout">
-        <section className="admin-panel">
-          <h2>{editing ? adminCopy(lang, 'Modifica voce', 'Edit entry') : adminCopy(lang, 'Aggiungi voce', 'Add entry')}</h2>
+        <details className="admin-panel finance-collapsible-panel finance-form-panel" open={Boolean(editing)}>
+          <summary className="finance-collapsible-summary">
+            <strong>{editing ? contentText(adminContent, 'admin.finance.editEntry.title', lang, adminCopy(lang, 'Modifica voce', 'Edit entry')) : contentText(adminContent, 'admin.finance.addEntry.title', lang, adminCopy(lang, 'Aggiungi voce', 'Add entry'))}</strong>
+          </summary>
+          <div className="finance-collapsible-body">
           <form className="admin-form-grid" onSubmit={submit}>
             <AdminSelect label={adminCopy(lang, 'Tipo', 'Type')} value={form.type} onChange={(value) => update('type', value)} options={['income', 'expense']} formatter={(value) => value === 'income' ? adminCopy(lang, 'Entrata', 'Income') : adminCopy(lang, 'Uscita', 'Expense')} />
             <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.entry_date} onChange={(value) => update('entry_date', value)} />
@@ -3745,53 +6990,262 @@ function FinanceAdminPage({ lang, session }) {
             <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione / note', 'Description / notes')}</span><textarea rows={4} value={form.description} onChange={(event) => update('description', event.target.value)} /></label>
             <div className="modal-actions full"><button className="button primary" type="submit">{editing ? adminCopy(lang, 'Salva modifiche', 'Save changes') : adminCopy(lang, 'Aggiungi voce', 'Add entry')}</button>{editing && <button className="button secondary" type="button" onClick={resetForm}>{adminCopy(lang, 'Annulla modifica', 'Cancel edit')}</button>}</div>
           </form>
-        </section>
-        <section className="admin-panel">
-          <div className="admin-panel-header"><h2>{adminCopy(lang, 'Voci finanziarie', 'Financial entries')}</h2><span className="status-pill accepted">{entries.length}</span></div>
-          {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : entries.length === 0 ? <p>{adminCopy(lang, 'Nessuna voce trovata.', 'No entries found.')}</p> : (
+          </div>
+        </details>
+        <details className="admin-panel finance-collapsible-panel finance-entries-panel">
+          <summary className="finance-collapsible-summary">
+            <AdminEditableText as="strong" itemKey="admin.finance.entries.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Voci finanziarie', 'Financial entries')} />
+            <em>{entries.length}</em>
+          </summary>
+          <div className="finance-collapsible-body">
+          {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : enrichedEntries.length === 0 ? <p>{adminCopy(lang, 'Nessuna voce trovata.', 'No entries found.')}</p> : (
             <div className="finance-entry-list">
-              {entries.map((entry) => <FinanceEntryCard key={entry.id} entry={entry} lang={lang} onEdit={() => startEdit(entry)} onArchive={() => archive(entry)} />)}
+              {enrichedEntries.map((entry) => <FinanceEntryCard key={entry.id} entry={entry} lang={lang} onOpen={() => setActiveFinanceDetail({ key: 'movement', title: adminCopy(lang, 'Dettaglio movimento', 'Movement detail'), entries: [entry], total: Number(entry.amount || 0), selectedEntry: entry })} onEdit={() => startEdit(entry)} onArchive={() => archive(entry)} />)}
             </div>
           )}
-        </section>
+          </div>
+        </details>
       </div>
       {activeFinanceDetail && <FinanceDetailModal detail={activeFinanceDetail} lang={lang} onClose={() => setActiveFinanceDetail(null)} />}
     </section>
   );
 }
 
+function FinanceOverview({ lang, summary, rangeLabel, onOpen }) {
+  const empty = adminCopy(lang, 'Nessun movimento per questo periodo.', 'No movements for this period.');
+  return (
+    <details className="admin-panel finance-collapsible-panel finance-overview-panel">
+      <summary className="finance-collapsible-summary">
+        <strong>{rangeLabel}</strong>
+      </summary>
+      <div className="finance-collapsible-body">
+      <div className="finance-overview-grid">
+        <article className="finance-overview-metric"><span>{adminCopy(lang, 'Utile netto periodo', 'Period net profit')}</span><strong className={`finance-amount ${summary.net < 0 ? 'expense' : 'income'}`}>{formatMoney(summary.net)}</strong></article>
+        <button type="button" className="finance-overview-metric clickable" onClick={() => onOpen({ key: 'linked-bookings', title: adminCopy(lang, 'Movimenti collegati a prenotazioni', 'Movements linked to bookings'), entries: summary.linkedBookingEntries, total: summary.linkedBookingEntries.length })}><span>{adminCopy(lang, 'Movimenti collegati a prenotazioni', 'Movements linked to bookings')}</span><strong>{summary.linkedBookingEntries.length}</strong></button>
+        <button type="button" className="finance-overview-metric clickable" onClick={() => onOpen({ key: 'linked-fixed', title: adminCopy(lang, 'Movimenti collegati a escursioni fisse', 'Movements linked to fixed excursions'), entries: summary.linkedFixedEntries, total: summary.linkedFixedEntries.length })}><span>{adminCopy(lang, 'Movimenti collegati a escursioni fisse', 'Movements linked to fixed excursions')}</span><strong>{summary.linkedFixedEntries.length}</strong></button>
+        <button type="button" className="finance-overview-metric clickable" onClick={() => onOpen({ key: 'unlinked', title: adminCopy(lang, 'Movimenti non collegati', 'Unlinked movements'), entries: summary.unlinkedEntries, total: summary.unlinkedEntries.length })}><span>{adminCopy(lang, 'Movimenti non collegati', 'Unlinked movements')}</span><strong>{summary.unlinkedEntries.length}</strong></button>
+      </div>
+      <div className="finance-category-breakdown-grid">
+        <FinanceCategoryBreakdown
+          lang={lang}
+          title={adminCopy(lang, 'Entrate per categoria', 'Income by category')}
+          empty={empty}
+          categories={summary.incomeCategories}
+          onOpen={(category) => onOpen({ key: `income-${category.key}`, title: `${adminCopy(lang, 'Entrate', 'Income')} · ${financeCategoryLabel(category.key, lang)}`, entries: category.entries, total: category.total })}
+        />
+        <FinanceCategoryBreakdown
+          lang={lang}
+          title={adminCopy(lang, 'Uscite per categoria', 'Expenses by category')}
+          empty={empty}
+          categories={summary.expenseCategories}
+          onOpen={(category) => onOpen({ key: `expense-${category.key}`, title: `${adminCopy(lang, 'Uscite', 'Expenses')} · ${financeCategoryLabel(category.key, lang)}`, entries: category.entries, total: category.total })}
+        />
+      </div>
+      </div>
+    </details>
+  );
+}
+
+function FinanceProfitLoss({ lang, summary, adminContent = {} }) {
+  const volume = Math.max(summary.income, summary.expenses, 1);
+  const incomeWidth = Math.max(6, Math.round((summary.income / volume) * 100));
+  const expenseWidth = Math.max(6, Math.round((summary.expenses / volume) * 100));
+  const margin = summary.income > 0 ? Math.round((summary.net / summary.income) * 100) : 0;
+  return (
+    <details className="admin-panel finance-collapsible-panel finance-pl-panel">
+      <summary className="finance-collapsible-summary">
+        <AdminEditableText as="strong" itemKey="admin.finance.profitLoss.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Profitti e perdite', 'Profit & Loss')} />
+      </summary>
+      <div className="finance-collapsible-body">
+      <div className="finance-pl-grid">
+        <article className="finance-pl-total">
+          <span>{adminCopy(lang, 'Entrate', 'Earnings')}</span>
+          <strong className="finance-amount income">{formatMoney(summary.income)}</strong>
+        </article>
+        <article className="finance-pl-total">
+          <span>{adminCopy(lang, 'Uscite', 'Expenses')}</span>
+          <strong className="finance-amount expense">{formatMoney(summary.expenses)}</strong>
+        </article>
+        <article className="finance-pl-total highlighted">
+          <span>{adminCopy(lang, 'Risultato netto', 'Net result')}</span>
+          <strong className={`finance-amount ${summary.net < 0 ? 'expense' : 'income'}`}>{formatMoney(summary.net)}</strong>
+        </article>
+      </div>
+      <div className="finance-pl-bars" aria-label={adminCopy(lang, 'Confronto entrate e uscite', 'Earnings versus expenses comparison')}>
+        <div className="finance-pl-bar-row">
+          <span>{adminCopy(lang, 'Entrate', 'Earnings')}</span>
+          <div className="finance-pl-bar-track"><i className="income" style={{ width: `${incomeWidth}%` }} /></div>
+          <strong>{formatMoney(summary.income)}</strong>
+        </div>
+        <div className="finance-pl-bar-row">
+          <span>{adminCopy(lang, 'Uscite', 'Expenses')}</span>
+          <div className="finance-pl-bar-track"><i className="expense" style={{ width: `${expenseWidth}%` }} /></div>
+          <strong>{formatMoney(summary.expenses)}</strong>
+        </div>
+      </div>
+      <p className="small-note finance-pl-note">{adminCopy(lang, 'Margine netto sul periodo', 'Net margin for the period')}: <strong>{margin}%</strong></p>
+      </div>
+    </details>
+  );
+}
+
+function FinanceCategoryBreakdown({ lang, title, categories, empty, onOpen }) {
+  return (
+    <section className="finance-category-breakdown">
+      <h3>{title}</h3>
+      {!categories.length ? <p className="small-note">{empty}</p> : (
+        <div className="finance-category-list">
+          {categories.map((category) => (
+            <button type="button" className="finance-category-row" key={category.key} onClick={() => onOpen(category)}>
+              <span>
+                <strong>{financeCategoryLabel(category.key, lang)}</strong>
+                <small>{category.entries.length} {category.entries.length === 1 ? adminCopy(lang, 'movimento', 'movement') : adminCopy(lang, 'movimenti', 'movements')} · {category.percentage}%</small>
+              </span>
+              <strong className={`finance-amount ${category.type}`}>{formatMoney(category.total)}</strong>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function FinanceDetailModal({ detail, lang, onClose }) {
+  const [selectedEntry, setSelectedEntry] = useState(detail.selectedEntry || null);
   const numericTotal = typeof detail.total === 'number' ? detail.total : 0;
-  const isCountOnly = detail.key === 'linked' || detail.key === 'unlinked-expenses';
+  const isCountOnly = detail.key === 'linked' || detail.key === 'linked-bookings' || detail.key === 'linked-fixed' || detail.key === 'unlinked' || detail.key === 'unlinked-expenses';
+  useBodyScrollLock(true);
+  useEffect(() => { setSelectedEntry(detail.selectedEntry || null); }, [detail]);
   return (
     <div className="modal-backdrop finance-detail-backdrop" role="presentation" onClick={onClose}>
       <section className="admin-modal finance-detail-modal full-screen-admin-modal" role="dialog" aria-modal="true" aria-labelledby="financeDetailTitle" onClick={(event) => event.stopPropagation()}>
         <div className="admin-modal-header">
           <div>
-            <span className="kicker">{adminCopy(lang, 'Dettaglio finanze', 'Finance details')}</span>
-            <h2 id="financeDetailTitle">{detail.title}</h2>
-            <p>{isCountOnly ? `${detail.entries.length} ${adminCopy(lang, 'movimenti', 'entries')}` : formatMoney(numericTotal)}</p>
+            <span className="kicker">{selectedEntry ? adminCopy(lang, 'Dettaglio movimento', 'Movement detail') : adminCopy(lang, 'Dettaglio finanze', 'Finance details')}</span>
+            <h2 id="financeDetailTitle">{selectedEntry ? selectedEntry.title || detail.title : detail.title}</h2>
+            {!selectedEntry && <p>{isCountOnly ? `${detail.entries.length} ${adminCopy(lang, 'movimenti', 'entries')}` : formatMoney(numericTotal)}</p>}
           </div>
-          <button className="modal-close-button" type="button" onClick={onClose}>{adminCopy(lang, 'Chiudi', 'Close')}</button>
+          <div className="modal-actions inline-actions">
+            {selectedEntry && detail.entries.length > 1 && <button className="button secondary" type="button" onClick={() => setSelectedEntry(null)}>{adminCopy(lang, 'Indietro', 'Back')}</button>}
+            <button className="modal-close-button" type="button" onClick={onClose}>{adminCopy(lang, 'Chiudi', 'Close')}</button>
+          </div>
         </div>
-        {detail.entries.length === 0 ? <p>{adminCopy(lang, 'Nessun movimento disponibile.', 'No entries available.')}</p> : (
-          <div className="finance-detail-entry-list">
-            {detail.entries.map((entry) => (
-              <article className="finance-detail-entry" key={entry.id}>
-                <div>
-                  <strong>{entry.title || '-'}</strong>
-                  <p>{formatDateForMessage(entry.entry_date, lang)} · {financeCategoryLabel(entry.category, lang)} · {entry.payment_method || adminCopy(lang, 'Metodo non indicato', 'No payment method')}</p>
-                  {entry.description && <p className="small-note">{entry.description}</p>}
-                  <p className="small-note">{entry.booking_request_id || entry.fixed_excursion_id || entry.leaflet_id ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Unlinked')}</p>
-                </div>
-                <strong className={`finance-amount ${entry.type}`}>{entry.type === 'expense' ? '-' : '+'}{formatMoney(entry.amount, entry.currency)}</strong>
-              </article>
-            ))}
-          </div>
+        {selectedEntry ? <FinanceMovementDetail entry={selectedEntry} lang={lang} /> : (
+          detail.entries.length === 0 ? <p>{adminCopy(lang, 'Nessun movimento disponibile.', 'No entries available.')}</p> : (
+            <div className="finance-detail-entry-list">
+              {detail.entries.map((entry) => <FinanceMovementRow key={entry.id} entry={entry} lang={lang} onClick={() => setSelectedEntry(entry)} />)}
+            </div>
+          )
         )}
       </section>
     </div>
   );
+}
+
+function FinanceMovementRow({ entry, lang, onClick }) {
+  return (
+    <button type="button" className="finance-detail-entry finance-movement-row finance-movement-row--clickable" onClick={onClick}>
+      <div>
+        <strong>{entry.title || '-'}</strong>
+        <p>{formatDateForMessage(entry.entry_date, lang)} · {financeCategoryLabel(entry.category, lang)} · {entry.payment_method || adminCopy(lang, 'Metodo non indicato', 'No payment method')}</p>
+        {financeEntryCustomerName(entry) && <p className="small-note">{financeEntryCustomerName(entry)}</p>}
+        {entry.description && <p className="small-note">{entry.description}</p>}
+        <p className="small-note">{financeEntryIsLinked(entry) ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Unlinked')}</p>
+      </div>
+      <strong className={`finance-amount ${entry.type}`}>{entry.type === 'expense' ? '-' : '+'}{formatMoney(entry.amount, entry.currency)}</strong>
+    </button>
+  );
+}
+
+function FinanceMovementDetail({ entry, lang }) {
+  const booking = entry.linkedBooking;
+  const fixed = entry.linkedFixedExcursion;
+  const leaflet = entry.linkedLeaflet;
+  const missing = adminCopy(lang, 'Non disponibile', 'Not available');
+  const guests = [booking?.adults ? `${booking.adults} ${adminCopy(lang, 'adulti', 'adults')}` : '', booking?.children ? `${booking.children} ${adminCopy(lang, 'bambini', 'children')}` : ''].filter(Boolean).join(' · ');
+  return (
+    <div className="finance-movement-detail">
+      <section className="finance-movement-hero">
+        <div>
+          <span className="kicker">{entry.type === 'expense' ? adminCopy(lang, 'Uscita', 'Expense') : adminCopy(lang, 'Entrata', 'Income')}</span>
+          <h3>{entry.title || missing}</h3>
+          <p>{formatDateForMessage(entry.entry_date, lang)} · {financeCategoryLabel(entry.category, lang)}</p>
+        </div>
+        <strong className={`finance-amount ${entry.type}`}>{entry.type === 'expense' ? '-' : '+'}{formatMoney(entry.amount, entry.currency)}</strong>
+      </section>
+      <div className="finance-detail-grid">
+        <FinanceDetailSection title={adminCopy(lang, 'Informazioni pagamento', 'Payment information')}>
+          <FinanceDetailRow label={adminCopy(lang, 'Tipo', 'Type')} value={entry.type === 'expense' ? adminCopy(lang, 'Uscita', 'Expense') : adminCopy(lang, 'Entrata', 'Income')} />
+          <FinanceDetailRow label={adminCopy(lang, 'Data', 'Date')} value={formatDateForMessage(entry.entry_date, lang)} />
+          <FinanceDetailRow label={adminCopy(lang, 'Importo', 'Amount')} value={formatMoney(entry.amount, entry.currency)} />
+          <FinanceDetailRow label={adminCopy(lang, 'Valuta', 'Currency')} value={entry.currency || 'EUR'} />
+          <FinanceDetailRow label={adminCopy(lang, 'Categoria', 'Category')} value={financeCategoryLabel(entry.category, lang)} />
+          <FinanceDetailRow label={adminCopy(lang, 'Metodo pagamento', 'Payment method')} value={entry.payment_method || missing} />
+          <FinanceDetailRow label={adminCopy(lang, 'Stato', 'Status')} value={financeEntryIsLinked(entry) ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Unlinked')} />
+          <FinanceDetailRow label={adminCopy(lang, 'Archiviata', 'Archived')} value={entry.active === false ? adminCopy(lang, 'Sì', 'Yes') : adminCopy(lang, 'No', 'No')} />
+          <FinanceDetailRow label={adminCopy(lang, 'Creata', 'Created')} value={entry.created_at ? formatDateForMessage(String(entry.created_at).slice(0, 10), lang) : missing} />
+          <FinanceDetailRow label={adminCopy(lang, 'Aggiornata', 'Updated')} value={entry.updated_at ? formatDateForMessage(String(entry.updated_at).slice(0, 10), lang) : missing} />
+        </FinanceDetailSection>
+        <FinanceDetailSection title={adminCopy(lang, 'Cliente', 'Customer')}>
+          {booking ? (
+            <>
+              <FinanceDetailRow label={adminCopy(lang, 'Nome', 'Name')} value={booking.customer_name || missing} />
+              <FinanceDetailRow label="Email" value={booking.customer_email || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Telefono / WhatsApp', 'Phone / WhatsApp')} value={booking.customer_phone || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Contatto preferito', 'Preferred contact')} value={booking.preferred_contact || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Fonte conoscenza', 'Discovery source')} value={heardAboutUsDisplay(booking.heard_about_us, booking.heard_about_us_detail, lang, { fallback: missing })} />
+            </>
+          ) : <p className="small-note">{adminCopy(lang, 'Nessuna prenotazione collegata.', 'No linked booking.')}</p>}
+        </FinanceDetailSection>
+        <FinanceDetailSection title={adminCopy(lang, 'Prenotazione collegata', 'Linked booking')}>
+          {booking ? (
+            <>
+              <FinanceDetailRow label={adminCopy(lang, 'Codice', 'Code')} value={booking.booking_code || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Esperienza', 'Experience')} value={adminExperienceLabel(booking.experience_id, lang)} />
+              <FinanceDetailRow label={adminCopy(lang, 'Data richiesta / escursione', 'Requested / excursion date')} value={formatDateForMessage(booking.requested_date, lang) || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Ospiti', 'Guests')} value={guests || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Stato richiesta', 'Request status')} value={requestStatusLabels[booking.status]?.[lang] || booking.status || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Tipo richiesta', 'Request type')} value={booking.request_type || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Fonte conoscenza', 'Discovery source')} value={heardAboutUsDisplay(booking.heard_about_us, booking.heard_about_us_detail, lang, { fallback: missing })} />
+              <FinanceDetailRow label={adminCopy(lang, 'Nota admin', 'Admin note')} value={booking.admin_note || missing} />
+            </>
+          ) : <p className="small-note">{adminCopy(lang, 'Nessuna prenotazione collegata.', 'No linked booking.')}</p>}
+        </FinanceDetailSection>
+        <FinanceDetailSection title={adminCopy(lang, 'Escursione fissa collegata', 'Linked fixed excursion')}>
+          {fixed ? (
+            <>
+              <FinanceDetailRow label={adminCopy(lang, 'Titolo', 'Title')} value={fixedExcursionTitle(fixed, lang) || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Data', 'Date')} value={formatDateForMessage(fixed.date, lang) || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Orario', 'Time')} value={`${fixed.start_time ? String(fixed.start_time).slice(0, 5) : ''}${fixed.end_time ? `–${String(fixed.end_time).slice(0, 5)}` : ''}` || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Esperienza', 'Experience')} value={adminExperienceLabel(fixed.experience_id, lang)} />
+              <FinanceDetailRow label={adminCopy(lang, 'Punto d’incontro', 'Meeting point')} value={fixedExcursionField(fixed, 'meeting_point', lang) || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Posti disponibili', 'Places remaining')} value={fixed.places_remaining !== undefined ? `${fixed.places_remaining}/${fixed.capacity || '-'}` : missing} />
+            </>
+          ) : <p className="small-note">{adminCopy(lang, 'Nessuna escursione fissa collegata.', 'No linked fixed excursion.')}</p>}
+        </FinanceDetailSection>
+        <FinanceDetailSection title={adminCopy(lang, 'Calendario mensile collegato', 'Linked monthly calendar')}>
+          {leaflet ? <FinanceDetailRow label={adminCopy(lang, 'Calendario', 'Calendar')} value={leafletLabel(leaflet, lang)} /> : <p className="small-note">{adminCopy(lang, 'Nessun calendario mensile collegato.', 'No linked monthly calendar.')}</p>}
+        </FinanceDetailSection>
+        <FinanceDetailSection title={adminCopy(lang, 'Note', 'Notes')}>
+          <p>{entry.description || adminCopy(lang, 'Nessuna nota.', 'No notes.')}</p>
+          {entry.archive_reason && <p className="small-note">{adminCopy(lang, 'Motivo archivio', 'Archive reason')}: {entry.archive_reason}</p>}
+        </FinanceDetailSection>
+      </div>
+    </div>
+  );
+}
+
+function FinanceDetailSection({ title, children }) {
+  return (
+    <details className="finance-detail-section">
+      <summary><span>{title}</span></summary>
+      <div className="finance-detail-section-body">{children}</div>
+    </details>
+  );
+}
+
+function FinanceDetailRow({ label, value }) {
+  return <div className="finance-detail-row"><span>{label}</span><strong>{value || '-'}</strong></div>;
 }
 
 function requestFinanceLabel(request, lang) {
@@ -3799,7 +7253,7 @@ function requestFinanceLabel(request, lang) {
   return `${formatDateForMessage(request.requested_date, lang) || '-'} · ${request.customer_name || '-'} · ${adminExperienceLabel(request.experience_id, lang)}${request.booking_code ? ` · ${request.booking_code}` : ''}`;
 }
 
-function FinanceEntryCard({ entry, lang, onEdit, onArchive }) {
+function FinanceEntryCard({ entry, lang, onOpen, onEdit, onArchive }) {
   return (
     <article className={`finance-entry-card ${entry.active === false ? 'inactive' : ''}`}>
       <div className="request-card-head">
@@ -3807,13 +7261,17 @@ function FinanceEntryCard({ entry, lang, onEdit, onArchive }) {
         <strong className={`finance-amount ${entry.type}`}>{entry.type === 'expense' ? '-' : '+'}{formatMoney(entry.amount, entry.currency)}</strong>
       </div>
       {entry.description && <p>{entry.description}</p>}
-      <p className="small-note">{entry.payment_method || adminCopy(lang, 'Metodo non indicato', 'No payment method')} · {entry.booking_request_id || entry.fixed_excursion_id || entry.leaflet_id ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Unlinked')}</p>
-      <div className="request-actions"><button className="button secondary" type="button" onClick={onEdit}>{adminCopy(lang, 'Modifica', 'Edit')}</button>{entry.active !== false && <button className="button secondary danger" type="button" onClick={onArchive}>{adminCopy(lang, 'Archivia', 'Archive')}</button>}</div>
+      <p className="small-note">{entry.payment_method || adminCopy(lang, 'Metodo non indicato', 'No payment method')} · {financeEntryIsLinked(entry) ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Unlinked')}{financeEntryCustomerName(entry) ? ` · ${financeEntryCustomerName(entry)}` : ''}</p>
+      <div className="request-actions">
+        <button className="button secondary" type="button" onClick={onOpen}>{adminCopy(lang, 'Dettaglio', 'Details')}</button>
+        <button className="button secondary" type="button" onClick={onEdit}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
+        {entry.active !== false && <button className="button secondary danger" type="button" onClick={onArchive}>{adminCopy(lang, 'Archivia', 'Archive')}</button>}
+      </div>
     </article>
   );
 }
 
-function TodayDashboard({ lang, session, navigate }) {
+function TodayDashboard({ lang, session, navigate, adminContent = {} }) {
   const { requests, loading, error, refresh } = useAdminRequests({ limit: 250 });
   const [blocks, setBlocks] = useState([]);
   const [blocksError, setBlocksError] = useState('');
@@ -3854,7 +7312,9 @@ function TodayDashboard({ lang, session, navigate }) {
     <section className="admin-page">
       <div className="admin-page-header">
         <div>
-          <h1>{adminCopy(lang, 'Pannello operativo', 'Operations')}</h1>
+          <span className="kicker">{adminCopy(lang, 'Oggi', 'Today')}</span>
+          <AdminEditableText as="h1" itemKey="admin.today.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Pannello operativo', 'Operations')} />
+          <AdminEditableText as="p" itemKey="admin.today.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Stato operativo rapido, richieste e attività da controllare oggi.', 'Fast operational status, requests, and activity to review today.')} />
         </div>
         <div className="admin-header-actions">
           <button className="button primary" type="button" onClick={() => setManualOpen(true)}>{adminCopy(lang, 'Aggiungi richiesta manuale', 'Add manual request')}</button>
@@ -3866,16 +7326,16 @@ function TodayDashboard({ lang, session, navigate }) {
       {(error || blocksError) && <div className="admin-alert error" role="alert">{error || blocksError}</div>}
 
       <div className="admin-summary-grid admin-primary-stat-grid">
-        <SummaryCard label={adminCopy(lang, 'Pending oggi', 'Pending today')} value={pendingToday.length} onClick={() => document.getElementById('adminTodayRequests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} helper={adminCopy(lang, 'Apri richieste di oggi', 'Open today requests')} />
-        <SummaryCard label={adminCopy(lang, 'Pending totale', 'Pending total')} value={pending.length} onClick={() => navigate('/admin/requests')} helper={adminCopy(lang, 'Vai alle richieste', 'Go to requests')} />
-        <SummaryCard label={adminCopy(lang, 'Accettate oggi', 'Accepted today')} value={acceptedToday.length} onClick={() => navigate('/admin/upcoming')} helper={adminCopy(lang, 'Vedi confermate', 'View accepted')} />
-        <SummaryCard label={adminCopy(lang, 'Disponibilità oggi', 'Availability issues today')} value={availabilityIssuesToday.length} onClick={() => navigate('/admin/availability')} helper={adminCopy(lang, 'Gestisci calendario', 'Manage calendar')} />
+        <SummaryCard label={<AdminEditableText itemKey="admin.today.pendingToday.label" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Pending oggi', 'Pending today')} />} value={pendingToday.length} onClick={() => document.getElementById('adminTodayRequests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} helper={<AdminEditableText as="small" itemKey="admin.today.pendingToday.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Apri richieste di oggi', 'Open today requests')} />} ariaLabel={`${contentText(adminContent, 'admin.today.pendingToday.label', lang, adminCopy(lang, 'Pending oggi', 'Pending today'))}: ${pendingToday.length}`} />
+        <SummaryCard label={<AdminEditableText itemKey="admin.today.pendingTotal.label" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Pending totale', 'Pending total')} />} value={pending.length} onClick={() => navigate('/admin/requests')} helper={<AdminEditableText as="small" itemKey="admin.today.pendingTotal.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Vai alle richieste', 'Go to requests')} />} ariaLabel={`${contentText(adminContent, 'admin.today.pendingTotal.label', lang, adminCopy(lang, 'Pending totale', 'Pending total'))}: ${pending.length}`} />
+        <SummaryCard label={<AdminEditableText itemKey="admin.today.acceptedToday.label" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Accettate oggi', 'Accepted today')} />} value={acceptedToday.length} onClick={() => navigate('/admin/upcoming')} helper={<AdminEditableText as="small" itemKey="admin.today.acceptedToday.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Vedi confermate', 'View accepted')} />} ariaLabel={`${contentText(adminContent, 'admin.today.acceptedToday.label', lang, adminCopy(lang, 'Accettate oggi', 'Accepted today'))}: ${acceptedToday.length}`} />
+        <SummaryCard label={<AdminEditableText itemKey="admin.today.availabilityToday.label" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Disponibilità oggi', 'Availability issues today')} />} value={availabilityIssuesToday.length} onClick={() => navigate('/admin/availability')} helper={<AdminEditableText as="small" itemKey="admin.today.availabilityToday.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestisci calendario', 'Manage calendar')} />} ariaLabel={`${contentText(adminContent, 'admin.today.availabilityToday.label', lang, adminCopy(lang, 'Disponibilità oggi', 'Availability issues today'))}: ${availabilityIssuesToday.length}`} />
       </div>
 
       <div className="admin-two-column">
         <section className="admin-panel">
           <details className="admin-archive-details today-requests-details" id="adminTodayRequests">
-            <summary><span>{adminCopy(lang, 'Richieste di oggi', 'Today requests')}</span><strong>{todayRequests.length}</strong></summary>
+            <summary><AdminEditableText itemKey="admin.today.todayRequests.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Richieste di oggi', 'Today requests')} /><strong>{todayRequests.length}</strong></summary>
             <div className="today-requests-collapsed-body">
               <div className="admin-panel-header today-requests-inner-header">
                 <p className="small-note">{adminCopy(lang, 'Sezione chiusa di default. Aprila solo quando devi controllare le richieste con data oggi.', 'Collapsed by default. Open it only when you need to check requests dated today.')}</p>
@@ -3891,7 +7351,7 @@ function TodayDashboard({ lang, session, navigate }) {
 
           <div className="admin-panel-subsection">
             <div className="admin-panel-header">
-              <h2>{adminCopy(lang, 'Richieste pending da confermare', 'Pending requests needing attention')}</h2>
+              <AdminEditableText as="h2" itemKey="admin.today.pendingRequests.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Richieste pending da confermare', 'Pending requests needing attention')} />
               <button type="button" onClick={() => navigate('/admin/requests')}>{adminCopy(lang, 'Tutte', 'All')}</button>
             </div>
             {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : pending.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta in attesa.', 'No pending requests.')}</p> : (
@@ -3903,9 +7363,9 @@ function TodayDashboard({ lang, session, navigate }) {
         </section>
 
         <aside className="admin-panel compact-panel admin-operations-panel">
-          <div className="admin-panel-header"><h2>{adminCopy(lang, 'Operazioni imminenti', 'Upcoming operations')}</h2><span className="status-pill accepted">{operational.length + next14.length}</span></div>
+          <div className="admin-panel-header"><AdminEditableText as="h2" itemKey="admin.today.upcomingOperations.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Operazioni imminenti', 'Upcoming operations')} /></div>
           <details className="admin-archive-details admin-operation-group">
-            <summary><span>{adminCopy(lang, 'Prenotazioni accettate', 'Accepted bookings')}</span><strong>{operational.length}</strong></summary>
+            <summary><AdminEditableText itemKey="admin.today.acceptedBookings.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Prenotazioni accettate', 'Accepted bookings')} /><strong>{operational.length}</strong></summary>
             <AdminMiniList
               items={operational}
               empty={adminCopy(lang, 'Nessuna conferma nei prossimi 7 giorni.', 'No accepted bookings in the next 7 days.')}
@@ -3914,7 +7374,7 @@ function TodayDashboard({ lang, session, navigate }) {
             <button className="button secondary admin-inline-button" type="button" onClick={() => navigate('/admin/upcoming')}>{adminCopy(lang, 'Apri prossime prenotazioni', 'Open upcoming bookings')}</button>
           </details>
           <details className="admin-archive-details admin-operation-group">
-            <summary><span>{adminCopy(lang, 'Blocchi prossimi', 'Near-term blocks')}</span><strong>{next14.length}</strong></summary>
+            <summary><AdminEditableText itemKey="admin.today.nearTermBlocks.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Blocchi prossimi', 'Near-term blocks')} /><strong>{next14.length}</strong></summary>
             <AdminMiniList
               items={blocks.slice(0, 8)}
               empty={adminCopy(lang, 'Nessun blocco attivo nei prossimi 30 giorni.', 'No active blocks in the next 30 days.')}
@@ -3922,7 +7382,7 @@ function TodayDashboard({ lang, session, navigate }) {
             />
           </details>
           <details className="admin-archive-details admin-operation-group">
-            <summary><span>{adminCopy(lang, 'Decisioni recenti', 'Recent decisions')}</span><strong>{recentDecisions.length}</strong></summary>
+            <summary><AdminEditableText itemKey="admin.today.recentDecisions.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Decisioni recenti', 'Recent decisions')} /><strong>{recentDecisions.length}</strong></summary>
             <AdminMiniList
               items={recentDecisions}
               empty={adminCopy(lang, 'Nessuna decisione recente.', 'No recent decisions.')}
@@ -3976,7 +7436,7 @@ function bucketUpcomingRequests(requests) {
   return groups;
 }
 
-function UpcomingPage({ lang, session, navigate }) {
+function UpcomingPage({ lang, session, navigate, adminContent = {} }) {
   const { requests, loading, error, refresh } = useAdminRequests({ status: 'accepted', limit: 500 });
   const [blocks, setBlocks] = useState([]);
   const [blocksError, setBlocksError] = useState('');
@@ -4012,8 +7472,8 @@ function UpcomingPage({ lang, session, navigate }) {
       <div className="admin-page-header">
         <div>
           <span className="kicker">{adminCopy(lang, 'Conferme owner', 'Owner confirmations')}</span>
-          <h1>{adminCopy(lang, 'Prossime prenotazioni', 'Upcoming bookings')}</h1>
-          <p>{adminCopy(lang, 'Richieste accettate e blocchi attivi, organizzati per giorno. Nessuna statistica: solo operatività.', 'Accepted requests and active blocks, organized by date. No analytics: just operations.')}</p>
+          <AdminEditableText as="h1" itemKey="admin.upcoming.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Prossime prenotazioni', 'Upcoming bookings')} />
+          <AdminEditableText as="p" itemKey="admin.upcoming.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Richieste accettate e blocchi attivi, organizzati per giorno. Nessuna statistica: solo operatività.', 'Accepted requests and active blocks, organized by date. No analytics: just operations.')} />
         </div>
         <div className="admin-header-actions">
           <button className="button secondary" type="button" onClick={refreshAll}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
@@ -4024,7 +7484,7 @@ function UpcomingPage({ lang, session, navigate }) {
       <div className="admin-two-column">
         <section className="admin-panel upcoming-collapsed-panel">
           <details className="admin-archive-details admin-upcoming-group">
-            <summary><span>{adminCopy(lang, 'Prenotazioni accettate', 'Accepted bookings')}</span><strong>{upcoming.length}</strong></summary>
+            <summary><AdminEditableText itemKey="admin.upcoming.accepted.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Prenotazioni accettate', 'Accepted bookings')} /><strong>{upcoming.length}</strong></summary>
             {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : upcoming.length === 0 ? <p>{adminCopy(lang, 'Nessuna prenotazione accettata futura.', 'No future accepted bookings.')}</p> : (
               <div className="upcoming-group-list">
                 {groups.map((group) => group.items.length > 0 && (
@@ -4039,7 +7499,7 @@ function UpcomingPage({ lang, session, navigate }) {
             )}
           </details>
           <details className="admin-archive-details admin-upcoming-group">
-            <summary><span>{adminCopy(lang, 'Esperienze passate', 'Past experiences')}</span><strong>{pastAccepted.length}</strong></summary>
+            <summary><AdminEditableText itemKey="admin.upcoming.past.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Esperienze passate', 'Past experiences')} /><strong>{pastAccepted.length}</strong></summary>
             {pastAccepted.length === 0 ? <p className="small-note">{adminCopy(lang, 'Nessuna esperienza passata.', 'No past experiences.')}</p> : (
               <div className="request-card-list compact-list">
                 {pastAccepted.map((request) => <RequestCard key={request.id} request={request} lang={lang} compact />)}
@@ -4048,7 +7508,7 @@ function UpcomingPage({ lang, session, navigate }) {
           </details>
         </section>
         <aside className="admin-panel compact-panel">
-          <h2>{adminCopy(lang, 'Blocchi e limitazioni', 'Blocks and limitations')}</h2>
+          <AdminEditableText as="h2" itemKey="admin.upcoming.blocks.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Blocchi e limitazioni', 'Blocks and limitations')} />
           <AdminMiniList
             items={nearBlocks}
             empty={adminCopy(lang, 'Nessun blocco attivo nei prossimi 30 giorni.', 'No active blocks in the next 30 days.')}
@@ -4067,10 +7527,13 @@ function UpcomingPage({ lang, session, navigate }) {
   );
 }
 
-function SummaryCard({ label, value, onClick, helper }) {
-  const content = <><strong>{value}</strong><span>{label}</span>{helper && <small>{helper}</small>}</>;
+function SummaryCard({ label, value, onClick, helper, ariaLabel }) {
+  const labelNode = React.isValidElement(label) ? label : <span>{label}</span>;
+  const helperNode = helper ? (React.isValidElement(helper) ? helper : <small>{helper}</small>) : null;
+  const resolvedAriaLabel = ariaLabel || (typeof label === 'string' ? `${label}: ${value}` : String(value || ''));
+  const content = <><strong>{value}</strong>{labelNode}{helperNode}</>;
   if (onClick) {
-    return <button type="button" className="summary-card clickable-summary-card" onClick={onClick} aria-label={`${label}: ${value}`}>{content}</button>;
+    return <button type="button" className="summary-card clickable-summary-card" onClick={onClick} aria-label={resolvedAriaLabel}>{content}</button>;
   }
   return <article className="summary-card">{content}</article>;
 }
@@ -4097,6 +7560,7 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
       <dl className="request-details-grid">
         <div><dt>{adminCopy(lang, 'Tipo', 'Type')}</dt><dd>{request.request_type === 'fixed' ? adminCopy(lang, 'Escursione fissa', 'Fixed excursion') : adminCopy(lang, 'Escursione privata', 'Private excursion')}</dd></div>
         <div><dt>{adminCopy(lang, 'Fonte', 'Source')}</dt><dd>{request.source || '-'}</dd></div>
+        <div><dt>{adminCopy(lang, 'Fonte conoscenza', 'Discovery source')}</dt><dd>{heardAboutUsDisplay(request.heard_about_us, request.heard_about_us_detail, lang, { fallback: adminCopy(lang, 'Non disponibile', 'Not available') })}</dd></div>
         <div><dt>{adminCopy(lang, 'Contatto', 'Contact')}</dt><dd>{request.preferred_contact || '-'}</dd></div>
         <div><dt>{adminCopy(lang, 'Esperienza', 'Experience')}</dt><dd>{adminExperienceLabel(request.experience_id, lang)}</dd></div>
         <div><dt>{adminCopy(lang, 'Data richiesta', 'Requested date')}</dt><dd>{formatDateForMessage(request.requested_date, lang) || '-'}</dd></div>
@@ -4176,6 +7640,7 @@ function DecisionModal({ lang, session, decision, onClose, onDone }) {
   const [reason, setReason] = useState('unavailable');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  useBodyScrollLock(true);
 
   async function confirm() {
     setLoading(true);
@@ -4257,13 +7722,14 @@ function DecisionModal({ lang, session, decision, onClose, onDone }) {
 }
 
 const emptyManualRequest = {
-  customer_name: '', customer_phone: '', customer_email: '', preferred_contact: 'whatsapp', source: 'whatsapp', request_type: 'private', party_type: 'solo', experience_id: 'unsure', requested_date: '', alternative_date: '', language: 'it', adults: '', children: '', children_under_3: false, private_experience: false, main_interest: '', preferred_pace: '', message: '', admin_note: ''
+  customer_name: '', customer_phone: '', customer_email: '', preferred_contact: 'whatsapp', source: 'whatsapp', request_type: 'private', party_type: 'solo', experience_id: 'unsure', requested_date: '', alternative_date: '', language: 'it', adults: '', children: '', children_under_3: false, private_experience: false, main_interest: '', preferred_pace: '', message: '', heard_about_us: 'not_specified', heard_about_us_label: '', heard_about_us_detail: '', admin_note: ''
 };
 
 function ManualRequestModal({ lang, session, onClose, onSaved }) {
   const [form, setForm] = useState({ ...emptyManualRequest, language: lang });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  useBodyScrollLock(true);
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -4278,7 +7744,8 @@ function ManualRequestModal({ lang, session, onClose, onSaved }) {
     }
     setLoading(true);
     try {
-      await createManualBookingRequest(form, session.user.id);
+      const cleanHeardAboutUs = normalizeHeardAboutUs(form.heard_about_us || 'not_specified', { allowAdmin: true }) || 'not_specified';
+      await createManualBookingRequest({ ...form, heard_about_us: cleanHeardAboutUs, heard_about_us_label: heardAboutUsLabel(cleanHeardAboutUs, lang), heard_about_us_detail: needsHeardAboutUsDetail(cleanHeardAboutUs) ? cleanHeardAboutUsDetail(form.heard_about_us_detail) : null }, session.user.id);
       onSaved();
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Richiesta non salvata.', 'Request not saved.'));
@@ -4300,6 +7767,8 @@ function ManualRequestModal({ lang, session, onClose, onSaved }) {
           <AdminInput label="Email" type="email" value={form.customer_email} onChange={(value) => update('customer_email', value)} />
           <AdminSelect label={adminCopy(lang, 'Contatto preferito', 'Preferred contact')} value={form.preferred_contact} onChange={(value) => update('preferred_contact', value)} options={['whatsapp', 'phone', 'email', 'unknown']} />
           <AdminSelect label={adminCopy(lang, 'Fonte', 'Source')} value={form.source} onChange={(value) => update('source', value)} options={['whatsapp', 'phone', 'email', 'manual']} />
+          <AdminSelect label={text(lang, 'heardAboutUsAdmin')} value={form.heard_about_us || 'not_specified'} onChange={(value) => { update('heard_about_us', value); update('heard_about_us_label', heardAboutUsLabel(value, lang)); if (!needsHeardAboutUsDetail(value)) update('heard_about_us_detail', ''); }} options={heardAboutUsOptions({ includeAdmin: true }).map((option) => option.value)} formatter={(value) => heardAboutUsLabel(value, lang)} />
+          {needsHeardAboutUsDetail(form.heard_about_us) && <AdminInput label={text(lang, 'heardAboutUsOtherLabel')} value={form.heard_about_us_detail || ''} onChange={(value) => update('heard_about_us_detail', value)} />}
           <AdminSelect label={adminCopy(lang, 'Tipo richiesta', 'Request type')} value={form.request_type} onChange={(value) => update('request_type', value)} options={['private', 'fixed']} formatter={(value) => value === 'fixed' ? adminCopy(lang, 'Escursione fissa', 'Fixed excursion') : adminCopy(lang, 'Escursione privata', 'Private excursion')} />
           <AdminSelect label={adminCopy(lang, 'Tipo gruppo', 'Party type')} value={form.party_type} onChange={(value) => update('party_type', value)} options={['solo', 'couple', 'family', 'group', 'company', 'school', 'other']} formatter={(value) => ({ solo: adminCopy(lang, 'Singolo', 'Solo traveler'), couple: adminCopy(lang, 'Coppia', 'Couple'), family: adminCopy(lang, 'Famiglia', 'Family'), group: adminCopy(lang, 'Gruppo', 'Group'), company: adminCopy(lang, 'Azienda', 'Company'), school: adminCopy(lang, 'Scuola', 'School'), other: adminCopy(lang, 'Altro', 'Other') }[value] || value)} />
           <AdminSelect label={adminCopy(lang, 'Esperienza', 'Experience')} value={form.experience_id} onChange={(value) => update('experience_id', value)} options={ADMIN_EXPERIENCE_OPTIONS} formatter={(value) => adminExperienceLabel(value, lang)} />
@@ -4325,9 +7794,9 @@ function ManualRequestModal({ lang, session, onClose, onSaved }) {
   );
 }
 
-function AdminInput({ label, value, onChange, type = 'text' }) {
+function AdminInput({ label, value, onChange, type = 'text', placeholder = '' }) {
   const id = useMemo(() => `field-${Math.random().toString(36).slice(2)}`, []);
-  return <label className="admin-field" htmlFor={id}><span>{label}</span><input id={id} type={type} value={value || ''} min={type === 'number' ? '0' : undefined} onChange={(event) => onChange(event.target.value)} /></label>;
+  return <label className="admin-field" htmlFor={id}><span>{label}</span><input id={id} type={type} value={value || ''} placeholder={placeholder} min={type === 'number' ? '0' : undefined} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
 function AdminSelect({ label, value, onChange, options, formatter = (item) => item }) {
@@ -4372,7 +7841,7 @@ function RequestStatusAccordions({ requests, lang, onApprove, onDecline, onRemov
   );
 }
 
-function AdminReviewsPanel({ lang }) {
+function AdminReviewsPanel({ lang, adminContent = {} }) {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -4380,6 +7849,8 @@ function AdminReviewsPanel({ lang }) {
   const [confirmReview, setConfirmReview] = useState(null);
   const [replyDrafts, setReplyDrafts] = useState({});
   const [savingReplyId, setSavingReplyId] = useState('');
+
+  useBodyScrollLock(Boolean(confirmReview));
 
   async function refresh() {
     setLoading(true);
@@ -4462,7 +7933,7 @@ function AdminReviewsPanel({ lang }) {
 
   return (
     <section className="admin-panel admin-reviews-panel">
-      <div className="admin-panel-header"><h2>{adminCopy(lang, 'Gestione recensioni', 'Review management')}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
+      <div className="admin-panel-header"><AdminEditableText as="h2" itemKey="admin.reviews.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestione recensioni', 'Review management')} /><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : reviews.length === 0 ? <p>{adminCopy(lang, 'Nessuna recensione ricevuta.', 'No reviews received.')}</p> : (
@@ -4518,7 +7989,7 @@ function AdminReviewsPanel({ lang }) {
   );
 }
 
-function RequestsPage({ lang, session }) {
+function RequestsPage({ lang, session, adminContent = {} }) {
   const [filters, setFilters] = useState({ status: 'all', experience_id: 'all', source: 'all', search: '', fromDate: '', toDate: '', limit: 250 });
   const { requests, loading, error, refresh } = useAdminRequests(filters);
   const [manualOpen, setManualOpen] = useState(false);
@@ -4539,8 +8010,8 @@ function RequestsPage({ lang, session }) {
       <div className="admin-page-header">
         <div>
           <span className="kicker">{adminCopy(lang, 'Gestione richieste', 'Request management')}</span>
-          <h1>{adminCopy(lang, 'Richieste', 'Requests')}</h1>
-          <p>{adminCopy(lang, 'Cerca e filtra richieste da sito, WhatsApp, telefono o email.', 'Search and filter requests from the website, WhatsApp, phone, or email.')}</p>
+          <AdminEditableText as="h1" itemKey="admin.requests.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Richieste', 'Requests')} />
+          <AdminEditableText as="p" itemKey="admin.requests.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Cerca e filtra richieste da sito, WhatsApp, telefono o email.', 'Search and filter requests from the website, WhatsApp, phone, or email.')} />
         </div>
         <button className="button primary" type="button" onClick={() => setManualOpen(true)}>{adminCopy(lang, 'Aggiungi manuale', 'Add manual')}</button>
       </div>
@@ -4555,7 +8026,7 @@ function RequestsPage({ lang, session }) {
         <input aria-label="To date" type="date" value={filters.toDate} onChange={(event) => updateFilter('toDate', event.target.value)} />
       </div>
       <section className="admin-panel">
-        <div className="admin-panel-header"><h2>{adminCopy(lang, 'Risultati', 'Results')} · {requests.length}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
+        <div className="admin-panel-header"><h2><AdminEditableText itemKey="admin.requests.results.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Risultati', 'Results')} /> · {requests.length}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
         {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : requests.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta trovata.', 'No requests found.')}</p> : (
           <RequestStatusAccordions
             requests={requests}
@@ -4582,7 +8053,7 @@ function isValidOptionalUrl(value) {
   }
 }
 
-function PartnershipsAdminPage({ lang, session }) {
+function PartnershipsAdminPage({ lang, session, adminContent = {} }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -4638,15 +8109,15 @@ function PartnershipsAdminPage({ lang, session }) {
       <div className="admin-page-header">
         <div>
           <span className="kicker">{adminCopy(lang, 'Partnership pubbliche', 'Public partnerships')}</span>
-          <h1>{adminCopy(lang, 'Collaborazioni', 'Partnerships')}</h1>
-          <p>{adminCopy(lang, 'Crea, modifica e disattiva le collaborazioni visibili sul sito pubblico.', 'Create, edit, and deactivate collaborations visible on the public website.')}</p>
+          <AdminEditableText as="h1" itemKey="admin.partnerships.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Collaborazioni', 'Partnerships')} />
+          <AdminEditableText as="p" itemKey="admin.partnerships.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Crea, modifica e disattiva le collaborazioni visibili sul sito pubblico.', 'Create, edit, and deactivate collaborations visible on the public website.')} />
         </div>
       </div>
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       <div className="admin-two-column availability-columns">
         <section className="admin-panel">
-          <h2>{adminCopy(lang, 'Crea collaborazione', 'Create partnership')}</h2>
+          <AdminEditableText as="h2" itemKey="admin.partnerships.create.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Crea collaborazione', 'Create partnership')} />
           <form className="admin-form-grid" onSubmit={submit}>
             <AdminInput label={adminCopy(lang, 'Nome', 'Name')} value={form.name} onChange={(value) => update('name', value)} />
             <AdminInput label="Category IT" value={form.category_it} onChange={(value) => update('category_it', value)} />
@@ -4663,7 +8134,7 @@ function PartnershipsAdminPage({ lang, session }) {
           </form>
         </section>
         <section className="admin-panel">
-          <div className="admin-panel-header"><h2>{adminCopy(lang, 'Collaborazioni salvate', 'Saved partnerships')}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
+          <div className="admin-panel-header"><AdminEditableText as="h2" itemKey="admin.partnerships.saved.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Collaborazioni salvate', 'Saved partnerships')} /><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
           {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : items.length === 0 ? <p>{adminCopy(lang, 'Nessuna collaborazione salvata.', 'No partnerships saved.')}</p> : (
             <div className="availability-block-list">
               {items.map((item) => <PartnershipAdminCard key={item.id} item={item} lang={lang} userId={session.user.id} onChanged={(message) => { setFeedback(message); refresh(); }} />)}
@@ -4769,7 +8240,7 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
   );
 }
 
-function AvailabilityPage({ lang, session }) {
+function AvailabilityPage({ lang, session, adminContent = {} }) {
   const [tab, setTab] = useState('blocks');
   const [blocks, setBlocks] = useState([]);
   const [fixedExcursions, setFixedExcursions] = useState([]);
@@ -4778,7 +8249,7 @@ function AvailabilityPage({ lang, session }) {
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [form, setForm] = useState({ date: '', experience_id: '', status: 'closed', reason_it: '', reason_en: '', internal_note: '' });
-  const [fixedForm, setFixedForm] = useState({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', leaflet_id: '', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
+  const [fixedForm, setFixedForm] = useState({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', leaflet_id: '', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', meeting_point_maps_url: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
   const [leafletForm, setLeafletForm] = useState({ month: String(new Date().getMonth() + 1), year: String(new Date().getFullYear()), title_it: '', title_en: '', file: null, active: true });
 
   async function refresh() {
@@ -4851,7 +8322,7 @@ function AvailabilityPage({ lang, session }) {
     try {
       const filePayload = fixedForm.blockedDatesFile ? await uploadBlockedDatesFile(fixedForm.blockedDatesFile, session.user.id) : {};
       await createFixedExcursion({ ...fixedForm, ...filePayload, created_by: session.user.id, updated_by: session.user.id });
-      setFixedForm({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', leaflet_id: '', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
+      setFixedForm({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', leaflet_id: '', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', meeting_point_maps_url: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
       setFeedback(adminCopy(lang, 'Escursione fissa creata.', 'Fixed excursion created.'));
       refresh();
     } catch (err) {
@@ -4884,8 +8355,8 @@ function AvailabilityPage({ lang, session }) {
       <div className="admin-page-header">
         <div>
           <span className="kicker">{adminCopy(lang, 'Calendario pubblico', 'Public calendar')}</span>
-          <h1>{adminCopy(lang, 'Disponibilità', 'Availability')}</h1>
-          <p>{adminCopy(lang, 'Gestisci disponibilità privata e date fisse prenotabili fino a 12 persone.', 'Manage private availability and fixed excursion dates bookable up to 12 people.')}</p>
+          <AdminEditableText as="h1" itemKey="admin.availability.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Disponibilità', 'Availability')} />
+          <AdminEditableText as="p" itemKey="admin.availability.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestisci disponibilità privata e date fisse prenotabili fino a 12 persone.', 'Manage private availability and fixed excursion dates bookable up to 12 people.')} />
         </div>
       </div>
       <div className="mode-toggle admin-tabs" role="tablist" aria-label="Calendar admin tabs">
@@ -4899,7 +8370,7 @@ function AvailabilityPage({ lang, session }) {
       {tab === 'blocks' ? (
         <div className="admin-two-column availability-columns">
           <section className="admin-panel">
-            <h2>{adminCopy(lang, 'Aggiungi blocco disponibilità', 'Add availability block')}</h2>
+            <AdminEditableText as="h2" itemKey="admin.availability.addBlock.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Aggiungi blocco disponibilità', 'Add availability block')} />
             <form className="admin-form-grid" onSubmit={submit}>
               <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.date} onChange={(value) => update('date', value)} />
               <AdminSelect label={adminCopy(lang, 'Ambito', 'Scope')} value={form.experience_id} onChange={(value) => update('experience_id', value)} options={['', 'etna-premium', 'etna-learning', 'etna-live', 'etna-stories']} formatter={(value) => value ? adminExperienceLabel(value, lang) : adminCopy(lang, 'Tutte le esperienze', 'All experiences')} />
@@ -4911,7 +8382,7 @@ function AvailabilityPage({ lang, session }) {
             </form>
           </section>
           <section className="admin-panel">
-            <div className="admin-panel-header"><h2>{adminCopy(lang, 'Blocchi esistenti', 'Existing blocks')}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
+            <div className="admin-panel-header"><AdminEditableText as="h2" itemKey="admin.availability.existingBlocks.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Blocchi esistenti', 'Existing blocks')} /><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
             {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : blocks.length === 0 ? <p>{adminCopy(lang, 'Nessun blocco salvato.', 'No saved blocks.')}</p> : (
               <div className="availability-block-list">
                 {blocks.filter((block) => block.active !== false).map((block) => <AvailabilityBlockCard key={block.id} block={block} lang={lang} userId={session.user.id} onChanged={(message) => { setFeedback(message); refresh(); }} />)}
@@ -4970,6 +8441,7 @@ function AvailabilityPage({ lang, session }) {
               <label className="admin-field full"><span>Description EN</span><textarea value={fixedForm.description_en} onChange={(event) => updateFixed('description_en', event.target.value)} rows={3} /></label>
               <AdminInput label="Meeting point IT" value={fixedForm.meeting_point_it} onChange={(value) => updateFixed('meeting_point_it', value)} />
               <AdminInput label="Meeting point EN" value={fixedForm.meeting_point_en} onChange={(value) => updateFixed('meeting_point_en', value)} />
+              <AdminInput label={adminCopy(lang, 'Link Google Maps del punto d’incontro', 'Google Maps meeting point link')} value={fixedForm.meeting_point_maps_url} placeholder="https://maps.google.com/..." onChange={(value) => updateFixed('meeting_point_maps_url', value)} />
               <AdminInput label="Difficulty IT" value={fixedForm.difficulty_it} onChange={(value) => updateFixed('difficulty_it', value)} />
               <AdminInput label="Difficulty EN" value={fixedForm.difficulty_en} onChange={(value) => updateFixed('difficulty_en', value)} />
               <AdminInput label="Price note IT" value={fixedForm.price_note_it} onChange={(value) => updateFixed('price_note_it', value)} />
@@ -5048,6 +8520,7 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
     description_en: item.description_en || item.note_en || '',
     meeting_point_it: item.meeting_point_it || '',
     meeting_point_en: item.meeting_point_en || '',
+    meeting_point_maps_url: item.meeting_point_maps_url || '',
     difficulty_it: item.difficulty_it || '',
     difficulty_en: item.difficulty_en || '',
     price_note_it: item.price_note_it || '',
@@ -5120,6 +8593,7 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
           <label className="admin-field full"><span>Description EN</span><textarea value={form.description_en} onChange={(event) => setForm((current) => ({ ...current, description_en: event.target.value }))} rows={3} /></label>
           <AdminInput label="Meeting point IT" value={form.meeting_point_it} onChange={(value) => setForm((current) => ({ ...current, meeting_point_it: value }))} />
           <AdminInput label="Meeting point EN" value={form.meeting_point_en} onChange={(value) => setForm((current) => ({ ...current, meeting_point_en: value }))} />
+          <AdminInput label={adminCopy(lang, 'Link Google Maps del punto d’incontro', 'Google Maps meeting point link')} value={form.meeting_point_maps_url} placeholder="https://maps.google.com/..." onChange={(value) => setForm((current) => ({ ...current, meeting_point_maps_url: value }))} />
           <AdminInput label="Difficulty IT" value={form.difficulty_it} onChange={(value) => setForm((current) => ({ ...current, difficulty_it: value }))} />
           <AdminInput label="Difficulty EN" value={form.difficulty_en} onChange={(value) => setForm((current) => ({ ...current, difficulty_en: value }))} />
           <AdminInput label="Price note IT" value={form.price_note_it} onChange={(value) => setForm((current) => ({ ...current, price_note_it: value }))} />
@@ -5207,11 +8681,37 @@ function AvailabilityBlockCard({ block, lang, userId, onChanged }) {
 function App() {
   const [pathname, navigate] = usePathname();
   const [lang, setLang] = useState('it');
-  const [formState, setFormState] = useState({ language: 'it', requestType: 'private', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', message: i18n.it.defaultMessage });
+  const [formState, setFormState] = useState({ language: 'it', requestType: 'private', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', heardAboutUs: '', heardAboutUsDetail: '', message: i18n.it.defaultMessage });
   const [activePage, setActivePage] = useState('home');
   const [siteMedia, setSiteMedia] = useState({});
   const [siteContent, setSiteContent] = useState({});
   const contactRef = useRef(null);
+  const analyticsContextRef = useRef({ section: 'home', language: 'it' });
+
+  useEffect(() => {
+    analyticsContextRef.current = { section: activePage, language: lang };
+  }, [activePage, lang]);
+
+  useEffect(() => {
+    if (pathname.startsWith('/admin')) return undefined;
+    return startAnalyticsHeartbeat(() => analyticsContextRef.current);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (pathname.startsWith('/admin')) return;
+    trackPageView(activePage, { path: `/${activePage === 'home' ? '' : activePage}`, language: lang });
+  }, [activePage, lang, pathname]);
+
+  useEffect(() => {
+    const token = import.meta.env.VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN;
+    if (!token || typeof document === 'undefined' || document.getElementById('cloudflare-web-analytics')) return;
+    const script = document.createElement('script');
+    script.id = 'cloudflare-web-analytics';
+    script.defer = true;
+    script.src = 'https://static.cloudflareinsights.com/beacon.min.js';
+    script.setAttribute('data-cf-beacon', JSON.stringify({ token }));
+    document.head.appendChild(script);
+  }, []);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -5235,12 +8735,36 @@ function App() {
     }));
   }, [lang]);
 
-  function scrollToForm() {
+  function setPublicLanguage(nextLang) {
+    setLang((current) => {
+      const resolved = typeof nextLang === 'function' ? nextLang(current) : nextLang;
+      if (resolved && resolved !== current) trackLanguageSwitch(current, resolved);
+      return resolved || current;
+    });
+  }
+
+  function scrollContactIntoView() {
     setActivePage('contact');
     window.setTimeout(() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   }
 
-  function fillForm({ experienceId, message, requestType, fixedExcursionId, requestedDate, adults, children, childrenUnder3Count, scroll = false }) {
+  function scrollToForm(metadata = {}) {
+    const trackingContext = buildBookingTrackingContext({
+      experienceId: formState.experienceId || '',
+      requestType: formState.requestType || 'private',
+      sourceSection: metadata.source_section || 'hero',
+      sourceCta: metadata.source_cta || 'contact_direct',
+      ctaLocation: metadata.cta_location || 'hero',
+      selectedDate: formState.requestedDate || '',
+      hasFixedExcursion: formState.requestType === 'fixed',
+      language: lang
+    });
+    trackBookingFormOpen(formState.experienceId || formState.requestType || 'private', mergeTrackingContext(trackingContext, metadata));
+    setFormState((current) => ({ ...current, trackingContext: mergeTrackingContext(trackingContext, metadata) }));
+    scrollContactIntoView();
+  }
+
+  function fillForm({ experienceId, message, requestType, fixedExcursionId, requestedDate, adults, children, childrenUnder3Count, trackingContext, scroll = false }) {
     setFormState((current) => ({
       ...current,
       experienceId: experienceId || current.experienceId,
@@ -5252,9 +8776,10 @@ function App() {
       childrenUnder3Count: childrenUnder3Count !== undefined ? childrenUnder3Count : current.childrenUnder3Count,
       privateExperience: requestType ? requestType === 'private' : current.privateExperience,
       message: message || current.message,
-      language: lang
+      language: lang,
+      trackingContext: trackingContext || current.trackingContext
     }));
-    if (scroll) scrollToForm();
+    if (scroll) scrollContactIntoView();
   }
 
   function renderPublicPage() {
@@ -5268,7 +8793,7 @@ function App() {
       case 'reviews':
         return <ReviewsPage lang={lang} siteContent={siteContent} />;
       case 'contact':
-        return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteContent={siteContent} />;
+        return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'home':
       default:
         return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} siteMedia={siteMedia} siteContent={siteContent} />;
@@ -5276,17 +8801,17 @@ function App() {
   }
 
   if (pathname.startsWith('/admin')) {
-    return <AdminRouter pathname={pathname} navigate={navigate} lang={lang} setLang={setLang} />;
+    return <AdminRouter pathname={pathname} navigate={navigate} lang={lang} setLang={setPublicLanguage} />;
   }
 
   return (
     <>
-      <Header lang={lang} setLang={setLang} activePage={activePage} setActivePage={setActivePage} siteMedia={siteMedia} />
+      <Header lang={lang} setLang={setPublicLanguage} activePage={activePage} setActivePage={setActivePage} siteMedia={siteMedia} />
       <main ref={contactRef} className={`public-page-shell public-page-${activePage}`}>
         {renderPublicPage()}
       </main>
       <Footer lang={lang} siteContent={siteContent} />
-      <StickyMobileBar lang={lang} />
+      <StickyMobileBar lang={lang} siteContent={siteContent} />
     </>
   );
 }

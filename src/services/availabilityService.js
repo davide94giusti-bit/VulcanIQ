@@ -3,6 +3,11 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 
 const FIXED_EXCURSION_FILE_BUCKET = 'vulcaniq-public-assets';
 
+const PUBLIC_FIXED_EXCURSION_COLUMNS = 'id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, meeting_point_maps_url, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, accepted_count, places_remaining';
+const PUBLIC_FIXED_EXCURSION_FALLBACK_COLUMNS = 'id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, accepted_count, places_remaining';
+const ADMIN_FIXED_EXCURSION_COLUMNS = 'id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, meeting_point_maps_url, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, created_by, updated_by';
+const ADMIN_FIXED_EXCURSION_FALLBACK_COLUMNS = 'id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, created_by, updated_by';
+
 function normalizeAvailabilityRow(row) {
   return {
     id: row.id,
@@ -38,6 +43,7 @@ function normalizeFixedExcursion(row) {
     description_en: row.description_en || '',
     meeting_point_it: row.meeting_point_it || '',
     meeting_point_en: row.meeting_point_en || '',
+    meeting_point_maps_url: row.meeting_point_maps_url || '',
     difficulty_it: row.difficulty_it || '',
     difficulty_en: row.difficulty_en || '',
     price_note_it: row.price_note_it || '',
@@ -91,18 +97,26 @@ export async function loadPublicAvailability() {
 
 export async function loadPublicFixedExcursions() {
   if (!isSupabaseConfigured) return [];
-  try {
-    const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+
+  async function fetchRows(columns) {
     const { data, error } = await supabase
       .from('public_fixed_excursions')
-      .select('id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, accepted_count, places_remaining')
+      .select(columns)
       .eq('active', true)
       .gte('date', today)
       .order('date', { ascending: true })
       .order('start_time', { ascending: true });
-
     if (error) throw error;
-    return Array.isArray(data) ? data.map(normalizeFixedExcursion) : [];
+    return data || [];
+  }
+
+  try {
+    try {
+      return (await fetchRows(PUBLIC_FIXED_EXCURSION_COLUMNS)).map(normalizeFixedExcursion);
+    } catch (fullViewError) {
+      return (await fetchRows(PUBLIC_FIXED_EXCURSION_FALLBACK_COLUMNS)).map(normalizeFixedExcursion);
+    }
   } catch (error) {
     console.warn('Supabase fixed excursions unavailable.', error?.message || error);
     return [];
@@ -182,17 +196,23 @@ export async function deactivateAvailabilityBlock(id, userId) {
 export async function listFixedExcursions({ activeOnly = false, fromDate = null, toDate = null } = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
-  let query = supabase
-    .from('fixed_excursions')
-    .select('id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, created_by, updated_by')
-    .order('date', { ascending: true })
-    .order('start_time', { ascending: true });
+  function buildQuery(columns) {
+    let query = supabase
+      .from('fixed_excursions')
+      .select(columns)
+      .order('date', { ascending: true })
+      .order('start_time', { ascending: true });
 
-  if (activeOnly) query = query.eq('active', true);
-  if (fromDate) query = query.gte('date', fromDate);
-  if (toDate) query = query.lte('date', toDate);
+    if (activeOnly) query = query.eq('active', true);
+    if (fromDate) query = query.gte('date', fromDate);
+    if (toDate) query = query.lte('date', toDate);
+    return query;
+  }
 
-  const { data, error } = await query;
+  let { data, error } = await buildQuery(ADMIN_FIXED_EXCURSION_COLUMNS);
+  if (error) {
+    ({ data, error } = await buildQuery(ADMIN_FIXED_EXCURSION_FALLBACK_COLUMNS));
+  }
   if (error) throw error;
 
   const rows = Array.isArray(data) ? data : [];
@@ -236,6 +256,7 @@ export async function createFixedExcursion(input) {
     description_en: input.description_en || input.note_en || null,
     meeting_point_it: input.meeting_point_it || null,
     meeting_point_en: input.meeting_point_en || null,
+    meeting_point_maps_url: input.meeting_point_maps_url || null,
     difficulty_it: input.difficulty_it || null,
     difficulty_en: input.difficulty_en || null,
     price_note_it: input.price_note_it || null,

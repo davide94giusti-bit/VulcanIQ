@@ -77,7 +77,20 @@ create table if not exists public.booking_requests (
   main_interest text,
   preferred_pace text,
   message text,
+  heard_about_us text,
+  heard_about_us_label text,
+  heard_about_us_detail text,
   source text not null default 'website',
+  source_section text,
+  source_cta text,
+  cta_location text,
+  selected_date date,
+  has_fixed_excursion boolean not null default false,
+  traffic_source text,
+  utm_source text,
+  utm_medium text,
+  utm_campaign text,
+  utm_content text,
   admin_note text,
   decision_note text,
   decided_at timestamptz,
@@ -96,6 +109,7 @@ create table if not exists public.booking_requests (
   constraint booking_requests_language_check check (language is null or language in ('it', 'en')),
   constraint booking_requests_party_type_check check (party_type is null or party_type in ('solo', 'couple', 'family', 'group', 'company', 'school', 'other')),
   constraint booking_requests_source_check check (source in ('website', 'whatsapp', 'phone', 'email', 'manual')),
+  constraint booking_requests_heard_about_us_check check (heard_about_us is null or heard_about_us in ('instagram', 'google', 'google_maps', 'facebook', 'whatsapp_or_friend', 'hotel_bnb_partner', 'previous_customer', 'guide_or_local_partner', 'other', 'not_specified')),
   constraint booking_requests_adults_check check (adults is null or adults >= 0),
   constraint booking_requests_children_check check (children is null or children >= 0)
 );
@@ -114,13 +128,31 @@ alter table public.booking_requests add column if not exists archive_reason text
 alter table public.booking_requests add column if not exists cancelled_at timestamptz null;
 alter table public.booking_requests add column if not exists cancelled_by uuid references auth.users(id);
 alter table public.booking_requests add column if not exists completed_at timestamptz null;
+alter table public.booking_requests add column if not exists source_section text;
+alter table public.booking_requests add column if not exists source_cta text;
+alter table public.booking_requests add column if not exists cta_location text;
+alter table public.booking_requests add column if not exists selected_date date;
+alter table public.booking_requests add column if not exists has_fixed_excursion boolean not null default false;
+alter table public.booking_requests add column if not exists traffic_source text;
+alter table public.booking_requests add column if not exists utm_source text;
+alter table public.booking_requests add column if not exists utm_medium text;
+alter table public.booking_requests add column if not exists utm_campaign text;
+alter table public.booking_requests add column if not exists utm_content text;
+alter table public.booking_requests add column if not exists heard_about_us text;
+alter table public.booking_requests add column if not exists heard_about_us_label text;
+alter table public.booking_requests add column if not exists heard_about_us_detail text;
 
 create index if not exists booking_requests_status_idx on public.booking_requests(status);
 create index if not exists booking_requests_requested_date_idx on public.booking_requests(requested_date);
 create index if not exists booking_requests_created_at_idx on public.booking_requests(created_at desc);
 create index if not exists booking_requests_source_idx on public.booking_requests(source);
 create index if not exists booking_requests_request_type_idx on public.booking_requests(request_type);
+create index if not exists booking_requests_source_section_idx on public.booking_requests(source_section);
+create index if not exists booking_requests_cta_location_idx on public.booking_requests(cta_location);
+create index if not exists booking_requests_traffic_source_idx on public.booking_requests(traffic_source);
 create index if not exists booking_requests_fixed_excursion_idx on public.booking_requests(fixed_excursion_id);
+create index if not exists booking_requests_heard_about_us_idx on public.booking_requests(heard_about_us);
+create index if not exists booking_requests_heard_about_us_detail_idx on public.booking_requests(heard_about_us_detail) where heard_about_us_detail is not null;
 create index if not exists booking_requests_archive_idx on public.booking_requests(archived_at) where archived_at is not null;
 create unique index if not exists booking_requests_booking_code_idx on public.booking_requests(booking_code) where booking_code is not null;
 
@@ -213,6 +245,7 @@ create table if not exists public.fixed_excursions (
   description_en text,
   meeting_point_it text,
   meeting_point_en text,
+  meeting_point_maps_url text,
   difficulty_it text,
   difficulty_en text,
   price_note_it text,
@@ -238,6 +271,7 @@ alter table public.fixed_excursions add column if not exists description_it text
 alter table public.fixed_excursions add column if not exists description_en text;
 alter table public.fixed_excursions add column if not exists meeting_point_it text;
 alter table public.fixed_excursions add column if not exists meeting_point_en text;
+alter table public.fixed_excursions add column if not exists meeting_point_maps_url text;
 alter table public.fixed_excursions add column if not exists difficulty_it text;
 alter table public.fixed_excursions add column if not exists difficulty_en text;
 alter table public.fixed_excursions add column if not exists price_note_it text;
@@ -638,6 +672,7 @@ select
   fe.description_en,
   fe.meeting_point_it,
   fe.meeting_point_en,
+  fe.meeting_point_maps_url,
   fe.difficulty_it,
   fe.difficulty_en,
   fe.price_note_it,

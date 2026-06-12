@@ -2,7 +2,7 @@
 
 Vite + React public website for **vulcanIQ**, a premium Mount Etna experiential tourism brand, with an optional free Supabase layer for owner-managed booking requests, private availability, fixed excursions, blocked-date calendar files, public partnerships, and booking-code validated public reviews.
 
-The site remains deployable on Netlify/Cloudflare-compatible static hosting and does not add paid services, payments, SMS, WhatsApp Business API, customer accounts, invoices, Google Calendar sync, or analytics.
+The site is configured for Cloudflare Pages deployment and does not add paid services, payments, SMS, WhatsApp Business API, customer accounts, invoices, or Google Calendar sync.
 
 ## What changed in this update
 
@@ -39,11 +39,12 @@ npm run dev
 npm run preview
 ```
 
-Netlify settings:
+Cloudflare Pages settings:
 
+- Framework preset: `Vite`
 - Build command: `npm run build`
-- Publish directory: `dist`
-- Node version: any supported Node `>=18 <23`
+- Build output directory: `dist`
+- Node version: `20` or `22`
 
 ## Environment variables
 
@@ -55,7 +56,7 @@ The public site builds and renders without Supabase credentials. Without Supabas
 4. public review submission and admin database features remain disabled until Supabase is configured;
 5. `/admin` shows a setup warning.
 
-To enable booking/admin features, add these browser-safe variables locally and in Netlify:
+To enable booking/admin features, add these browser-safe variables locally and in Cloudflare Pages:
 
 ```bash
 VITE_SUPABASE_URL=your-project-url
@@ -105,7 +106,7 @@ Read:
 High-level flow:
 
 1. Create a free Supabase project.
-2. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to Netlify.
+2. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to Cloudflare Pages.
 3. Run `supabase/schema.sql` in the Supabase SQL editor.
 4. Create the owner Auth users.
 5. Insert both users into `admin_profiles` with `role = 'owner'` and `active = true`.
@@ -128,9 +129,9 @@ Public visitors can insert `booking_requests`; they cannot read customer request
 1. Run `npm install`.
 2. Run `npm run build`.
 3. Push the project to GitHub.
-4. Connect the repository to Netlify.
-5. Set build command `npm run build` and publish directory `dist`.
-6. Add Supabase env vars in Netlify.
+4. Connect the repository to Cloudflare Pages.
+5. Set framework preset `Vite`, build command `npm run build`, and build output directory `dist`.
+6. Add Supabase environment variables in Cloudflare Pages.
 7. Run the Supabase schema.
 8. Add the approved owner users to `admin_profiles`.
 9. Deploy.
@@ -194,3 +195,42 @@ public/brand/vulcaniq/og-image.png
 ```
 
 The public header, mobile header, admin login, admin dashboard, and visual editor preview all use the same black-and-gold vulcanIQ logo treatment. The old blue-background logo file is left in the repository for safety, but it is no longer referenced by the normal UI.
+
+## Admin Analytics / Dati
+
+This build adds a free privacy-first **Admin → Dati / Analytics** tab.
+
+The in-app analytics dashboard uses first-party Supabase tables as the source of truth:
+
+- `analytics_events`
+- `analytics_sessions`
+
+The public website tracks only anonymous operational events such as page views, language switches, excursion views, booking-form opens, successful booking submissions, WhatsApp/email/phone clicks, Google Maps clicks, review views, and session heartbeat/end events. Admin dashboard activity is excluded from public analytics.
+
+Analytics ingestion order:
+
+1. Cloudflare Pages Function: `/api/analytics/event` from `functions/api/analytics/event.js`.
+2. Direct Supabase anon-key insert fallback for events and initial sessions only, used only if the same-origin Cloudflare endpoint is unavailable.
+
+Required Supabase migration:
+
+```text
+supabase/migrations/20260608_add_analytics_events.sql
+```
+
+Required server-side environment variables for the Cloudflare Pages ingestion endpoint:
+
+```bash
+SUPABASE_URL=your-project-url
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+```
+
+Do not expose `SUPABASE_SERVICE_ROLE_KEY` in frontend code. It must be set only in Cloudflare Pages environment variables for server-side Functions.
+
+Optional Cloudflare Web Analytics support:
+
+```bash
+VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN=optional-token
+```
+
+If the optional token is absent, no Cloudflare Web Analytics script is injected. The admin Analytics tab does not depend on Cloudflare Web Analytics.
