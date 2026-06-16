@@ -253,6 +253,31 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     formKicker: 'Modulo contatto',
     formTitle: 'Prepara la richiesta.',
     formIntro: 'Scegli una data fissa o una richiesta privata, indica il numero di persone e lascia un contatto: il team risponderà direttamente.',
+    startQuestionnaire: 'Inizia il questionario',
+    prepareYourRequest: 'Prepara la tua richiesta',
+    contactQuestionnaireIntro: 'Rispondi una domanda alla volta: alla fine potrai controllare e modificare il messaggio prima di inviarlo.',
+    contactQuestionnaireTitle: 'Prepara la tua richiesta',
+    contactQuestionnaireProgress: 'Passaggio {current} di {total}',
+    contactQuestionnaireCloseConfirm: 'Vuoi chiudere il questionario? Le risposte inserite potrebbero andare perse.',
+    next: 'Avanti',
+    back: 'Indietro',
+    reviewMessage: 'Controlla il messaggio',
+    regenerateMessage: 'Rigenera messaggio dalle risposte',
+    dateTodayOrFuture: 'Seleziona una data di oggi o futura.',
+    requestTypeQuestion: 'Che tipo di esperienza vuoi richiedere?',
+    experienceQuestion: 'Quale esperienza ti interessa?',
+    dateQuestion: 'Quando vorresti vivere l’esperienza?',
+    participantsQuestion: 'Chi parteciperà?',
+    contactQuestion: 'Come possiamo ricontattarti?',
+    attributionQuestion: 'Dove hai sentito parlare di vulcanIQ?',
+    notSure: 'Non sono sicuro',
+    noDateYet: 'Non ho ancora una data precisa',
+    chooseExperienceOptional: 'Scegli un’esperienza o indica che non sei sicuro.',
+    contactPhoneRequired: 'Inserisci un numero di telefono per essere ricontattato via WhatsApp o telefono.',
+    contactEmailRequired: 'Inserisci un indirizzo email per essere ricontattato via email.',
+    answerRequired: 'Rispondi a questa domanda per continuare.',
+    fixedExcursionRequired: 'Scegli un’escursione fissa disponibile oppure seleziona “Non sono sicuro”.',
+    finalMessageHelp: 'Questo messaggio è generato dalle tue risposte. Puoi modificarlo prima di inviarlo.',
     submitRequest: 'Invia richiesta',
     requestSent: 'La tua richiesta è stata inviata. Leonardo o il team vulcanIQ ti risponderà direttamente.',
     requestFallbackError: 'Non siamo riusciti a salvare la richiesta automaticamente. Puoi contattarci su WhatsApp o email.',
@@ -484,6 +509,31 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     formKicker: 'Contact form',
     formTitle: 'Prepare your request.',
     formIntro: 'Choose a fixed date or a private request, add the number of people, and leave a contact: the team will reply directly.',
+    startQuestionnaire: 'Start the questionnaire',
+    prepareYourRequest: 'Prepare your request',
+    contactQuestionnaireIntro: 'Answer one question at a time: at the end you can review and edit the message before sending it.',
+    contactQuestionnaireTitle: 'Prepare your request',
+    contactQuestionnaireProgress: 'Step {current} of {total}',
+    contactQuestionnaireCloseConfirm: 'Do you want to close the questionnaire? Your answers may be lost.',
+    next: 'Next',
+    back: 'Back',
+    reviewMessage: 'Review your message',
+    regenerateMessage: 'Regenerate message from answers',
+    dateTodayOrFuture: 'Please select today or a future date.',
+    requestTypeQuestion: 'What type of experience would you like to request?',
+    experienceQuestion: 'Which experience are you interested in?',
+    dateQuestion: 'When would you like to do the experience?',
+    participantsQuestion: 'Who will participate?',
+    contactQuestion: 'How can we contact you?',
+    attributionQuestion: 'Where did you hear about vulcanIQ?',
+    notSure: 'I am not sure',
+    noDateYet: 'I do not have a precise date yet',
+    chooseExperienceOptional: 'Choose an experience or say you are not sure.',
+    contactPhoneRequired: 'Enter a phone number so we can contact you by WhatsApp or phone.',
+    contactEmailRequired: 'Enter an email address so we can contact you by email.',
+    answerRequired: 'Answer this question to continue.',
+    fixedExcursionRequired: 'Choose an available fixed excursion or select “I am not sure”.',
+    finalMessageHelp: 'This message is generated from your answers. You can edit it before sending.',
     submitRequest: 'Submit request',
     requestSent: 'Your request has been sent. Leonardo or the vulcanIQ team will reply directly.',
     requestFallbackError: 'We could not save the request automatically. You can contact us by WhatsApp or email.',
@@ -1061,6 +1111,106 @@ function buildQuestionnaireMessage(result, lang) {
     return `Ciao Leonardo,\nvorrei informazioni su un’esperienza vulcanIQ sull’Etna.\n\nEsperienza consigliata: ${result.recommended.title}\nAlternativa: ${result.alternative.title}\n\nDettagli:\n- Viaggio con: ${details.travelingWith}\n- Interesse principale: ${details.interest}\n- Ritmo preferito: ${details.pace}\n- Esperienza privata: ${details.private}\n- Bambini nel gruppo: ${details.children}\n\nVorrei sapere disponibilità, durata indicativa, prezzo e consigli sull’abbigliamento.\n\nGrazie.`;
   }
   return `Hi Leonardo,\nI would like more information about a vulcanIQ experience on Mount Etna.\n\nRecommended experience: ${result.recommended.title}\nAlternative: ${result.alternative.title}\n\nDetails:\n- Traveling with: ${details.travelingWith}\n- Main interest: ${details.interest}\n- Preferred pace: ${details.pace}\n- Private experience: ${details.private}\n- Children in the group: ${details.children}\n\nI would like to know availability, approximate duration, price, and clothing recommendations.\n\nThank you.`;
+}
+
+
+function isPastPublicDate(value) {
+  const clean = String(value || '').trim();
+  if (!clean) return false;
+  return clean < todayIso();
+}
+
+function safeParticipantNumber(value, fallback = 0) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return parsed;
+}
+
+function requestChoiceLabel(value, lang) {
+  if (value === 'fixed') return text(lang, 'fixedExcursion');
+  if (value === 'unsure') return text(lang, 'notSure');
+  return text(lang, 'privateExcursion');
+}
+
+function partyTypeLabel(value, lang) {
+  const labels = {
+    solo: { it: 'Singolo', en: 'Solo traveler' },
+    couple: { it: 'Coppia', en: 'Couple' },
+    family: { it: 'Famiglia', en: 'Family' },
+    group: { it: 'Gruppo', en: 'Group' },
+    company: { it: 'Azienda', en: 'Company' },
+    school: { it: 'Scuola', en: 'School' },
+    other: { it: 'Altro', en: 'Other' }
+  };
+  return labels[value]?.[lang] || labels.solo[lang];
+}
+
+function preferredContactLabel(value, lang) {
+  if (value === 'email') return 'Email';
+  if (value === 'phone') return lang === 'it' ? 'Telefono' : 'Phone';
+  return 'WhatsApp';
+}
+
+function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
+  const requestChoice = formState.requestTypeChoice || formState.requestType || 'private';
+  const requestType = requestChoice === 'fixed' ? 'fixed' : 'private';
+  const experienceId = requestType === 'fixed' && selectedFixed?.experience_id ? selectedFixed.experience_id : (formState.experienceId || 'unsure');
+  const experienceName = experienceId && experienceId !== 'unsure' ? adminExperienceLabel(experienceId, lang) : text(lang, 'notSure');
+  const requestedDate = selectedFixed?.date || formState.requestedDate || '';
+  const alternativeDate = formState.alternativeDate || '';
+  const adults = safeParticipantNumber(formState.adults, 1);
+  const children = safeParticipantNumber(formState.children, 0);
+  const under3 = safeParticipantNumber(formState.childrenUnder3Count, 0);
+  const total = adults + children;
+  const heard = normalizeHeardAboutUs(formState.heardAboutUs);
+  const heardDisplay = heard ? heardAboutUsDisplay(heard, formState.heardAboutUsDetail, lang) : text(lang, 'notSure');
+  const phone = String(formState.phone || '').trim();
+  const email = String(formState.email || '').trim();
+  const name = String(formState.name || '').trim();
+  if (lang === 'it') {
+    return `Ciao Leonardo,
+vorrei preparare una richiesta vulcanIQ.
+
+Nome: ${name || '-'}
+Tipo di richiesta: ${requestChoiceLabel(requestChoice, lang)}
+Esperienza: ${experienceName}
+Data richiesta: ${requestedDate ? formatDateForMessage(requestedDate, lang) : '-'}
+Data alternativa: ${alternativeDate ? formatDateForMessage(alternativeDate, lang) : '-'}
+Tipo di gruppo: ${partyTypeLabel(formState.partyType || 'solo', lang)}
+Adulti: ${adults}
+Bambini: ${children}
+Bambini sotto i 3 anni: ${under3}
+Totale persone: ${total}
+Contatto preferito: ${preferredContactLabel(formState.preferredContact || 'whatsapp', lang)}
+Telefono/WhatsApp: ${phone || '-'}
+Email: ${email || '-'}
+Ho sentito parlare di vulcanIQ da: ${heardDisplay}
+
+Vorrei sapere se la richiesta può essere confermata e ricevere dettagli pratici su disponibilità, durata, prezzo e abbigliamento consigliato.
+
+Grazie.`;
+  }
+  return `Hi Leonardo,
+I would like to prepare a vulcanIQ request.
+
+Name: ${name || '-'}
+Request type: ${requestChoiceLabel(requestChoice, lang)}
+Experience: ${experienceName}
+Requested date: ${requestedDate ? formatDateForMessage(requestedDate, lang) : '-'}
+Alternative date: ${alternativeDate ? formatDateForMessage(alternativeDate, lang) : '-'}
+Group type: ${partyTypeLabel(formState.partyType || 'solo', lang)}
+Adults: ${adults}
+Children: ${children}
+Children under 3: ${under3}
+Total people: ${total}
+Preferred contact: ${preferredContactLabel(formState.preferredContact || 'whatsapp', lang)}
+Phone/WhatsApp: ${phone || '-'}
+Email: ${email || '-'}
+Where I heard about vulcanIQ: ${heardDisplay}
+
+I would like to know whether the request can be confirmed and receive practical details about availability, duration, price, and recommended clothing.
+
+Thank you.`;
 }
 
 
@@ -2565,15 +2715,19 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
   const [submitState, setSubmitState] = useState({ loading: false, error: '', success: '' });
   const [fixedExcursions, setFixedExcursions] = useState([]);
-  const requestType = formState.requestType || 'private';
+  const [questionnaireOpen, setQuestionnaireOpen] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [stepError, setStepError] = useState('');
+  const [messageManuallyEdited, setMessageManuallyEdited] = useState(false);
+  const requestChoice = formState.requestTypeChoice || formState.requestType || 'private';
+  const requestType = requestChoice === 'fixed' ? 'fixed' : 'private';
   const message = formState.message || text(lang, 'defaultMessage');
   const experienceId = formState.experienceId || '';
   const selectedFixed = fixedExcursions.find((item) => item.id === formState.fixedExcursionId) || null;
   const effectiveExperienceId = requestType === 'fixed' && selectedFixed?.experience_id ? selectedFixed.experience_id : experienceId;
-  const selectedTitle = effectiveExperienceId ? experienceById(effectiveExperienceId).title : '';
-  const adults = Number.parseInt(formState.adults || '0', 10) || 0;
-  const children = Number.parseInt(formState.children || '0', 10) || 0;
-  const childrenUnder3Count = Number.parseInt(formState.childrenUnder3Count || '0', 10) || 0;
+  const adults = safeParticipantNumber(formState.adults, 1);
+  const children = safeParticipantNumber(formState.children, 0);
+  const childrenUnder3Count = safeParticipantNumber(formState.childrenUnder3Count, 0);
   const totalPeople = adults + children;
   const over12 = totalPeople > 12;
   const selectedHeardAboutUs = normalizeHeardAboutUs(formState.heardAboutUs);
@@ -2583,12 +2737,26 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const preferredContactValue = ['whatsapp', 'phone', 'email'].includes(formState.preferredContact) ? formState.preferredContact : 'whatsapp';
   const selectedHeardAboutUsMetadata = heardAboutUsMetadata(selectedHeardAboutUs, lang, selectedHeardAboutUsDetail);
   const trackedFormOpenRef = useRef(new Set());
+  const modalRef = useRef(null);
+  const previousFocusRef = useRef(null);
   const [leaflets, setLeaflets] = useState([]);
   const [fixedOptionsOpen, setFixedOptionsOpen] = useState(false);
   const [privateOptionsOpen, setPrivateOptionsOpen] = useState(false);
   const [detailsMonthDate, setDetailsMonthDate] = useState(startOfMonth(new Date()));
   const [activeLeaflet, setActiveLeaflet] = useState(null);
   const [selectedPrivateExperience, setSelectedPrivateExperience] = useState(null);
+
+  const questionnaireSteps = [
+    { key: 'request_type', title: text(lang, 'requestTypeQuestion') },
+    { key: 'experience', title: text(lang, 'experienceQuestion') },
+    { key: 'date', title: text(lang, 'dateQuestion') },
+    { key: 'participants', title: text(lang, 'participantsQuestion') },
+    { key: 'contact', title: text(lang, 'contactQuestion') },
+    { key: 'attribution', title: text(lang, 'attributionQuestion') },
+    { key: 'message', title: text(lang, 'reviewMessage') }
+  ];
+  const currentStep = questionnaireSteps[stepIndex] || questionnaireSteps[0];
+  const todayMinDate = todayIso();
 
   useEffect(() => {
     let active = true;
@@ -2597,7 +2765,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       loadPublicMonthlyLeaflets().catch(() => [])
     ]).then(([fixedRows, leafletRows]) => {
       if (!active) return;
-      setFixedExcursions(fixedRows || []);
+      setFixedExcursions((fixedRows || []).filter((item) => !item.date || item.date >= todayIso()));
       setLeaflets(leafletRows || []);
     }).catch(() => {
       if (!active) return;
@@ -2607,37 +2775,57 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     return () => { active = false; };
   }, []);
 
-  useBodyScrollLock(Boolean(fixedOptionsOpen || privateOptionsOpen || activeLeaflet || selectedPrivateExperience));
+  useBodyScrollLock(Boolean(questionnaireOpen || fixedOptionsOpen || privateOptionsOpen || activeLeaflet || selectedPrivateExperience));
+
+  useEffect(() => {
+    if (!questionnaireOpen) return undefined;
+    previousFocusRef.current = document.activeElement;
+    window.setTimeout(() => modalRef.current?.querySelector('button, input, select, textarea')?.focus(), 0);
+    return () => {
+      const previous = previousFocusRef.current;
+      if (previous && typeof previous.focus === 'function') window.setTimeout(() => previous.focus(), 0);
+    };
+  }, [questionnaireOpen]);
 
   useEffect(() => {
     function closeOnEscape(event) {
       if (event.key !== 'Escape') return;
       if (activeLeaflet) { setActiveLeaflet(null); return; }
       if (selectedPrivateExperience) { setSelectedPrivateExperience(null); return; }
-      setFixedOptionsOpen(false);
-      setPrivateOptionsOpen(false);
+      if (fixedOptionsOpen) { setFixedOptionsOpen(false); return; }
+      if (privateOptionsOpen) { setPrivateOptionsOpen(false); return; }
+      if (questionnaireOpen) attemptCloseQuestionnaire();
     }
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [activeLeaflet, selectedPrivateExperience]);
+  }, [activeLeaflet, selectedPrivateExperience, fixedOptionsOpen, privateOptionsOpen, questionnaireOpen, formState]);
 
   const fixedOptions = useMemo(() => monthlyOptionsLeaflets({ leaflets, fixedExcursions, monthDate: detailsMonthDate, lang }), [leaflets, fixedExcursions, detailsMonthDate, lang]);
   const canGoPreviousDetailsMonth = isCurrentOrFutureMonth(new Date(detailsMonthDate.getFullYear(), detailsMonthDate.getMonth() - 1, 1));
 
+  const currentTrackingMetadata = mergeTrackingContext(mergeTrackingContext(buildBookingTrackingContext({
+    experienceId: effectiveExperienceId,
+    requestType,
+    sourceSection: 'contact',
+    sourceCta: 'prepare_request',
+    ctaLocation: 'questionnaire_modal',
+    selectedDate: selectedFixed?.date || formState.requestedDate || '',
+    hasFixedExcursion: requestType === 'fixed',
+    language: formState.language || lang
+  }), formState.trackingContext), {
+    ...selectedHeardAboutUsMetadata,
+    questionnaire_version: 'contact_request_v1',
+    questionnaire_step: stepIndex + 1,
+    questionnaire_step_key: currentStep.key,
+    questionnaire_completed: currentStep.key === 'message'
+  });
+
   function update(field, value) {
     if (!trackedFormOpenRef.current.has('field_start')) {
       trackedFormOpenRef.current.add('field_start');
-      trackBookingFormFieldStart(effectiveExperienceId || requestType || 'unsure', mergeTrackingContext(mergeTrackingContext(buildBookingTrackingContext({
-        experienceId: effectiveExperienceId,
-        requestType,
-        sourceSection: 'contact',
-        sourceCta: 'prepare_request',
-        ctaLocation: 'booking_modal',
-        selectedDate: selectedFixed?.date || formState.requestedDate || '',
-        hasFixedExcursion: requestType === 'fixed',
-        language: formState.language || lang
-      }), formState.trackingContext), heardAboutUsMetadata(field === 'heardAboutUs' ? value : formState.heardAboutUs, lang, field === 'heardAboutUsDetail' ? value : formState.heardAboutUsDetail)));
+      trackBookingFormFieldStart(effectiveExperienceId || requestType || 'private', currentTrackingMetadata);
     }
+    setStepError('');
     setFormState((current) => {
       if (field === 'heardAboutUs') {
         return { ...current, heardAboutUs: value, heardAboutUsDetail: needsHeardAboutUsDetail(value) ? current.heardAboutUsDetail : '' };
@@ -2646,26 +2834,35 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     });
   }
 
+  function updateMessage(value) {
+    setMessageManuallyEdited(true);
+    update('message', value);
+  }
+
   function updateRequestType(value) {
+    setStepError('');
     setFormState((current) => ({
       ...current,
-      requestType: value,
-      privateExperience: value === 'private',
+      requestTypeChoice: value,
+      requestType: value === 'fixed' ? 'fixed' : 'private',
+      privateExperience: value !== 'fixed',
       fixedExcursionId: value === 'fixed' ? current.fixedExcursionId : '',
-      requestedDate: value === 'private' ? current.requestedDate : current.requestedDate
+      experienceId: value === 'unsure' ? 'unsure' : current.experienceId
     }));
   }
 
   function updateFixedExcursion(id) {
     const fixed = fixedExcursions.find((item) => item.id === id);
+    setStepError('');
     setFormState((current) => ({
       ...current,
+      requestTypeChoice: 'fixed',
       requestType: 'fixed',
       fixedExcursionId: id,
       privateExperience: false,
       experienceId: fixed?.experience_id || current.experienceId,
       requestedDate: fixed?.date || current.requestedDate,
-      message: fixed ? buildFixedExcursionMessage({ fixedExcursion: fixed, people: totalPeople || '' }, lang) : current.message
+      message: !messageManuallyEdited && fixed ? buildFixedExcursionMessage({ fixedExcursion: fixed, people: totalPeople || '' }, lang) : current.message
     }));
   }
 
@@ -2676,17 +2873,15 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     });
   }
 
-  function openRequestDetails() {
-    if (requestType === 'fixed') {
-      setDetailsMonthDate(startOfMonth(new Date()));
-      setFixedOptionsOpen(true);
-      trackEvent('fixed_excursion_options_open', { request_type: 'fixed', selected_month: monthKey(new Date()), language: lang, source_section: 'today_request_flow' }, { dedupe: false });
-      trackEvent('request_details_open', { request_type: 'fixed', language: lang, source_section: 'today_request_flow' }, { dedupe: false });
-      return;
-    }
+  function openFixedOptions() {
+    setDetailsMonthDate(startOfMonth(new Date()));
+    setFixedOptionsOpen(true);
+    trackEvent('fixed_excursion_options_open', { request_type: 'fixed', selected_month: monthKey(new Date()), language: lang, source_section: 'contact_questionnaire' }, { dedupe: false });
+  }
+
+  function openPrivateOptions() {
     setPrivateOptionsOpen(true);
-    trackEvent('private_excursion_options_open', { request_type: 'private', language: lang, source_section: 'today_request_flow' }, { dedupe: false });
-    trackEvent('request_details_open', { request_type: 'private', language: lang, source_section: 'today_request_flow' }, { dedupe: false });
+    trackEvent('private_excursion_options_open', { request_type: 'private', language: lang, source_section: 'contact_questionnaire' }, { dedupe: false });
   }
 
   function openRequestLeaflet(option) {
@@ -2698,9 +2893,9 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       excursion_id: option.fixedExcursion?.id || '',
       excursion_slug: option.fixedExcursion?.experience_id || '',
       language: lang,
-      source_section: 'today_request_flow'
+      source_section: 'contact_questionnaire'
     }, { dedupe: false });
-    setActiveLeaflet({ leaflet: option.leaflet, label: option.title || leafletTitle(option.leaflet, lang) });
+    setActiveLeaflet({ leaflet: option.leaflet, label: option.title || leafletTitle(option.leaflet, lang), fixedExcursion: option.fixedExcursion || null });
   }
 
   function openPrivateExperienceDetails(experience) {
@@ -2709,74 +2904,144 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       excursion_id: experience?.id || '',
       excursion_slug: experience?.id || '',
       language: lang,
-      source_section: 'today_request_flow'
+      source_section: 'contact_questionnaire'
     }, { dedupe: false });
     trackExperienceDetailOpen(experience);
     setSelectedPrivateExperience(experience);
   }
 
-  const currentTrackingMetadata = mergeTrackingContext(mergeTrackingContext(buildBookingTrackingContext({
-    experienceId: effectiveExperienceId,
-    requestType,
-    sourceSection: 'contact',
-    sourceCta: 'prepare_request',
-    ctaLocation: 'booking_modal',
-    selectedDate: selectedFixed?.date || formState.requestedDate || '',
-    hasFixedExcursion: requestType === 'fixed',
-    language: formState.language || lang
-  }), formState.trackingContext), selectedHeardAboutUsMetadata);
-
   function usePrivateExperienceInRequest(experience) {
     setFormState((current) => ({
       ...current,
+      requestTypeChoice: 'private',
       requestType: 'private',
       privateExperience: true,
+      fixedExcursionId: '',
       experienceId: experience?.id || current.experienceId,
-      message: experience ? buildExperienceMessage(experience, lang) : current.message,
+      message: !messageManuallyEdited && experience ? buildExperienceMessage(experience, lang) : current.message,
       language: current.language || lang
     }));
     setSelectedPrivateExperience(null);
     setPrivateOptionsOpen(false);
   }
 
+  function hasMeaningfulQuestionnaireData() {
+    const defaultMessages = [i18n.it.defaultMessage, i18n.en.defaultMessage];
+    return Boolean(
+      formState.name || formState.phone || formState.email || formState.experienceId || formState.fixedExcursionId ||
+      formState.requestedDate || formState.alternativeDate || formState.heardAboutUs || formState.heardAboutUsDetail ||
+      (formState.message && !defaultMessages.includes(formState.message))
+    );
+  }
+
+  function attemptCloseQuestionnaire() {
+    if (!hasMeaningfulQuestionnaireData() || window.confirm(text(lang, 'contactQuestionnaireCloseConfirm'))) {
+      setQuestionnaireOpen(false);
+      setStepError('');
+    }
+  }
+
+  function openQuestionnaire() {
+    const trackingContext = mergeTrackingContext(buildBookingTrackingContext({
+      experienceId: effectiveExperienceId,
+      requestType,
+      sourceSection: 'contact',
+      sourceCta: 'start_questionnaire',
+      ctaLocation: 'contact_section',
+      selectedDate: selectedFixed?.date || formState.requestedDate || '',
+      hasFixedExcursion: requestType === 'fixed',
+      language: lang
+    }), formState.trackingContext);
+    trackBookingFormOpen(effectiveExperienceId || requestType || 'private', { ...trackingContext, questionnaire_version: 'contact_request_v1' });
+    setFormState((current) => ({ ...current, trackingContext, language: current.language || lang }));
+    setQuestionnaireOpen(true);
+  }
+
+  function regenerateMessageFromAnswers() {
+    const generated = buildContactQuestionnaireMessage({ formState, selectedFixed, lang });
+    setMessageManuallyEdited(false);
+    setFormState((current) => ({ ...current, message: generated }));
+  }
+
+  function ensureFinalMessage() {
+    if (messageManuallyEdited) return;
+    const generated = buildContactQuestionnaireMessage({ formState, selectedFixed, lang });
+    setFormState((current) => ({ ...current, message: generated }));
+  }
+
+  function validationForStep(index = stepIndex) {
+    const stepKey = questionnaireSteps[index]?.key;
+    const email = String(formState.email || '').trim();
+    const phone = String(formState.phone || '').trim();
+    if (stepKey === 'request_type' && !requestChoice) return text(lang, 'answerRequired');
+    if (stepKey === 'experience') {
+      if (requestChoice === 'fixed' && !formState.fixedExcursionId) return text(lang, 'fixedExcursionRequired');
+      if (requestChoice !== 'fixed' && !formState.experienceId) return text(lang, 'chooseExperienceOptional');
+    }
+    if (stepKey === 'date') {
+      if (isPastPublicDate(formState.requestedDate) || isPastPublicDate(formState.alternativeDate)) return text(lang, 'dateTodayOrFuture');
+    }
+    if (stepKey === 'participants' && totalPeople < 1) return text(lang, 'peopleRequired');
+    if (stepKey === 'contact') {
+      if (!email && !phone) return text(lang, 'contactRequired');
+      if ((preferredContactValue === 'whatsapp' || preferredContactValue === 'phone') && !phone) return text(lang, 'contactPhoneRequired');
+      if (preferredContactValue === 'email' && !email) return text(lang, 'contactEmailRequired');
+    }
+    if (stepKey === 'attribution') {
+      if (!selectedHeardAboutUs) return text(lang, 'heardAboutUsRequired');
+      if (selectedHeardAboutUsNeedsDetail && !selectedHeardAboutUsDetail) return text(lang, 'heardAboutUsOtherRequired');
+    }
+    if (stepKey === 'message') {
+      if (isPastPublicDate(formState.requestedDate) || isPastPublicDate(formState.alternativeDate)) return text(lang, 'dateTodayOrFuture');
+      if (!String(message || '').trim()) return text(lang, 'requestDetailsRequired');
+    }
+    return '';
+  }
+
+  function firstValidationError() {
+    for (let index = 0; index < questionnaireSteps.length; index += 1) {
+      const error = validationForStep(index);
+      if (error) return error;
+    }
+    return '';
+  }
+
+  function goNext() {
+    const error = validationForStep();
+    if (error) {
+      trackBookingSubmitValidationError(effectiveExperienceId || requestType || 'private', `questionnaire_${currentStep.key}`, currentTrackingMetadata);
+      setStepError(error);
+      return;
+    }
+    setStepError('');
+    setStepIndex((current) => {
+      const next = Math.min(current + 1, questionnaireSteps.length - 1);
+      if (questionnaireSteps[next]?.key === 'message') window.setTimeout(ensureFinalMessage, 0);
+      return next;
+    });
+  }
+
+  function goBack() {
+    setStepError('');
+    setStepIndex((current) => Math.max(0, current - 1));
+  }
+
   async function submitRequest(event) {
-    event.preventDefault();
+    event?.preventDefault?.();
     setSubmitState({ loading: false, error: '', success: '' });
 
-    const email = (formState.email || '').trim();
-    const phone = (formState.phone || '').trim();
-    const selectedDate = (formState.requestedDate || '').trim();
-    const hasMessage = (message || '').trim() && message !== text(lang, 'defaultMessage');
-    const trackedExperience = effectiveExperienceId || requestType || 'unsure';
-    const trackingMetadata = currentTrackingMetadata;
+    const email = String(formState.email || '').trim();
+    const phone = String(formState.phone || '').trim();
+    const selectedDate = String(formState.requestedDate || '').trim();
+    const hasMessage = String(message || '').trim() && message !== text(lang, 'defaultMessage');
+    const trackedExperience = effectiveExperienceId || requestType || 'private';
+    const trackingMetadata = { ...currentTrackingMetadata, questionnaire_completed: true, questionnaire_step_key: 'message' };
+    const preflightError = firstValidationError();
 
-    if (!email && !phone) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_contact', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'contactRequired'), success: '' });
-      return;
-    }
-
-    if (!totalPeople) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_people', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'peopleRequired'), success: '' });
-      return;
-    }
-
-    if (requestType === 'fixed' && !formState.fixedExcursionId) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_fixed_excursion', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'fixedDateRequired'), success: '' });
-      return;
-    }
-
-    if (!selectedHeardAboutUs) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_heard_about_us', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'heardAboutUsRequired'), success: '' });
-      return;
-    }
-
-    if (selectedHeardAboutUsNeedsDetail && !selectedHeardAboutUsDetail) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_heard_about_us_detail', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'heardAboutUsOtherRequired'), success: '' });
+    if (preflightError) {
+      trackBookingSubmitValidationError(trackedExperience, 'questionnaire_incomplete', trackingMetadata);
+      setStepError(preflightError);
+      setSubmitState({ loading: false, error: preflightError, success: '' });
       return;
     }
 
@@ -2795,37 +3060,37 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
         children,
         metadata: trackingMetadata,
         payload: {
-        customer_name: formState.name,
-        customer_email: email,
-        customer_phone: phone,
-        preferred_contact: preferredContactValue,
-        experience_id: requestType === 'fixed' ? (selectedFixed?.experience_id || 'unsure') : (experienceId || 'unsure'),
-        fixed_excursion_experience_id: selectedFixed?.experience_id || null,
-        requested_date: selectedFixed?.date || formState.requestedDate,
-        alternative_date: formState.alternativeDate,
-        language: formState.language || lang,
-        party_type: formState.partyType || (requestType === 'private' ? 'other' : 'group'),
-        request_type: requestType,
-        fixed_excursion_id: requestType === 'fixed' ? formState.fixedExcursionId : null,
-        adults,
-        children,
-        children_under_3: childrenUnder3Count > 0,
-        private_experience: requestType === 'private',
-        message: fullMessage,
-        heard_about_us: selectedHeardAboutUs,
-        heard_about_us_label: heardAboutUsLabel(selectedHeardAboutUs, lang),
-        heard_about_us_detail: selectedHeardAboutUsNeedsDetail ? selectedHeardAboutUsDetail : null,
-        source: 'website',
-        source_section: trackingMetadata.source_section,
-        source_cta: trackingMetadata.source_cta,
-        cta_location: trackingMetadata.cta_location,
-        selected_date: trackingMetadata.selected_date || selectedFixed?.date || formState.requestedDate || null,
-        has_fixed_excursion: trackingMetadata.has_fixed_excursion,
-        traffic_source: trackingMetadata.traffic_source,
-        utm_source: trackingMetadata.utm_source,
-        utm_medium: trackingMetadata.utm_medium,
-        utm_campaign: trackingMetadata.utm_campaign,
-        utm_content: trackingMetadata.utm_content
+          customer_name: formState.name,
+          customer_email: email,
+          customer_phone: phone,
+          preferred_contact: preferredContactValue,
+          experience_id: requestType === 'fixed' ? (selectedFixed?.experience_id || 'unsure') : (experienceId || 'unsure'),
+          fixed_excursion_experience_id: selectedFixed?.experience_id || null,
+          requested_date: selectedFixed?.date || formState.requestedDate,
+          alternative_date: formState.alternativeDate,
+          language: formState.language || lang,
+          party_type: formState.partyType || (requestType === 'private' ? 'other' : 'group'),
+          request_type: requestType,
+          fixed_excursion_id: requestType === 'fixed' ? formState.fixedExcursionId : null,
+          adults,
+          children,
+          children_under_3: childrenUnder3Count > 0,
+          private_experience: requestType === 'private',
+          message: fullMessage,
+          heard_about_us: selectedHeardAboutUs,
+          heard_about_us_label: heardAboutUsLabel(selectedHeardAboutUs, lang),
+          heard_about_us_detail: selectedHeardAboutUsNeedsDetail ? selectedHeardAboutUsDetail : null,
+          source: 'website',
+          source_section: trackingMetadata.source_section,
+          source_cta: trackingMetadata.source_cta,
+          cta_location: trackingMetadata.cta_location,
+          selected_date: trackingMetadata.selected_date || selectedFixed?.date || formState.requestedDate || null,
+          has_fixed_excursion: trackingMetadata.has_fixed_excursion,
+          traffic_source: trackingMetadata.traffic_source,
+          utm_source: trackingMetadata.utm_source,
+          utm_medium: trackingMetadata.utm_medium,
+          utm_campaign: trackingMetadata.utm_campaign,
+          utm_content: trackingMetadata.utm_content
         }
       });
       setSubmitState({ loading: false, error: '', success: text(lang, 'requestSent') });
@@ -2834,183 +3099,240 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     }
   }
 
-
-  function validateSelectedAttributionForDirectContact(trackedExperience, trackingMetadata) {
-    if (!selectedHeardAboutUs) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_heard_about_us', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'heardAboutUsRequired'), success: '' });
-      return false;
-    }
-    if (selectedHeardAboutUsNeedsDetail && !selectedHeardAboutUsDetail) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_heard_about_us_detail', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'heardAboutUsOtherRequired'), success: '' });
-      return false;
-    }
-    return true;
-  }
-
   function openFormWhatsapp() {
-    const trackedExperience = effectiveExperienceId || requestType || 'unsure';
-    if (!validateSelectedAttributionForDirectContact(trackedExperience, currentTrackingMetadata)) return;
-    trackContactClick('whatsapp', 'booking_modal', { ...currentTrackingMetadata, source_cta: 'whatsapp_direct' });
+    const trackedExperience = effectiveExperienceId || requestType || 'private';
+    const error = firstValidationError();
+    if (error) {
+      trackBookingSubmitValidationError(trackedExperience, 'questionnaire_incomplete_whatsapp', currentTrackingMetadata);
+      setStepError(error);
+      setSubmitState({ loading: false, error, success: '' });
+      return;
+    }
+    trackContactClick('whatsapp', 'questionnaire_modal', { ...currentTrackingMetadata, source_cta: 'whatsapp_direct', questionnaire_completed: true });
     if (typeof window !== 'undefined') {
-      window.open(`https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(selectedHeardAboutUs, selectedHeardAboutUsDetail, lang))}`, '_blank', 'noopener,noreferrer');
+      window.open(`https://wa.me/${contact.phoneWa}?text=${encode(fullMessage)}`, '_blank', 'noopener,noreferrer');
     }
   }
+
+  function renderStepFields() {
+    switch (currentStep.key) {
+      case 'request_type':
+        return (
+          <div className="questionnaire-choice-grid" role="radiogroup" aria-label={text(lang, 'requestMode')}>
+            {[['private', text(lang, 'privateExcursion')], ['fixed', text(lang, 'fixedExcursion')], ['unsure', text(lang, 'notSure')]].map(([value, label]) => (
+              <button key={value} type="button" className={`questionnaire-choice ${requestChoice === value ? 'active' : ''}`} onClick={() => updateRequestType(value)} aria-pressed={requestChoice === value}>{label}</button>
+            ))}
+          </div>
+        );
+      case 'experience':
+        return (
+          <div className="questionnaire-field-stack">
+            {requestChoice === 'fixed' ? (
+              <>
+                <label className="field-label" htmlFor="questionnaireFixedExcursion">{text(lang, 'chooseFixedExcursion')}</label>
+                <select id="questionnaireFixedExcursion" value={formState.fixedExcursionId || ''} onChange={(event) => updateFixedExcursion(event.target.value)}>
+                  <option value="">{text(lang, 'chooseFixedExcursion')}</option>
+                  {fixedExcursions.map((item) => <option key={item.id} value={item.id}>{fixedExcursionLabel(item, lang)} · {text(lang, 'placesRemaining')} {item.places_remaining}/{item.capacity}</option>)}
+                </select>
+                {fixedExcursions.length === 0 && <p className="small-note">{text(lang, 'noFixedExcursions')}</p>}
+              </>
+            ) : (
+              <>
+                <label className="field-label" htmlFor="questionnaireExperience">{text(lang, 'selectedExperience')}</label>
+                <select id="questionnaireExperience" value={experienceId} onChange={(event) => update('experienceId', event.target.value)}>
+                  <option value="">{text(lang, 'selectExperience')}</option>
+                  {experiences.map((experience) => <option value={experience.id} key={experience.id}>{experience.title}</option>)}
+                  <option value="unsure">{text(lang, 'notSure')}</option>
+                </select>
+              </>
+            )}
+          </div>
+        );
+      case 'date':
+        return (
+          <div className="questionnaire-field-stack">
+            {selectedFixed && <p className="small-note">{text(lang, 'fixedExcursion')}: {fixedExcursionLabel(selectedFixed, lang)} · {adminExperienceLabel(selectedFixed.experience_id, lang)}</p>}
+            {requestType === 'private' && (
+              <div className="form-two-cols">
+                <div>
+                  <label className="field-label" htmlFor="questionnaireRequestedDate">{text(lang, 'requestedDate')}</label>
+                  <input id="questionnaireRequestedDate" type="date" min={todayMinDate} value={formState.requestedDate || ''} onChange={(event) => update('requestedDate', event.target.value)} />
+                </div>
+                <div>
+                  <label className="field-label" htmlFor="questionnaireAlternativeDate">{text(lang, 'alternativeDate')}</label>
+                  <input id="questionnaireAlternativeDate" type="date" min={todayMinDate} value={formState.alternativeDate || ''} onChange={(event) => update('alternativeDate', event.target.value)} />
+                </div>
+              </div>
+            )}
+            {requestType === 'private' && <p className="small-note">{text(lang, 'noDateYet')}</p>}
+          </div>
+        );
+      case 'participants':
+        return (
+          <div className="questionnaire-field-stack">
+            <label className="field-label" htmlFor="questionnairePartyType">{text(lang, 'partyType')}</label>
+            <select id="questionnairePartyType" value={formState.partyType || 'solo'} onChange={(event) => update('partyType', event.target.value)}>
+              <option value="solo">{text(lang, 'soloTraveler')}</option>
+              <option value="couple">{lang === 'it' ? 'Coppia' : 'Couple'}</option>
+              <option value="family">{lang === 'it' ? 'Famiglia' : 'Family'}</option>
+              <option value="group">{lang === 'it' ? 'Gruppo' : 'Group'}</option>
+              <option value="company">{lang === 'it' ? 'Azienda' : 'Company'}</option>
+              <option value="school">{lang === 'it' ? 'Scuola' : 'School'}</option>
+              <option value="other">{lang === 'it' ? 'Altro' : 'Other'}</option>
+            </select>
+            <div className="form-two-cols people-count-grid">
+              <div>
+                <label className="field-label" htmlFor="questionnaireAdults">{text(lang, 'adults')}</label>
+                <input id="questionnaireAdults" type="number" min="0" value={formState.adults || ''} onChange={(event) => update('adults', event.target.value)} />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="questionnaireChildren">{text(lang, 'childrenCount')}</label>
+                <input id="questionnaireChildren" type="number" min="0" value={formState.children || ''} onChange={(event) => update('children', event.target.value)} />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="questionnaireChildrenUnder3">{text(lang, 'childrenUnder3')}</label>
+                <input id="questionnaireChildrenUnder3" type="number" min="0" max={children || undefined} value={formState.childrenUnder3Count || '0'} onChange={(event) => update('childrenUnder3Count', event.target.value)} />
+              </div>
+              <div className="people-summary">
+                <strong>{text(lang, 'totalPeople')}</strong>
+                <span>{totalPeople}</span>
+              </div>
+            </div>
+            {over12 && <p className="form-status warning" role="status">{text(lang, 'contactGuideOver12')}</p>}
+          </div>
+        );
+      case 'contact':
+        return (
+          <div className="questionnaire-field-stack">
+            <label className="field-label" htmlFor="questionnaireName">{text(lang, 'name')}</label>
+            <input id="questionnaireName" type="text" value={formState.name || ''} onChange={(event) => update('name', event.target.value)} autoComplete="name" />
+            <div className="form-two-cols">
+              <div>
+                <label className="field-label" htmlFor="questionnairePhone">{text(lang, 'phone')}</label>
+                <input id="questionnairePhone" type="tel" value={formState.phone || ''} onChange={(event) => update('phone', event.target.value)} autoComplete="tel" />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="questionnaireEmail">{text(lang, 'contactEmail')}</label>
+                <input id="questionnaireEmail" type="email" value={formState.email || ''} onChange={(event) => update('email', event.target.value)} autoComplete="email" />
+              </div>
+            </div>
+            <div className="form-two-cols">
+              <div>
+                <label className="field-label" htmlFor="questionnairePreferred">{text(lang, 'preferredContact')}</label>
+                <select id="questionnairePreferred" value={preferredContactValue} onChange={(event) => update('preferredContact', event.target.value)}>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="phone">{lang === 'it' ? 'Telefono' : 'Phone'}</option>
+                  <option value="email">Email</option>
+                </select>
+              </div>
+              <div>
+                <label className="field-label" htmlFor="questionnaireLanguage">{text(lang, 'preferredLanguage')}</label>
+                <select id="questionnaireLanguage" value={formState.language || lang} onChange={(event) => update('language', event.target.value)}>
+                  <option value="it">Italiano</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        );
+      case 'attribution':
+        return (
+          <div className="questionnaire-field-stack">
+            <label className="field-label" htmlFor="questionnaireHeardAboutUs">{text(lang, 'heardAboutUs')}</label>
+            <ContactAttributionSelect id="questionnaireHeardAboutUs" lang={lang} value={formState.heardAboutUs || ''} onChange={(value) => update('heardAboutUs', value)} />
+            {selectedHeardAboutUsNeedsDetail && (
+              <label className="field-label full" htmlFor="questionnaireHeardAboutUsDetail">
+                {text(lang, 'heardAboutUsOtherLabel')}
+                <textarea
+                  id="questionnaireHeardAboutUsDetail"
+                  value={formState.heardAboutUsDetail || ''}
+                  onChange={(event) => update('heardAboutUsDetail', event.target.value)}
+                  placeholder={text(lang, 'heardAboutUsOtherPlaceholder')}
+                  rows={3}
+                  maxLength={240}
+                  required
+                />
+              </label>
+            )}
+          </div>
+        );
+      case 'message':
+      default:
+        return (
+          <div className="questionnaire-field-stack">
+            <p className="small-note">{text(lang, 'finalMessageHelp')}</p>
+            <label className="field-label" htmlFor="questionnaireMessage">{text(lang, 'message')}</label>
+            <textarea id="questionnaireMessage" className="questionnaire-message-textarea" value={message} onChange={(event) => updateMessage(event.target.value)} rows={10} />
+            <button className="button secondary" type="button" onClick={regenerateMessageFromAnswers}>{text(lang, 'regenerateMessage')}</button>
+          </div>
+        );
+    }
+  }
+
+  const progressPercent = Math.round(((stepIndex + 1) / questionnaireSteps.length) * 100);
+  const progressText = text(lang, 'contactQuestionnaireProgress').replace('{current}', String(stepIndex + 1)).replace('{total}', String(questionnaireSteps.length));
+  const finalError = firstValidationError();
+  const finalActionsDisabled = Boolean(finalError || submitState.loading);
 
   return (
     <section className="section alt-section" id="contact">
-      <div className="container contact-section-grid">
+      <div className="container contact-section-grid contact-questionnaire-entry">
         <div>
           <EditableText as="h2" itemKey="contact.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formTitle')} />
           <EditableText as="p" itemKey="contact.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formIntro')} />
-          <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={null} siteContent={siteContent} contactDetails={contact} />
+          <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={openQuestionnaire} siteContent={siteContent} contactDetails={contact} />
           <a className="instagram-link" href={contact.instagram} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
         </div>
-        <form className="contact-form" onSubmit={submitRequest}>
-          <label className="field-label">{text(lang, 'requestMode')}</label>
-          <div className="mode-toggle form-mode-toggle" role="tablist" aria-label={text(lang, 'requestMode')}>
-            <button type="button" className={requestType === 'fixed' ? 'active' : ''} onClick={() => updateRequestType('fixed')}>{text(lang, 'fixedExcursion')}</button>
-            <button type="button" className={requestType === 'private' ? 'active' : ''} onClick={() => updateRequestType('private')}>{text(lang, 'privateExcursion')}</button>
-          </div>
-
-          <button className="request-details-button" type="button" onClick={openRequestDetails}>
-            {requestType === 'fixed' ? text(lang, 'viewFixedExcursionOptions') : text(lang, 'viewPrivateExcursionOptions')}
-          </button>
-
-          {requestType === 'fixed' && (
-            <>
-              <label className="field-label" htmlFor="contactFixedExcursion">{text(lang, 'chooseFixedExcursion')}</label>
-              <select id="contactFixedExcursion" value={formState.fixedExcursionId || ''} onChange={(event) => updateFixedExcursion(event.target.value)}>
-                <option value="">{text(lang, 'chooseFixedExcursion')}</option>
-                {fixedExcursions.map((item) => <option key={item.id} value={item.id}>{fixedExcursionLabel(item, lang)} · {text(lang, 'placesRemaining')} {item.places_remaining}/{item.capacity}</option>)}
-              </select>
-              {fixedExcursions.length === 0 && <p className="small-note">{text(lang, 'noFixedExcursions')}</p>}
-            </>
-          )}
-
-          <label className="field-label" htmlFor="contactName">{text(lang, 'name')}</label>
-          <input id="contactName" type="text" value={formState.name || ''} onChange={(event) => update('name', event.target.value)} autoComplete="name" />
-
-          <div className="form-two-cols">
-            <div>
-              <label className="field-label" htmlFor="contactPhone">{text(lang, 'phone')}</label>
-              <input id="contactPhone" type="tel" value={formState.phone || ''} onChange={(event) => update('phone', event.target.value)} autoComplete="tel" />
-            </div>
-            <div>
-              <label className="field-label" htmlFor="contactEmail">{text(lang, 'contactEmail')}</label>
-              <input id="contactEmail" type="email" value={formState.email || ''} onChange={(event) => update('email', event.target.value)} autoComplete="email" />
-            </div>
-          </div>
-
-          <div className="form-two-cols">
-            <div>
-              <label className="field-label" htmlFor="contactPreferred">{text(lang, 'preferredContact')}</label>
-              <select id="contactPreferred" value={preferredContactValue} onChange={(event) => update('preferredContact', event.target.value)}>
-                <option value="whatsapp">WhatsApp</option>
-                <option value="phone">{lang === 'it' ? 'Telefono' : 'Phone'}</option>
-                <option value="email">Email</option>
-              </select>
-            </div>
-            <div>
-              <label className="field-label" htmlFor="contactLanguage">{text(lang, 'preferredLanguage')}</label>
-              <select id="contactLanguage" value={formState.language || lang} onChange={(event) => update('language', event.target.value)}>
-                <option value="it">Italiano</option>
-                <option value="en">English</option>
-              </select>
-            </div>
-          </div>
-
-          <label className="field-label" htmlFor="contactHeardAboutUs">{text(lang, 'heardAboutUs')}</label>
-          <ContactAttributionSelect id="contactHeardAboutUs" lang={lang} value={formState.heardAboutUs || ''} onChange={(value) => update('heardAboutUs', value)} />
-          {selectedHeardAboutUsNeedsDetail && (
-            <label className="field-label full" htmlFor="contactHeardAboutUsDetail">
-              {text(lang, 'heardAboutUsOtherLabel')}
-              <textarea
-                id="contactHeardAboutUsDetail"
-                value={formState.heardAboutUsDetail || ''}
-                onChange={(event) => update('heardAboutUsDetail', event.target.value)}
-                placeholder={text(lang, 'heardAboutUsOtherPlaceholder')}
-                rows={3}
-                maxLength={240}
-                required
-              />
-            </label>
-          )}
-
-          <div className="form-two-cols">
-            <div>
-              <label className="field-label" htmlFor="contactPartyType">{text(lang, 'partyType')}</label>
-              <select id="contactPartyType" value={formState.partyType || 'solo'} onChange={(event) => update('partyType', event.target.value)}>
-                <option value="solo">{text(lang, 'soloTraveler')}</option>
-                <option value="couple">{lang === 'it' ? 'Coppia' : 'Couple'}</option>
-                <option value="family">{lang === 'it' ? 'Famiglia' : 'Family'}</option>
-                <option value="group">{lang === 'it' ? 'Gruppo' : 'Group'}</option>
-                <option value="company">{lang === 'it' ? 'Azienda' : 'Company'}</option>
-                <option value="school">{lang === 'it' ? 'Scuola' : 'School'}</option>
-                <option value="other">{lang === 'it' ? 'Altro' : 'Other'}</option>
-              </select>
-            </div>
-            <div>
-              <label className="field-label" htmlFor="contactExperience">{text(lang, 'selectedExperience')}</label>
-              {requestType === 'fixed' && selectedFixed ? (
-                <div className="readonly-selected-experience" id="contactExperience" role="note">
-                  <strong>{adminExperienceLabel(selectedFixed.experience_id, lang)}</strong>
-                  <span>{adminCopy(lang, 'Definita dal programma scelto', 'Defined by the selected program')}</span>
-                </div>
-              ) : (
-                <select id="contactExperience" value={experienceId} onChange={(event) => update('experienceId', event.target.value)}>
-                  <option value="">{text(lang, 'selectExperience')}</option>
-                  {experiences.map((experience) => <option value={experience.id} key={experience.id}>{experience.title}</option>)}
-                </select>
-              )}
-            </div>
-          </div>
-
-          {requestType === 'private' && (
-            <div className="form-two-cols">
-              <div>
-                <label className="field-label" htmlFor="contactRequestedDate">{text(lang, 'requestedDate')}</label>
-                <input id="contactRequestedDate" type="date" value={formState.requestedDate || ''} onChange={(event) => update('requestedDate', event.target.value)} />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="contactAlternativeDate">{text(lang, 'alternativeDate')}</label>
-                <input id="contactAlternativeDate" type="date" value={formState.alternativeDate || ''} onChange={(event) => update('alternativeDate', event.target.value)} />
-              </div>
-            </div>
-          )}
-
-          <div className="form-two-cols people-count-grid">
-            <div>
-              <label className="field-label" htmlFor="contactAdults">{text(lang, 'adults')}</label>
-              <input id="contactAdults" type="number" min="0" value={formState.adults || ''} onChange={(event) => update('adults', event.target.value)} />
-            </div>
-            <div>
-              <label className="field-label" htmlFor="contactChildren">{text(lang, 'childrenCount')}</label>
-              <input id="contactChildren" type="number" min="0" value={formState.children || ''} onChange={(event) => update('children', event.target.value)} />
-            </div>
-            <div>
-              <label className="field-label" htmlFor="contactChildrenUnder3">{text(lang, 'childrenUnder3')}</label>
-              <input id="contactChildrenUnder3" type="number" min="0" max={children || undefined} value={formState.childrenUnder3Count || '0'} onChange={(event) => update('childrenUnder3Count', event.target.value)} />
-            </div>
-            <div className="people-summary">
-              <strong>{text(lang, 'totalPeople')}</strong>
-              <span>{totalPeople}</span>
-            </div>
-          </div>
-          {over12 && <p className="form-status warning" role="status">{text(lang, 'contactGuideOver12')}</p>}
-
-          <label className="field-label" htmlFor="contactMessage">{text(lang, 'message')}</label>
-          <textarea id="contactMessage" value={message} onChange={(event) => update('message', event.target.value)} />
-          {selectedFixed && <p className="small-note">{text(lang, 'fixedExcursion')}: {fixedExcursionLabel(selectedFixed, lang)} · {adminExperienceLabel(selectedFixed.experience_id, lang)}</p>}
-          {submitState.error && <p className="form-status error" role="alert">{submitState.error}</p>}
+        <article className="contact-form questionnaire-start-card">
+          <span className="kicker">{text(lang, 'formKicker')}</span>
+          <h3>{text(lang, 'prepareYourRequest')}</h3>
+          <p>{text(lang, 'contactQuestionnaireIntro')}</p>
+          <button className="request-action-button request-action-button-primary questionnaire-start-button" type="button" onClick={openQuestionnaire}>{text(lang, 'startQuestionnaire')}</button>
           {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
-          <div className="request-action-row">
-            <button className="request-action-button request-action-button-primary" type="submit" disabled={submitState.loading}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitRequest')}</button>
-            <button className="request-action-button request-action-button-secondary" type="button" onClick={openFormWhatsapp}>{text(lang, 'sendWhatsapp')}</button>
-          </div>
-        </form>
+        </article>
       </div>
+
+      {questionnaireOpen && (
+        <div className="questionnaire-overlay" role="dialog" aria-modal="true" aria-labelledby="questionnaire-title">
+          <form className="questionnaire-modal" ref={modalRef} onSubmit={submitRequest}>
+            <header className="questionnaire-header">
+              <div>
+                <span className="kicker">vulcanIQ</span>
+                <h2 id="questionnaire-title">{text(lang, 'contactQuestionnaireTitle')}</h2>
+                <p>{progressText}</p>
+              </div>
+              <button className="date-modal-close" type="button" onClick={attemptCloseQuestionnaire} aria-label={text(lang, 'close')}>{text(lang, 'close')}</button>
+            </header>
+            <div className="questionnaire-progress" aria-label={progressText} role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={progressPercent}>
+              <span style={{ width: `${progressPercent}%` }} />
+            </div>
+            <div className="questionnaire-option-actions">
+              <button className="button secondary" type="button" onClick={openPrivateOptions}>{text(lang, 'viewPrivateExcursionOptions')}</button>
+              <button className="button secondary" type="button" onClick={openFixedOptions}>{text(lang, 'viewFixedExcursionOptions')}</button>
+            </div>
+            <main className="questionnaire-body">
+              <section className="questionnaire-step" aria-live="polite">
+                <h3>{currentStep.title}</h3>
+                {renderStepFields()}
+                {stepError && <p className="form-status error" role="alert">{stepError}</p>}
+                {submitState.error && currentStep.key === 'message' && <p className="form-status error" role="alert">{submitState.error}</p>}
+                {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
+              </section>
+            </main>
+            <footer className="questionnaire-footer">
+              <button className="button secondary" type="button" onClick={goBack} disabled={stepIndex === 0}>{text(lang, 'back')}</button>
+              {currentStep.key !== 'message' ? (
+                <button className="request-action-button request-action-button-primary" type="button" onClick={goNext}>{text(lang, 'next')}</button>
+              ) : (
+                <div className="questionnaire-final-actions">
+                  <button className="request-action-button request-action-button-primary" type="submit" disabled={finalActionsDisabled}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitRequest')}</button>
+                  <button className="request-action-button request-action-button-secondary" type="button" onClick={openFormWhatsapp} disabled={finalActionsDisabled}>{text(lang, 'sendWhatsapp')}</button>
+                </div>
+              )}
+            </footer>
+          </form>
+        </div>
+      )}
 
       {fixedOptionsOpen && (
         <div className="date-modal-overlay request-options-overlay" role="dialog" aria-modal="true" aria-labelledby="fixed-options-title" onClick={() => setFixedOptionsOpen(false)}>
@@ -3027,6 +3349,16 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
               <strong>{monthLabel(detailsMonthDate, lang)}</strong>
               <button type="button" onClick={() => changeDetailsMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
             </div>
+            {fixedExcursions.filter((item) => sameCalendarMonth(item.date, detailsMonthDate)).length > 0 && (
+              <div className="request-fixed-list">
+                {fixedExcursions.filter((item) => sameCalendarMonth(item.date, detailsMonthDate)).map((item) => (
+                  <button className="request-fixed-option" type="button" key={item.id} onClick={() => { updateFixedExcursion(item.id); setFixedOptionsOpen(false); }}>
+                    <strong>{fixedExcursionLabel(item, lang)}</strong>
+                    <span>{adminExperienceLabel(item.experience_id, lang)} · {text(lang, 'placesRemaining')} {item.places_remaining}/{item.capacity}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {fixedOptions.length ? (
               <div className="request-leaflet-grid">
                 {fixedOptions.map((option) => {
@@ -3100,7 +3432,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
                 </dl>
                 <div className="request-action-row experience-modal-actions">
                   <button className="request-action-button request-action-button-primary" type="button" onClick={() => usePrivateExperienceInRequest(selectedPrivateExperience)}>{text(lang, 'useThisOptionInRequest')}</button>
-                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedPrivateExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedPrivateExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: { ...buildBookingTrackingContext({ experienceId: selectedPrivateExperience?.id || '', requestType: 'private', sourceSection: 'today', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), ...selectedHeardAboutUsMetadata }, defaultSource: formState.heardAboutUs || '', defaultDetail: formState.heardAboutUsDetail || '', confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}`, afterConfirm: (selectedMetadata, source, detail) => setFormState((current) => ({ ...current, heardAboutUs: source || current.heardAboutUs, heardAboutUsDetail: detail || current.heardAboutUsDetail })) })}>{text(lang, 'sendWhatsapp')}</a>
+                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedPrivateExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedPrivateExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: { ...buildBookingTrackingContext({ experienceId: selectedPrivateExperience?.id || '', requestType: 'private', sourceSection: 'contact_questionnaire', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), ...selectedHeardAboutUsMetadata }, defaultSource: formState.heardAboutUs || '', defaultDetail: formState.heardAboutUsDetail || '', confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}`, afterConfirm: (selectedMetadata, source, detail) => setFormState((current) => ({ ...current, heardAboutUs: source || current.heardAboutUs, heardAboutUsDetail: detail || current.heardAboutUsDetail })) })}>{text(lang, 'sendWhatsapp')}</a>
                 </div>
               </div>
             </div>
@@ -3122,6 +3454,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
                 <iframe className="leaflet-fullscreen-frame" src={activeLeaflet.leaflet.file_url} title={activeLeaflet.label || text(lang, 'openProgram')} />
               )}
             </div>
+            {activeLeaflet.fixedExcursion && <button className="request-action-button request-action-button-primary" type="button" onClick={() => { updateFixedExcursion(activeLeaflet.fixedExcursion.id); setActiveLeaflet(null); setFixedOptionsOpen(false); }}>{text(lang, 'useThisOptionInRequest')}</button>}
           </article>
         </div>
       )}
@@ -6767,15 +7100,15 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           <AnalyticsStaticPanel title={<AdminEditableText itemKey="admin.analytics.overview.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Panoramica', 'Overview')} />}>
             <AnalyticsWarningList warnings={model.warnings} />
             <div className="admin-summary-grid analytics-summary-grid">
-              <SummaryCard label={adminCopy(lang, 'Visitatori', 'Visitors')} value={model.visitors || '—'} helper={adminCopy(lang, 'ID visitatore anonimi', 'Anonymous visitor IDs')} />
-              <SummaryCard label={adminCopy(lang, 'Visualizzazioni pagina', 'Page views')} value={model.pageViews} helper="page_view" />
-              <SummaryCard label={adminCopy(lang, 'Aperture modulo', 'Form opens')} value={model.formOpens} helper="booking_form_open" />
-              <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} helper="booking_form_submit_attempt" />
-              <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model.websiteRequests} helper={adminCopy(lang, 'booking_requests source=website', 'booking_requests source=website')} />
-              <SummaryCard label={adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks')} value={model.whatsappClicks} helper="whatsapp_click" />
-              <SummaryCard label={adminCopy(lang, 'Click email', 'Email clicks')} value={model.emailClicks} helper="email_click" />
-              <SummaryCard label={adminCopy(lang, 'Conversione richieste sito', 'Website request conversion')} value={model.conversionMetrics.websiteRequestConversion} helper={adminCopy(lang, 'Richieste sito / visitatori', 'Website requests / visitors')} />
-              <SummaryCard label={adminCopy(lang, 'Tempo medio di coinvolgimento', 'Average engagement time')} value={model.averageEngagement} helper={adminCopy(lang, 'Stimato dalle sessioni anonime.', 'Estimated from anonymous sessions.')} />
+              <SummaryCard label={adminCopy(lang, 'Visitatori', 'Visitors')} value={model.visitors || '—'} />
+              <SummaryCard label={adminCopy(lang, 'Visualizzazioni pagina', 'Page views')} value={model.pageViews} />
+              <SummaryCard label={adminCopy(lang, 'Aperture modulo', 'Form opens')} value={model.formOpens} />
+              <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} />
+              <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model.websiteRequests} />
+              <SummaryCard label={adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks')} value={model.whatsappClicks} />
+              <SummaryCard label={adminCopy(lang, 'Click email', 'Email clicks')} value={model.emailClicks} />
+              <SummaryCard label={adminCopy(lang, 'Conversione richieste sito', 'Website request conversion')} value={model.conversionMetrics.websiteRequestConversion} />
+              <SummaryCard label={adminCopy(lang, 'Tempo medio di coinvolgimento', 'Average engagement time')} value={model.averageEngagement} />
             </div>
           </AnalyticsStaticPanel>
 
@@ -6847,10 +7180,10 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
               </AnalyticsSubsection>
               <AnalyticsSubsection title={adminCopy(lang, 'Conversioni principali', 'Core conversions')}>
                 <div className="admin-summary-grid analytics-mini-summary-grid">
-                  <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} helper="booking_form_submit_attempt" />
-                  <SummaryCard label={adminCopy(lang, 'Invii riusciti tracciati', 'Tracked successful submissions')} value={model.submitSuccesses} helper="booking_form_submit_success" />
-                  <SummaryCard label={adminCopy(lang, 'Errori invio', 'Submit errors')} value={model.submitErrors} helper="booking_form_submit_error" />
-                  <SummaryCard label={adminCopy(lang, 'Conversione invii', 'Tracked conversion')} value={model.conversionMetrics.trackedSubmissionConversion} helper={adminCopy(lang, 'Invii analytics / visitatori', 'Analytics successes / visitors')} />
+                  <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} />
+                  <SummaryCard label={adminCopy(lang, 'Invii riusciti tracciati', 'Tracked successful submissions')} value={model.submitSuccesses} />
+                  <SummaryCard label={adminCopy(lang, 'Errori invio', 'Submit errors')} value={model.submitErrors} />
+                  <SummaryCard label={adminCopy(lang, 'Conversione invii', 'Tracked conversion')} value={model.conversionMetrics.trackedSubmissionConversion} />
                 </div>
               </AnalyticsSubsection>
             </div>
@@ -6859,10 +7192,10 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           <AnalyticsPanel title={<AdminEditableText itemKey="admin.analytics.contactIntent.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Intento di contatto', 'Contact intent')} />}>
             <AnalyticsHelperNote>{adminCopy(lang, 'Raggruppa le azioni con cui un visitatore prova a contattare vulcanIQ senza necessariamente completare il modulo.', 'Groups the actions where a visitor tries to contact vulcanIQ without necessarily completing the form.')}</AnalyticsHelperNote>
             <div className="admin-summary-grid analytics-mini-summary-grid">
-              <SummaryCard label={adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks')} value={model.whatsappClicks} helper="whatsapp_click" />
-              <SummaryCard label={adminCopy(lang, 'Click email', 'Email clicks')} value={model.emailClicks} helper="email_click" />
-              <SummaryCard label={adminCopy(lang, 'Click telefono', 'Phone clicks')} value={model.phoneClicks} helper="phone_click" />
-              <SummaryCard label={adminCopy(lang, 'Click Google Maps', 'Google Maps clicks')} value={model.mapsClicks} helper="google_maps_click" />
+              <SummaryCard label={adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks')} value={model.whatsappClicks} />
+              <SummaryCard label={adminCopy(lang, 'Click email', 'Email clicks')} value={model.emailClicks} />
+              <SummaryCard label={adminCopy(lang, 'Click telefono', 'Phone clicks')} value={model.phoneClicks} />
+              <SummaryCard label={adminCopy(lang, 'Click Google Maps', 'Google Maps clicks')} value={model.mapsClicks} />
             </div>
             <AnalyticsSubsection title={adminCopy(lang, 'Percorsi di contatto', 'Contact paths')}>
               <AnalyticsTable
