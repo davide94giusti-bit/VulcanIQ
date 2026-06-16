@@ -7679,3 +7679,126 @@ body.modal-scroll-lock {
     font-size: 0.94rem;
   }
 }
+/* Questionnaire follow-up polish: centered desktop CTAs, hidden fixed text rows, card detail modals, compact mobile actions. */
+@media (min-width: 761px) {
+  .questionnaire-option-actions {
+    justify-content: center;
+    align-items: center;
+  }
+
+  .contact-questionnaire-entry .questionnaire-option-actions .button.secondary,
+  .questionnaire-option-actions .button.secondary {
+    flex: 0 0 auto;
+  }
+}
+
+.request-options-modal .request-fixed-list,
+.request-options-modal .request-fixed-option,
+.request-options-modal .fixed-excursion-list,
+.request-options-modal .fixed-excursion-option,
+.request-options-modal .calendar-detail-list,
+.request-options-modal .calendar-detail-item,
+.request-options-modal .date-modal-fixed-card,
+.request-options-modal .selected-excursion-list {
+  display: none !important;
+}
+
+.request-private-detail-overlay {
+  padding: clamp(16px, 3vw, 36px) !important;
+  place-items: center !important;
+  align-items: center !important;
+  overflow-y: auto !important;
+}
+
+.request-private-detail-modal {
+  width: min(100%, 980px) !important;
+  min-height: 0 !important;
+  max-height: calc(100dvh - clamp(32px, 6vw, 72px)) !important;
+  border-radius: clamp(24px, 3vw, 34px) !important;
+  padding: clamp(18px, 3vw, 32px) !important;
+  overflow-y: auto !important;
+  background: var(--paper) !important;
+}
+
+.request-private-detail-modal .experience-modal-header {
+  position: static !important;
+  margin: 0 0 clamp(16px, 2.5vw, 24px) !important;
+  padding: 0 0 14px !important;
+  background: transparent !important;
+}
+
+.request-private-detail-modal .experience-detail-content {
+  width: 100% !important;
+  max-width: 920px !important;
+  margin-inline: auto !important;
+}
+
+.request-leaflet-overlay .leaflet-fullscreen-modal {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.request-leaflet-overlay .request-action-button {
+  width: fit-content;
+  max-width: calc(100% - 28px);
+  min-height: 48px;
+  margin: 10px auto calc(14px + env(safe-area-inset-bottom));
+  padding: 0 24px;
+  border-radius: 999px;
+  justify-self: center;
+  line-height: 1.1;
+}
+
+@media (max-width: 760px) {
+  .questionnaire-header .date-modal-close,
+  .request-options-modal .date-modal-close,
+  .request-fixed-detail-modal .date-modal-close,
+  .leaflet-fullscreen-header .date-modal-close,
+  .request-private-detail-modal .experience-modal-close,
+  .request-private-detail-modal .date-modal-close {
+    width: auto;
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 16px;
+    border-radius: 999px;
+    align-self: flex-start;
+    justify-self: start;
+  }
+
+  .request-private-detail-overlay {
+    padding: 12px !important;
+    place-items: center !important;
+    align-items: center !important;
+  }
+
+  .request-private-detail-modal {
+    width: calc(100% - 8px) !important;
+    min-height: 0 !important;
+    max-height: calc(100dvh - 24px) !important;
+    border-radius: 24px !important;
+    padding: 16px !important;
+  }
+
+  .request-private-detail-modal .experience-detail-content {
+    grid-template-columns: 1fr !important;
+    gap: 18px !important;
+  }
+
+  .request-private-detail-modal .experience-modal-image {
+    min-height: 190px;
+    border-radius: 20px;
+  }
+
+  .request-leaflet-overlay .leaflet-fullscreen-body {
+    padding-bottom: 8px;
+  }
+
+  .request-leaflet-overlay .request-action-button {
+    width: fit-content !important;
+    max-width: calc(100% - 24px);
+    min-height: 46px;
+    margin: 8px auto calc(18px + env(safe-area-inset-bottom));
+    padding: 0 20px;
+    font-size: clamp(0.92rem, 4vw, 1.02rem);
+    box-shadow: 0 12px 28px rgba(240, 107, 79, 0.22);
+  }
+}
