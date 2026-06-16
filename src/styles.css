@@ -7443,3 +7443,50 @@ body.modal-scroll-lock {
     padding-bottom: 28px;
   }
 }
+
+/* Contact questionnaire option buttons: match primary contact CTA color treatment. */
+.questionnaire-option-actions .button.secondary {
+  background: linear-gradient(135deg, var(--blue), var(--night-2));
+  border-color: rgba(71, 103, 132, 0.18);
+  color: #fff;
+  box-shadow: 0 14px 30px rgba(19, 36, 59, 0.18);
+}
+.questionnaire-option-actions .button.secondary:hover,
+.questionnaire-option-actions .button.secondary:focus-visible {
+  background: linear-gradient(135deg, var(--night-2), var(--blue));
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* The questionnaire option browsers and their nested detail views are full-screen, including desktop. */
+.request-options-overlay,
+.request-fixed-detail-overlay,
+.request-private-detail-overlay {
+  padding: 0;
+  place-items: stretch;
+  align-items: stretch;
+}
+.request-options-modal,
+.request-fixed-detail-modal,
+.request-private-detail-modal {
+  width: 100%;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+  padding: clamp(18px, 3vw, 42px);
+}
+.request-fixed-detail-overlay,
+.request-private-detail-overlay {
+  z-index: 1600;
+}
+.request-fixed-detail-modal .date-modal-header,
+.request-private-detail-modal .experience-modal-header {
+  margin-bottom: clamp(18px, 3vw, 28px);
+}
+.request-fixed-detail-card {
+  width: min(100%, 980px);
+  margin-inline: auto;
+}
+.request-private-detail-modal .experience-detail-content {
+  width: min(100%, 1120px);
+  margin-inline: auto;
+}

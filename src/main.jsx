@@ -275,6 +275,8 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     chooseExperienceOptional: 'Scegli un’esperienza o indica che non sei sicuro.',
     contactPhoneRequired: 'Inserisci un numero di telefono per essere ricontattato via WhatsApp o telefono.',
     contactEmailRequired: 'Inserisci un indirizzo email per essere ricontattato via email.',
+    contactPhoneInvalid: 'Inserisci un numero di telefono valido usando solo numeri e, se necessario, un + iniziale.',
+    contactEmailInvalid: 'Inserisci un indirizzo email valido con @.',
     answerRequired: 'Rispondi a questa domanda per continuare.',
     fixedExcursionRequired: 'Scegli un’escursione fissa disponibile oppure seleziona “Non sono sicuro”.',
     finalMessageHelp: 'Questo messaggio è generato dalle tue risposte. Puoi modificarlo prima di inviarlo.',
@@ -531,6 +533,8 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     chooseExperienceOptional: 'Choose an experience or say you are not sure.',
     contactPhoneRequired: 'Enter a phone number so we can contact you by WhatsApp or phone.',
     contactEmailRequired: 'Enter an email address so we can contact you by email.',
+    contactPhoneInvalid: 'Enter a valid phone number using only numbers and, if needed, one leading +.',
+    contactEmailInvalid: 'Enter a valid email address containing @.',
     answerRequired: 'Answer this question to continue.',
     fixedExcursionRequired: 'Choose an available fixed excursion or select “I am not sure”.',
     finalMessageHelp: 'This message is generated from your answers. You can edit it before sending.',
@@ -1118,6 +1122,40 @@ function isPastPublicDate(value) {
   const clean = String(value || '').trim();
   if (!clean) return false;
   return clean < todayIso();
+}
+
+function sanitizePublicPhoneInput(value) {
+  const raw = String(value || '');
+  const hasLeadingPlus = raw.trimStart().startsWith('+');
+  const digits = raw.replace(/\D/g, '');
+  return `${hasLeadingPlus ? '+' : ''}${digits}`;
+}
+
+function isValidPublicPhone(value) {
+  const clean = sanitizePublicPhoneInput(value);
+  if (!clean) return true;
+  const digits = clean.replace(/\D/g, '');
+  return digits.length >= 5 && /^\+?\d+$/.test(clean);
+}
+
+function isValidPublicEmail(value) {
+  const clean = String(value || '').trim();
+  if (!clean) return true;
+  return clean.includes('@') && !/\s/.test(clean) && clean.indexOf('@') > 0 && clean.indexOf('@') < clean.length - 1;
+}
+
+function preventInvalidPhoneInput(event) {
+  const data = event.data;
+  if (!data) return;
+  if (!/^[0-9+]$/.test(data)) {
+    event.preventDefault();
+    return;
+  }
+  if (data === '+') {
+    const value = String(event.currentTarget.value || '');
+    const start = event.currentTarget.selectionStart ?? value.length;
+    if (start !== 0 || value.includes('+')) event.preventDefault();
+  }
 }
 
 function safeParticipantNumber(value, fallback = 0) {
@@ -2745,6 +2783,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const [detailsMonthDate, setDetailsMonthDate] = useState(startOfMonth(new Date()));
   const [activeLeaflet, setActiveLeaflet] = useState(null);
   const [selectedPrivateExperience, setSelectedPrivateExperience] = useState(null);
+  const [selectedFixedExcursionDetails, setSelectedFixedExcursionDetails] = useState(null);
 
   const questionnaireSteps = [
     { key: 'request_type', title: text(lang, 'requestTypeQuestion') },
@@ -2775,7 +2814,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     return () => { active = false; };
   }, []);
 
-  useBodyScrollLock(Boolean(questionnaireOpen || fixedOptionsOpen || privateOptionsOpen || activeLeaflet || selectedPrivateExperience));
+  useBodyScrollLock(Boolean(questionnaireOpen || fixedOptionsOpen || privateOptionsOpen || activeLeaflet || selectedPrivateExperience || selectedFixedExcursionDetails));
 
   useEffect(() => {
     if (!questionnaireOpen) return undefined;
@@ -2791,6 +2830,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     function closeOnEscape(event) {
       if (event.key !== 'Escape') return;
       if (activeLeaflet) { setActiveLeaflet(null); return; }
+      if (selectedFixedExcursionDetails) { setSelectedFixedExcursionDetails(null); return; }
       if (selectedPrivateExperience) { setSelectedPrivateExperience(null); return; }
       if (fixedOptionsOpen) { setFixedOptionsOpen(false); return; }
       if (privateOptionsOpen) { setPrivateOptionsOpen(false); return; }
@@ -2798,7 +2838,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     }
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [activeLeaflet, selectedPrivateExperience, fixedOptionsOpen, privateOptionsOpen, questionnaireOpen, formState]);
+  }, [activeLeaflet, selectedFixedExcursionDetails, selectedPrivateExperience, fixedOptionsOpen, privateOptionsOpen, questionnaireOpen, formState]);
 
   const fixedOptions = useMemo(() => monthlyOptionsLeaflets({ leaflets, fixedExcursions, monthDate: detailsMonthDate, lang }), [leaflets, fixedExcursions, detailsMonthDate, lang]);
   const canGoPreviousDetailsMonth = isCurrentOrFutureMonth(new Date(detailsMonthDate.getFullYear(), detailsMonthDate.getMonth() - 1, 1));
@@ -2986,6 +3026,8 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       if (!email && !phone) return text(lang, 'contactRequired');
       if ((preferredContactValue === 'whatsapp' || preferredContactValue === 'phone') && !phone) return text(lang, 'contactPhoneRequired');
       if (preferredContactValue === 'email' && !email) return text(lang, 'contactEmailRequired');
+      if (phone && !isValidPublicPhone(phone)) return text(lang, 'contactPhoneInvalid');
+      if (email && !isValidPublicEmail(email)) return text(lang, 'contactEmailInvalid');
     }
     if (stepKey === 'attribution') {
       if (!selectedHeardAboutUs) return text(lang, 'heardAboutUsRequired');
@@ -3209,11 +3251,11 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
             <div className="form-two-cols">
               <div>
                 <label className="field-label" htmlFor="questionnairePhone">{text(lang, 'phone')}</label>
-                <input id="questionnairePhone" type="tel" value={formState.phone || ''} onChange={(event) => update('phone', event.target.value)} autoComplete="tel" />
+                <input id="questionnairePhone" type="tel" inputMode="tel" pattern="^\+?[0-9]*$" value={formState.phone || ''} onBeforeInput={preventInvalidPhoneInput} onChange={(event) => update('phone', sanitizePublicPhoneInput(event.target.value))} autoComplete="tel" />
               </div>
               <div>
                 <label className="field-label" htmlFor="questionnaireEmail">{text(lang, 'contactEmail')}</label>
-                <input id="questionnaireEmail" type="email" value={formState.email || ''} onChange={(event) => update('email', event.target.value)} autoComplete="email" />
+                <input id="questionnaireEmail" type="email" inputMode="email" value={formState.email || ''} onChange={(event) => update('email', event.target.value)} onBlur={(event) => update('email', String(event.target.value || '').trim())} autoComplete="email" />
               </div>
             </div>
             <div className="form-two-cols">
@@ -3352,7 +3394,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
             {fixedExcursions.filter((item) => sameCalendarMonth(item.date, detailsMonthDate)).length > 0 && (
               <div className="request-fixed-list">
                 {fixedExcursions.filter((item) => sameCalendarMonth(item.date, detailsMonthDate)).map((item) => (
-                  <button className="request-fixed-option" type="button" key={item.id} onClick={() => { updateFixedExcursion(item.id); setFixedOptionsOpen(false); }}>
+                  <button className="request-fixed-option" type="button" key={item.id} onClick={() => setSelectedFixedExcursionDetails(item)}>
                     <strong>{fixedExcursionLabel(item, lang)}</strong>
                     <span>{adminExperienceLabel(item.experience_id, lang)} · {text(lang, 'placesRemaining')} {item.places_remaining}/{item.capacity}</span>
                   </button>
@@ -3414,6 +3456,38 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
         </div>
       )}
 
+
+      {selectedFixedExcursionDetails && (
+        <div className="date-modal-overlay request-fixed-detail-overlay" role="dialog" aria-modal="true" aria-labelledby="request-fixed-detail-title" onClick={() => setSelectedFixedExcursionDetails(null)}>
+          <article className="date-modal request-fixed-detail-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="date-modal-header">
+              <div>
+                <span className="micro-label details-label">{text(lang, 'fixedExcursion')}</span>
+                <h2 id="request-fixed-detail-title">{fixedExcursionTitle(selectedFixedExcursionDetails, lang)}</h2>
+                <p>{fixedExcursionLabel(selectedFixedExcursionDetails, lang)}</p>
+              </div>
+              <button className="date-modal-close" type="button" onClick={() => setSelectedFixedExcursionDetails(null)}>{text(lang, 'close')}</button>
+            </div>
+            <div className="date-modal-content fixed-date-content">
+              <article className="date-modal-fixed-card request-fixed-detail-card">
+                <FormattedDescription textValue={fixedExcursionField(selectedFixedExcursionDetails, 'description', lang) || selectedFixedExcursionDetails[`note_${lang}`] || selectedFixedExcursionDetails.note_it || selectedFixedExcursionDetails.note_en || experienceById(selectedFixedExcursionDetails.experience_id).summary[lang]} />
+                <dl className="public-details-grid date-modal-details-grid">
+                  <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(selectedFixedExcursionDetails.date, lang)}</dd></div>
+                  <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(selectedFixedExcursionDetails.experience_id, lang)}</dd></div>
+                  <MeetingPointDetailCard item={selectedFixedExcursionDetails} lang={lang} />
+                  {fixedExcursionField(selectedFixedExcursionDetails, 'difficulty', lang) && <div><dt>{text(lang, 'difficulty')}</dt><dd>{fixedExcursionField(selectedFixedExcursionDetails, 'difficulty', lang)}</dd></div>}
+                  {fixedExcursionField(selectedFixedExcursionDetails, 'price_note', lang) && <div><dt>{text(lang, 'priceNote')}</dt><dd>{fixedExcursionField(selectedFixedExcursionDetails, 'price_note', lang)}</dd></div>}
+                  <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{selectedFixedExcursionDetails.places_remaining}/{selectedFixedExcursionDetails.capacity}</dd></div>
+                </dl>
+                <BlockedDatesAttachment item={selectedFixedExcursionDetails} lang={lang} onOpenFile={(file, label) => setActiveLeaflet({ leaflet: file, label: label || text(lang, 'openExcursionProgram'), fixedExcursion: selectedFixedExcursionDetails })} />
+                <div className="request-action-row date-modal-actions">
+                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => { updateFixedExcursion(selectedFixedExcursionDetails.id); setSelectedFixedExcursionDetails(null); setFixedOptionsOpen(false); }}>{text(lang, 'useThisOptionInRequest')}</button>
+                </div>
+              </article>
+            </div>
+          </article>
+        </div>
+      )}
       {selectedPrivateExperience && (
         <div className="experience-modal-overlay request-private-detail-overlay" role="dialog" aria-modal="true" aria-labelledby="request-private-detail-title" onClick={() => setSelectedPrivateExperience(null)}>
           <article className="experience-modal request-private-detail-modal" onClick={(event) => event.stopPropagation()}>
