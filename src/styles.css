@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   color-scheme: light;
   --ink: #18212b;
   --night: #0d1626;
@@ -630,7 +630,7 @@ textarea { min-height: 150px; resize: vertical; }
 .dark-card h2, .dark-card p, .dark-card li { color: #fff; }
 .check-list { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 10px; }
 .check-list li { position: relative; padding-left: 24px; color: var(--basalt); }
-.check-list li::before { content: "✓"; position: absolute; left: 0; top: 0; color: var(--lava); font-weight: 900; }
+.check-list li::before { content: "Ô£ô"; position: absolute; left: 0; top: 0; color: var(--lava); font-weight: 900; }
 .review-list { display: grid; gap: 12px; }
 blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cream); color: var(--basalt); font-size: 0.95rem; }
 .image-strip-section { padding-top: 0; }
@@ -4627,7 +4627,7 @@ body.modal-scroll-lock { overflow: hidden; }
 }
 
 .today-requests-details[open] > summary::after {
-  content: "–";
+  content: "ÔÇô";
 }
 
 .today-requests-collapsed-body {
@@ -5494,7 +5494,7 @@ body.modal-scroll-lock {
 }
 
 .finance-detail-section summary::after {
-  content: "⌄";
+  content: "Ôîä";
   flex: 0 0 auto;
   color: var(--ash);
   font-size: 1rem;
@@ -5909,7 +5909,7 @@ body.modal-scroll-lock {
 }
 
 .finance-collapsible-panel > summary.finance-collapsible-summary::after {
-  content: "⌄";
+  content: "Ôîä";
   grid-column: 3;
   grid-row: 1;
   align-self: center;
@@ -6414,7 +6414,7 @@ body.modal-scroll-lock {
 }
 
 .analytics-collapsible-summary::after {
-  content: "⌄";
+  content: "Ôîä";
   display: grid;
   width: 2.35rem;
   height: 2.35rem;
@@ -7594,5 +7594,88 @@ body.modal-scroll-lock {
     width: 100%;
     min-height: 82px;
     padding-inline: 18px;
+  }
+}
+
+/* Follow-up questionnaire option modal refinement: compact mobile CTAs, card-style private detail modal, hidden fixed-excursion text rows. */
+.request-options-modal .request-fixed-list,
+.request-options-modal .request-fixed-option,
+.request-options-modal .fixed-excursion-list,
+.request-options-modal .fixed-excursion-option {
+  display: none !important;
+}
+
+.request-private-detail-overlay {
+  padding: clamp(14px, 3vw, 32px);
+  place-items: center;
+  align-items: center;
+  overflow-y: auto;
+}
+
+.request-private-detail-modal {
+  width: min(100%, 1120px);
+  min-height: 0;
+  max-height: calc(100dvh - clamp(28px, 6vw, 64px));
+  border-radius: clamp(24px, 3vw, 34px);
+  padding: clamp(18px, 3vw, 34px);
+  background: var(--paper);
+  overflow-y: auto;
+}
+
+.request-private-detail-modal .experience-modal-header {
+  position: static;
+  margin: 0 0 clamp(18px, 3vw, 28px);
+  padding: 0 0 14px;
+  background: transparent;
+}
+
+.request-private-detail-modal .experience-detail-content {
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
+}
+
+@media (max-width: 760px) {
+  .questionnaire-option-actions {
+    gap: 10px;
+    padding-top: 14px;
+  }
+
+  .contact-questionnaire-entry .questionnaire-option-actions .button.secondary,
+  .questionnaire-option-actions .button.secondary {
+    width: 100%;
+    min-height: 56px;
+    padding: 0 16px;
+    border-radius: 999px;
+    font-size: clamp(0.94rem, 4.1vw, 1.05rem);
+    line-height: 1.12;
+    box-shadow: 0 10px 24px rgba(7, 16, 33, 0.16);
+  }
+
+  .questionnaire-option-actions .button.secondary:hover,
+  .questionnaire-option-actions .button.secondary:focus-visible {
+    box-shadow: 0 12px 28px rgba(7, 16, 33, 0.18);
+  }
+
+  .request-private-detail-overlay {
+    padding: 14px;
+    place-items: center;
+    align-items: center;
+  }
+
+  .request-private-detail-modal {
+    width: min(100%, 720px);
+    min-height: 0;
+    max-height: calc(100dvh - 28px);
+    border-radius: 26px;
+    padding: 18px;
+  }
+}
+
+@media (max-width: 420px) {
+  .contact-questionnaire-entry .questionnaire-option-actions .button.secondary,
+  .questionnaire-option-actions .button.secondary {
+    min-height: 52px;
+    font-size: 0.94rem;
   }
 }
