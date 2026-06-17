@@ -7802,3 +7802,85 @@ body.modal-scroll-lock {
     box-shadow: 0 12px 28px rgba(240, 107, 79, 0.22);
   }
 }
+}
+
+/* Mobile questionnaire scroll and boundary refinement */
+@media (max-width: 760px) {
+  .questionnaire-overlay {
+    overflow-y: auto;
+    align-items: flex-start;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .questionnaire-modal {
+    display: block;
+    min-height: 100dvh;
+    height: auto;
+    overflow-y: visible;
+    overflow-x: hidden;
+  }
+
+  .questionnaire-header,
+  .questionnaire-footer {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .questionnaire-header {
+    align-items: stretch;
+    padding-bottom: 16px;
+  }
+
+  .questionnaire-header .date-modal-close {
+    align-self: flex-end !important;
+    justify-self: end !important;
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 40px !important;
+    padding: 0 16px !important;
+    margin: 4px 0 0 auto !important;
+  }
+
+  .questionnaire-option-actions {
+    position: static;
+    z-index: auto;
+  }
+
+  .questionnaire-body {
+    overflow: visible;
+    min-height: 0;
+    padding-inline: 18px;
+  }
+
+  .questionnaire-step,
+  .questionnaire-field-stack,
+  .questionnaire-step .form-two-cols,
+  .questionnaire-step .form-two-cols > div {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .questionnaire-step .form-two-cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    overflow: hidden;
+  }
+
+  .questionnaire-step input,
+  .questionnaire-step select,
+  .questionnaire-step textarea,
+  .questionnaire-step input[type="date"] {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .questionnaire-step input[type="date"] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+}
