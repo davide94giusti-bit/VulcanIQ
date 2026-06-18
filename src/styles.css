@@ -22,7 +22,12 @@
   --radius-sm: 16px;
   --max: 1180px;
   --header-height: 72px;
+  --motion-fast: 180ms;
+  --motion-duration: 220ms;
+  --motion-slow: 260ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
+
 
 * { box-sizing: border-box; }
 
@@ -60,6 +65,163 @@ h1, h2, h3 {
 h1 { font-size: clamp(3rem, 7vw, 6.6rem); max-width: 860px; }
 h2 { font-size: clamp(2rem, 4vw, 4.2rem); }
 h3 { font-size: clamp(1.25rem, 2vw, 1.7rem); }
+
+
+/* Motion utilities: subtle, reusable transitions for modals, step changes, dropdowns, and press feedback. */
+.motion-backdrop {
+  opacity: 1;
+  animation: motionBackdropIn var(--motion-duration) var(--motion-ease) both;
+  transition: opacity var(--motion-duration) var(--motion-ease), backdrop-filter var(--motion-duration) var(--motion-ease);
+}
+
+.motion-panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transform-origin: center;
+  animation: motionPanelIn var(--motion-duration) var(--motion-ease) both;
+  transition: opacity var(--motion-duration) var(--motion-ease), transform var(--motion-duration) var(--motion-ease);
+  will-change: opacity, transform;
+}
+
+.motion-backdrop.is-closing {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.motion-backdrop.is-closing .motion-panel {
+  opacity: 0;
+  transform: translateY(12px) scale(0.985);
+}
+
+.motion-step,
+.questionnaire-step {
+  animation: motionStepIn var(--motion-duration) var(--motion-ease) both;
+}
+
+@keyframes motionBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes motionPanelIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes motionStepIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes motionDropdownIn {
+  from { opacity: 0; transform: translateY(-6px) scaleY(0.985); }
+  to { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+
+button,
+.button,
+.pill-action,
+.request-action-button,
+.text-button,
+.round-button,
+.icon-button,
+.date-modal-close,
+.experience-modal-close,
+.experience-compact-card,
+.request-leaflet-tile,
+.choice-card,
+.questionnaire-choice,
+.date-button,
+.public-date-button,
+.admin-date-button,
+.summary-card,
+.content-card,
+.calendar-card,
+.questionnaire-card,
+.result-card,
+.empty-state-card,
+.upcoming-card,
+.partnership-card,
+.testimonial-card {
+  transition:
+    transform var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-duration) var(--motion-ease),
+    border-color var(--motion-duration) var(--motion-ease),
+    background-color var(--motion-duration) var(--motion-ease),
+    color var(--motion-fast) ease,
+    opacity var(--motion-fast) ease;
+}
+
+button:not(:disabled):active,
+.button:not(:disabled):active,
+.pill-action:active,
+.request-action-button:not(:disabled):active,
+.text-button:not(:disabled):active,
+.round-button:not(:disabled):active,
+.icon-button:not(:disabled):active,
+.date-modal-close:not(:disabled):active,
+.experience-modal-close:not(:disabled):active,
+.experience-compact-card:not(:disabled):active,
+.request-leaflet-tile:not(:disabled):active,
+.choice-card:active,
+.questionnaire-choice:not(:disabled):active,
+.date-button:not(:disabled):active,
+.public-date-button:not(:disabled):active,
+.admin-date-button:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+@media (hover: hover) {
+  .experience-compact-card:hover,
+  .request-leaflet-tile:hover,
+  .choice-card:hover,
+  .questionnaire-choice:hover,
+  .content-card:hover,
+  .calendar-card:hover,
+  .questionnaire-card:hover,
+  .result-card:hover,
+  .empty-state-card:hover,
+  .upcoming-card:hover,
+  .partnership-card:hover,
+  .testimonial-card:hover {
+    transform: translateY(-2px);
+  }
+}
+
+.experience-card.open .experience-body,
+.request-accordion[open] .request-card-list,
+.request-accordion[open] > .small-note,
+.footer-phone-choice-menu,
+.email-popover,
+.request-options-monthbar,
+.request-leaflet-grid,
+.request-private-grid {
+  transform-origin: top center;
+  animation: motionDropdownIn var(--motion-duration) var(--motion-ease) both;
+}
+
+.questionnaire-progress span {
+  transition: width var(--motion-duration) var(--motion-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .motion-panel,
+  .motion-backdrop.is-closing .motion-panel,
+  .questionnaire-step {
+    transform: none !important;
+  }
+}
 
 :focus-visible {
   outline: 3px solid rgba(240, 107, 79, 0.72);
@@ -734,7 +896,7 @@ blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cr
     background: rgba(13, 22, 38, 0.98);
     box-shadow: var(--shadow);
   }
-  .nav-links.open { display: flex; }
+  .nav-links.open { display: flex; animation: motionDropdownIn var(--motion-duration) var(--motion-ease) both; transform-origin: top center; }
   .nav-links a, .nav-links button { justify-content: center; width: 100%; }
   .hero-grid { grid-template-columns: 1fr; }
   .hero-media { min-height: 360px; max-width: 560px; }
@@ -7679,6 +7841,10 @@ body.modal-scroll-lock {
     font-size: 0.94rem;
   }
 }
+<<<<<<< HEAD
+=======
+
+>>>>>>> ef9885b (Polish questionnaire and modal transitions)
 /* Questionnaire follow-up polish: centered desktop CTAs, hidden fixed text rows, card detail modals, compact mobile actions. */
 @media (min-width: 761px) {
   .questionnaire-option-actions {
@@ -7882,4 +8048,8 @@ body.modal-scroll-lock {
     -webkit-appearance: none;
     appearance: none;
   }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> ef9885b (Polish questionnaire and modal transitions)

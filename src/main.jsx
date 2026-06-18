@@ -123,6 +123,62 @@ function useBodyScrollLock(isLocked) {
 }
 
 
+
+const MOTION_DURATION_MS = 220;
+
+function useTransitionPresence(isOpen, duration = MOTION_DURATION_MS) {
+  const [shouldRender, setShouldRender] = useState(Boolean(isOpen));
+  const [isClosing, setIsClosing] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true);
+      setIsClosing(false);
+      return undefined;
+    }
+
+    if (!shouldRender) {
+      setIsClosing(false);
+      return undefined;
+    }
+
+    setIsClosing(true);
+    const timeout = window.setTimeout(() => {
+      setShouldRender(false);
+      setIsClosing(false);
+    }, duration);
+
+    return () => window.clearTimeout(timeout);
+  }, [isOpen, shouldRender, duration]);
+
+  return { shouldRender, isClosing };
+}
+
+function useTransitionValue(value, duration = MOTION_DURATION_MS) {
+  const presence = useTransitionPresence(Boolean(value), duration);
+  const [renderedValue, setRenderedValue] = useState(value);
+
+  useEffect(() => {
+    if (value) {
+      setRenderedValue(value);
+      return;
+    }
+
+    if (!presence.shouldRender) setRenderedValue(null);
+  }, [value, presence.shouldRender]);
+
+  return { ...presence, renderedValue: presence.shouldRender ? renderedValue : null };
+}
+
+
+function prefersReducedMotion() {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+}
+
+function motionScrollBehavior() {
+  return prefersReducedMotion() ? 'auto' : 'smooth';
+}
+
 function buildMediaMap(items = []) {
   return (items || []).reduce((acc, item) => {
     if (item?.media_key && item?.file_url) acc[item.media_key] = item;
@@ -1768,6 +1824,11 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
   const [dateModalOpen, setDateModalOpen] = useState(false);
   const [dateRequest, setDateRequest] = useState({ experienceId: 'etna-premium', adults: '1', children: '0', childrenUnder3Count: '0' });
   const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
+  const dateModalTransition = useTransitionPresence(dateModalOpen);
+  const experienceModalTransition = useTransitionValue(selectedExperience);
+  const leafletModalTransition = useTransitionValue(activeLeaflet);
+  const renderedExperience = experienceModalTransition.renderedValue;
+  const renderedLeaflet = leafletModalTransition.renderedValue;
 
   useEffect(() => {
     let active = true;
@@ -1796,7 +1857,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
     return () => { active = false; };
   }, []);
 
-  useBodyScrollLock(Boolean(selectedExperience || activeLeaflet || dateModalOpen));
+  useBodyScrollLock(Boolean(dateModalTransition.shouldRender || experienceModalTransition.shouldRender || leafletModalTransition.shouldRender));
 
   useEffect(() => {
     function closeOnEscape(event) {
@@ -2071,9 +2132,9 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         )}
       </div>
 
-      {dateModalOpen && (
-        <div className="date-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="date-modal-title" onClick={() => setDateModalOpen(false)}>
-          <article className="date-modal" onClick={(event) => event.stopPropagation()}>
+      {dateModalTransition.shouldRender && (
+        <div className={`date-modal-overlay motion-backdrop ${dateModalTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="date-modal-title" onClick={() => setDateModalOpen(false)}>
+          <article className="date-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="date-modal-header">
               <div>
                 <span className="micro-label details-label">{selectedItems.length ? text(lang, 'scheduledExcursion') : text(lang, 'availableDates')}</span>
@@ -2088,25 +2149,25 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         </div>
       )}
 
-      {selectedExperience && (
-        <div className="experience-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="experience-modal-title" onClick={() => setSelectedExperience(null)}>
-          <article className="experience-modal" onClick={(event) => event.stopPropagation()}>
+      {renderedExperience && (
+        <div className={`experience-modal-overlay motion-backdrop ${experienceModalTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="experience-modal-title" onClick={() => setSelectedExperience(null)}>
+          <article className="experience-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="experience-modal-header">
-              <h2 id="experience-modal-title">{selectedExperience.title}</h2>
+              <h2 id="experience-modal-title">{renderedExperience.title}</h2>
               <button className="experience-modal-close" type="button" onClick={() => setSelectedExperience(null)}>{text(lang, 'close')}</button>
             </div>
             <div className="experience-detail-content">
-              <EditableImage mediaKey={experienceMediaKey(selectedExperience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={selectedExperience.image} fallbackAlt={`${selectedExperience.title} vulcanIQ`} className="experience-modal-image" />
+              <EditableImage mediaKey={experienceMediaKey(renderedExperience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={renderedExperience.image} fallbackAlt={`${renderedExperience.title} vulcanIQ`} className="experience-modal-image" />
               <div className="experience-detail-copy">
-                <EditableText as="p" itemKey={`experiences.${selectedExperience.id}.description`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.description[lang]} />
+                <EditableText as="p" itemKey={`experiences.${renderedExperience.id}.description`} lang={lang} siteContent={siteContent} editor={editor} fallback={renderedExperience.description[lang]} />
                 <dl>
-                  <div><dt>{text(lang, 'bestFor')}</dt><dd><EditableText itemKey={`experiences.${selectedExperience.id}.best_for`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.bestFor[lang]} /></dd></div>
-                  <div><dt>{text(lang, 'practical')}</dt><dd><EditableText itemKey={`experiences.${selectedExperience.id}.notes`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.notes[lang]} /></dd></div>
-                  <div><dt>{text(lang, 'safety')}</dt><dd><EditableText itemKey={`experiences.${selectedExperience.id}.safety`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.safety[lang]} /></dd></div>
+                  <div><dt>{text(lang, 'bestFor')}</dt><dd><EditableText itemKey={`experiences.${renderedExperience.id}.best_for`} lang={lang} siteContent={siteContent} editor={editor} fallback={renderedExperience.bestFor[lang]} /></dd></div>
+                  <div><dt>{text(lang, 'practical')}</dt><dd><EditableText itemKey={`experiences.${renderedExperience.id}.notes`} lang={lang} siteContent={siteContent} editor={editor} fallback={renderedExperience.notes[lang]} /></dd></div>
+                  <div><dt>{text(lang, 'safety')}</dt><dd><EditableText itemKey={`experiences.${renderedExperience.id}.safety`} lang={lang} siteContent={siteContent} editor={editor} fallback={renderedExperience.safety[lang]} /></dd></div>
                 </dl>
                 <div className="request-action-row experience-modal-actions">
-                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestExperience(selectedExperience)}>{text(lang, 'request')}</button>
-                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: buildBookingTrackingContext({ experienceId: selectedExperience?.id || '', requestType: 'private', sourceSection: 'experiences', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
+                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestExperience(renderedExperience)}>{text(lang, 'request')}</button>
+                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(renderedExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(renderedExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: buildBookingTrackingContext({ experienceId: renderedExperience?.id || '', requestType: 'private', sourceSection: 'experiences', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
                 </div>
               </div>
             </div>
@@ -2114,18 +2175,18 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         </div>
       )}
 
-      {activeLeaflet?.leaflet && (
-        <div className="leaflet-fullscreen-overlay" role="dialog" aria-modal="true" aria-label={activeLeaflet.label || text(lang, 'openProgram')} onClick={() => setActiveLeaflet(null)}>
-          <article className="leaflet-fullscreen-modal" onClick={(event) => event.stopPropagation()}>
+      {renderedLeaflet?.leaflet && (
+        <div className={`leaflet-fullscreen-overlay motion-backdrop ${leafletModalTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-label={renderedLeaflet.label || text(lang, 'openProgram')} onClick={() => setActiveLeaflet(null)}>
+          <article className="leaflet-fullscreen-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="leaflet-fullscreen-header">
-              <h2>{activeLeaflet.label || text(lang, 'openProgram')}</h2>
+              <h2>{renderedLeaflet.label || text(lang, 'openProgram')}</h2>
               <button className="date-modal-close" type="button" onClick={() => setActiveLeaflet(null)}>{text(lang, 'close')}</button>
             </div>
             <div className="leaflet-fullscreen-body">
-              {String(activeLeaflet.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(activeLeaflet.leaflet.file_url) ? (
-                <img className="leaflet-fullscreen-image" src={activeLeaflet.leaflet.file_url} alt={activeLeaflet.label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
+              {String(renderedLeaflet.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(renderedLeaflet.leaflet.file_url) ? (
+                <img className="leaflet-fullscreen-image" src={renderedLeaflet.leaflet.file_url} alt={renderedLeaflet.label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
               ) : (
-                <iframe className="leaflet-fullscreen-frame" src={activeLeaflet.leaflet.file_url} title={activeLeaflet.label || text(lang, 'openProgram')} />
+                <iframe className="leaflet-fullscreen-frame" src={renderedLeaflet.leaflet.file_url} title={renderedLeaflet.label || text(lang, 'openProgram')} />
               )}
             </div>
           </article>
@@ -2840,6 +2901,15 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const [activeLeaflet, setActiveLeaflet] = useState(null);
   const [selectedPrivateExperience, setSelectedPrivateExperience] = useState(null);
   const [selectedFixedExcursionDetails, setSelectedFixedExcursionDetails] = useState(null);
+  const questionnaireTransition = useTransitionPresence(questionnaireOpen);
+  const fixedOptionsTransition = useTransitionPresence(fixedOptionsOpen);
+  const privateOptionsTransition = useTransitionPresence(privateOptionsOpen);
+  const requestLeafletTransition = useTransitionValue(activeLeaflet);
+  const privateDetailTransition = useTransitionValue(selectedPrivateExperience);
+  const fixedDetailTransition = useTransitionValue(selectedFixedExcursionDetails);
+  const renderedRequestLeaflet = requestLeafletTransition.renderedValue;
+  const renderedPrivateExperience = privateDetailTransition.renderedValue;
+  const renderedFixedExcursionDetails = fixedDetailTransition.renderedValue;
 
   const questionnaireSteps = [
     { key: 'request_type', title: text(lang, 'requestTypeQuestion') },
@@ -2870,7 +2940,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     return () => { active = false; };
   }, []);
 
-  useBodyScrollLock(Boolean(questionnaireOpen || fixedOptionsOpen || privateOptionsOpen || activeLeaflet || selectedPrivateExperience || selectedFixedExcursionDetails));
+  useBodyScrollLock(Boolean(questionnaireTransition.shouldRender || fixedOptionsTransition.shouldRender || privateOptionsTransition.shouldRender || requestLeafletTransition.shouldRender || privateDetailTransition.shouldRender || fixedDetailTransition.shouldRender));
 
   useEffect(() => {
     if (!questionnaireOpen) return undefined;
@@ -2881,6 +2951,15 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       if (previous && typeof previous.focus === 'function') window.setTimeout(() => previous.focus(), 0);
     };
   }, [questionnaireOpen]);
+
+  useEffect(() => {
+    if (!questionnaireOpen) return undefined;
+    const timeout = window.setTimeout(() => {
+      const scrollTarget = modalRef.current?.querySelector?.('.questionnaire-body') || modalRef.current;
+      scrollTarget?.scrollTo?.({ top: 0, behavior: motionScrollBehavior() });
+    }, 40);
+    return () => window.clearTimeout(timeout);
+  }, [questionnaireOpen, stepIndex]);
 
   useEffect(() => {
     function closeOnEscape(event) {
@@ -3013,7 +3092,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     if (typeof window !== 'undefined') {
       window.setTimeout(() => {
         setStepIndex(dateStepIndex);
-        modalRef.current?.scrollTo?.({ top: 0, behavior: 'auto' });
+        modalRef.current?.scrollTo?.({ top: 0, behavior: motionScrollBehavior() });
         modalRef.current?.querySelector?.('#questionnaireRequestedDate')?.focus?.();
       }, 0);
     }
@@ -3039,109 +3118,6 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     setFixedOptionsOpen(false);
     setPrivateOptionsOpen(false);
     moveQuestionnaireToDateStep();
-  }
-
-  function hasMeaningfulQuestionnaireData() {
-    const defaultMessages = [i18n.it.defaultMessage, i18n.en.defaultMessage];
-    return Boolean(
-      formState.name || formState.phone || formState.email || formState.experienceId || formState.fixedExcursionId ||
-      formState.requestedDate || formState.alternativeDate || formState.heardAboutUs || formState.heardAboutUsDetail ||
-      (formState.message && !defaultMessages.includes(formState.message))
-    );
-  }
-
-  function attemptCloseQuestionnaire() {
-    if (!hasMeaningfulQuestionnaireData() || window.confirm(text(lang, 'contactQuestionnaireCloseConfirm'))) {
-      setQuestionnaireOpen(false);
-      setStepError('');
-    }
-  }
-
-  function openQuestionnaire() {
-    const trackingContext = mergeTrackingContext(buildBookingTrackingContext({
-      experienceId: effectiveExperienceId,
-      requestType,
-      sourceSection: 'contact',
-      sourceCta: 'start_questionnaire',
-      ctaLocation: 'contact_section',
-      selectedDate: selectedFixed?.date || formState.requestedDate || '',
-      hasFixedExcursion: requestType === 'fixed',
-      language: lang
-    }), formState.trackingContext);
-    trackBookingFormOpen(effectiveExperienceId || requestType || 'private', { ...trackingContext, questionnaire_version: 'contact_request_v1' });
-    setFormState((current) => ({ ...current, trackingContext, language: current.language || lang }));
-    setQuestionnaireOpen(true);
-  }
-
-  function regenerateMessageFromAnswers() {
-    const generated = buildContactQuestionnaireMessage({ formState, selectedFixed, lang });
-    setMessageManuallyEdited(false);
-    setFormState((current) => ({ ...current, message: generated }));
-  }
-
-  function ensureFinalMessage() {
-    if (messageManuallyEdited) return;
-    const generated = buildContactQuestionnaireMessage({ formState, selectedFixed, lang });
-    setFormState((current) => ({ ...current, message: generated }));
-  }
-
-  function validationForStep(index = stepIndex) {
-    const stepKey = questionnaireSteps[index]?.key;
-    const email = String(formState.email || '').trim();
-    const phone = String(formState.phone || '').trim();
-    if (stepKey === 'request_type' && !requestChoice) return text(lang, 'answerRequired');
-    if (stepKey === 'experience') {
-      if (requestChoice === 'fixed' && !formState.fixedExcursionId) return text(lang, 'fixedExcursionRequired');
-      if (requestChoice !== 'fixed' && !formState.experienceId) return text(lang, 'chooseExperienceOptional');
-    }
-    if (stepKey === 'date') {
-      if (isPastPublicDate(formState.requestedDate) || isPastPublicDate(formState.alternativeDate)) return text(lang, 'dateTodayOrFuture');
-    }
-    if (stepKey === 'participants' && totalPeople < 1) return text(lang, 'peopleRequired');
-    if (stepKey === 'contact') {
-      if (!email && !phone) return text(lang, 'contactRequired');
-      if ((preferredContactValue === 'whatsapp' || preferredContactValue === 'phone') && !phone) return text(lang, 'contactPhoneRequired');
-      if (preferredContactValue === 'email' && !email) return text(lang, 'contactEmailRequired');
-      if (phone && !isValidPublicPhone(phone)) return text(lang, 'contactPhoneInvalid');
-      if (email && !isValidPublicEmail(email)) return text(lang, 'contactEmailInvalid');
-    }
-    if (stepKey === 'attribution') {
-      if (!selectedHeardAboutUs) return text(lang, 'heardAboutUsRequired');
-      if (selectedHeardAboutUsNeedsDetail && !selectedHeardAboutUsDetail) return text(lang, 'heardAboutUsOtherRequired');
-    }
-    if (stepKey === 'message') {
-      if (isPastPublicDate(formState.requestedDate) || isPastPublicDate(formState.alternativeDate)) return text(lang, 'dateTodayOrFuture');
-      if (!String(message || '').trim()) return text(lang, 'requestDetailsRequired');
-    }
-    return '';
-  }
-
-  function firstValidationError() {
-    for (let index = 0; index < questionnaireSteps.length; index += 1) {
-      const error = validationForStep(index);
-      if (error) return error;
-    }
-    return '';
-  }
-
-  function goNext() {
-    const error = validationForStep();
-    if (error) {
-      trackBookingSubmitValidationError(effectiveExperienceId || requestType || 'private', `questionnaire_${currentStep.key}`, currentTrackingMetadata);
-      setStepError(error);
-      return;
-    }
-    setStepError('');
-    setStepIndex((current) => {
-      const next = Math.min(current + 1, questionnaireSteps.length - 1);
-      if (questionnaireSteps[next]?.key === 'message') window.setTimeout(ensureFinalMessage, 0);
-      return next;
-    });
-  }
-
-  function goBack() {
-    setStepError('');
-    setStepIndex((current) => Math.max(0, current - 1));
   }
 
   function hasMeaningfulQuestionnaireData() {
@@ -3513,9 +3489,9 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
         </article>
       </div>
 
-      {questionnaireOpen && (
-        <div className="questionnaire-overlay" role="dialog" aria-modal="true" aria-labelledby="questionnaire-title">
-          <form className="questionnaire-modal" ref={modalRef} onSubmit={submitRequest}>
+      {questionnaireTransition.shouldRender && (
+        <div className={`questionnaire-overlay motion-backdrop ${questionnaireTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="questionnaire-title">
+          <form className="questionnaire-modal motion-panel" ref={modalRef} onSubmit={submitRequest}>
             <header className="questionnaire-header">
               <div>
                 <span className="kicker">vulcanIQ</span>
@@ -3532,7 +3508,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
               <button className="button secondary" type="button" onClick={openFixedOptions}>{text(lang, 'viewFixedExcursionOptions')}</button>
             </div>
             <main className="questionnaire-body">
-              <section className="questionnaire-step" aria-live="polite">
+              <section className="questionnaire-step" key={currentStep.key} aria-live="polite">
                 <h3>{currentStep.title}</h3>
                 {renderStepFields()}
                 {stepError && <p className="form-status error" role="alert">{stepError}</p>}
@@ -3555,9 +3531,9 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
         </div>
       )}
 
-      {fixedOptionsOpen && (
-        <div className="date-modal-overlay request-options-overlay" role="dialog" aria-modal="true" aria-labelledby="fixed-options-title" onClick={() => setFixedOptionsOpen(false)}>
-          <article className="date-modal request-options-modal" onClick={(event) => event.stopPropagation()}>
+      {fixedOptionsTransition.shouldRender && (
+        <div className={`date-modal-overlay request-options-overlay motion-backdrop ${fixedOptionsTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="fixed-options-title" onClick={() => setFixedOptionsOpen(false)}>
+          <article className="date-modal request-options-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="date-modal-header">
               <div>
                 <h2 id="fixed-options-title">{text(lang, 'fixedExcursionOptionsTitle')}</h2>
@@ -3606,9 +3582,9 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
         </div>
       )}
 
-      {privateOptionsOpen && (
-        <div className="date-modal-overlay request-options-overlay" role="dialog" aria-modal="true" aria-labelledby="private-options-title" onClick={() => setPrivateOptionsOpen(false)}>
-          <article className="date-modal request-options-modal" onClick={(event) => event.stopPropagation()}>
+      {privateOptionsTransition.shouldRender && (
+        <div className={`date-modal-overlay request-options-overlay motion-backdrop ${privateOptionsTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="private-options-title" onClick={() => setPrivateOptionsOpen(false)}>
+          <article className="date-modal request-options-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="date-modal-header">
               <div>
                 <h2 id="private-options-title">{text(lang, 'privateExcursionOptionsTitle')}</h2>
@@ -3636,55 +3612,55 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       )}
 
 
-      {selectedFixedExcursionDetails && (
-        <div className="date-modal-overlay request-fixed-detail-overlay" role="dialog" aria-modal="true" aria-labelledby="request-fixed-detail-title" onClick={() => setSelectedFixedExcursionDetails(null)}>
-          <article className="date-modal request-fixed-detail-modal" onClick={(event) => event.stopPropagation()}>
+      {renderedFixedExcursionDetails && (
+        <div className={`date-modal-overlay request-fixed-detail-overlay motion-backdrop ${fixedDetailTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="request-fixed-detail-title" onClick={() => setSelectedFixedExcursionDetails(null)}>
+          <article className="date-modal request-fixed-detail-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="date-modal-header">
               <div>
                 <span className="micro-label details-label">{text(lang, 'fixedExcursion')}</span>
-                <h2 id="request-fixed-detail-title">{fixedExcursionTitle(selectedFixedExcursionDetails, lang)}</h2>
-                <p>{fixedExcursionLabel(selectedFixedExcursionDetails, lang)}</p>
+                <h2 id="request-fixed-detail-title">{fixedExcursionTitle(renderedFixedExcursionDetails, lang)}</h2>
+                <p>{fixedExcursionLabel(renderedFixedExcursionDetails, lang)}</p>
               </div>
               <button className="date-modal-close" type="button" onClick={() => setSelectedFixedExcursionDetails(null)}>{text(lang, 'close')}</button>
             </div>
             <div className="date-modal-content fixed-date-content">
               <article className="date-modal-fixed-card request-fixed-detail-card">
-                <FormattedDescription textValue={fixedExcursionField(selectedFixedExcursionDetails, 'description', lang) || selectedFixedExcursionDetails[`note_${lang}`] || selectedFixedExcursionDetails.note_it || selectedFixedExcursionDetails.note_en || experienceById(selectedFixedExcursionDetails.experience_id).summary[lang]} />
+                <FormattedDescription textValue={fixedExcursionField(renderedFixedExcursionDetails, 'description', lang) || renderedFixedExcursionDetails[`note_${lang}`] || renderedFixedExcursionDetails.note_it || renderedFixedExcursionDetails.note_en || experienceById(renderedFixedExcursionDetails.experience_id).summary[lang]} />
                 <dl className="public-details-grid date-modal-details-grid">
-                  <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(selectedFixedExcursionDetails.date, lang)}</dd></div>
-                  <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(selectedFixedExcursionDetails.experience_id, lang)}</dd></div>
-                  <MeetingPointDetailCard item={selectedFixedExcursionDetails} lang={lang} />
-                  {fixedExcursionField(selectedFixedExcursionDetails, 'difficulty', lang) && <div><dt>{text(lang, 'difficulty')}</dt><dd>{fixedExcursionField(selectedFixedExcursionDetails, 'difficulty', lang)}</dd></div>}
-                  {fixedExcursionField(selectedFixedExcursionDetails, 'price_note', lang) && <div><dt>{text(lang, 'priceNote')}</dt><dd>{fixedExcursionField(selectedFixedExcursionDetails, 'price_note', lang)}</dd></div>}
-                  <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{selectedFixedExcursionDetails.places_remaining}/{selectedFixedExcursionDetails.capacity}</dd></div>
+                  <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(renderedFixedExcursionDetails.date, lang)}</dd></div>
+                  <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(renderedFixedExcursionDetails.experience_id, lang)}</dd></div>
+                  <MeetingPointDetailCard item={renderedFixedExcursionDetails} lang={lang} />
+                  {fixedExcursionField(renderedFixedExcursionDetails, 'difficulty', lang) && <div><dt>{text(lang, 'difficulty')}</dt><dd>{fixedExcursionField(renderedFixedExcursionDetails, 'difficulty', lang)}</dd></div>}
+                  {fixedExcursionField(renderedFixedExcursionDetails, 'price_note', lang) && <div><dt>{text(lang, 'priceNote')}</dt><dd>{fixedExcursionField(renderedFixedExcursionDetails, 'price_note', lang)}</dd></div>}
+                  <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{renderedFixedExcursionDetails.places_remaining}/{renderedFixedExcursionDetails.capacity}</dd></div>
                 </dl>
-                <BlockedDatesAttachment item={selectedFixedExcursionDetails} lang={lang} onOpenFile={(file, label) => setActiveLeaflet({ leaflet: file, label: label || text(lang, 'openExcursionProgram'), fixedExcursion: selectedFixedExcursionDetails })} />
+                <BlockedDatesAttachment item={renderedFixedExcursionDetails} lang={lang} onOpenFile={(file, label) => setActiveLeaflet({ leaflet: file, label: label || text(lang, 'openExcursionProgram'), fixedExcursion: renderedFixedExcursionDetails })} />
                 <div className="request-action-row date-modal-actions">
-                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => { updateFixedExcursion(selectedFixedExcursionDetails.id); setSelectedFixedExcursionDetails(null); setFixedOptionsOpen(false); }}>{text(lang, 'useThisOptionInRequest')}</button>
+                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => { updateFixedExcursion(renderedFixedExcursionDetails.id); setSelectedFixedExcursionDetails(null); setFixedOptionsOpen(false); }}>{text(lang, 'useThisOptionInRequest')}</button>
                 </div>
               </article>
             </div>
           </article>
         </div>
       )}
-      {selectedPrivateExperience && (
-        <div className="experience-modal-overlay request-private-detail-overlay" role="dialog" aria-modal="true" aria-labelledby="request-private-detail-title" onClick={() => setSelectedPrivateExperience(null)}>
-          <article className="experience-modal request-private-detail-modal" onClick={(event) => event.stopPropagation()}>
+      {renderedPrivateExperience && (
+        <div className={`experience-modal-overlay request-private-detail-overlay motion-backdrop ${privateDetailTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="request-private-detail-title" onClick={() => setSelectedPrivateExperience(null)}>
+          <article className="experience-modal request-private-detail-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="experience-modal-header">
-              <h2 id="request-private-detail-title">{selectedPrivateExperience.title}</h2>
+              <h2 id="request-private-detail-title">{renderedPrivateExperience.title}</h2>
               <button className="experience-modal-close" type="button" onClick={() => setSelectedPrivateExperience(null)}>{text(lang, 'close')}</button>
             </div>
             <div className="experience-detail-content">
-              <EditableImage mediaKey={experienceMediaKey(selectedPrivateExperience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={selectedPrivateExperience.image} fallbackAlt={`${selectedPrivateExperience.title} vulcanIQ`} className="experience-modal-image" />
+              <EditableImage mediaKey={experienceMediaKey(renderedPrivateExperience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={renderedPrivateExperience.image} fallbackAlt={`${renderedPrivateExperience.title} vulcanIQ`} className="experience-modal-image" />
               <div className="experience-detail-copy">
-                <p>{selectedPrivateExperience.description[lang]}</p>
+                <p>{renderedPrivateExperience.description[lang]}</p>
                 <dl>
-                  <div><dt>{text(lang, 'bestFor')}</dt><dd>{selectedPrivateExperience.bestFor[lang]}</dd></div>
-                  <div><dt>{text(lang, 'practical')}</dt><dd>{selectedPrivateExperience.notes[lang]}</dd></div>
-                  <div><dt>{text(lang, 'safety')}</dt><dd>{selectedPrivateExperience.safety[lang]}</dd></div>
+                  <div><dt>{text(lang, 'bestFor')}</dt><dd>{renderedPrivateExperience.bestFor[lang]}</dd></div>
+                  <div><dt>{text(lang, 'practical')}</dt><dd>{renderedPrivateExperience.notes[lang]}</dd></div>
+                  <div><dt>{text(lang, 'safety')}</dt><dd>{renderedPrivateExperience.safety[lang]}</dd></div>
                 </dl>
                 <div className="request-action-row experience-modal-actions">
-                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => usePrivateExperienceInRequest(selectedPrivateExperience)}>{text(lang, 'useThisOptionInRequest')}</button>
+                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => usePrivateExperienceInRequest(renderedPrivateExperience)}>{text(lang, 'useThisOptionInRequest')}</button>
                 </div>
               </div>
             </div>
@@ -3692,21 +3668,21 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
         </div>
       )}
 
-      {activeLeaflet?.leaflet && (
-        <div className="leaflet-fullscreen-overlay request-leaflet-overlay" role="dialog" aria-modal="true" aria-label={activeLeaflet.label || text(lang, 'openProgram')} onClick={() => setActiveLeaflet(null)}>
-          <article className="leaflet-fullscreen-modal" onClick={(event) => event.stopPropagation()}>
+      {renderedRequestLeaflet?.leaflet && (
+        <div className={`leaflet-fullscreen-overlay request-leaflet-overlay motion-backdrop ${requestLeafletTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-label={renderedRequestLeaflet.label || text(lang, 'openProgram')} onClick={() => setActiveLeaflet(null)}>
+          <article className="leaflet-fullscreen-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="leaflet-fullscreen-header">
-              <h2>{activeLeaflet.label || text(lang, 'openProgram')}</h2>
+              <h2>{renderedRequestLeaflet.label || text(lang, 'openProgram')}</h2>
               <button className="date-modal-close" type="button" onClick={() => setActiveLeaflet(null)}>{text(lang, 'close')}</button>
             </div>
             <div className="leaflet-fullscreen-body">
-              {String(activeLeaflet.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(activeLeaflet.leaflet.file_url) ? (
-                <img className="leaflet-fullscreen-image" src={activeLeaflet.leaflet.file_url} alt={activeLeaflet.label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
+              {String(renderedRequestLeaflet.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(renderedRequestLeaflet.leaflet.file_url) ? (
+                <img className="leaflet-fullscreen-image" src={renderedRequestLeaflet.leaflet.file_url} alt={renderedRequestLeaflet.label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
               ) : (
-                <iframe className="leaflet-fullscreen-frame" src={activeLeaflet.leaflet.file_url} title={activeLeaflet.label || text(lang, 'openProgram')} />
+                <iframe className="leaflet-fullscreen-frame" src={renderedRequestLeaflet.leaflet.file_url} title={renderedRequestLeaflet.label || text(lang, 'openProgram')} />
               )}
             </div>
-            {activeLeaflet.fixedExcursion && <button className="request-action-button request-action-button-primary" type="button" onClick={() => { updateFixedExcursion(activeLeaflet.fixedExcursion.id); setActiveLeaflet(null); setFixedOptionsOpen(false); }}>{text(lang, 'useThisOptionInRequest')}</button>}
+            {renderedRequestLeaflet.fixedExcursion && <button className="request-action-button request-action-button-primary" type="button" onClick={() => { updateFixedExcursion(renderedRequestLeaflet.fixedExcursion.id); setActiveLeaflet(null); setFixedOptionsOpen(false); }}>{text(lang, 'useThisOptionInRequest')}</button>}
           </article>
         </div>
       )}
