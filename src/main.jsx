@@ -1246,6 +1246,10 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
   const experienceName = experienceId && experienceId !== 'unsure' ? adminExperienceLabel(experienceId, lang) : text(lang, 'notSure');
   const requestedDate = selectedFixed?.date || formState.requestedDate || '';
   const alternativeDate = formState.alternativeDate || '';
+  const fixedTitle = requestType === 'fixed' && selectedFixed ? fixedExcursionTitle(selectedFixed, lang) : '';
+  const requestTypeText = requestType === 'fixed' && fixedTitle
+    ? `${text(lang, 'fixedExcursion')} - "${fixedTitle}"`
+    : requestChoiceLabel(requestChoice, lang);
   const heard = normalizeHeardAboutUs(formState.heardAboutUs);
   const heardDisplay = heard ? heardAboutUsDisplay(heard, formState.heardAboutUsDetail, lang) : '';
   const phone = String(formState.phone || '').trim();
@@ -1261,7 +1265,7 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
 
   if (lang === 'it') {
     const requestLines = joinMessageLines([
-      messageLine('Tipo', requestChoiceLabel(requestChoice, lang)),
+      messageLine('Tipo', requestTypeText),
       messageLine('Esperienza', experienceName),
       messageLine(requestType === 'fixed' ? 'Data' : 'Data preferita', cleanDateForMessage(requestedDate, lang)),
       requestType === 'private' ? messageLine('Data alternativa', cleanDateForMessage(alternativeDate, lang)) : '',
@@ -1288,7 +1292,7 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
   }
 
   const requestLines = joinMessageLines([
-    messageLine('Type', requestChoiceLabel(requestChoice, lang)),
+    messageLine('Type', requestTypeText),
     messageLine('Experience', experienceName),
     messageLine(requestType === 'fixed' ? 'Date' : 'Preferred date', cleanDateForMessage(requestedDate, lang)),
     requestType === 'private' ? messageLine('Alternative date', cleanDateForMessage(alternativeDate, lang)) : '',
@@ -3009,6 +3013,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       requestType: 'private',
       privateExperience: true,
       fixedExcursionId: '',
+      requestedDate: (current.requestTypeChoice || current.requestType) === 'fixed' ? '' : current.requestedDate,
       experienceId: experience?.id || current.experienceId,
       message: !messageManuallyEdited && experience ? buildExperienceMessage(experience, lang) : current.message,
       language: current.language || lang
