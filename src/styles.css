@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   color-scheme: light;
   --ink: #18212b;
   --night: #0d1626;
@@ -792,7 +792,7 @@ textarea { min-height: 150px; resize: vertical; }
 .dark-card h2, .dark-card p, .dark-card li { color: #fff; }
 .check-list { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 10px; }
 .check-list li { position: relative; padding-left: 24px; color: var(--basalt); }
-.check-list li::before { content: "Ô£ô"; position: absolute; left: 0; top: 0; color: var(--lava); font-weight: 900; }
+.check-list li::before { content: "✓"; position: absolute; left: 0; top: 0; color: var(--lava); font-weight: 900; }
 .review-list { display: grid; gap: 12px; }
 blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cream); color: var(--basalt); font-size: 0.95rem; }
 .image-strip-section { padding-top: 0; }
@@ -4789,7 +4789,7 @@ body.modal-scroll-lock { overflow: hidden; }
 }
 
 .today-requests-details[open] > summary::after {
-  content: "ÔÇô";
+  content: "–";
 }
 
 .today-requests-collapsed-body {
@@ -5656,7 +5656,7 @@ body.modal-scroll-lock {
 }
 
 .finance-detail-section summary::after {
-  content: "Ôîä";
+  content: "⌄";
   flex: 0 0 auto;
   color: var(--ash);
   font-size: 1rem;
@@ -6071,7 +6071,7 @@ body.modal-scroll-lock {
 }
 
 .finance-collapsible-panel > summary.finance-collapsible-summary::after {
-  content: "Ôîä";
+  content: "⌄";
   grid-column: 3;
   grid-row: 1;
   align-self: center;
@@ -6576,7 +6576,7 @@ body.modal-scroll-lock {
 }
 
 .analytics-collapsible-summary::after {
-  content: "Ôîä";
+  content: "⌄";
   display: grid;
   width: 2.35rem;
   height: 2.35rem;
@@ -7841,10 +7841,7 @@ body.modal-scroll-lock {
     font-size: 0.94rem;
   }
 }
-<<<<<<< HEAD
-=======
 
->>>>>>> ef9885b (Polish questionnaire and modal transitions)
 /* Questionnaire follow-up polish: centered desktop CTAs, hidden fixed text rows, card detail modals, compact mobile actions. */
 @media (min-width: 761px) {
   .questionnaire-option-actions {
@@ -8048,8 +8045,4 @@ body.modal-scroll-lock {
     -webkit-appearance: none;
     appearance: none;
   }
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> ef9885b (Polish questionnaire and modal transitions)
