@@ -3006,6 +3006,19 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     setSelectedPrivateExperience(experience);
   }
 
+  function moveQuestionnaireToDateStep() {
+    const dateStepIndex = questionnaireSteps.findIndex((step) => step.key === 'date');
+    if (dateStepIndex < 0) return;
+    setStepIndex(dateStepIndex);
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        setStepIndex(dateStepIndex);
+        modalRef.current?.scrollTo?.({ top: 0, behavior: 'auto' });
+        modalRef.current?.querySelector?.('#questionnaireRequestedDate')?.focus?.();
+      }, 0);
+    }
+  }
+
   function usePrivateExperienceInRequest(experience) {
     setFormState((current) => ({
       ...current,
@@ -3018,8 +3031,117 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       message: !messageManuallyEdited && experience ? buildExperienceMessage(experience, lang) : current.message,
       language: current.language || lang
     }));
+    setQuestionnaireOpen(true);
+    setStepError('');
+    setActiveLeaflet(null);
+    setSelectedFixedExcursionDetails(null);
     setSelectedPrivateExperience(null);
+    setFixedOptionsOpen(false);
     setPrivateOptionsOpen(false);
+    moveQuestionnaireToDateStep();
+  }
+
+  function hasMeaningfulQuestionnaireData() {
+    const defaultMessages = [i18n.it.defaultMessage, i18n.en.defaultMessage];
+    return Boolean(
+      formState.name || formState.phone || formState.email || formState.experienceId || formState.fixedExcursionId ||
+      formState.requestedDate || formState.alternativeDate || formState.heardAboutUs || formState.heardAboutUsDetail ||
+      (formState.message && !defaultMessages.includes(formState.message))
+    );
+  }
+
+  function attemptCloseQuestionnaire() {
+    if (!hasMeaningfulQuestionnaireData() || window.confirm(text(lang, 'contactQuestionnaireCloseConfirm'))) {
+      setQuestionnaireOpen(false);
+      setStepError('');
+    }
+  }
+
+  function openQuestionnaire() {
+    const trackingContext = mergeTrackingContext(buildBookingTrackingContext({
+      experienceId: effectiveExperienceId,
+      requestType,
+      sourceSection: 'contact',
+      sourceCta: 'start_questionnaire',
+      ctaLocation: 'contact_section',
+      selectedDate: selectedFixed?.date || formState.requestedDate || '',
+      hasFixedExcursion: requestType === 'fixed',
+      language: lang
+    }), formState.trackingContext);
+    trackBookingFormOpen(effectiveExperienceId || requestType || 'private', { ...trackingContext, questionnaire_version: 'contact_request_v1' });
+    setFormState((current) => ({ ...current, trackingContext, language: current.language || lang }));
+    setQuestionnaireOpen(true);
+  }
+
+  function regenerateMessageFromAnswers() {
+    const generated = buildContactQuestionnaireMessage({ formState, selectedFixed, lang });
+    setMessageManuallyEdited(false);
+    setFormState((current) => ({ ...current, message: generated }));
+  }
+
+  function ensureFinalMessage() {
+    if (messageManuallyEdited) return;
+    const generated = buildContactQuestionnaireMessage({ formState, selectedFixed, lang });
+    setFormState((current) => ({ ...current, message: generated }));
+  }
+
+  function validationForStep(index = stepIndex) {
+    const stepKey = questionnaireSteps[index]?.key;
+    const email = String(formState.email || '').trim();
+    const phone = String(formState.phone || '').trim();
+    if (stepKey === 'request_type' && !requestChoice) return text(lang, 'answerRequired');
+    if (stepKey === 'experience') {
+      if (requestChoice === 'fixed' && !formState.fixedExcursionId) return text(lang, 'fixedExcursionRequired');
+      if (requestChoice !== 'fixed' && !formState.experienceId) return text(lang, 'chooseExperienceOptional');
+    }
+    if (stepKey === 'date') {
+      if (isPastPublicDate(formState.requestedDate) || isPastPublicDate(formState.alternativeDate)) return text(lang, 'dateTodayOrFuture');
+    }
+    if (stepKey === 'participants' && totalPeople < 1) return text(lang, 'peopleRequired');
+    if (stepKey === 'contact') {
+      if (!email && !phone) return text(lang, 'contactRequired');
+      if ((preferredContactValue === 'whatsapp' || preferredContactValue === 'phone') && !phone) return text(lang, 'contactPhoneRequired');
+      if (preferredContactValue === 'email' && !email) return text(lang, 'contactEmailRequired');
+      if (phone && !isValidPublicPhone(phone)) return text(lang, 'contactPhoneInvalid');
+      if (email && !isValidPublicEmail(email)) return text(lang, 'contactEmailInvalid');
+    }
+    if (stepKey === 'attribution') {
+      if (!selectedHeardAboutUs) return text(lang, 'heardAboutUsRequired');
+      if (selectedHeardAboutUsNeedsDetail && !selectedHeardAboutUsDetail) return text(lang, 'heardAboutUsOtherRequired');
+    }
+    if (stepKey === 'message') {
+      if (isPastPublicDate(formState.requestedDate) || isPastPublicDate(formState.alternativeDate)) return text(lang, 'dateTodayOrFuture');
+      if (!String(message || '').trim()) return text(lang, 'requestDetailsRequired');
+    }
+    return '';
+  }
+
+  function firstValidationError() {
+    for (let index = 0; index < questionnaireSteps.length; index += 1) {
+      const error = validationForStep(index);
+      if (error) return error;
+    }
+    return '';
+  }
+
+  function goNext() {
+    const error = validationForStep();
+    if (error) {
+      trackBookingSubmitValidationError(effectiveExperienceId || requestType || 'private', `questionnaire_${currentStep.key}`, currentTrackingMetadata);
+      setStepError(error);
+      return;
+    }
+    setStepError('');
+    setStepIndex((current) => {
+      const next = Math.min(current + 1, questionnaireSteps.length - 1);
+      if (questionnaireSteps[next]?.key === 'message') window.setTimeout(ensureFinalMessage, 0);
+      return next;
+    });
+  }
+
+  function goBack() {
+    setStepError('');
+    setStepIndex((current) => Math.max(0, current - 1));
   }
 
   function hasMeaningfulQuestionnaireData() {
