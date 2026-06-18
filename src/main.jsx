@@ -1189,6 +1189,56 @@ function preferredContactLabel(value, lang) {
   return 'WhatsApp';
 }
 
+function hasMessageValue(value) {
+  const clean = String(value || '').trim();
+  return Boolean(clean && clean !== '-');
+}
+
+function messageLine(label, value, { trailingPeriod = false } = {}) {
+  const clean = String(value || '').trim();
+  if (!hasMessageValue(clean)) return '';
+  const suffix = trailingPeriod && !/[.!?]$/.test(clean) ? '.' : '';
+  return `• ${label}: ${clean}${suffix}`;
+}
+
+function joinMessageLines(lines) {
+  return lines.filter(Boolean).join('\n');
+}
+
+function cleanDateForMessage(value, lang) {
+  const clean = String(value || '').trim();
+  if (!hasMessageValue(clean)) return '';
+  return formatDateForMessage(clean, lang);
+}
+
+function peopleSummary({ adults, children, childrenUnder3Count, lang }) {
+  const adultCount = safeParticipantNumber(adults, 0);
+  const childCount = safeParticipantNumber(children, 0);
+  const under3Count = safeParticipantNumber(childrenUnder3Count, 0);
+  const olderChildrenCount = Math.max(childCount - under3Count, 0);
+  const parts = [];
+
+  if (adultCount > 0) {
+    parts.push(lang === 'it'
+      ? `${adultCount} ${adultCount === 1 ? 'adulto' : 'adulti'}`
+      : `${adultCount} ${adultCount === 1 ? 'adult' : 'adults'}`);
+  }
+
+  if (olderChildrenCount > 0) {
+    parts.push(lang === 'it'
+      ? `${olderChildrenCount} ${olderChildrenCount === 1 ? 'bambino' : 'bambini'}`
+      : `${olderChildrenCount} ${olderChildrenCount === 1 ? 'child' : 'children'}`);
+  }
+
+  if (under3Count > 0) {
+    parts.push(lang === 'it'
+      ? `${under3Count} ${under3Count === 1 ? 'bambino sotto i 3 anni' : 'bambini sotto i 3 anni'}`
+      : `${under3Count} ${under3Count === 1 ? 'child under 3' : 'children under 3'}`);
+  }
+
+  return parts.join(', ');
+}
+
 function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
   const requestChoice = formState.requestTypeChoice || formState.requestType || 'private';
   const requestType = requestChoice === 'fixed' ? 'fixed' : 'private';
@@ -1196,61 +1246,73 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
   const experienceName = experienceId && experienceId !== 'unsure' ? adminExperienceLabel(experienceId, lang) : text(lang, 'notSure');
   const requestedDate = selectedFixed?.date || formState.requestedDate || '';
   const alternativeDate = formState.alternativeDate || '';
-  const adults = safeParticipantNumber(formState.adults, 1);
-  const children = safeParticipantNumber(formState.children, 0);
-  const under3 = safeParticipantNumber(formState.childrenUnder3Count, 0);
-  const total = adults + children;
   const heard = normalizeHeardAboutUs(formState.heardAboutUs);
-  const heardDisplay = heard ? heardAboutUsDisplay(heard, formState.heardAboutUsDetail, lang) : text(lang, 'notSure');
+  const heardDisplay = heard ? heardAboutUsDisplay(heard, formState.heardAboutUsDetail, lang) : '';
   const phone = String(formState.phone || '').trim();
   const email = String(formState.email || '').trim();
   const name = String(formState.name || '').trim();
+  const preferredContact = preferredContactLabel(formState.preferredContact || 'whatsapp', lang);
+  const people = peopleSummary({
+    adults: formState.adults,
+    children: formState.children,
+    childrenUnder3Count: formState.childrenUnder3Count,
+    lang
+  });
+
   if (lang === 'it') {
-    return `Ciao Leonardo,
-vorrei preparare una richiesta vulcanIQ.
-
-Nome: ${name || '-'}
-Tipo di richiesta: ${requestChoiceLabel(requestChoice, lang)}
-Esperienza: ${experienceName}
-Data richiesta: ${requestedDate ? formatDateForMessage(requestedDate, lang) : '-'}
-Data alternativa: ${alternativeDate ? formatDateForMessage(alternativeDate, lang) : '-'}
-Tipo di gruppo: ${partyTypeLabel(formState.partyType || 'solo', lang)}
-Adulti: ${adults}
-Bambini: ${children}
-Bambini sotto i 3 anni: ${under3}
-Totale persone: ${total}
-Contatto preferito: ${preferredContactLabel(formState.preferredContact || 'whatsapp', lang)}
-Telefono/WhatsApp: ${phone || '-'}
-Email: ${email || '-'}
-Ho sentito parlare di vulcanIQ da: ${heardDisplay}
-
-Vorrei sapere se la richiesta può essere confermata e ricevere dettagli pratici su disponibilità, durata, prezzo e abbigliamento consigliato.
-
-Grazie.`;
+    const requestLines = joinMessageLines([
+      messageLine('Tipo', requestChoiceLabel(requestChoice, lang)),
+      messageLine('Esperienza', experienceName),
+      messageLine(requestType === 'fixed' ? 'Data' : 'Data preferita', cleanDateForMessage(requestedDate, lang)),
+      requestType === 'private' ? messageLine('Data alternativa', cleanDateForMessage(alternativeDate, lang)) : '',
+      messageLine('Persone', people)
+    ]);
+    const contactLines = joinMessageLines([
+      messageLine('Nome', name),
+      messageLine('WhatsApp/telefono', phone),
+      messageLine('Email', email),
+      messageLine('Contatto preferito', preferredContact, { trailingPeriod: true })
+    ]);
+    const opening = heardDisplay
+      ? `Ho sentito parlare di vulcanIQ da ${heardDisplay} e vorrei informazioni per un’esperienza vulcanIQ sull’Etna.`
+      : 'Vorrei informazioni per un’esperienza vulcanIQ sull’Etna.';
+    const sections = [
+      `Ciao Leonardo,\n\n${opening}`,
+      requestLines ? `Richiesta:\n${requestLines}` : '',
+      contactLines ? `Contatti:\n${contactLines}` : '',
+      'Vorrei sapere se la richiesta può essere confermata e ricevere dettagli su disponibilità, durata, prezzo e abbigliamento consigliato.',
+      'Grazie.',
+      hasMessageValue(name) ? name : ''
+    ];
+    return sections.filter(Boolean).join('\n\n');
   }
-  return `Hi Leonardo,
-I would like to prepare a vulcanIQ request.
 
-Name: ${name || '-'}
-Request type: ${requestChoiceLabel(requestChoice, lang)}
-Experience: ${experienceName}
-Requested date: ${requestedDate ? formatDateForMessage(requestedDate, lang) : '-'}
-Alternative date: ${alternativeDate ? formatDateForMessage(alternativeDate, lang) : '-'}
-Group type: ${partyTypeLabel(formState.partyType || 'solo', lang)}
-Adults: ${adults}
-Children: ${children}
-Children under 3: ${under3}
-Total people: ${total}
-Preferred contact: ${preferredContactLabel(formState.preferredContact || 'whatsapp', lang)}
-Phone/WhatsApp: ${phone || '-'}
-Email: ${email || '-'}
-Where I heard about vulcanIQ: ${heardDisplay}
-
-I would like to know whether the request can be confirmed and receive practical details about availability, duration, price, and recommended clothing.
-
-Thank you.`;
+  const requestLines = joinMessageLines([
+    messageLine('Type', requestChoiceLabel(requestChoice, lang)),
+    messageLine('Experience', experienceName),
+    messageLine(requestType === 'fixed' ? 'Date' : 'Preferred date', cleanDateForMessage(requestedDate, lang)),
+    requestType === 'private' ? messageLine('Alternative date', cleanDateForMessage(alternativeDate, lang)) : '',
+    messageLine('People', people)
+  ]);
+  const contactLines = joinMessageLines([
+    messageLine('Name', name),
+    messageLine('WhatsApp/phone', phone),
+    messageLine('Email', email),
+    messageLine('Preferred contact', preferredContact, { trailingPeriod: true })
+  ]);
+  const opening = heardDisplay
+    ? `I heard about vulcanIQ from ${heardDisplay} and I would like information about a vulcanIQ experience on Mount Etna.`
+    : 'I would like information about a vulcanIQ experience on Mount Etna.';
+  const sections = [
+    `Hi Leonardo,\n\n${opening}`,
+    requestLines ? `Request:\n${requestLines}` : '',
+    contactLines ? `Contact:\n${contactLines}` : '',
+    'I would like to know whether the request can be confirmed and receive details about availability, duration, price, and recommended clothing.',
+    'Thank you.',
+    hasMessageValue(name) ? name : ''
+  ];
+  return sections.filter(Boolean).join('\n\n');
 }
-
 
 function fixedExcursionField(item, field, lang) {
   if (!item) return '';
@@ -1437,16 +1499,6 @@ Children under 3: ${under3Count}
 I would like to know whether the date is available and receive details about duration, price, and recommended clothing.
 
 Thank you.`;
-}
-
-function appendUnder3CountToMessage(message, count, lang) {
-  const cleanCount = Number.parseInt(count || '0', 10) || 0;
-  const base = String(message || text(lang, 'defaultMessage')).trimEnd();
-  if (cleanCount <= 0) return base;
-  const label = lang === 'it' ? 'Bambini sotto i 3 anni' : 'Children under 3';
-  return `${base}
-
-${label}: ${cleanCount}`;
 }
 
 function buildCalendarMessage({ experience, date, status, note }, lang) {
@@ -2771,7 +2823,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const selectedHeardAboutUs = normalizeHeardAboutUs(formState.heardAboutUs);
   const selectedHeardAboutUsDetail = cleanHeardAboutUsDetail(formState.heardAboutUsDetail);
   const selectedHeardAboutUsNeedsDetail = needsHeardAboutUsDetail(selectedHeardAboutUs);
-  const fullMessage = appendHeardAboutUsToMessage(appendUnder3CountToMessage(message, childrenUnder3Count, lang), selectedHeardAboutUs, selectedHeardAboutUsDetail, lang);
+  const fullMessage = String(message || text(lang, 'defaultMessage')).trim();
   const preferredContactValue = ['whatsapp', 'phone', 'email'].includes(formState.preferredContact) ? formState.preferredContact : 'whatsapp';
   const selectedHeardAboutUsMetadata = heardAboutUsMetadata(selectedHeardAboutUs, lang, selectedHeardAboutUsDetail);
   const trackedFormOpenRef = useRef(new Set());
@@ -3763,12 +3815,6 @@ function heardAboutUsMetadata(value, lang, detail = '') {
   };
 }
 
-function heardAboutUsMessageLine(value, detail, lang) {
-  const display = heardAboutUsDisplay(value, detail, lang);
-  if (!display) return '';
-  return `${text(lang, 'heardAboutUsMessagePrefix')} ${display}.`;
-}
-
 function buildAttributionContactMessage(value, detail, lang) {
   const display = heardAboutUsDisplay(value, detail, lang);
   if (!display) return text(lang, 'defaultMessage');
@@ -3776,14 +3822,6 @@ function buildAttributionContactMessage(value, detail, lang) {
     return `Hi Leonardo,\n\nI heard about vulcanIQ from "${display}" and I would like information about a vulcanIQ experience on Mount Etna.\n\nI would like to know availability, approximate duration, price and clothing recommendations.\n\nThank you!`;
   }
   return `Ciao Leonardo,\n\nHo sentito parlare di vulcanIQ da "${display}" e vorrei informazioni su un’esperienza vulcanIQ sull’Etna.\n\nVorrei sapere disponibilità, durata indicativa, prezzo e consigli sull’abbigliamento.\n\nGrazie!`;
-}
-
-function appendHeardAboutUsToMessage(message, value, detail, lang) {
-  const base = String(message || text(lang, 'defaultMessage')).trimEnd();
-  const line = heardAboutUsMessageLine(value, detail, lang);
-  if (!line) return base;
-  if (base.includes(line)) return base;
-  return `${base}\n\n${line}`;
 }
 
 function ContactAttributionSelect({ lang, value, onChange, includeAdmin = false, id = 'heardAboutUs' }) {
