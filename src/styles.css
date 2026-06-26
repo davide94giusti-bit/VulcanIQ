@@ -8046,3 +8046,77 @@ body.modal-scroll-lock {
     appearance: none;
   }
 }
+/* Admin backup */
+.backup-admin-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.backup-page-header,
+.backup-header-actions {
+  align-items: flex-start;
+}
+
+.backup-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  justify-content: flex-end;
+}
+
+.backup-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.backup-panel p {
+  color: var(--muted);
+  margin: 0.4rem 0 0;
+}
+
+.backup-cron-grid {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 1rem;
+}
+
+.backup-cron-grid code,
+.admin-technical-details code {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  color: var(--text);
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 0.75rem;
+}
+
+.backup-restore-list {
+  color: var(--muted);
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.75rem 0 0;
+  padding-left: 1.35rem;
+}
+
+.admin-technical-details {
+  margin-top: 0.7rem;
+}
+
+.admin-technical-details summary {
+  cursor: pointer;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+@media (max-width: 760px) {
+  .backup-header-actions,
+  .backup-header-actions .button {
+    width: 100%;
+  }
+
+  .backup-summary-grid,
+  .backup-cron-grid {
+    grid-template-columns: 1fr;
+  }
+}

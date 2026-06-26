@@ -11,6 +11,7 @@ import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFil
 import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
 import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
 import { listAnalyticsEvents, listAnalyticsSessions } from './services/analyticsService.js';
+import { createDatabaseBackup } from './services/backupService.js';
 import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat } from './analytics.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import { submitPublicBookingRequestWithTracking } from './services/publicBookingSubmit.js';
@@ -37,6 +38,7 @@ const ADMIN_NAV_SECTIONS = [
   { key: 'edit', path: '/admin/edit', labelIt: 'Modifica', labelEn: 'Edit', editable: true },
   { key: 'finance', path: '/admin/finance', labelIt: 'Finanze', labelEn: 'Finance', editable: true },
   { key: 'analytics', path: '/admin/analytics', labelIt: 'Dati', labelEn: 'Analytics', editable: true },
+  { key: 'backup', path: '/admin/system/backup', labelIt: 'Sistema', labelEn: 'System', editable: false, ownerOnly: true },
   { key: 'publicSite', path: '/', labelIt: 'Sito pubblico', labelEn: 'Public site', editable: true, external: true }
 ];
 
@@ -47,6 +49,7 @@ function adminNavLabel(section, lang) {
 function isAdminNavSectionActive(normalizedPath, section) {
   if (!section || section.external) return false;
   if (section.key === 'analytics') return normalizedPath.includes('/analytics') || normalizedPath.includes('/data');
+  if (section.key === 'backup') return normalizedPath.includes('/system') || normalizedPath.includes('/backup');
   if (section.key === 'edit') return normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media');
   if (section.key === 'partnerships') return normalizedPath.includes('/partnerships');
   return normalizedPath.includes(`/${section.key}`);
@@ -55,6 +58,11 @@ function isAdminNavSectionActive(normalizedPath, section) {
 function adminPathFromLocation(pathname) {
   const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
   return ADMIN_NAV_SECTIONS.find((section) => !section.external && isAdminNavSectionActive(normalizedPath, section))?.path || '/admin/today';
+}
+
+function visibleAdminNavSections(profile) {
+  const isOwner = profile?.role === 'owner' && profile?.active !== false;
+  return ADMIN_NAV_SECTIONS.filter((section) => !section.ownerOnly || isOwner);
 }
 
 const MEDIA = {
@@ -4264,6 +4272,9 @@ function ProtectedAdminArea({ pathname, navigate, lang, setLang }) {
 function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
   const currentAdminPath = adminPathFromLocation(pathname);
+  const visibleSections = visibleAdminNavSections(profile);
+  const currentNavValue = visibleSections.some((section) => section.path === currentAdminPath) ? currentAdminPath : '/admin/today';
+  const isOwner = profile?.role === 'owner' && profile?.active !== false;
 
   const [adminContentRows, setAdminContentRows] = useState([]);
 
@@ -4306,11 +4317,11 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   return (
     <div className="admin-shell">
       <header className="admin-header">
-        <select className="admin-mobile-nav" value={currentAdminPath} onChange={(event) => navigate(event.target.value)} aria-label="Admin navigation">
-          {ADMIN_NAV_SECTIONS.map((section) => <option key={section.key} value={section.path}>{adminNavLabel(section, lang)}</option>)}
+        <select className="admin-mobile-nav" value={currentNavValue} onChange={(event) => navigate(event.target.value)} aria-label="Admin navigation">
+          {visibleSections.map((section) => <option key={section.key} value={section.path}>{adminNavLabel(section, lang)}</option>)}
         </select>
         <nav className="admin-nav" aria-label="Admin navigation">
-          {ADMIN_NAV_SECTIONS.map((section) => section.external ? (
+          {visibleSections.map((section) => section.external ? (
             <a key={section.key} href={section.path} target="_blank" rel="noopener noreferrer">{adminNavLabel(section, lang)}</a>
           ) : (
             <button key={section.key} type="button" className={isAdminNavSectionActive(normalizedPath, section) ? 'active' : ''} onClick={() => navigate(section.path)}>{adminNavLabel(section, lang)}</button>
@@ -4331,6 +4342,8 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           <FinanceAdminPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/analytics') || normalizedPath.includes('/data') ? (
           <AdminAnalyticsPage lang={lang} session={session} adminContent={adminContent} />
+        ) : normalizedPath.includes('/system') || normalizedPath.includes('/backup') ? (
+          isOwner ? <AdminBackupPage lang={lang} session={session} profile={profile} adminContent={adminContent} /> : <OwnerOnlyAdminPage lang={lang} />
         ) : normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media') ? (
           <AdminEditPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/partnerships') ? (
@@ -7255,15 +7268,133 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
   URL.revokeObjectURL(url);
 }
 
+
+function OwnerOnlyAdminPage({ lang }) {
+  return (
+    <section className="admin-subpage backup-admin-page">
+      <div className="admin-page-header">
+        <div>
+          <span className="kicker">vulcanIQ</span>
+          <h1>{adminCopy(lang, 'Accesso owner richiesto', 'Owner access required')}</h1>
+          <p>{adminCopy(lang, 'Questa sezione è disponibile solo agli owner attivi.', 'This section is available only to active owners.')}</p>
+        </div>
+      </div>
+      <div className="admin-alert warning" role="status">
+        {adminCopy(lang, 'I manager e gli utenti non autenticati non possono accedere ai controlli di backup.', 'Managers and unauthenticated users cannot access backup controls.')}
+      </div>
+    </section>
+  );
+}
+
+function backupWorkflowUrl() {
+  return import.meta.env.VITE_GITHUB_BACKUP_WORKFLOW_URL || import.meta.env.VITE_GITHUB_ACTIONS_BACKUP_URL || '';
+}
+
+function AdminBackupPage({ lang }) {
+  const [state, setState] = useState({ loading: false, message: '', error: '' });
+  const workflowUrl = backupWorkflowUrl();
+
+  async function handleCreateBackup() {
+    setState({ loading: true, message: '', error: '' });
+    try {
+      const result = await createDatabaseBackup({ lang });
+      setState({ loading: false, message: result?.message || adminCopy(lang, 'Backup avviato', 'Backup started'), error: '' });
+    } catch (error) {
+      setState({ loading: false, message: '', error: error?.message || adminCopy(lang, 'Impossibile avviare il backup.', 'Could not start backup.') });
+    }
+  }
+
+  return (
+    <section className="admin-subpage backup-admin-page">
+      <div className="admin-page-header backup-page-header">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'Sistema', 'System')}</span>
+          <h1>{adminCopy(lang, 'Backup database', 'Backup database')}</h1>
+          <p>{adminCopy(lang, 'Backup owner-only tramite endpoint server-side e GitHub Actions. Nessun dump viene generato nel browser.', 'Owner-only backup through a server-side endpoint and GitHub Actions. No dump is generated in the browser.')}</p>
+        </div>
+        <div className="backup-header-actions">
+          <button className="button primary" type="button" disabled={state.loading} onClick={handleCreateBackup}>
+            {state.loading ? adminCopy(lang, 'Avvio backup...', 'Starting backup...') : adminCopy(lang, 'Crea backup', 'Create backup')}
+          </button>
+          {workflowUrl ? (
+            <a className="button secondary" href={workflowUrl} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Scarica ultimo backup', 'Download latest backup')}</a>
+          ) : (
+            <button className="button secondary" type="button" disabled>{adminCopy(lang, 'Scarica ultimo backup', 'Download latest backup')}</button>
+          )}
+        </div>
+      </div>
+
+      {state.message && <div className="admin-alert success" role="status">{state.message}<br />{adminCopy(lang, 'Ultimo backup disponibile negli artifact di GitHub Actions.', 'Latest backup available in GitHub Actions artifacts.')}</div>}
+      {state.error && <div className="admin-alert error" role="alert">{state.error}</div>}
+      {!workflowUrl && <div className="admin-alert warning" role="status">{adminCopy(lang, 'Imposta VITE_GITHUB_BACKUP_WORKFLOW_URL in Cloudflare per abilitare il link diretto al workflow/artifact GitHub.', 'Set VITE_GITHUB_BACKUP_WORKFLOW_URL in Cloudflare to enable the direct GitHub workflow/artifact link.')}</div>}
+
+      <div className="admin-summary-grid backup-summary-grid">
+        <SummaryCard label={adminCopy(lang, 'Ultimo backup', 'Last backup')} value={adminCopy(lang, 'GitHub Actions', 'GitHub Actions')} helper={adminCopy(lang, 'Verifica la cronologia del workflow e gli artifact ZIP.', 'Check the workflow history and ZIP artifacts.')} />
+        <SummaryCard label={adminCopy(lang, 'Ultimo stato', 'Last status')} value={adminCopy(lang, 'Vedi workflow', 'See workflow')} helper={adminCopy(lang, 'Lo stato dettagliato resta nella pagina Actions di GitHub.', 'Detailed status remains on the GitHub Actions page.')} />
+        <SummaryCard label={adminCopy(lang, 'Programmazione backup', 'Backup schedule')} value={adminCopy(lang, 'Giornaliero', 'Daily')} helper={adminCopy(lang, '02:00 UTC tramite GitHub Actions.', '02:00 UTC via GitHub Actions.')} />
+      </div>
+
+      <section className="admin-panel backup-panel">
+        <div className="admin-panel-header">
+          <h2>{adminCopy(lang, 'Programmazione backup', 'Backup schedule')}</h2>
+        </div>
+        <p>{adminCopy(lang, 'Backup automatico: giornaliero alle 02:00 UTC tramite GitHub Actions. Per modificare la frequenza, aggiorna il cron nel workflow GitHub.', 'Automatic backup: daily at 02:00 UTC via GitHub Actions. To change the frequency, update the cron expression in the GitHub workflow.')}</p>
+        <div className="backup-cron-grid" aria-label={adminCopy(lang, 'Esempi cron backup', 'Backup cron examples')}>
+          <code>{adminCopy(lang, 'Giornaliero', 'Daily')}: 0 2 * * *</code>
+          <code>{adminCopy(lang, 'Settimanale', 'Weekly')}: 0 2 * * 0</code>
+          <code>{adminCopy(lang, 'Mensile', 'Monthly')}: 0 2 1 * *</code>
+        </div>
+        <p className="small-note">{adminCopy(lang, 'Le esecuzioni pianificate sono gestite da GitHub Actions e possono non partire esattamente al secondo configurato.', 'Scheduled runs are handled by GitHub Actions and may not start at the exact configured second.')}</p>
+      </section>
+
+      <section className="admin-panel backup-panel">
+        <div className="admin-panel-header">
+          <h2>{adminCopy(lang, 'Istruzioni di ripristino', 'Restore instructions')}</h2>
+        </div>
+        <ol className="backup-restore-list">
+          <li>{adminCopy(lang, 'Crea un nuovo progetto Supabase.', 'Create a new Supabase project.')}</li>
+          <li>{adminCopy(lang, 'Abilita Data API.', 'Enable Data API.')}</li>
+          <li>{adminCopy(lang, 'Imposta gli schemi esposti su public.', 'Set exposed schemas to public.')}</li>
+          <li>{adminCopy(lang, 'Ripristina i file SQL inclusi nello ZIP.', 'Restore the SQL files included in the ZIP.')}</li>
+          <li>{adminCopy(lang, 'Ricrea/verifica gli utenti Auth.', 'Recreate/verify Auth users.')}</li>
+          <li>{adminCopy(lang, 'Aggiorna le variabili Cloudflare.', 'Update Cloudflare variables.')}</li>
+          <li>{adminCopy(lang, 'Esegui un nuovo deploy.', 'Redeploy.')}</li>
+          <li>{adminCopy(lang, 'Verifica /admin e una richiesta booking di test.', 'Verify /admin and one test booking request.')}</li>
+        </ol>
+      </section>
+
+      <section className="admin-panel backup-panel">
+        <div className="admin-panel-header">
+          <h2>{adminCopy(lang, 'Configurazione sicura', 'Secure configuration')}</h2>
+        </div>
+        <p>{adminCopy(lang, 'Configura i segreti richiesti nella pagina Actions del repository GitHub. Il token GitHub per avviare il workflow va salvato solo nelle variabili server-side di Cloudflare Pages.', 'Configure the required secrets in the GitHub repository Actions settings. The GitHub token used to start the workflow must be stored only in Cloudflare Pages server-side variables.')}</p>
+        <p className="small-note">{adminCopy(lang, 'Non inserire mai URL database, chiave service role, access token Supabase o token GitHub in src, .env.local committati o variabili VITE pubbliche.', 'Never put database URLs, service role keys, Supabase access tokens, or GitHub tokens in src, committed .env.local files, or public VITE variables.')}</p>
+      </section>
+    </section>
+  );
+}
+
+function analyticsAdminErrorMessage(lang, error) {
+  const raw = `${error?.message || error || ''}`.toLowerCase();
+  if (raw.includes('analytics_events') || raw.includes('analytics_sessions') || raw.includes('schema cache') || raw.includes('pgrst')) {
+    return adminCopy(lang, 'La tabella degli eventi analytics non è disponibile o non è ancora sincronizzata.', 'The analytics events table is not available or has not synced yet.');
+  }
+  return adminCopy(lang, 'Analytics non disponibili al momento.', 'Analytics are not available right now.');
+}
+
+function analyticsTechnicalError(error) {
+  return error?.message || error?.details || error?.hint || error?.code || '';
+}
+
 function AdminAnalyticsPage({ lang, adminContent = {} }) {
   const [period, setPeriod] = useState('30d');
-  const [state, setState] = useState({ loading: true, error: '', events: [], sessions: [], bookingRequests: [] });
+  const [state, setState] = useState({ loading: true, error: '', technicalError: '', events: [], sessions: [], bookingRequests: [] });
   const range = useMemo(() => analyticsDateRange(period), [period]);
 
   useEffect(() => {
     let alive = true;
     async function loadAnalytics() {
-      setState((current) => ({ ...current, loading: true, error: '' }));
+      setState((current) => ({ ...current, loading: true, error: '', technicalError: '' }));
       try {
         const [events, sessions, requests] = await Promise.all([
           listAnalyticsEvents({ ...range, limit: 10000 }),
@@ -7271,20 +7402,20 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           listBookingRequests({ limit: 1000 }).catch(() => [])
         ]);
         if (!alive) return;
-        setState({ loading: false, error: '', events, sessions, bookingRequests: requests || [] });
+        setState({ loading: false, error: '', technicalError: '', events, sessions, bookingRequests: requests || [] });
       } catch (error) {
         if (!alive) return;
-        setState({ loading: false, error: error?.message || adminCopy(lang, 'Analytics non disponibili.', 'Analytics are not available.'), events: [], sessions: [], bookingRequests: [] });
+        setState({ loading: false, error: analyticsAdminErrorMessage(lang, error), technicalError: analyticsTechnicalError(error), events: [], sessions: [], bookingRequests: [] });
       }
     }
     loadAnalytics();
     return () => { alive = false; };
-  }, [period]);
+  }, [period, lang]);
 
   const model = useMemo(() => buildAnalyticsModel({ events: state.events, sessions: state.sessions, bookingRequests: state.bookingRequests, range, lang }), [state.events, state.sessions, state.bookingRequests, range, lang]);
   const hasData = state.events.length > 0 || state.sessions.length > 0;
   const emptyText = adminCopy(lang, 'Nessun dato disponibile per il periodo selezionato.', 'No analytics data available for the selected period.');
-  const setupText = adminCopy(lang, 'I dati inizieranno a comparire dopo le prime visite pubbliche al sito.', 'Data will start appearing after public visitors browse the website.');
+  const setupText = adminCopy(lang, 'I dati inizieranno a comparire dopo le prime visite pubbliche al sito.', 'Data will start appearing after the first public visits to the website.');
 
   return (
     <section className="admin-subpage analytics-admin-page">
@@ -7305,7 +7436,18 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
         </div>
       </div>
 
-      {state.error && <div className="admin-alert warning" role="status">{state.error}<br />{setupText}</div>}
+      {state.error && (
+        <div className="admin-alert warning" role="status">
+          <p>{state.error}</p>
+          <p>{setupText}</p>
+          {state.technicalError && (
+            <details className="admin-technical-details">
+              <summary>{adminCopy(lang, 'Dettagli tecnici', 'Technical details')}</summary>
+              <code>{state.technicalError}</code>
+            </details>
+          )}
+        </div>
+      )}
       {state.loading ? <p>{adminCopy(lang, 'Caricamento dati...', 'Loading analytics...')}</p> : (
         <>
           {!hasData && <div className="admin-alert warning" role="status">{emptyText}<br />{setupText}</div>}
