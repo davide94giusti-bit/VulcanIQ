@@ -1,27 +1,28 @@
-function json(status, body = {}) {
-  if (status === 204) return new Response(null, { status, headers: { 'Cache-Control': 'no-store' } });
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-store'
-    }
-  });
-}
+﻿import { backupErrorMessage, findLatestBackupArtifact, json, requestLanguage, requireActiveOwner } from './_shared.js';
 
-function cleanText(value, maxLength = 160) {
-  if (value === null || value === undefined) return '';
-  return String(value).trim().replace(/[\u0000-\u001f\u007f]/g, '').slice(0, maxLength);
+export async function onRequestOptions() {
+  return json(204, {});
 }
 
 export async function onRequestGet(context) {
-  const owner = cleanText(context.env?.GITHUB_OWNER, 120);
-  const repo = cleanText(context.env?.GITHUB_REPO, 120);
-  const workflowId = cleanText(context.env?.GITHUB_BACKUP_WORKFLOW_ID || 'vulcaniq-db-backup.yml', 180);
-  const configured = Boolean(owner && repo);
+  const language = requestLanguage(context.request, 'en');
+  const ownerAccess = await requireActiveOwner(context.request, context.env || {}, language);
+  if (!ownerAccess.ok) return ownerAccess.response;
+
+  const latest = await findLatestBackupArtifact(context.env || {});
+  if (!latest.ok) {
+    return json(latest.status === 404 || latest.status === 410 ? 200 : latest.status || 502, {
+      ok: latest.status === 404 || latest.status === 410,
+      configured: latest.code !== 'github_backup_not_configured',
+      latestBackup: latest.latestBackup || null,
+      message: backupErrorMessage(language, latest.code),
+      code: latest.code
+    });
+  }
+
   return json(200, {
     ok: true,
-    configured,
-    workflow_url: configured ? `https://github.com/${owner}/${repo}/actions/workflows/${workflowId}` : null
+    configured: true,
+    latestBackup: latest.latestBackup
   });
 }

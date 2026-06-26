@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   color-scheme: light;
   --ink: #18212b;
   --night: #0d1626;
@@ -792,7 +792,7 @@ textarea { min-height: 150px; resize: vertical; }
 .dark-card h2, .dark-card p, .dark-card li { color: #fff; }
 .check-list { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 10px; }
 .check-list li { position: relative; padding-left: 24px; color: var(--basalt); }
-.check-list li::before { content: "✓"; position: absolute; left: 0; top: 0; color: var(--lava); font-weight: 900; }
+.check-list li::before { content: "âœ“"; position: absolute; left: 0; top: 0; color: var(--lava); font-weight: 900; }
 .review-list { display: grid; gap: 12px; }
 blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cream); color: var(--basalt); font-size: 0.95rem; }
 .image-strip-section { padding-top: 0; }
@@ -4789,7 +4789,7 @@ body.modal-scroll-lock { overflow: hidden; }
 }
 
 .today-requests-details[open] > summary::after {
-  content: "–";
+  content: "â€“";
 }
 
 .today-requests-collapsed-body {
@@ -5656,7 +5656,7 @@ body.modal-scroll-lock {
 }
 
 .finance-detail-section summary::after {
-  content: "⌄";
+  content: "âŒ„";
   flex: 0 0 auto;
   color: var(--ash);
   font-size: 1rem;
@@ -6071,7 +6071,7 @@ body.modal-scroll-lock {
 }
 
 .finance-collapsible-panel > summary.finance-collapsible-summary::after {
-  content: "⌄";
+  content: "âŒ„";
   grid-column: 3;
   grid-row: 1;
   align-self: center;
@@ -6576,7 +6576,7 @@ body.modal-scroll-lock {
 }
 
 .analytics-collapsible-summary::after {
-  content: "⌄";
+  content: "âŒ„";
   display: grid;
   width: 2.35rem;
   height: 2.35rem;
@@ -8046,6 +8046,7 @@ body.modal-scroll-lock {
     appearance: none;
   }
 }
+
 /* Admin backup */
 .backup-admin-page {
   display: grid;
@@ -8118,5 +8119,70 @@ body.modal-scroll-lock {
   .backup-summary-grid,
   .backup-cron-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+.backup-schedule-form {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.backup-toggle-row {
+  align-items: center;
+  color: var(--text);
+  display: inline-flex;
+  font-weight: 700;
+  gap: 0.55rem;
+}
+
+.backup-toggle-row input {
+  height: 1rem;
+  width: 1rem;
+}
+
+.backup-schedule-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.backup-schedule-grid label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.backup-schedule-grid label span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.backup-schedule-grid input,
+.backup-schedule-grid select {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 14px;
+  color: var(--text);
+  min-height: 44px;
+  padding: 0.75rem 0.85rem;
+}
+
+.backup-schedule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+@media (max-width: 760px) {
+  .backup-schedule-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .backup-schedule-actions,
+  .backup-schedule-actions .button {
+    width: 100%;
   }
 }

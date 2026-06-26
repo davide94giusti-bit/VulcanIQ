@@ -1,4 +1,4 @@
-name: vulcanIQ Supabase backup
+﻿name: vulcanIQ Supabase backup
 
 on:
   workflow_dispatch:
@@ -16,12 +16,8 @@ on:
           - en
           - it
   schedule:
-    # Daily at 02:00 UTC:
-    - cron: "0 2 * * *"
-    # Weekly every Sunday at 02:00 UTC:
-    # - cron: "0 2 * * 0"
-    # Monthly on the 1st at 02:00 UTC:
-    # - cron: "0 2 1 * *"
+    # Runs hourly. The job reads public.system_backup_settings and exits when no backup is due.
+    - cron: "0 * * * *"
 
 permissions:
   contents: read
@@ -33,7 +29,7 @@ env:
 
 jobs:
   backup:
-    name: Create import-ready database ZIP
+    name: Create import-ready database artifact
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -46,11 +42,11 @@ jobs:
         with:
           version: latest
 
-      - name: Install PostgreSQL client and ZIP tools
+      - name: Install PostgreSQL client
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y postgresql-client zip
+          sudo apt-get install -y postgresql-client
 
       - name: Validate required secrets
         run: |
@@ -59,12 +55,105 @@ jobs:
           test -n "${SUPABASE_PROJECT_REF}"
           test -n "${SUPABASE_DB_URL}"
 
+      - name: Check scheduled backup due
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual backup requested."
+            echo "SHOULD_RUN=true" >> "$GITHUB_ENV"
+            echo "BACKUP_TRIGGER=manual" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          TABLE_EXISTS="$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atc "select to_regclass('public.system_backup_settings') is not null")"
+          if [ "$TABLE_EXISTS" != "t" ]; then
+            CURRENT_HOUR="$(date -u +'%H')"
+            if [ "$CURRENT_HOUR" = "02" ]; then
+              echo "Backup settings table missing; using default daily 02:00 UTC schedule."
+              echo "SHOULD_RUN=true" >> "$GITHUB_ENV"
+            else
+              echo "Backup settings table missing and no default backup is due."
+              echo "SHOULD_RUN=false" >> "$GITHUB_ENV"
+            fi
+            echo "BACKUP_TRIGGER=schedule" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          RESULT="$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atc "
+            with s as (
+              select
+                id,
+                enabled,
+                frequency,
+                utc_hour,
+                utc_minute,
+                coalesce(weekly_day, 0) as weekly_day,
+                coalesce(monthly_day, 1) as monthly_day,
+                last_scheduled_backup_at
+              from public.system_backup_settings
+              where id = 'default'
+              union all
+              select 'default', true, 'daily', 2, 0, 0, 1, null::timestamptz
+              where not exists (select 1 from public.system_backup_settings where id = 'default')
+              limit 1
+            ),
+            n as (
+              select now() as now_tz, timezone('utc', now()) as now_utc
+            ),
+            c as (
+              select
+                s.*,
+                n.now_tz,
+                n.now_utc,
+                case
+                  when frequency = 'daily' then
+                    date_trunc('day', n.now_utc) + make_interval(hours => utc_hour, mins => utc_minute)
+                  when frequency = 'weekly' then
+                    date_trunc('day', n.now_utc)
+                    - (((extract(dow from n.now_utc)::int - weekly_day + 7) % 7) * interval '1 day')
+                    + make_interval(hours => utc_hour, mins => utc_minute)
+                  when frequency = 'monthly' then
+                    make_timestamp(
+                      extract(year from n.now_utc)::int,
+                      extract(month from n.now_utc)::int,
+                      least(monthly_day, 28),
+                      utc_hour,
+                      utc_minute,
+                      0
+                    )
+                end as due_utc
+              from s cross join n
+            )
+            select
+              case
+                when enabled = true
+                  and now_utc >= due_utc
+                  and (last_scheduled_backup_at is null or last_scheduled_backup_at < (due_utc at time zone 'UTC'))
+                then 'true'
+                else 'false'
+              end || '|' || coalesce(to_char(due_utc, 'YYYY-MM-DD') || 'T' || to_char(due_utc, 'HH24:MI:SS') || 'Z', '')
+            from c;")"
+
+          SHOULD_RUN="${RESULT%%|*}"
+          DUE_AT="${RESULT#*|}"
+          echo "SHOULD_RUN=${SHOULD_RUN}" >> "$GITHUB_ENV"
+          echo "SCHEDULED_BACKUP_DUE_AT=${DUE_AT}" >> "$GITHUB_ENV"
+          echo "BACKUP_TRIGGER=schedule" >> "$GITHUB_ENV"
+
+          if [ "$SHOULD_RUN" = "true" ]; then
+            echo "Scheduled backup is due at ${DUE_AT}."
+          else
+            echo "No scheduled backup due."
+          fi
+
       - name: Prepare backup files
+        if: ${{ env.SHOULD_RUN == 'true' }}
         run: |
           set -euo pipefail
           BACKUP_CREATED_AT_UTC="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           BACKUP_STAMP="$(date -u +'%Y-%m-%d_%H-%M-UTC')"
-          ARTIFACT_NAME="vulcaniq-supabase-backup-${BACKUP_STAMP}.zip"
+          ARTIFACT_NAME="vulcaniq-supabase-backup-${BACKUP_STAMP}"
           echo "BACKUP_CREATED_AT_UTC=${BACKUP_CREATED_AT_UTC}" >> "$GITHUB_ENV"
           echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> "$GITHUB_ENV"
 
@@ -78,6 +167,8 @@ jobs:
             "supabase_project_ref": "${SUPABASE_PROJECT_REF}",
             "requested_by": "${{ github.event.inputs.requested_by || github.actor }}",
             "trigger": "${{ github.event_name }}",
+            "backup_trigger": "${BACKUP_TRIGGER}",
+            "scheduled_backup_due_at_utc": "${SCHEDULED_BACKUP_DUE_AT:-}",
             "includes_roles": true,
             "includes_schema": true,
             "includes_data": true,
@@ -148,18 +239,18 @@ jobs:
           cat > backup/README_RESTORE.md <<'RESTOREREADME'
           # vulcanIQ Supabase restore checklist
 
-          This ZIP is generated by GitHub Actions. It contains logical SQL dumps for roles, schema, and data, plus restore scripts and Cloudflare environment-variable guidance.
+          This artifact is generated by GitHub Actions. When downloaded from the vulcanIQ admin area, it is a single ZIP containing logical SQL dumps for roles, schema, and data, plus restore scripts and Cloudflare environment-variable guidance.
 
           ## What is included
 
-          - `00_project_info.json` — backup metadata.
-          - `01_roles.sql` — database role dump from Supabase CLI.
-          - `02_schema.sql` — database schema dump from Supabase CLI.
-          - `03_data.sql` — database data dump from Supabase CLI.
-          - `restore-supabase.sh` — Bash restore helper.
-          - `restore-supabase.ps1` — PowerShell restore helper.
-          - `cloudflare-env-template.txt` — variables to recreate in Cloudflare Pages.
-          - `storage-assets/README_STORAGE.md` — Storage limitation and manual asset guidance.
+          - `00_project_info.json` â€” backup metadata.
+          - `01_roles.sql` â€” database role dump from Supabase CLI.
+          - `02_schema.sql` â€” database schema dump from Supabase CLI.
+          - `03_data.sql` â€” database data dump from Supabase CLI.
+          - `restore-supabase.sh` â€” Bash restore helper.
+          - `restore-supabase.ps1` â€” PowerShell restore helper.
+          - `cloudflare-env-template.txt` â€” variables to recreate in Cloudflare Pages.
+          - `storage-assets/README_STORAGE.md` â€” Storage limitation and manual asset guidance.
 
           ## Restore steps
 
@@ -200,18 +291,7 @@ jobs:
 
           ## Scheduling
 
-          The workflow runs daily at 02:00 UTC by default. GitHub Actions scheduled workflows use cron and may not start at the exact second. Edit `.github/workflows/vulcaniq-db-backup.yml` to switch frequency:
-
-          ```yaml
-          # Daily at 02:00 UTC:
-          - cron: "0 2 * * *"
-
-          # Weekly every Sunday at 02:00 UTC:
-          - cron: "0 2 * * 0"
-
-          # Monthly on the 1st at 02:00 UTC:
-          - cron: "0 2 1 * *"
-          ```
+          The workflow runs hourly and checks `public.system_backup_settings`. If no backup is due, it exits successfully without creating an artifact. The vulcanIQ owner can edit the active schedule from the Backup page in the admin area.
 
           ## Storage limitation
 
@@ -219,41 +299,51 @@ jobs:
           RESTOREREADME
 
       - name: Dump database roles
+        if: ${{ env.SHOULD_RUN == 'true' }}
         run: |
           set -euo pipefail
           supabase db dump --db-url "$SUPABASE_DB_URL" --role-only -f backup/01_roles.sql
 
       - name: Dump database schema
+        if: ${{ env.SHOULD_RUN == 'true' }}
         run: |
           set -euo pipefail
           supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/02_schema.sql
 
       - name: Dump database data
+        if: ${{ env.SHOULD_RUN == 'true' }}
         run: |
           set -euo pipefail
           supabase db dump --db-url "$SUPABASE_DB_URL" --data-only --use-copy -f backup/03_data.sql
 
       - name: Validate backup files
+        if: ${{ env.SHOULD_RUN == 'true' }}
         run: |
           set -euo pipefail
+          test -s backup/00_project_info.json
           test -s backup/01_roles.sql
           test -s backup/02_schema.sql
           test -s backup/03_data.sql
           test -s backup/README_RESTORE.md
           test -s backup/cloudflare-env-template.txt
-
-      - name: Create backup ZIP
-        run: |
-          set -euo pipefail
-          cd backup
-          zip -r "../${ARTIFACT_NAME}" .
-          cd ..
-          test -s "${ARTIFACT_NAME}"
+          test -s backup/restore-supabase.sh
+          test -s backup/restore-supabase.ps1
+          test -s backup/storage-assets/README_STORAGE.md
 
       - name: Upload backup artifact
+        if: ${{ env.SHOULD_RUN == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
-          path: ${{ env.ARTIFACT_NAME }}
+          path: backup/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Mark scheduled backup completed
+        if: ${{ github.event_name == 'schedule' && env.SHOULD_RUN == 'true' }}
+        run: |
+          set -euo pipefail
+          TABLE_EXISTS="$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atc "select to_regclass('public.system_backup_settings') is not null")"
+          if [ "$TABLE_EXISTS" = "t" ]; then
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "update public.system_backup_settings set last_scheduled_backup_at = now() where id = 'default';"
+          fi

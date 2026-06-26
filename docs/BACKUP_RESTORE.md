@@ -1,17 +1,45 @@
-# vulcanIQ backup and restore
+﻿# vulcanIQ backup and restore
 
 ## Owner workflow
 
-The admin page `Admin > System > Backup` is visible only to active owners (`public.admin_profiles.role = 'owner'`). The browser does not run `pg_dump`, Supabase CLI, or ZIP creation directly.
+The admin page `Admin > System > Backup` is visible only to active owners (`public.admin_profiles.role = 'owner'` and `active = true`). Managers, unauthenticated users, and public visitors cannot create or download backups.
 
-Flow:
+The browser never receives GitHub tokens, Supabase service-role keys, Supabase access tokens for automation, or database URLs. The browser only sends the logged-in owner Supabase JWT to Cloudflare Pages Functions.
+
+Create flow:
 
 1. Owner clicks **Create backup**.
 2. The frontend sends the current Supabase access token to `/api/admin/backup/create`.
 3. The Cloudflare Pages Function validates the Supabase user.
 4. The function confirms an active owner row in `public.admin_profiles`.
 5. The function triggers the GitHub Actions workflow `vulcaniq-db-backup.yml`.
-6. GitHub Actions creates a ZIP artifact with SQL dumps and restore documentation.
+6. GitHub Actions creates an import-ready backup artifact.
+
+Download flow:
+
+1. Owner clicks **Download latest backup**.
+2. The frontend calls `/api/admin/backup/download` with the current Supabase access token.
+3. The Cloudflare Pages Function validates the owner.
+4. The function finds the latest successful `vulcaniq-db-backup.yml` run and latest artifact whose name starts with `vulcaniq-supabase-backup-`.
+5. The function downloads the artifact from GitHub server-side and returns it as `application/zip`.
+6. The browser downloads the ZIP locally without requiring a GitHub login.
+
+## Backup artifact structure
+
+The workflow uploads the `backup/` folder directly with `actions/upload-artifact`. GitHub still returns a ZIP when the artifact is downloaded, but the ZIP should open directly to these files:
+
+```txt
+00_project_info.json
+01_roles.sql
+02_schema.sql
+03_data.sql
+README_RESTORE.md
+cloudflare-env-template.txt
+restore-supabase.ps1
+restore-supabase.sh
+storage-assets/
+storage-assets/README_STORAGE.md
+```
 
 ## GitHub repository secrets
 
@@ -29,7 +57,7 @@ Do not commit these values to Git and do not put them in frontend `VITE_` variab
 
 ## Cloudflare Pages server-side variables
 
-Set these in Cloudflare Pages as non-public server-side variables for the Pages Function:
+Set these in Cloudflare Pages as non-public server-side variables for the Pages Functions:
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY` or `VITE_SUPABASE_ANON_KEY`
@@ -40,32 +68,33 @@ Set these in Cloudflare Pages as non-public server-side variables for the Pages 
 - `GITHUB_BACKUP_WORKFLOW_ID` (default: `vulcaniq-db-backup.yml`)
 - `GITHUB_BACKUP_REF` (default: `main`)
 
-Optional public frontend variable for the admin button link:
+Optional public frontend variable for the diagnostic workflow link:
 
 - `VITE_GITHUB_BACKUP_WORKFLOW_URL`
 
 ## Schedule
 
-Default automatic backup schedule:
+Run this migration before using the editable schedule UI:
 
-```yaml
-- cron: "0 2 * * *"
+```sql
+supabase/migrations/20260626_system_backup_settings.sql
 ```
 
-Examples:
+The workflow runs hourly:
 
 ```yaml
-# Daily at 02:00 UTC:
-- cron: "0 2 * * *"
-
-# Weekly every Sunday at 02:00 UTC:
-- cron: "0 2 * * 0"
-
-# Monthly on the 1st at 02:00 UTC:
-- cron: "0 2 1 * *"
+- cron: "0 * * * *"
 ```
 
-Scheduled workflow runs are handled by GitHub Actions and may not start at the exact second.
+On each scheduled run, the workflow reads `public.system_backup_settings`. If no backup is due, it exits successfully and creates no artifact. If a backup is due, it creates the backup and updates `last_scheduled_backup_at`.
+
+Supported owner-controlled settings:
+
+- Enabled / disabled
+- Daily, weekly, or monthly frequency
+- UTC time
+- Day of week for weekly backups
+- Day of month from 1 to 28 for monthly backups
 
 ## Restore checklist
 
@@ -73,7 +102,7 @@ Scheduled workflow runs are handled by GitHub Actions and may not start at the e
 2. Enable Data API.
 3. Set exposed schemas to `public`.
 4. Set extra search path to `public, extensions`.
-5. Unzip the latest GitHub Actions backup artifact.
+5. Unzip the latest backup downloaded from the vulcanIQ admin area.
 6. Run `restore-supabase.sh` or `restore-supabase.ps1` with the new database connection string.
 7. Recreate or verify Supabase Auth users.
 8. Insert or verify active owner rows in `public.admin_profiles`.
