@@ -1,4 +1,4 @@
-﻿name: vulcanIQ Supabase backup
+name: vulcanIQ Supabase backup
 
 on:
   workflow_dispatch:
@@ -187,7 +187,6 @@ jobs:
           VITE_SUPABASE_ANON_KEY=YOUR-PUBLISHABLE-OR-ANON-KEY
           SUPABASE_ANON_KEY=YOUR-PUBLISHABLE-OR-ANON-KEY
           SUPABASE_SERVICE_ROLE_KEY=YOUR-SERVICE-ROLE-KEY
-          VITE_GITHUB_BACKUP_WORKFLOW_URL=https://github.com/YOUR-OWNER/YOUR-REPO/actions/workflows/vulcaniq-db-backup.yml
           GITHUB_OWNER=YOUR-GITHUB-OWNER
           GITHUB_REPO=YOUR-GITHUB-REPO
           GITHUB_BACKUP_WORKFLOW_ID=vulcaniq-db-backup.yml
@@ -243,14 +242,14 @@ jobs:
 
           ## What is included
 
-          - `00_project_info.json` â€” backup metadata.
-          - `01_roles.sql` â€” database role dump from Supabase CLI.
-          - `02_schema.sql` â€” database schema dump from Supabase CLI.
-          - `03_data.sql` â€” database data dump from Supabase CLI.
-          - `restore-supabase.sh` â€” Bash restore helper.
-          - `restore-supabase.ps1` â€” PowerShell restore helper.
-          - `cloudflare-env-template.txt` â€” variables to recreate in Cloudflare Pages.
-          - `storage-assets/README_STORAGE.md` â€” Storage limitation and manual asset guidance.
+          - `00_project_info.json` — backup metadata.
+          - `01_roles.sql` — database role dump from Supabase CLI.
+          - `02_schema.sql` — database schema dump from Supabase CLI.
+          - `03_data.sql` — database data dump from Supabase CLI.
+          - `restore-supabase.sh` — Bash restore helper.
+          - `restore-supabase.ps1` — PowerShell restore helper.
+          - `cloudflare-env-template.txt` — variables to recreate in Cloudflare Pages.
+          - `storage-assets/README_STORAGE.md` — Storage limitation and manual asset guidance.
 
           ## Restore steps
 

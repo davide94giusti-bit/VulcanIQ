@@ -1,4 +1,4 @@
-﻿import { cleanText, githubConfig, githubFetch, json, localized, readRequestJson, requireActiveOwner } from './_shared.js';
+import { cleanText, githubConfig, githubFetch, json, localized, readRequestJson, requireActiveOwner } from './_shared.js';
 
 async function dispatchWorkflow(env, user, language) {
   const config = githubConfig(env || {});
@@ -42,5 +42,5 @@ export async function onRequestPost(context) {
     return json(dispatch.status || 502, { ok: false, message });
   }
 
-  return json(200, { ok: true, message: localized(language, 'Backup avviato', 'Backup started') });
+  return json(200, { ok: true, message: localized(language, 'Backup avviato', 'Backup started'), requestedAt: new Date().toISOString() });
 }

@@ -1,4 +1,4 @@
-﻿import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 
 function safeMessage(payload, fallback) {
   if (payload && typeof payload.message === 'string' && payload.message.trim()) return payload.message.trim();
@@ -12,7 +12,7 @@ function localized(lang, it, en) {
 
 async function accessToken(lang) {
   if (!isSupabaseConfigured || !supabase) {
-    throw new Error(localized(lang, 'Supabase non Ã¨ configurato.', 'Supabase is not configured.'));
+    throw new Error(localized(lang, 'Supabase non è configurato.', 'Supabase is not configured.'));
   }
 
   const { data, error } = await supabase.auth.getSession();

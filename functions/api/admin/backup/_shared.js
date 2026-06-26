@@ -198,6 +198,42 @@ export async function findLatestBackupArtifact(env = {}) {
   return { ok: false, status: 404, code: 'no_backup_artifacts' };
 }
 
+
+function workflowRunToSafeMetadata(run) {
+  if (!run) return null;
+  return {
+    id: run.id,
+    runNumber: run.run_number || null,
+    name: run.name || '',
+    event: run.event || '',
+    status: run.status || '',
+    conclusion: run.conclusion || null,
+    createdAt: run.created_at || null,
+    updatedAt: run.updated_at || null,
+    runStartedAt: run.run_started_at || null
+  };
+}
+
+export async function findLatestBackupWorkflowRun(env = {}) {
+  const config = githubConfig(env);
+  if (!config) return { ok: false, status: 500, code: 'github_backup_not_configured', workflowRun: null };
+
+  const workflowPath = `/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/actions/workflows/${encodeURIComponent(config.workflowId)}/runs`;
+  const runParams = new URLSearchParams({
+    branch: config.ref,
+    per_page: '1'
+  });
+
+  const response = await githubFetch(config, `${workflowPath}?${runParams.toString()}`);
+  if (!response.ok) {
+    return { ok: false, status: response.status, code: githubErrorCode(response.status), workflowRun: null };
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  const runs = Array.isArray(payload.workflow_runs) ? payload.workflow_runs : [];
+  return { ok: true, config, workflowRun: workflowRunToSafeMetadata(runs[0]) };
+}
+
 export function githubErrorCode(status) {
   if (status === 401 || status === 403) return 'github_access_denied';
   if (status === 404) return 'github_resource_not_found';

@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   color-scheme: light;
   --ink: #18212b;
   --night: #0d1626;
@@ -792,7 +792,7 @@ textarea { min-height: 150px; resize: vertical; }
 .dark-card h2, .dark-card p, .dark-card li { color: #fff; }
 .check-list { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 10px; }
 .check-list li { position: relative; padding-left: 24px; color: var(--basalt); }
-.check-list li::before { content: "âœ“"; position: absolute; left: 0; top: 0; color: var(--lava); font-weight: 900; }
+.check-list li::before { content: "✓"; position: absolute; left: 0; top: 0; color: var(--lava); font-weight: 900; }
 .review-list { display: grid; gap: 12px; }
 blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cream); color: var(--basalt); font-size: 0.95rem; }
 .image-strip-section { padding-top: 0; }
@@ -4789,7 +4789,7 @@ body.modal-scroll-lock { overflow: hidden; }
 }
 
 .today-requests-details[open] > summary::after {
-  content: "â€“";
+  content: "–";
 }
 
 .today-requests-collapsed-body {
@@ -5656,7 +5656,7 @@ body.modal-scroll-lock {
 }
 
 .finance-detail-section summary::after {
-  content: "âŒ„";
+  content: "⌄";
   flex: 0 0 auto;
   color: var(--ash);
   font-size: 1rem;
@@ -6071,7 +6071,7 @@ body.modal-scroll-lock {
 }
 
 .finance-collapsible-panel > summary.finance-collapsible-summary::after {
-  content: "âŒ„";
+  content: "⌄";
   grid-column: 3;
   grid-row: 1;
   align-self: center;
@@ -6576,7 +6576,7 @@ body.modal-scroll-lock {
 }
 
 .analytics-collapsible-summary::after {
-  content: "âŒ„";
+  content: "⌄";
   display: grid;
   width: 2.35rem;
   height: 2.35rem;
@@ -8184,5 +8184,175 @@ body.modal-scroll-lock {
   .backup-schedule-actions,
   .backup-schedule-actions .button {
     width: 100%;
+  }
+}
+
+.backup-progress-panel {
+  background: rgba(255,255,255,0.86);
+  border: 1px solid rgba(59,130,246,0.18);
+  border-radius: 24px;
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+}
+
+.backup-progress-panel.failed {
+  border-color: rgba(220,38,38,0.32);
+}
+
+.backup-progress-head {
+  align-items: center;
+  color: var(--text);
+  display: flex;
+  font-weight: 800;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.backup-progress-track {
+  background: rgba(15,23,42,0.10);
+  border-radius: 999px;
+  height: 12px;
+  overflow: hidden;
+}
+
+.backup-progress-track span {
+  background: linear-gradient(90deg, var(--accent), #ffb199);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  transition: width 0.45s ease;
+}
+
+.backup-progress-panel.failed .backup-progress-track span {
+  background: #b42318;
+}
+
+.backup-progress-panel p,
+.backup-workflow-panel p,
+.backup-restore-content p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.backup-workflow-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 1rem 0 0;
+}
+
+.backup-workflow-grid div {
+  background: rgba(255,255,255,0.7);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 0.9rem;
+}
+
+.backup-workflow-grid dt {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.backup-workflow-grid dd {
+  color: var(--text);
+  font-weight: 900;
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.backup-restore-details {
+  padding: 0;
+}
+
+.backup-restore-details summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  list-style: none;
+  padding: 1.25rem;
+}
+
+.backup-restore-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.backup-restore-details summary::after {
+  content: '+';
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  display: grid;
+  font-size: 1.2rem;
+  font-weight: 900;
+  height: 36px;
+  place-items: center;
+  width: 36px;
+}
+
+.backup-restore-details[open] summary::after {
+  content: '-';
+}
+
+.backup-restore-details summary strong {
+  color: var(--text);
+  display: block;
+  font-size: clamp(1.55rem, 3vw, 2.4rem);
+  line-height: 1;
+}
+
+.backup-restore-details summary small {
+  color: var(--muted);
+  display: block;
+  font-weight: 700;
+  margin-top: 0.4rem;
+}
+
+.backup-restore-content {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.backup-restore-content h3 {
+  color: var(--text);
+  font-size: 1.1rem;
+  margin: 0.5rem 0 0;
+}
+
+.backup-restore-content code,
+.backup-code-grid code {
+  background: rgba(15,23,42,0.06);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  display: inline-block;
+  font-size: 0.86rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 0.3rem 0.45rem;
+}
+
+.backup-code-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.backup-code-grid div {
+  display: grid;
+  gap: 0.45rem;
+}
+
+@media (max-width: 760px) {
+  .backup-workflow-grid,
+  .backup-code-grid {
+    grid-template-columns: 1fr;
   }
 }

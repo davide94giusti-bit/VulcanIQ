@@ -53,8 +53,17 @@ async function loadSchedule(config) {
     id: 'eq.default',
     limit: '1'
   });
-  if (!result.ok) return { ok: false, status: result.response.status };
-  return { ok: true, schedule: safeSchedule(result.rows[0]) };
+  if (result.ok) return { ok: true, schedule: safeSchedule(result.rows[0]) };
+
+  // Backward compatibility for databases that ran an earlier draft migration.
+  const fallback = await restSelect(config, 'system_backup_settings', {
+    select: 'id,enabled,frequency,utc_hour,utc_minute,weekly_day,monthly_day,updated_at,updated_by,last_backup_at',
+    id: 'eq.default',
+    limit: '1'
+  });
+  if (!fallback.ok) return { ok: false, status: result.response.status || fallback.response.status };
+  const row = fallback.rows[0] || null;
+  return { ok: true, schedule: safeSchedule(row ? { ...row, last_scheduled_backup_at: row.last_backup_at || null } : null) };
 }
 
 export async function onRequestOptions() {

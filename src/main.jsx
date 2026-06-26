@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { blockedDates, defaultExperienceAvailability } from './data/availability.js';
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
@@ -33,7 +33,7 @@ const ADMIN_NAV_SECTIONS = [
   { key: 'calendar', path: '/admin/calendar', labelIt: 'Calendario', labelEn: 'Calendar', editable: true },
   { key: 'upcoming', path: '/admin/upcoming', labelIt: 'Prossime', labelEn: 'Upcoming', editable: true },
   { key: 'requests', path: '/admin/requests', labelIt: 'Richieste', labelEn: 'Requests', editable: true },
-  { key: 'availability', path: '/admin/availability', labelIt: 'DisponibilitÃ ', labelEn: 'Availability', editable: true },
+  { key: 'availability', path: '/admin/availability', labelIt: 'Disponibilità', labelEn: 'Availability', editable: true },
   { key: 'partnerships', path: '/admin/partnerships', labelIt: 'Collaborazioni', labelEn: 'Collaborations', editable: true },
   { key: 'edit', path: '/admin/edit', labelIt: 'Modifica', labelEn: 'Edit', editable: true },
   { key: 'finance', path: '/admin/finance', labelIt: 'Finanze', labelEn: 'Finance', editable: true },
@@ -221,33 +221,33 @@ const i18n = {
     nav: ['Inizio', 'Escursioni', 'Collaborazioni', 'Chi siamo', 'Recensioni', 'Contattaci'],
     contact: 'Contattaci',
     heroKicker: '',
-    heroTitle: "L'Etna non Ã¨ solo uno scenario.",
-    heroLead: 'Esperienze private e fisse sullâ€™Etna per leggere il vulcano come territorio vivo: con conoscenza, sicurezza e relazione umana.',
+    heroTitle: "L'Etna non è solo uno scenario.",
+    heroLead: 'Esperienze private e fisse sull’Etna per leggere il vulcano come territorio vivo: con conoscenza, sicurezza e relazione umana.',
     findExperience: "Trova l'esperienza giusta",
-    viewAvailability: 'Guarda le disponibilitÃ ',
+    viewAvailability: 'Guarda le disponibilità',
     call: 'Chiama Leonardo',
     whatsapp: 'Scrivici su WhatsApp',
     email: "Invia un'email",
     trust: ['Guida vulcanologica certificata'],
     guideLicenseAria: 'Apri la licenza della guida vulcanologica Leonardo Chiavetta',
     philosophyKicker: 'Filosofia',
-    philosophyTitle: 'PerchÃ© un luogo non si visita davvero finchÃ© non si entra in relazione con ciÃ² che lo rende vivo.',
-    philosophyText: `vulcanIQ nasce da unâ€™esigenza di fermarsi e cambiare prospettiva. Dopo anni a contatto con il turismo di massa, Ã¨ emersa una domanda semplice ma potente: Ã¨ davvero questo il modo di vivere un luogo come lâ€™Etna?
+    philosophyTitle: 'Perché un luogo non si visita davvero finché non si entra in relazione con ciò che lo rende vivo.',
+    philosophyText: `vulcanIQ nasce da un’esigenza di fermarsi e cambiare prospettiva. Dopo anni a contatto con il turismo di massa, è emersa una domanda semplice ma potente: è davvero questo il modo di vivere un luogo come l’Etna?
 
-Da lÃ¬ Ã¨ iniziato un percorso diverso. Il desiderio di rallentare, di osservare davvero, di restituire valore a ciÃ² che spesso viene attraversato troppo in fretta.
+Da lì è iniziato un percorso diverso. Il desiderio di rallentare, di osservare davvero, di restituire valore a ciò che spesso viene attraversato troppo in fretta.
 
-Non piÃ¹ solo accompagnare, ma trasmettere. Non piÃ¹ mostrare, ma far comprendere.
+Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprendere.
 
-Ãˆ cosÃ¬ che prende forma un modo nuovo di vivere la Sicilia: attraverso le storie di chi la abita, i gesti quotidiani, le tradizioni che resistono nel tempo. Lontano dai percorsi piÃ¹ battuti, vicino alle persone, ai dettagli, alle connessioni autentiche.`,
+È così che prende forma un modo nuovo di vivere la Sicilia: attraverso le storie di chi la abita, i gesti quotidiani, le tradizioni che resistono nel tempo. Lontano dai percorsi più battuti, vicino alle persone, ai dettagli, alle connessioni autentiche.`,
     mission: 'Missione',
-    missionText: 'vulcanIQ nasce per trasformare il modo in cui le persone vivono lâ€™Etna: non come una semplice destinazione da visitare, ma come un territorio da ascoltare, comprendere e ricordare. La nostra missione Ã¨ creare esperienze autentiche, curate e profondamente umane, capaci di unire natura, cultura locale, racconti e relazioni vere.',
+    missionText: 'vulcanIQ nasce per trasformare il modo in cui le persone vivono l’Etna: non come una semplice destinazione da visitare, ma come un territorio da ascoltare, comprendere e ricordare. La nostra missione è creare esperienze autentiche, curate e profondamente umane, capaci di unire natura, cultura locale, racconti e relazioni vere.',
     vision: 'Visione',
-    visionText: 'Crediamo in un turismo che non consumi il territorio, ma lo ascolti. Un modo piÃ¹ autentico di vivere lâ€™Etna, fatto di connessione, rispetto e ricordi che restano.',
-    readMore: 'Leggi di piÃ¹',
+    visionText: 'Crediamo in un turismo che non consumi il territorio, ma lo ascolti. Un modo più autentico di vivere l’Etna, fatto di connessione, rispetto e ricordi che restano.',
+    readMore: 'Leggi di più',
     hide: 'Riduci',
     experiencesKicker: 'Escursioni',
-    experiencesTitle: 'Escursioni sullâ€™Etna, pensate su misura.',
-    experiencesIntro: 'Scegli il modo piÃ¹ adatto per vivere il vulcano: esperienze private, formative o condivise, sempre guidate con attenzione, sicurezza e conoscenza del territorio.',
+    experiencesTitle: 'Escursioni sull’Etna, pensate su misura.',
+    experiencesIntro: 'Scegli il modo più adatto per vivere il vulcano: esperienze private, formative o condivise, sempre guidate con attenzione, sicurezza e conoscenza del territorio.',
     bestFor: 'Ideale per',
     starting: 'Indicazione',
     value: 'Valore',
@@ -264,9 +264,9 @@ Non piÃ¹ solo accompagnare, ma trasmettere. Non piÃ¹ mostrare, ma far compre
     continueForm: 'Continua con il modulo',
     close: 'Chiudi',
     copied: 'Copiato',
-    availabilityKicker: 'DisponibilitÃ ',
+    availabilityKicker: 'Disponibilità',
     availabilityTitle: 'Scegli tra escursioni fisse e richieste private.',
-    availabilityIntro: 'Le escursioni fisse hanno posti limitati; le richieste private seguono disponibilitÃ , meteo, ordinanze, condizioni vulcaniche e valutazione della guida.',
+    availabilityIntro: 'Le escursioni fisse hanno posti limitati; le richieste private seguono disponibilità, meteo, ordinanze, condizioni vulcaniche e valutazione della guida.',
     previousMonth: 'Mese precedente',
     nextMonth: 'Mese successivo',
     chooseExperience: 'Esperienza',
@@ -274,7 +274,7 @@ Non piÃ¹ solo accompagnare, ma trasmettere. Non piÃ¹ mostrare, ma far compre
     limited: 'Limitata',
     closed: 'Chiusa',
     onRequest: 'Su richiesta',
-    dateClosed: 'Questa data non Ã¨ disponibile. Puoi richiedere una data alternativa.',
+    dateClosed: 'Questa data non è disponibile. Puoi richiedere una data alternativa.',
     requestDate: 'Richiedi questa data',
     requestAlternative: 'Richiedi alternativa',
     questionnaireKicker: 'Questionario',
@@ -285,7 +285,7 @@ Non piÃ¹ solo accompagnare, ma trasmettere. Non piÃ¹ mostrare, ma far compre
     pace: 'Ritmo preferito',
     private: 'Esperienza privata',
     children: 'Bambini nel gruppo',
-    yes: 'SÃ¬',
+    yes: 'Sì',
     no: 'No',
     generate: 'Genera raccomandazione',
     recommended: 'Esperienza consigliata',
@@ -296,27 +296,27 @@ Non piÃ¹ solo accompagnare, ma trasmettere. Non piÃ¹ mostrare, ma far compre
     requestThis: 'Richiedi questa esperienza',
     childNote: 'Nota: con bambini sotto i 3 anni il percorso deve essere valutato con particolare attenzione dalla guida.',
     wearKicker: 'Abbigliamento',
-    wearTitle: 'Cosa indossare sullâ€™Etna.',
+    wearTitle: 'Cosa indossare sull’Etna.',
     wearIntro: 'Indicazioni sintetiche: la conferma finale dipende da stagione, quota e condizioni del giorno.',
     reviewsKicker: 'Recensioni',
-    reviewsTitle: 'Recensioni di chi ha vissuto lâ€™Etna con noi.',
+    reviewsTitle: 'Recensioni di chi ha vissuto l’Etna con noi.',
     reviewsIntro: '',
     safetyKicker: 'Sicurezza',
     safetyTitle: 'Condizioni, prudenza e valutazione reale.',
-    safetyIntro: 'Ogni esperienza Ã¨ confermata solo se meteo, accessibilitÃ , ordinanze e attivitÃ  vulcanica lo permettono.',
+    safetyIntro: 'Ogni esperienza è confermata solo se meteo, accessibilità, ordinanze e attività vulcanica lo permettono.',
     teamKicker: 'Team',
     teamTitle: 'Un progetto piccolo, curato e umano.',
-    leonardoRole: 'Fondatore Â· guida ambientale e vulcanologica',
-    leonardoBio: 'Fondatore e ideatore di vulcanIQ, Ã¨ guida ambientale dal 2020 e guida vulcanologica dal 2024. Accompagna le persone alla scoperta dellâ€™Etna attraverso racconti, natura e osservazione del territorio, con lâ€™obiettivo di trasformare ogni esperienza in qualcosa di autentico, emozionale e profondamente umano.',
+    leonardoRole: 'Fondatore · guida ambientale e vulcanologica',
+    leonardoBio: 'Fondatore e ideatore di vulcanIQ, è guida ambientale dal 2020 e guida vulcanologica dal 2024. Accompagna le persone alla scoperta dell’Etna attraverso racconti, natura e osservazione del territorio, con l’obiettivo di trasformare ogni esperienza in qualcosa di autentico, emozionale e profondamente umano.',
     coFounderName: 'Deborah Giusti',
-    coFounderRole: 'Co-fondatrice Â· qualitÃ  del servizio, scuole e aziende',
-    coFounderBio: 'Da oltre 8 anni nel mondo dellâ€™insegnamento e con esperienza come analista aziendale, Deborah unisce empatia, organizzazione e attenzione ai dettagli per creare esperienze autentiche e di valore. In vulcanIQ si occupa della qualitÃ  del servizio e dello sviluppo di percorsi dedicati a scuole e aziende, progettando attivitÃ  capaci di unire scoperta, coinvolgimento e crescita personale.',
+    coFounderRole: 'Co-fondatrice · qualità del servizio, scuole e aziende',
+    coFounderBio: 'Da oltre 8 anni nel mondo dell’insegnamento e con esperienza come analista aziendale, Deborah unisce empatia, organizzazione e attenzione ai dettagli per creare esperienze autentiche e di valore. In vulcanIQ si occupa della qualità del servizio e dello sviluppo di percorsi dedicati a scuole e aziende, progettando attività capaci di unire scoperta, coinvolgimento e crescita personale.',
     coFounderAlt: 'Deborah, co-founder vulcanIQ',
     finalTitle: 'Parla con Leonardo prima di scegliere.',
     finalText: 'Racconta date, interessi e composizione del gruppo: riceverai una proposta realistica, non un pacchetto standard.',
     formKicker: 'Modulo contatto',
     formTitle: 'Prepara la richiesta.',
-    formIntro: 'Scegli una data fissa o una richiesta privata, indica il numero di persone e lascia un contatto: il team risponderÃ  direttamente.',
+    formIntro: 'Scegli una data fissa o una richiesta privata, indica il numero di persone e lascia un contatto: il team risponderà direttamente.',
     startQuestionnaire: 'Inizia il questionario',
     prepareYourRequest: 'Prepara la tua richiesta',
     contactQuestionnaireIntro: 'Rispondi una domanda alla volta: alla fine potrai controllare e modificare il messaggio prima di inviarlo.',
@@ -330,22 +330,22 @@ Non piÃ¹ solo accompagnare, ma trasmettere. Non piÃ¹ mostrare, ma far compre
     dateTodayOrFuture: 'Seleziona una data di oggi o futura.',
     requestTypeQuestion: 'Che tipo di esperienza vuoi richiedere?',
     experienceQuestion: 'Quale esperienza ti interessa?',
-    dateQuestion: 'Quando vorresti vivere lâ€™esperienza?',
-    participantsQuestion: 'Chi parteciperÃ ?',
+    dateQuestion: 'Quando vorresti vivere l’esperienza?',
+    participantsQuestion: 'Chi parteciperà?',
     contactQuestion: 'Come possiamo ricontattarti?',
     attributionQuestion: 'Dove hai sentito parlare di vulcanIQ?',
     notSure: 'Non sono sicuro',
     noDateYet: 'Non ho ancora una data precisa',
-    chooseExperienceOptional: 'Scegli unâ€™esperienza o indica che non sei sicuro.',
+    chooseExperienceOptional: 'Scegli un’esperienza o indica che non sei sicuro.',
     contactPhoneRequired: 'Inserisci un numero di telefono per essere ricontattato via WhatsApp o telefono.',
     contactEmailRequired: 'Inserisci un indirizzo email per essere ricontattato via email.',
     contactPhoneInvalid: 'Inserisci un numero di telefono valido usando solo numeri e, se necessario, un + iniziale.',
     contactEmailInvalid: 'Inserisci un indirizzo email valido con @.',
     answerRequired: 'Rispondi a questa domanda per continuare.',
-    fixedExcursionRequired: 'Scegli unâ€™escursione fissa disponibile oppure seleziona â€œNon sono sicuroâ€.',
-    finalMessageHelp: 'Questo messaggio Ã¨ generato dalle tue risposte. Puoi modificarlo prima di inviarlo.',
+    fixedExcursionRequired: 'Scegli un’escursione fissa disponibile oppure seleziona “Non sono sicuro”.',
+    finalMessageHelp: 'Questo messaggio è generato dalle tue risposte. Puoi modificarlo prima di inviarlo.',
     submitRequest: 'Invia richiesta',
-    requestSent: 'La tua richiesta Ã¨ stata inviata. Leonardo o il team vulcanIQ ti risponderÃ  direttamente.',
+    requestSent: 'La tua richiesta è stata inviata. Leonardo o il team vulcanIQ ti risponderà direttamente.',
     requestFallbackError: 'Non siamo riusciti a salvare la richiesta automaticamente. Puoi contattarci su WhatsApp o email.',
     contactRequired: 'Inserisci almeno telefono o email.',
     requestDetailsRequired: 'Inserisci un messaggio oppure seleziona esperienza o data.',
@@ -353,7 +353,7 @@ Non piÃ¹ solo accompagnare, ma trasmettere. Non piÃ¹ mostrare, ma far compre
     heardAboutUsAdmin: 'Dove ha sentito parlare di vulcanIQ?',
     heardAboutUsPlaceholder: 'Seleziona qui',
     heardAboutUsRequired: 'Seleziona dove hai sentito parlare di vulcanIQ.',
-    heardAboutUsModalIntro: 'Seleziona unâ€™opzione prima di continuare.',
+    heardAboutUsModalIntro: 'Seleziona un’opzione prima di continuare.',
     heardAboutUsOtherLabel: 'Specifica dove hai sentito parlare di vulcanIQ',
     heardAboutUsOtherPlaceholder: 'Scrivi dove hai conosciuto vulcanIQ',
     heardAboutUsOtherRequired: 'Specifica dove hai sentito parlare di vulcanIQ.',
@@ -381,19 +381,19 @@ Non piÃ¹ solo accompagnare, ma trasmettere. Non piÃ¹ mostrare, ma far compre
     fixedExcursions: 'Escursioni fisse',
     privateExcursions: 'Escursioni private',
     upcomingExcursions: 'Prossime escursioni',
-    upcomingEmpty: 'Al momento non ci sono escursioni programmate. Contattaci per organizzare unâ€™esperienza privata.',
+    upcomingEmpty: 'Al momento non ci sono escursioni programmate. Contattaci per organizzare un’esperienza privata.',
     dateLabel: 'Data',
     bookedBy: 'Prenotato da',
     reviewDateLabel: 'Data',
     guideLabel: 'Guida',
     timeLabel: 'Orario',
     experienceLabel: 'Esperienza',
-    meetingPoint: 'Punto dâ€™incontro',
-    meetingPointDirections: 'Punto dâ€™incontro - premi per indicazioni',
+    meetingPoint: 'Punto d’incontro',
+    meetingPointDirections: 'Punto d’incontro - premi per indicazioni',
     meetingPointDirectionsHint: 'Apri indicazioni su Google Maps',
-    difficulty: 'DifficoltÃ ',
+    difficulty: 'Difficoltà',
     priceNote: 'Nota prezzo',
-    requestAvailability: 'Richiedi disponibilitÃ ',
+    requestAvailability: 'Richiedi disponibilità',
     partnershipsTitle: 'Collaborazioni',
     partnershipsSubtitle: '',
     partnershipsEmpty: 'Al momento non ci sono collaborazioni pubblicate.',
@@ -417,9 +417,9 @@ Non piÃ¹ solo accompagnare, ma trasmettere. Non piÃ¹ mostrare, ma far compre
     totalPeople: 'Totale persone',
     partyType: 'Tipo di gruppo',
     soloTraveler: 'Singolo',
-    contactGuideOver12: 'Per gruppi superiori a 12 persone, contatta direttamente la guida per valutare lâ€™esperienza piÃ¹ adatta.',
+    contactGuideOver12: 'Per gruppi superiori a 12 persone, contatta direttamente la guida per valutare l’esperienza più adatta.',
     peopleRequired: 'Inserisci almeno una persona nella richiesta.',
-    fixedDateRequired: 'Seleziona unâ€™escursione fissa disponibile.',
+    fixedDateRequired: 'Seleziona un’escursione fissa disponibile.',
     reviewOriginalLabel: 'Recensione originale in inglese',
     leaveReviewTitle: 'Pubblica una recensione',
     leaveReviewIntro: 'Inserisci il codice prenotazione ricevuto dopo la conferma per pubblicare una recensione.',
@@ -428,15 +428,15 @@ Non piÃ¹ solo accompagnare, ma trasmettere. Non piÃ¹ mostrare, ma far compre
     rating: 'Valutazione',
     reviewText: 'Recensione',
     submitReview: 'Pubblica una recensione',
-    reviewSent: 'Grazie. La recensione Ã¨ stata pubblicata.',
+    reviewSent: 'Grazie. La recensione è stata pubblicata.',
     invalidBookingCode: 'Codice prenotazione non valido.',
-    bookingCodeUsed: 'Ãˆ giÃ  stata inviata una recensione per questo codice prenotazione.',
+    bookingCodeUsed: 'È già stata inviata una recensione per questo codice prenotazione.',
     reviewTextRequired: 'Inserisci il testo della recensione.',
     noPublicReviews: 'Non ci sono ancora recensioni pubblicate.',
     blockedDatesCalendar: 'Calendario date occupate',
     unavailableDates: 'Date non disponibili',
     openCalendarFile: 'Apri calendario',
-    gearExtra: 'In base al periodo e al tipo di escursione, vi verranno fornite ulteriori informazioni sullâ€™attrezzatura necessaria.',
+    gearExtra: 'In base al periodo e al tipo di escursione, vi verranno fornite ulteriori informazioni sull’attrezzatura necessaria.',
     message: 'Messaggio',
     sendWhatsapp: 'Invia su WhatsApp',
     sendEmail: 'Email',
@@ -445,14 +445,14 @@ Non piÃ¹ solo accompagnare, ma trasmettere. Non piÃ¹ mostrare, ma far compre
     footerText: '',
     realPhotoPlaceholder: 'Real Etna photo placeholder',
     replaceWith: 'Replace with',
-    heroAlt: 'Escursione guidata sullâ€™Etna durante attivitÃ  vulcanica osservata da distanza sicura',
-    liveAlt: 'Gruppo con guida vulcanologica osserva lâ€™attivitÃ  dellâ€™Etna da terreno lavico sicuro',
-    safetyAlt: 'Paesaggio vulcanico dellâ€™Etna con terreno lavico e condizioni controllate',
-    gallery01Alt: 'Dettaglio di roccia lavica nera sullâ€™Etna',
+    heroAlt: 'Escursione guidata sull’Etna durante attività vulcanica osservata da distanza sicura',
+    liveAlt: 'Gruppo con guida vulcanologica osserva l’attività dell’Etna da terreno lavico sicuro',
+    safetyAlt: 'Paesaggio vulcanico dell’Etna con terreno lavico e condizioni controllate',
+    gallery01Alt: 'Dettaglio di roccia lavica nera sull’Etna',
     gallery02Alt: 'Sentiero vulcanico etneo con guida a distanza sicura',
-    gallery03Alt: 'Paesaggio dellâ€™Etna con luce naturale e terreno lavico',
-    emailSubject: 'Richiesta esperienza vulcanIQ sullâ€™Etna',
-    defaultMessage: 'Ciao Leonardo,\nvorrei informazioni su unâ€™esperienza vulcanIQ sullâ€™Etna.\n\nVorrei sapere disponibilitÃ , durata indicativa, prezzo e consigli sullâ€™abbigliamento.\n\nGrazie.',
+    gallery03Alt: 'Paesaggio dell’Etna con luce naturale e terreno lavico',
+    emailSubject: 'Richiesta esperienza vulcanIQ sull’Etna',
+    defaultMessage: 'Ciao Leonardo,\nvorrei informazioni su un’esperienza vulcanIQ sull’Etna.\n\nVorrei sapere disponibilità, durata indicativa, prezzo e consigli sull’abbigliamento.\n\nGrazie.',
     excursionCalendar: 'Calendario escursioni',
     availableDates: 'Date disponibili',
     scheduledExcursion: 'Escursione programmata',
@@ -464,12 +464,12 @@ Non piÃ¹ solo accompagnare, ma trasmettere. Non piÃ¹ mostrare, ma far compre
     unavailableDatesLegend: 'Date non disponibili',
     dateDetails: 'Dettagli',
     noExcursionsOnDate: 'Nessuna escursione programmata per questa data.',
-    availableDatePrivateCopy: 'Puoi richiedere unâ€™esperienza privata o su misura.',
+    availableDatePrivateCopy: 'Puoi richiedere un’esperienza privata o su misura.',
     requestInformation: 'Richiedi informazioni',
     openExcursionProgram: 'Apri programma mensile',
     publishReview: 'Pubblica una recensione',
-    missionHero: 'Non accompagniamo solo persone sullâ€™Etna. Creiamo un modo piÃ¹ attento di incontrarlo.',
-    missionShort: 'vulcanIQ nasce per trasformare lâ€™escursione in unâ€™esperienza di ascolto, conoscenza e relazione con il territorio.',
+    missionHero: 'Non accompagniamo solo persone sull’Etna. Creiamo un modo più attento di incontrarlo.',
+    missionShort: 'vulcanIQ nasce per trasformare l’escursione in un’esperienza di ascolto, conoscenza e relazione con il territorio.',
     valuesTitle: 'Principi',
     values: ['Ascolto del territorio', 'Sicurezza prima di tutto', 'Esperienze su misura', 'Cultura locale', 'Ritmo umano', 'Relazione autentica']
   },
@@ -564,10 +564,10 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     safetyIntro: 'Every experience is confirmed only if weather, access, regulations, and volcanic activity allow it.',
     teamKicker: 'Team',
     teamTitle: 'A small, curated, human project.',
-    leonardoRole: 'Founder Â· environmental and volcanological guide',
+    leonardoRole: 'Founder · environmental and volcanological guide',
     leonardoBio: 'Founder and creator of vulcanIQ, Leonardo has been an environmental guide since 2020 and a volcanological guide since 2024. He accompanies people in discovering Mount Etna through stories, nature, and observation of the territory, with the aim of transforming every experience into something authentic, emotional, and deeply human.',
     coFounderName: 'Deborah Giusti',
-    coFounderRole: 'Co-founder Â· service quality, schools and companies',
+    coFounderRole: 'Co-founder · service quality, schools and companies',
     coFounderBio: 'With more than 8 years in education and experience as a business analyst, Deborah combines empathy, organization, and attention to detail to create authentic and valuable experiences. At vulcanIQ, she focuses on service quality and the development of programs for schools and companies, designing activities that bring together discovery, engagement, and personal growth.',
     coFounderAlt: 'Deborah, vulcanIQ co-founder',
     finalTitle: 'Talk to Leonardo before choosing.',
@@ -600,7 +600,7 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     contactPhoneInvalid: 'Enter a valid phone number using only numbers and, if needed, one leading +.',
     contactEmailInvalid: 'Enter a valid email address containing @.',
     answerRequired: 'Answer this question to continue.',
-    fixedExcursionRequired: 'Choose an available fixed excursion or select â€œI am not sureâ€.',
+    fixedExcursionRequired: 'Choose an available fixed excursion or select “I am not sure”.',
     finalMessageHelp: 'This message is generated from your answers. You can edit it before sending.',
     submitRequest: 'Submit request',
     requestSent: 'Your request has been sent. Leonardo or the vulcanIQ team will reply directly.',
@@ -740,15 +740,15 @@ const experiences = [
     image: MEDIA.premium,
     summary: {
       it: 'Percorso privato, curato e modulato sul ritmo del gruppo.',
-      en: 'Private, curated experience adapted to the groupâ€™s pace.'
+      en: 'Private, curated experience adapted to the group’s pace.'
     },
-    bestFor: { it: 'singolo, coppie, piccoli gruppi, ospiti che cercano esclusivitÃ ', en: 'solo traveler, couples, small groups, guests looking for exclusivity' },
+    bestFor: { it: 'singolo, coppie, piccoli gruppi, ospiti che cercano esclusività', en: 'solo traveler, couples, small groups, guests looking for exclusivity' },
     starting: { it: 'su richiesta', en: 'on request' },
     description: {
-      it: 'Unâ€™esperienza lenta, riservata e personalizzata per vivere lâ€™Etna con piÃ¹ cura, piÃ¹ tempo e una relazione diretta con la guida.',
+      it: 'Un’esperienza lenta, riservata e personalizzata per vivere l’Etna con più cura, più tempo e una relazione diretta con la guida.',
       en: 'A slow, private, tailored experience to explore Etna with more care, more time, and direct guide attention.'
     },
-    value: { it: 'esperienze personalizzate per vivere lâ€™Etna in modo esclusivo', en: 'personalized experiences to discover Mount Etna in an exclusive way' },
+    value: { it: 'esperienze personalizzate per vivere l’Etna in modo esclusivo', en: 'personalized experiences to discover Mount Etna in an exclusive way' },
     notes: { it: 'Durata, quota e percorso vengono definiti dopo una breve valutazione del gruppo.', en: 'Duration, altitude, and route are defined after a brief group assessment.' },
     safety: { it: 'La guida valuta meteo, ordinanze e condizioni vulcaniche prima della conferma.', en: 'The guide assesses weather, regulations, and volcanic conditions before confirmation.' },
     reason: { it: 'cerco un percorso privato, curato e adatto al mio ritmo', en: 'I am looking for a private, curated experience suited to my pace' }
@@ -764,32 +764,32 @@ const experiences = [
     bestFor: { it: 'singolo, famiglie, scuole, team aziendali, gruppi curiosi', en: 'solo traveler, families, schools, company teams, curious groups' },
     starting: { it: 'da definire in base al gruppo', en: 'defined around the group' },
     description: {
-      it: 'Un formato didattico e coinvolgente per capire lâ€™Etna attraverso osservazione, racconto, domande e lettura del paesaggio.',
+      it: 'Un formato didattico e coinvolgente per capire l’Etna attraverso osservazione, racconto, domande e lettura del paesaggio.',
       en: 'An educational, engaging format to understand Etna through observation, storytelling, questions, and landscape reading.'
     },
-    value: { it: 'Trasforma lâ€™escursione in apprendimento concreto, accessibile e memorabile.', en: 'Turns the excursion into concrete, accessible, memorable learning.' },
+    value: { it: 'Trasforma l’escursione in apprendimento concreto, accessibile e memorabile.', en: 'Turns the excursion into concrete, accessible, memorable learning.' },
     notes: { it: 'Possibili declinazioni per famiglia, scuola o azienda.', en: 'Can be adapted for family, school, or company contexts.' },
-    safety: { it: 'I percorsi sono scelti in base a etÃ , mobilitÃ  e condizioni del giorno.', en: 'Routes are chosen based on age, mobility, and daily conditions.' },
-    reason: { it: 'voglio unâ€™esperienza educativa, chiara e adatta al gruppo', en: 'I want an educational, clear experience suitable for the group' }
+    safety: { it: 'I percorsi sono scelti in base a età, mobilità e condizioni del giorno.', en: 'Routes are chosen based on age, mobility, and daily conditions.' },
+    reason: { it: 'voglio un’esperienza educativa, chiara e adatta al gruppo', en: 'I want an educational, clear experience suitable for the group' }
   },
   {
     id: 'etna-live',
     title: 'Etna Live',
     image: MEDIA.live,
     summary: {
-      it: 'Osservazione responsabile dellâ€™attivitÃ  vulcanica da distanza sicura.',
+      it: 'Osservazione responsabile dell’attività vulcanica da distanza sicura.',
       en: 'Responsible observation of volcanic activity from a safe distance.'
     },
     bestFor: { it: 'singolo, appassionati di vulcani, fotografi, ospiti flessibili', en: 'solo traveler, volcano enthusiasts, photographers, flexible guests' },
     starting: { it: 'su richiesta e condizioni', en: 'on request and conditions-based' },
     description: {
-      it: 'Quando lâ€™Etna lo consente, lâ€™esperienza si concentra sullâ€™osservazione interpretata dellâ€™attivitÃ  vulcanica, sempre con prudenza.',
+      it: 'Quando l’Etna lo consente, l’esperienza si concentra sull’osservazione interpretata dell’attività vulcanica, sempre con prudenza.',
       en: 'When Etna allows it, the experience focuses on interpreted observation of volcanic activity, always with prudence.'
     },
-    value: { it: 'Capire ciÃ² che si osserva, non inseguire lo spettacolo.', en: 'Understanding what is being observed, not chasing spectacle.' },
-    notes: { it: 'Serve flessibilitÃ : lâ€™itinerario puÃ² cambiare fino allâ€™ultimo in base alle condizioni.', en: 'Flexibility is required: the route may change up to the last moment based on conditions.' },
+    value: { it: 'Capire ciò che si osserva, non inseguire lo spettacolo.', en: 'Understanding what is being observed, not chasing spectacle.' },
+    notes: { it: 'Serve flessibilità: l’itinerario può cambiare fino all’ultimo in base alle condizioni.', en: 'Flexibility is required: the route may change up to the last moment based on conditions.' },
     safety: { it: 'Osservazione responsabile, distanza sicura e adattamento costante alle condizioni reali.', en: 'Responsible observation, safe distance, and constant adaptation to real conditions.' },
-    reason: { it: 'mi interessa lâ€™attivitÃ  vulcanica osservata in modo responsabile', en: 'I am interested in volcanic activity observed responsibly' }
+    reason: { it: 'mi interessa l’attività vulcanica osservata in modo responsabile', en: 'I am interested in volcanic activity observed responsibly' }
   },
   {
     id: 'etna-stories',
@@ -802,11 +802,11 @@ const experiences = [
     bestFor: { it: 'singolo, viaggiatori curiosi, food lovers, gruppi che cercano racconto', en: 'solo traveler, curious travelers, food lovers, groups seeking storytelling' },
     starting: { it: 'su richiesta', en: 'on request' },
     description: {
-      it: 'Un modo piÃ¹ narrativo e territoriale di vivere lâ€™Etna: rocce, paesaggi, storie umane, cultura materiale e luoghi identitari.',
+      it: 'Un modo più narrativo e territoriale di vivere l’Etna: rocce, paesaggi, storie umane, cultura materiale e luoghi identitari.',
       en: 'A more narrative and territorial way to experience Etna: rocks, landscapes, human stories, material culture, and identity places.'
     },
     value: { it: 'Connette vulcano, persone e memoria del luogo.', en: 'Connects volcano, people, and memory of place.' },
-    notes: { it: 'PuÃ² includere soste culturali, contesti locali o piccoli momenti esperienziali.', en: 'May include cultural stops, local contexts, or small experiential moments.' },
+    notes: { it: 'Può includere soste culturali, contesti locali o piccoli momenti esperienziali.', en: 'May include cultural stops, local contexts, or small experiential moments.' },
     safety: { it: 'Ritmo e percorso restano compatibili con condizioni e composizione del gruppo.', en: 'Pace and route remain compatible with conditions and group composition.' },
     reason: { it: 'cerco cultura locale, racconto e relazione con il territorio', en: 'I am looking for local culture, storytelling, and connection with the territory' }
   }
@@ -822,29 +822,29 @@ const questionnaireOptions = {
   ],
   interest: [
     { value: 'private-exclusive', it: 'Esperienza privata ed esclusiva', en: 'Exclusive private experience' },
-    { value: 'volcanic-activity', it: 'AttivitÃ  vulcanica', en: 'Volcanic activity' },
+    { value: 'volcanic-activity', it: 'Attività vulcanica', en: 'Volcanic activity' },
     { value: 'local-culture', it: 'Cultura locale, cibo o workshop', en: 'Local culture, food, or workshops' },
     { value: 'learning', it: 'Apprendimento e contenuto educativo', en: 'Learning and educational content' }
   ],
   pace: [
     { value: 'slow-comfortable', it: 'Lento e confortevole', en: 'Slow and comfortable' },
     { value: 'balanced', it: 'Bilanciato', en: 'Balanced' },
-    { value: 'active', it: 'PiÃ¹ attivo', en: 'More active' }
+    { value: 'active', it: 'Più attivo', en: 'More active' }
   ],
   private: [
-    { value: 'yes', it: 'SÃ¬', en: 'Yes' },
+    { value: 'yes', it: 'Sì', en: 'Yes' },
     { value: 'no', it: 'No', en: 'No' }
   ],
   children: [
     { value: 'no', it: 'No', en: 'No' },
-    { value: 'yes', it: 'SÃ¬', en: 'Yes' },
-    { value: 'under3', it: 'SÃ¬, sotto i 3 anni', en: 'Yes, under 3' }
+    { value: 'yes', it: 'Sì', en: 'Yes' },
+    { value: 'under3', it: 'Sì, sotto i 3 anni', en: 'Yes, under 3' }
   ]
 };
 
 const statusLabels = {
   available: { it: 'Disponibile', en: 'Available' },
-  limited: { it: 'DisponibilitÃ  limitata', en: 'Limited availability' },
+  limited: { it: 'Disponibilità limitata', en: 'Limited availability' },
   closed: { it: 'Non disponibile', en: 'Closed' },
   'on-request': { it: 'Su richiesta', en: 'On request' }
 };
@@ -875,7 +875,7 @@ function normalizeReviewText(value) {
     .map((paragraph) => paragraph
       .replace(/[ \t\f\v]+/g, ' ')
       .replace(/([.!?;:])(?=\S)/g, '$1 ')
-      .replace(/,(\p{L})/gu, ', $1')
+      .replace(/,([A-Za-zÀ-ÖØ-öø-ÿ])/g, ', $1')
       .trim())
     .filter(Boolean);
 
@@ -888,7 +888,7 @@ function normalizeReviewText(value) {
       return;
     }
 
-    const sentences = paragraph.match(/[^.!?]+[.!?]+[â€"']?|[^.!?]+$/g) || [paragraph];
+    const sentences = paragraph.match(/[^.!?]+[.!?]+[”"']?|[^.!?]+$/g) || [paragraph];
     let buffer = '';
 
     sentences.map((sentence) => sentence.trim()).filter(Boolean).forEach((sentence) => {
@@ -1168,7 +1168,7 @@ function formatDateForMessage(date, lang) {
 
 function buildExperienceMessage(experience, lang) {
   if (lang === 'it') {
-    return `Ciao Leonardo,\nvorrei informazioni su ${experience.title}.\n\nMi interessa questa esperienza perchÃ© ${experience.reason.it}.\n\nVorrei sapere disponibilitÃ , durata, prezzo indicativo e cosa indossare.\n\nGrazie.`;
+    return `Ciao Leonardo,\nvorrei informazioni su ${experience.title}.\n\nMi interessa questa esperienza perché ${experience.reason.it}.\n\nVorrei sapere disponibilità, durata, prezzo indicativo e cosa indossare.\n\nGrazie.`;
   }
   return `Hi Leonardo,\nI would like more information about ${experience.title}.\n\nI am interested in this experience because ${experience.reason.en}.\n\nI would like to know availability, approximate duration, price, and what to wear.\n\nThank you.`;
 }
@@ -1176,7 +1176,7 @@ function buildExperienceMessage(experience, lang) {
 function buildQuestionnaireMessage(result, lang) {
   const details = result.details;
   if (lang === 'it') {
-    return `Ciao Leonardo,\nvorrei informazioni su unâ€™esperienza vulcanIQ sullâ€™Etna.\n\nEsperienza consigliata: ${result.recommended.title}\nAlternativa: ${result.alternative.title}\n\nDettagli:\n- Viaggio con: ${details.travelingWith}\n- Interesse principale: ${details.interest}\n- Ritmo preferito: ${details.pace}\n- Esperienza privata: ${details.private}\n- Bambini nel gruppo: ${details.children}\n\nVorrei sapere disponibilitÃ , durata indicativa, prezzo e consigli sullâ€™abbigliamento.\n\nGrazie.`;
+    return `Ciao Leonardo,\nvorrei informazioni su un’esperienza vulcanIQ sull’Etna.\n\nEsperienza consigliata: ${result.recommended.title}\nAlternativa: ${result.alternative.title}\n\nDettagli:\n- Viaggio con: ${details.travelingWith}\n- Interesse principale: ${details.interest}\n- Ritmo preferito: ${details.pace}\n- Esperienza privata: ${details.private}\n- Bambini nel gruppo: ${details.children}\n\nVorrei sapere disponibilità, durata indicativa, prezzo e consigli sull’abbigliamento.\n\nGrazie.`;
   }
   return `Hi Leonardo,\nI would like more information about a vulcanIQ experience on Mount Etna.\n\nRecommended experience: ${result.recommended.title}\nAlternative: ${result.alternative.title}\n\nDetails:\n- Traveling with: ${details.travelingWith}\n- Main interest: ${details.interest}\n- Preferred pace: ${details.pace}\n- Private experience: ${details.private}\n- Children in the group: ${details.children}\n\nI would like to know availability, approximate duration, price, and clothing recommendations.\n\nThank you.`;
 }
@@ -1262,7 +1262,7 @@ function messageLine(label, value, { trailingPeriod = false } = {}) {
   const clean = String(value || '').trim();
   if (!hasMessageValue(clean)) return '';
   const suffix = trailingPeriod && !/[.!?]$/.test(clean) ? '.' : '';
-  return `â€¢ ${label}: ${clean}${suffix}`;
+  return `• ${label}: ${clean}${suffix}`;
 }
 
 function joinMessageLines(lines) {
@@ -1342,13 +1342,13 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
       messageLine('Contatto preferito', preferredContact, { trailingPeriod: true })
     ]);
     const opening = heardDisplay
-      ? `Ho sentito parlare di vulcanIQ da ${heardDisplay} e vorrei informazioni per unâ€™esperienza vulcanIQ sullâ€™Etna.`
-      : 'Vorrei informazioni per unâ€™esperienza vulcanIQ sullâ€™Etna.';
+      ? `Ho sentito parlare di vulcanIQ da ${heardDisplay} e vorrei informazioni per un’esperienza vulcanIQ sull’Etna.`
+      : 'Vorrei informazioni per un’esperienza vulcanIQ sull’Etna.';
     const sections = [
       `Ciao Leonardo,\n\n${opening}`,
       requestLines ? `Richiesta:\n${requestLines}` : '',
       contactLines ? `Contatti:\n${contactLines}` : '',
-      'Vorrei sapere se la richiesta puÃ² essere confermata e ricevere dettagli su disponibilitÃ , durata, prezzo e abbigliamento consigliato.',
+      'Vorrei sapere se la richiesta può essere confermata e ricevere dettagli su disponibilità, durata, prezzo e abbigliamento consigliato.',
       'Grazie.',
       hasMessageValue(name) ? name : ''
     ];
@@ -1396,8 +1396,8 @@ function fixedExcursionLabel(item, lang) {
   const date = formatDateForMessage(item.date, lang);
   const start = item.start_time ? String(item.start_time).slice(0, 5) : '';
   const end = item.end_time ? String(item.end_time).slice(0, 5) : '';
-  const time = start ? ` Â· ${start}${end ? `â€“${end}` : ''}` : '';
-  return `${date}${time} Â· ${fixedExcursionTitle(item, lang)}`;
+  const time = start ? ` · ${start}${end ? `–${end}` : ''}` : '';
+  return `${date}${time} · ${fixedExcursionTitle(item, lang)}`;
 }
 
 function leafletTitle(leaflet, lang) {
@@ -1519,11 +1519,11 @@ function buildFixedExcursionMessage({ fixedExcursion, people }, lang) {
   const title = fixedExcursionLabel(fixedExcursion, lang);
   if (lang === 'it') {
     return `Ciao Leonardo,
-vorrei richiedere un posto per lâ€™escursione fissa ${title}.
+vorrei richiedere un posto per l’escursione fissa ${title}.
 
 Persone: ${people || '-'}
 
-Vorrei sapere se la richiesta puÃ² essere confermata e ricevere i dettagli pratici.
+Vorrei sapere se la richiesta può essere confermata e ricevere i dettagli pratici.
 
 Grazie.`;
   }
@@ -1545,14 +1545,14 @@ function buildAvailableDateRequestMessage({ date, experienceId, adults, children
   const under3Count = childrenUnder3Count || '0';
   if (lang === 'it') {
     return `Ciao Leonardo,
-vorrei richiedere unâ€™esperienza privata o su misura per il giorno ${dateText}.
+vorrei richiedere un’esperienza privata o su misura per il giorno ${dateText}.
 
 Esperienza preferita: ${experience.title}
 Adulti: ${adultCount}
 Bambini: ${childCount}
 Bambini sotto i 3 anni: ${under3Count}
 
-Vorrei sapere se la data Ã¨ disponibile e ricevere dettagli su durata, prezzo e abbigliamento consigliato.
+Vorrei sapere se la data è disponibile e ricevere dettagli su durata, prezzo e abbigliamento consigliato.
 
 Grazie.`;
   }
@@ -1574,7 +1574,7 @@ function buildCalendarMessage({ experience, date, status, note }, lang) {
   const statusText = statusLabels[status]?.[lang] || status;
   const noteText = note || (lang === 'it' ? 'In base alle condizioni.' : 'Depending on conditions.');
   if (lang === 'it') {
-    return `Ciao Leonardo,\nvorrei informazioni su ${experience.title} per il giorno ${dateText}.\n\nHo visto questa disponibilitÃ  sul calendario vulcanIQ:\nStato: ${statusText}\nNota: ${noteText}\n\nVorrei sapere se la data Ã¨ confermabile e quali sono le condizioni previste.\n\nGrazie.`;
+    return `Ciao Leonardo,\nvorrei informazioni su ${experience.title} per il giorno ${dateText}.\n\nHo visto questa disponibilità sul calendario vulcanIQ:\nStato: ${statusText}\nNota: ${noteText}\n\nVorrei sapere se la data è confermabile e quali sono le condizioni previste.\n\nGrazie.`;
   }
   return `Hi Leonardo,\nI would like information about ${experience.title} for ${dateText}.\n\nI saw this availability on the vulcanIQ calendar:\nStatus: ${statusText}\nNote: ${noteText}\n\nI would like to know whether the date can be confirmed and what conditions are expected.\n\nThank you.`;
 }
@@ -1626,12 +1626,12 @@ function EmailPanel({ lang, message, subject, contact, onClose, onUseForm, onEma
     <div className="email-popover" role="dialog" aria-modal="false" aria-label={text(lang, 'emailOptions')}>
       <div className="email-popover-header">
         <strong>{text(lang, 'emailOptions')}</strong>
-        <button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>Ã—</button>
+        <button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>×</button>
       </div>
       <button type="button" className="email-option" onClick={() => { onEmailAction?.('default_email_app'); openDefaultEmailApp(recipientEmail, subject, message); }}>{text(lang, 'defaultEmail')}</button>
       <a className="email-option" href={gmail} target="_blank" rel="noopener noreferrer" onClick={() => onEmailAction?.('gmail')}>{text(lang, 'openGmail')}</a>
-      <button type="button" className="email-option" onClick={() => { onEmailAction?.('copy_email'); handleCopy('email', recipientEmail); }}>{text(lang, 'copyEmail')} {copied === 'email' ? `Â· ${text(lang, 'copied')}` : ''}</button>
-      <button type="button" className="email-option" onClick={() => { onEmailAction?.('copy_message'); handleCopy('message', message); }}>{text(lang, 'copyMessage')} {copied === 'message' ? `Â· ${text(lang, 'copied')}` : ''}</button>
+      <button type="button" className="email-option" onClick={() => { onEmailAction?.('copy_email'); handleCopy('email', recipientEmail); }}>{text(lang, 'copyEmail')} {copied === 'email' ? `· ${text(lang, 'copied')}` : ''}</button>
+      <button type="button" className="email-option" onClick={() => { onEmailAction?.('copy_message'); handleCopy('message', message); }}>{text(lang, 'copyMessage')} {copied === 'message' ? `· ${text(lang, 'copied')}` : ''}</button>
       {onUseForm && <button type="button" className="email-option" onClick={onUseForm}>{text(lang, 'continueForm')}</button>}
     </div>
   );
@@ -1744,7 +1744,7 @@ function VideoSlot({ src, poster, label, lang }) {
 function BrandLogo({ compact = false, siteMedia, editor }) {
   return (
     <span className={`brand-logo-wrap ${compact ? 'compact' : ''}`}>
-      <EditableImage mediaKey="brand_logo_main" lang={editor?.lang || 'it'} siteMedia={siteMedia} editor={editor} fallbackSrc={BRAND.logo} fallbackAlt={editor?.lang === 'en' ? 'vulcanIQ logo â€” premium Etna experiences' : 'Logo vulcanIQ â€” esperienze premium sullâ€™Etna'} className="brand-logo" loading="eager" />
+      <EditableImage mediaKey="brand_logo_main" lang={editor?.lang || 'it'} siteMedia={siteMedia} editor={editor} fallbackSrc={BRAND.logo} fallbackAlt={editor?.lang === 'en' ? 'vulcanIQ logo — premium Etna experiences' : 'Logo vulcanIQ — esperienze premium sull’Etna'} className="brand-logo" loading="eager" />
     </span>
   );
 }
@@ -1800,7 +1800,7 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, edito
               rel="noopener noreferrer"
               aria-label={text(lang, 'guideLicenseAria')}
             >
-              <span className="trust-check" aria-hidden="true">âœ“</span>
+              <span className="trust-check" aria-hidden="true">✓</span>
               <span>
                 <EditableText as="strong" itemKey="home.hero.guide_badge" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'trust')[0]} />
               </span>
@@ -2007,7 +2007,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
     const meeting = fixedExcursionField(item, 'meeting_point', lang);
     const difficulty = fixedExcursionField(item, 'difficulty', lang);
     const price = fixedExcursionField(item, 'price_note', lang);
-    const timeRange = item.start_time ? `${String(item.start_time).slice(0, 5)}${item.end_time ? `â€“${String(item.end_time).slice(0, 5)}` : ''}` : text(lang, 'onRequest');
+    const timeRange = item.start_time ? `${String(item.start_time).slice(0, 5)}${item.end_time ? `–${String(item.end_time).slice(0, 5)}` : ''}` : text(lang, 'onRequest');
     const fixedMessage = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
 
     return (
@@ -2086,9 +2086,9 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
             <div className="excursions-calendar-column">
               <article className="calendar-card public-excursion-calendar">
                 <div className="calendar-topline simplified-calendar-header">
-                  <button type="button" onClick={() => changeMonth(-1)} aria-label={text(lang, 'previousMonth')}>â€¹</button>
+                  <button type="button" onClick={() => changeMonth(-1)} aria-label={text(lang, 'previousMonth')}>‹</button>
                   <h3 className="calendar-month-title">{monthLabel(monthDate, lang)}</h3>
-                  <button type="button" onClick={() => changeMonth(1)} aria-label={text(lang, 'nextMonth')}>â€º</button>
+                  <button type="button" onClick={() => changeMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
                 </div>
                 <div className="calendar-legend compact-legend">
                   <span><i className="legend-dot fixed" />{text(lang, 'scheduledExcursion')}</span>
@@ -2330,11 +2330,11 @@ function formattedDescriptionBlocks(rawText) {
     'Distanza:', 'Distance:',
     'Dislivello:', 'Elevation gain:',
     'Durata:', 'Duration:',
-    'DifficoltÃ :', 'Difficulty:',
+    'Difficoltà:', 'Difficulty:',
     'Assicurazione', 'Insurance',
     'Partecipazione', 'Participation',
     'Quota:', 'Fee:',
-    'EtÃ  minima:', 'Minimum age:',
+    'Età minima:', 'Minimum age:',
     'Prenotazione', 'Booking',
     'Note:', 'Notes:'
   ];
@@ -2348,7 +2348,7 @@ function formattedDescriptionBlocks(rawText) {
   const markedBlocks = normalized.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
   if (markedBlocks.length > 1) return markedBlocks;
 
-  const sentences = value.match(/[^.!?]+[.!?]+[â€â€™"']?|[^.!?]+$/g)?.map((sentence) => sentence.trim()).filter(Boolean) || [value];
+  const sentences = value.match(/[^.!?]+[.!?]+[”’"']?|[^.!?]+$/g)?.map((sentence) => sentence.trim()).filter(Boolean) || [value];
   const blocks = [];
   let current = '';
 
@@ -2439,7 +2439,7 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
     const meeting = fixedExcursionField(item, 'meeting_point', lang);
     const difficulty = fixedExcursionField(item, 'difficulty', lang);
     const price = fixedExcursionField(item, 'price_note', lang);
-    const timeRange = item.start_time ? `${String(item.start_time).slice(0, 5)}${item.end_time ? `â€“${String(item.end_time).slice(0, 5)}` : ''}` : text(lang, 'onRequest');
+    const timeRange = item.start_time ? `${String(item.start_time).slice(0, 5)}${item.end_time ? `–${String(item.end_time).slice(0, 5)}` : ''}` : text(lang, 'onRequest');
     return (
       <article className="upcoming-card compact-upcoming-card" key={item.id}>
         <div className="selected-date-heading-row">
@@ -2472,9 +2472,9 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
           <div className="public-calendar-layout">
             <article className="calendar-card public-excursion-calendar">
               <div className="calendar-topline simplified-calendar-header">
-                <button type="button" onClick={() => changeMonth(-1)} aria-label={text(lang, 'previousMonth')}>â€¹</button>
+                <button type="button" onClick={() => changeMonth(-1)} aria-label={text(lang, 'previousMonth')}>‹</button>
                 <h3 className="calendar-month-title">{monthLabel(monthDate, lang)}</h3>
-                <button type="button" onClick={() => changeMonth(1)} aria-label={text(lang, 'nextMonth')}>â€º</button>
+                <button type="button" onClick={() => changeMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
               </div>
               <div className="calendar-legend compact-legend">
                 <span><i className="legend-dot fixed" />{text(lang, 'availableDates')}</span>
@@ -2604,7 +2604,7 @@ function ReviewsPage({ lang, siteContent, editor }) {
   function readableSubmitError(error) {
     const message = error?.message || '';
     if (message.includes('INVALID_BOOKING_CODE')) return lang === 'it' ? 'Codice non valido.' : 'Invalid code.';
-    if (message.includes('BOOKING_CODE_ALREADY_USED') || message.includes('duplicate key')) return lang === 'it' ? 'Questo codice Ã¨ giÃ  stato usato.' : 'This code has already been used.';
+    if (message.includes('BOOKING_CODE_ALREADY_USED') || message.includes('duplicate key')) return lang === 'it' ? 'Questo codice è già stato usato.' : 'This code has already been used.';
     if (message.includes('REVIEW_TEXT_REQUIRED')) return lang === 'it' ? 'Compila tutti i campi obbligatori.' : 'Please complete all required fields.';
     return lang === 'it' ? 'Recensione non inviata. Controlla il codice e riprova.' : 'Review not submitted. Check the code and try again.';
   }
@@ -2663,9 +2663,9 @@ function ReviewsPage({ lang, siteContent, editor }) {
           <div className="reviews-header-actions">
             <button className="button primary" type="button" onClick={() => { setSubmitState({ loading: false, error: '', success: '' }); setModalOpen(true); }}><EditableText itemKey="reviews.publish_button" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'publishReview')} /></button>
             <div className="review-sort-control" role="group" aria-label={lang === 'it' ? 'Ordina recensioni' : 'Sort reviews'}>
-              <button type="button" className={sortMode === 'recent' ? 'active' : ''} onClick={() => setSortMode('recent')}>{adminCopy(lang, 'PiÃ¹ recenti', 'Most recent')}</button>
-              <button type="button" className={sortMode === 'highest' ? 'active' : ''} onClick={() => setSortMode('highest')}>{adminCopy(lang, 'Voto piÃ¹ alto', 'Highest score')}</button>
-              <button type="button" className={sortMode === 'lowest' ? 'active' : ''} onClick={() => setSortMode('lowest')}>{adminCopy(lang, 'Voto piÃ¹ basso', 'Lowest score')}</button>
+              <button type="button" className={sortMode === 'recent' ? 'active' : ''} onClick={() => setSortMode('recent')}>{adminCopy(lang, 'Più recenti', 'Most recent')}</button>
+              <button type="button" className={sortMode === 'highest' ? 'active' : ''} onClick={() => setSortMode('highest')}>{adminCopy(lang, 'Voto più alto', 'Highest score')}</button>
+              <button type="button" className={sortMode === 'lowest' ? 'active' : ''} onClick={() => setSortMode('lowest')}>{adminCopy(lang, 'Voto più basso', 'Lowest score')}</button>
             </div>
           </div>
         </div>
@@ -2673,7 +2673,7 @@ function ReviewsPage({ lang, siteContent, editor }) {
           {sortedCards.map((review) => (
             <article className="review-card featured-review-card" key={review.id}>
               <header className="review-card-info-header">
-                <div className="stars review-rating-stars" aria-label={`${review.rating || 0}/5`}>{'â˜…'.repeat(Number(review.rating) || 5)}</div>
+                <div className="stars review-rating-stars" aria-label={`${review.rating || 0}/5`}>{'★'.repeat(Number(review.rating) || 5)}</div>
                 <div className="review-info-list">
                   <span><b>{text(lang, 'bookedBy')}:</b> {reviewBookedBy(review)}</span>
                   <span><b>{text(lang, 'reviewDateLabel')}:</b> {reviewDate(review)}</span>
@@ -2723,11 +2723,11 @@ function WearReviewsSafety({ lang }) {
     ? ['Scarpe chiuse con buona suola', 'Giacca antivento e strato caldo', 'Acqua personale e protezione solare', 'No abbigliamento fragile o inadatto al terreno lavico']
     : ['Closed shoes with good grip', 'Windproof jacket and warm layer', 'Personal water and sun protection', 'No fragile clothing unsuitable for lava terrain'];
   const safetyItems = lang === 'it'
-    ? ['Meteo e visibilitÃ ', 'Ordinanze e accessibilitÃ ', 'AttivitÃ  vulcanica reale', 'EtÃ , mobilitÃ  e abbigliamento del gruppo']
+    ? ['Meteo e visibilità', 'Ordinanze e accessibilità', 'Attività vulcanica reale', 'Età, mobilità e abbigliamento del gruppo']
     : ['Weather and visibility', 'Regulations and access', 'Actual volcanic activity', 'Group age, mobility, and clothing'];
   const review = lang === 'it'
-    ? 'Bellissima esperienza grazie alla nostra guida Leonardo, che ha una vera passione per i vulcani. Ero preoccupato di non essere vestito abbastanza pesante perchÃ© la temperatura indicata in cima era sotto lo zero â€” era fine aprile â€” ma una felpa e una giacca leggera sono state sufficienti. Lâ€™escursione Ã¨ moderatamente impegnativa, ma dura solo circa unâ€™ora. Abbiamo avuto il tempo per fare un paio di belle pause durante la salita e, dopo lâ€™escursione, per mangiare qualcosa.'
-    : 'Had a great time thanks to our guide Leonardo, who has a real passion for volcanoes. I had been worried about being underdressed because the reported temperature at the top was below freezing â€” this was in late April â€” but a sweatshirt and light jacket were fine. The hike is moderately strenuous but only one hour. We had time for a couple of nice breaks on the way up and after our hike to have some food.';
+    ? 'Bellissima esperienza grazie alla nostra guida Leonardo, che ha una vera passione per i vulcani. Ero preoccupato di non essere vestito abbastanza pesante perché la temperatura indicata in cima era sotto lo zero — era fine aprile — ma una felpa e una giacca leggera sono state sufficienti. L’escursione è moderatamente impegnativa, ma dura solo circa un’ora. Abbiamo avuto il tempo per fare un paio di belle pause durante la salita e, dopo l’escursione, per mangiare qualcosa.'
+    : 'Had a great time thanks to our guide Leonardo, who has a real passion for volcanoes. I had been worried about being underdressed because the reported temperature at the top was below freezing — this was in late April — but a sweatshirt and light jacket were fine. The hike is moderately strenuous but only one hour. We had time for a couple of nice breaks on the way up and after our hike to have some food.';
 
   return (
     <>
@@ -2744,7 +2744,7 @@ function WearReviewsSafety({ lang }) {
             <ImageSlot src={MEDIA.liveSafe} alt={text(lang, 'liveAlt')} lang={lang} ratio="wide" />
             <div className="info-card-copy">
               <h3>{lang === 'it' ? 'Distanza sicura, sempre.' : 'Safe distance, always.'}</h3>
-              <p>{lang === 'it' ? 'Lâ€™itinerario resta flessibile e viene scelto solo dopo una valutazione reale delle condizioni.' : 'The route stays flexible and is chosen only after real assessment of conditions.'}</p>
+              <p>{lang === 'it' ? 'L’itinerario resta flessibile e viene scelto solo dopo una valutazione reale delle condizioni.' : 'The route stays flexible and is chosen only after real assessment of conditions.'}</p>
             </div>
           </article>
           <article className="content-card dark-card readable-safety-card">
@@ -2772,7 +2772,7 @@ function WearReviewsSafety({ lang }) {
           <article className="testimonial-card">
             {lang === 'it' && <span className="micro-label">{text(lang, 'reviewOriginalLabel')}</span>}
             <blockquote>{review}</blockquote>
-            <p className="small-note">Leonardo Â· Etna experience</p>
+            <p className="small-note">Leonardo · Etna experience</p>
           </article>
         </div>
       </section>
@@ -3337,7 +3337,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
                 <label className="field-label" htmlFor="questionnaireFixedExcursion">{text(lang, 'chooseFixedExcursion')}</label>
                 <select id="questionnaireFixedExcursion" value={formState.fixedExcursionId || ''} onChange={(event) => updateFixedExcursion(event.target.value)}>
                   <option value="">{text(lang, 'chooseFixedExcursion')}</option>
-                  {fixedExcursions.map((item) => <option key={item.id} value={item.id}>{fixedExcursionLabel(item, lang)} Â· {text(lang, 'placesRemaining')} {item.places_remaining}/{item.capacity}</option>)}
+                  {fixedExcursions.map((item) => <option key={item.id} value={item.id}>{fixedExcursionLabel(item, lang)} · {text(lang, 'placesRemaining')} {item.places_remaining}/{item.capacity}</option>)}
                 </select>
                 {fixedExcursions.length === 0 && <p className="small-note">{text(lang, 'noFixedExcursions')}</p>}
               </>
@@ -3356,7 +3356,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       case 'date':
         return (
           <div className="questionnaire-field-stack">
-            {selectedFixed && <p className="small-note">{text(lang, 'fixedExcursion')}: {fixedExcursionLabel(selectedFixed, lang)} Â· {adminExperienceLabel(selectedFixed.experience_id, lang)}</p>}
+            {selectedFixed && <p className="small-note">{text(lang, 'fixedExcursion')}: {fixedExcursionLabel(selectedFixed, lang)} · {adminExperienceLabel(selectedFixed.experience_id, lang)}</p>}
             {requestType === 'private' && (
               <div className="form-two-cols">
                 <div>
@@ -3550,16 +3550,16 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
               <button className="date-modal-close" type="button" onClick={() => setFixedOptionsOpen(false)}>{text(lang, 'close')}</button>
             </div>
             <div className="request-options-monthbar" aria-label={text(lang, 'fixedExcursionOptionsTitle')}>
-              <button type="button" onClick={() => changeDetailsMonth(-1)} disabled={!canGoPreviousDetailsMonth} aria-label={text(lang, 'previousMonth')}>â€¹</button>
+              <button type="button" onClick={() => changeDetailsMonth(-1)} disabled={!canGoPreviousDetailsMonth} aria-label={text(lang, 'previousMonth')}>‹</button>
               <strong>{monthLabel(detailsMonthDate, lang)}</strong>
-              <button type="button" onClick={() => changeDetailsMonth(1)} aria-label={text(lang, 'nextMonth')}>â€º</button>
+              <button type="button" onClick={() => changeDetailsMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
             </div>
             {fixedExcursions.filter((item) => sameCalendarMonth(item.date, detailsMonthDate)).length > 0 && (
               <div className="request-fixed-list">
                 {fixedExcursions.filter((item) => sameCalendarMonth(item.date, detailsMonthDate)).map((item) => (
                   <button className="request-fixed-option" type="button" key={item.id} onClick={() => setSelectedFixedExcursionDetails(item)}>
                     <strong>{fixedExcursionLabel(item, lang)}</strong>
-                    <span>{adminExperienceLabel(item.experience_id, lang)} Â· {text(lang, 'placesRemaining')} {item.places_remaining}/{item.capacity}</span>
+                    <span>{adminExperienceLabel(item.experience_id, lang)} · {text(lang, 'placesRemaining')} {item.places_remaining}/{item.capacity}</span>
                   </button>
                 ))}
               </div>
@@ -3855,7 +3855,7 @@ const requestStatusLabels = {
 
 const adminAvailabilityStatusLabels = {
   closed: { it: 'Non disponibile', en: 'Closed' },
-  limited: { it: 'DisponibilitÃ  limitata', en: 'Limited availability' },
+  limited: { it: 'Disponibilità limitata', en: 'Limited availability' },
   'on-request': { it: 'Su richiesta', en: 'On request' }
 };
 
@@ -3932,7 +3932,7 @@ function buildAttributionContactMessage(value, detail, lang) {
   if (lang === 'en') {
     return `Hi Leonardo,\n\nI heard about vulcanIQ from "${display}" and I would like information about a vulcanIQ experience on Mount Etna.\n\nI would like to know availability, approximate duration, price and clothing recommendations.\n\nThank you!`;
   }
-  return `Ciao Leonardo,\n\nHo sentito parlare di vulcanIQ da "${display}" e vorrei informazioni su unâ€™esperienza vulcanIQ sullâ€™Etna.\n\nVorrei sapere disponibilitÃ , durata indicativa, prezzo e consigli sullâ€™abbigliamento.\n\nGrazie!`;
+  return `Ciao Leonardo,\n\nHo sentito parlare di vulcanIQ da "${display}" e vorrei informazioni su un’esperienza vulcanIQ sull’Etna.\n\nVorrei sapere disponibilità, durata indicativa, prezzo e consigli sull’abbigliamento.\n\nGrazie!`;
 }
 
 function ContactAttributionSelect({ lang, value, onChange, includeAdmin = false, id = 'heardAboutUs' }) {
@@ -4162,7 +4162,7 @@ function AdminLogin({ lang, setLang, navigate }) {
       const access = await getAdminAccess();
       if (!access.isAdmin) {
         await signOutOwner();
-        setError(adminCopy(lang, 'Accesso negato: questo utente non Ã¨ un owner attivo.', 'Access denied: this user is not an active owner.'));
+        setError(adminCopy(lang, 'Accesso negato: questo utente non è un owner attivo.', 'Access denied: this user is not an active owner.'));
         return;
       }
       navigate('/admin/today');
@@ -4183,7 +4183,7 @@ function AdminLogin({ lang, setLang, navigate }) {
         </div>
         {!isSupabaseConfigured && (
           <div className="admin-alert warning">
-            {adminCopy(lang, 'Supabase non Ã¨ configurato. Aggiungi VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.', 'Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')}
+            {adminCopy(lang, 'Supabase non è configurato. Aggiungi VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.', 'Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')}
           </div>
         )}
         <form className="admin-form" onSubmit={handleSubmit}>
@@ -4260,7 +4260,7 @@ function ProtectedAdminArea({ pathname, navigate, lang, setLang }) {
       <main className="admin-loading">
         <span className="kicker">Accesso</span>
         <h1>{adminCopy(lang, 'Accesso negato', 'Access denied')}</h1>
-        <p>{state.error === 'not-admin' ? adminCopy(lang, 'Il tuo account esiste, ma non Ã¨ presente come owner attivo in admin_profiles.', 'Your account exists, but it is not listed as an active owner in admin_profiles.') : state.error}</p>
+        <p>{state.error === 'not-admin' ? adminCopy(lang, 'Il tuo account esiste, ma non è presente come owner attivo in admin_profiles.', 'Your account exists, but it is not listed as an active owner in admin_profiles.') : state.error}</p>
         <button className="button secondary" type="button" onClick={() => navigate('/admin/login')}>{adminCopy(lang, 'Vai al login', 'Go to login')}</button>
       </main>
     );
@@ -4475,12 +4475,12 @@ function AdminCalendarPage({ lang, session, navigate, adminContent = {} }) {
       <div className="admin-page-header">
         <div>
           <span className="kicker">{adminCopy(lang, 'Calendario', 'Calendar')}</span>
-          <AdminEditableText as="h1" itemKey="admin.calendar.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Calendario disponibilitÃ ', 'Availability calendar')} />
+          <AdminEditableText as="h1" itemKey="admin.calendar.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Calendario disponibilità', 'Availability calendar')} />
           <AdminEditableText as="p" itemKey="admin.calendar.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Verde: escursione fissa. Rosso: esperienza prenotata. Grigio: data bloccata o non disponibile.', 'Green: fixed excursion. Red: booked experience. Grey: blocked or unavailable date.')} />
         </div>
         <div className="admin-header-actions">
           <button className="button secondary" type="button" onClick={refreshCalendar}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
-          <button className="button primary" type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Gestisci disponibilitÃ ', 'Manage availability')}</button>
+          <button className="button primary" type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Gestisci disponibilità', 'Manage availability')}</button>
         </div>
       </div>
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
@@ -4488,9 +4488,9 @@ function AdminCalendarPage({ lang, session, navigate, adminContent = {} }) {
       <div className="admin-calendar-layout">
         <article className="calendar-card admin-calendar-card">
           <div className="calendar-topline">
-            <button type="button" onClick={() => changeMonth(-1)} aria-label={text(lang, 'previousMonth')}>â€¹</button>
+            <button type="button" onClick={() => changeMonth(-1)} aria-label={text(lang, 'previousMonth')}>‹</button>
             <h2>{monthLabel(monthDate, lang)}</h2>
-            <button type="button" onClick={() => changeMonth(1)} aria-label={text(lang, 'nextMonth')}>â€º</button>
+            <button type="button" onClick={() => changeMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
           </div>
           <div className="calendar-legend compact-legend">
             <span><i className="legend-dot fixed" />{adminCopy(lang, 'Verde: escursione fissa', 'Green: fixed excursion')}</span>
@@ -4523,7 +4523,7 @@ function AdminCalendarPage({ lang, session, navigate, adminContent = {} }) {
           <h2>{formatDateForMessage(selectedDate, lang)}</h2>
           {isLoading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : (
             <>
-              {selected.fixed.length === 0 && selected.bookings.length === 0 && selected.blocks.length === 0 && <p>{adminCopy(lang, 'Nessuna attivitÃ  per questa data.', 'No activity for this date.')}</p>}
+              {selected.fixed.length === 0 && selected.bookings.length === 0 && selected.blocks.length === 0 && <p>{adminCopy(lang, 'Nessuna attività per questa data.', 'No activity for this date.')}</p>}
               {selected.fixed.length > 0 && (
                 <details className="admin-archive-details admin-calendar-detail-group">
                   <summary><span>{adminCopy(lang, 'Escursioni fisse', 'Fixed excursions')}</span><strong>{selected.fixed.length}</strong></summary>
@@ -4533,7 +4533,7 @@ function AdminCalendarPage({ lang, session, navigate, adminContent = {} }) {
                     return (
                       <article className="calendar-detail-item" key={item.id}>
                         <strong>{fixedExcursionLabel(item, lang)}</strong>
-                        <span>{adminExperienceLabel(item.experience_id, lang)} Â· {item.places_remaining}/{item.capacity}</span>
+                        <span>{adminExperienceLabel(item.experience_id, lang)} · {item.places_remaining}/{item.capacity}</span>
                         <dl className="request-details-grid">
                           <div><dt>{adminCopy(lang, 'Data', 'Date')}</dt><dd>{formatDateForMessage(item.date, lang)}</dd></div>
                           <div><dt>{adminCopy(lang, 'Ora inizio', 'Start time')}</dt><dd>{item.start_time ? String(item.start_time).slice(0, 5) : '-'}</dd></div>
@@ -4543,7 +4543,7 @@ function AdminCalendarPage({ lang, session, navigate, adminContent = {} }) {
                         <div className="guest-detail-list">
                           <strong>{adminCopy(lang, 'Ospiti prenotati', 'Booked guests')}</strong>
                           {bookedGuests.length ? bookedGuests.map((guest) => (
-                            <p className="small-note" key={guest.id}>{guest.customer_name || '-'} Â· {guest.customer_email || '-'} Â· {guest.customer_phone || '-'} Â· {Number(guest.adults || 0) + Number(guest.children || 0) || '-'} {adminCopy(lang, 'ospiti', 'guests')}{guest.booking_code ? ` Â· ${guest.booking_code}` : ''}</p>
+                            <p className="small-note" key={guest.id}>{guest.customer_name || '-'} · {guest.customer_email || '-'} · {guest.customer_phone || '-'} · {Number(guest.adults || 0) + Number(guest.children || 0) || '-'} {adminCopy(lang, 'ospiti', 'guests')}{guest.booking_code ? ` · ${guest.booking_code}` : ''}</p>
                           )) : <p className="small-note">{adminCopy(lang, 'Nessun ospite prenotato per questa data.', 'No guests booked for this date yet.')}</p>}
                         </div>
                         <button type="button" className="button secondary" onClick={() => setSelectedFixed(item)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
@@ -4560,7 +4560,7 @@ function AdminCalendarPage({ lang, session, navigate, adminContent = {} }) {
                   {selected.bookings.map((request) => (
                     <article className="calendar-detail-item" key={request.id}>
                       <strong>{request.customer_name || '-'}</strong>
-                      <span>{adminExperienceLabel(request.experience_id, lang)} Â· {Number(request.adults || 0) + Number(request.children || 0) || '-'} {adminCopy(lang, 'ospiti', 'guests')}</span>
+                      <span>{adminExperienceLabel(request.experience_id, lang)} · {Number(request.adults || 0) + Number(request.children || 0) || '-'} {adminCopy(lang, 'ospiti', 'guests')}</span>
                       <button type="button" className="button secondary" onClick={() => setSelectedBooking(request)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
                     </article>
                   ))}
@@ -4569,8 +4569,8 @@ function AdminCalendarPage({ lang, session, navigate, adminContent = {} }) {
               )}
               {selected.blocks.length > 0 && (
                 <details className="admin-archive-details admin-calendar-detail-group">
-                  <summary><span>{adminCopy(lang, 'Blocchi e note disponibilitÃ ', 'Availability notes')}</span><strong>{selected.blocks.length}</strong></summary>
-                  {selected.blocks.map((block) => <p className="small-note" key={block.id}>{adminAvailabilityStatusLabels[block.status]?.[lang] || block.status} Â· {block.reason_it || block.reason_en || '-'}</p>)}
+                  <summary><span>{adminCopy(lang, 'Blocchi e note disponibilità', 'Availability notes')}</span><strong>{selected.blocks.length}</strong></summary>
+                  {selected.blocks.map((block) => <p className="small-note" key={block.id}>{adminAvailabilityStatusLabels[block.status]?.[lang] || block.status} · {block.reason_it || block.reason_en || '-'}</p>)}
                 </details>
               )}
             </>
@@ -4589,7 +4589,7 @@ function CalendarBookingModal({ lang, request, onClose, onSave }) {
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <div className="admin-modal wide booking-edit-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-        <div className="admin-modal-header booking-edit-modal-header"><div><h2>{request.customer_name || adminCopy(lang, 'Prenotazione', 'Booking')}</h2><p>{request.customer_email || '-'} Â· {request.customer_phone || '-'}</p></div><button className="modal-close-button booking-modal-close-button" type="button" aria-label={adminCopy(lang, 'Chiudi', 'Close')} onClick={onClose}>{adminCopy(lang, 'Chiudi', 'Close')}</button></div>
+        <div className="admin-modal-header booking-edit-modal-header"><div><h2>{request.customer_name || adminCopy(lang, 'Prenotazione', 'Booking')}</h2><p>{request.customer_email || '-'} · {request.customer_phone || '-'}</p></div><button className="modal-close-button booking-modal-close-button" type="button" aria-label={adminCopy(lang, 'Chiudi', 'Close')} onClick={onClose}>{adminCopy(lang, 'Chiudi', 'Close')}</button></div>
         <div className="admin-form-grid booking-edit-modal-grid">
           <AdminSelect label={adminCopy(lang, 'Stato', 'Status')} value={form.status} onChange={(value) => setForm((current) => ({ ...current, status: value }))} options={REQUEST_STATUSES} formatter={(value) => requestStatusLabels[value]?.[lang] || value} />
           <label className="admin-field confirmed-date-section"><span>{adminCopy(lang, 'Data confermata', 'Confirmed date')}</span><input type="date" value={form.requested_date || ''} onChange={(event) => setForm((current) => ({ ...current, requested_date: event.target.value }))} /></label>
@@ -4624,7 +4624,7 @@ function CalendarFixedModal({ lang, item, onClose, onSave }) {
           <label className="admin-field full"><span>Description EN</span><textarea rows={3} value={form.description_en} onChange={(event) => setForm((current) => ({ ...current, description_en: event.target.value }))} /></label>
           <AdminInput label="Meeting point IT" value={form.meeting_point_it} onChange={(value) => setForm((current) => ({ ...current, meeting_point_it: value }))} />
           <AdminInput label="Meeting point EN" value={form.meeting_point_en} onChange={(value) => setForm((current) => ({ ...current, meeting_point_en: value }))} />
-          <AdminInput label={adminCopy(lang, 'Link Google Maps del punto dâ€™incontro', 'Google Maps meeting point link')} value={form.meeting_point_maps_url} placeholder="https://maps.google.com/..." onChange={(value) => setForm((current) => ({ ...current, meeting_point_maps_url: value }))} />
+          <AdminInput label={adminCopy(lang, 'Link Google Maps del punto d’incontro', 'Google Maps meeting point link')} value={form.meeting_point_maps_url} placeholder="https://maps.google.com/..." onChange={(value) => setForm((current) => ({ ...current, meeting_point_maps_url: value }))} />
           <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
           <div className="modal-actions full"><button className="button primary" type="button" onClick={() => onSave(item, { ...form, capacity: Number.parseInt(form.capacity || '12', 10) })}>{adminCopy(lang, 'Salva modifiche', 'Save changes')}</button><button className="button secondary" type="button" onClick={onClose}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
         </div>
@@ -4634,7 +4634,7 @@ function CalendarFixedModal({ lang, item, onClose, onSave }) {
 }
 
 const MEDIA_ADMIN_ITEMS = [
-  { key: 'brand_logo_main', it: 'Logo principale vulcanIQ', en: 'Main vulcanIQ logo', fallback: BRAND.logo, alt_it: 'Logo vulcanIQ â€” esperienze premium sullâ€™Etna', alt_en: 'vulcanIQ logo â€” premium Etna experiences' },
+  { key: 'brand_logo_main', it: 'Logo principale vulcanIQ', en: 'Main vulcanIQ logo', fallback: BRAND.logo, alt_it: 'Logo vulcanIQ — esperienze premium sull’Etna', alt_en: 'vulcanIQ logo — premium Etna experiences' },
   { key: 'home_hero_background', it: 'Sfondo hero homepage', en: 'Home hero background' },
   { key: 'home_hero_feature_image', it: 'Immagine hero homepage', en: 'Home hero image' },
   { key: 'home_hero_video', it: 'Video homepage', en: 'Home video' },
@@ -4760,7 +4760,7 @@ function WebsiteAdminPage({ lang, session }) {
       setContentRows([]);
       setMediaRows([]);
       setLoading(false);
-      setError(adminCopy(lang, 'Supabase non Ã¨ configurato. Puoi vedere lâ€™anteprima, ma non salvare modifiche.', 'Supabase is not configured. You can preview the site, but changes cannot be saved.'));
+      setError(adminCopy(lang, 'Supabase non è configurato. Puoi vedere l’anteprima, ma non salvare modifiche.', 'Supabase is not configured. You can preview the site, but changes cannot be saved.'));
       return;
     }
     try {
@@ -4796,7 +4796,7 @@ function WebsiteAdminPage({ lang, session }) {
   }
 
   async function saveContentItem(item) {
-    if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non Ã¨ configurato.', 'Supabase is not configured.'));
+    if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non è configurato.', 'Supabase is not configured.'));
     await upsertSiteContent({
       content_key: item.content_key || item.key,
       section: item.section,
@@ -4819,7 +4819,7 @@ function WebsiteAdminPage({ lang, session }) {
   }
 
   async function saveMediaItem(item) {
-    if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non Ã¨ configurato.', 'Supabase is not configured.'));
+    if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non è configurato.', 'Supabase is not configured.'));
     const key = item.media_key || item.key;
     const existing = mediaRows.find((row) => row.media_key === key);
     const uploaded = item.file ? await uploadSiteMediaFile(item.file, key, session.user.id) : {};
@@ -5065,7 +5065,7 @@ function AdminEditPage({ lang, session, adminContent = {} }) {
         <div>
           <span className="kicker">{adminCopy(lang, 'Modifica', 'Edit')}</span>
           <AdminEditableText as="h1" itemKey="admin.edit.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Modifica sito e recensioni', 'Edit website and reviews')} />
-          <AdminEditableText as="p" itemKey="admin.edit.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestisci contenuti, media e recensioni pubbliche da unâ€™unica area.', 'Manage public content, media, and reviews from one area.')} />
+          <AdminEditableText as="p" itemKey="admin.edit.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestisci contenuti, media e recensioni pubbliche da un’unica area.', 'Manage public content, media, and reviews from one area.')} />
         </div>
       </div>
       <details className="admin-archive-details edit-workspace-section">
@@ -5102,7 +5102,7 @@ function EditorFullscreenModal({ lang, editorLang, selected, contentMap, mediaMa
           <div>
             <span className="kicker">{adminCopy(lang, 'Editor elemento', 'Element editor')}</span>
             <h2 id="editorFullscreenTitle">{selected.label || selected.key}</h2>
-            <p>{selected.section || selected.type} Â· {selected.key}</p>
+            <p>{selected.section || selected.type} · {selected.key}</p>
           </div>
           <button className="button secondary" type="button" onClick={onClose}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>
         </div>
@@ -5177,7 +5177,7 @@ function EditorInspector({ lang, editorLang, selected, contentMap, mediaMap, upd
       <aside className="editor-inspector empty">
         <span className="kicker">{adminCopy(lang, 'Ispettore', 'Inspector')}</span>
         <h2>{adminCopy(lang, 'Seleziona un elemento', 'Select an element')}</h2>
-        <p>{adminCopy(lang, 'Seleziona un testo, unâ€™immagine o una card nella preview per modificarla.', 'Select a text, image, or card in the preview to edit it.')}</p>
+        <p>{adminCopy(lang, 'Seleziona un testo, un’immagine o una card nella preview per modificarla.', 'Select a text, image, or card in the preview to edit it.')}</p>
       </aside>
     );
   }
@@ -5187,7 +5187,7 @@ function EditorInspector({ lang, editorLang, selected, contentMap, mediaMap, upd
     const Field = item.content_type === 'textarea' || item.type === 'textarea' ? 'textarea' : 'input';
     return (
       <aside className="editor-inspector">
-        <div className="inspector-heading"><span className="kicker">{adminCopy(lang, 'Testo', 'Text')}</span><h2>{selected.label}</h2><p>{item.section} Â· {selected.key}</p></div>
+        <div className="inspector-heading"><span className="kicker">{adminCopy(lang, 'Testo', 'Text')}</span><h2>{selected.label}</h2><p>{item.section} · {selected.key}</p></div>
         <label className="admin-field full"><span>Italiano</span><Field rows={5} value={item.value_it ?? item.default_it ?? ''} onChange={(event) => updateContentDraft(selected.key, { value_it: event.target.value, active: true })} /></label>
         <label className="admin-field full"><span>English</span><Field rows={5} value={item.value_en ?? item.default_en ?? ''} onChange={(event) => updateContentDraft(selected.key, { value_en: event.target.value, active: true })} /></label>
         <label className="admin-field"><span>{adminCopy(lang, 'Dimensione testo', 'Text size')}</span><select value={item.text_size || 'normal'} onChange={(event) => updateContentDraft(selected.key, { text_size: event.target.value })}><option value="small">Small</option><option value="normal">Normal</option><option value="large">Large</option><option value="hero">Hero</option><option value="display">Display</option></select></label>
@@ -5222,8 +5222,8 @@ function EditorInspector({ lang, editorLang, selected, contentMap, mediaMap, upd
 
   return (
     <aside className="editor-inspector">
-      <div className="inspector-heading"><span className="kicker">{adminCopy(lang, 'Card', 'Card')}</span><h2>{selected.label}</h2><p>{selected.section} Â· {selected.key}</p></div>
-      <p>{adminCopy(lang, 'Questa card Ã¨ selezionata. Per modificare contenuti visibili, clicca direttamente su titolo, descrizione o immagine dentro la card. Per dati strutturati come collaborazioni o escursioni fisse, usa la sezione admin dedicata.', 'This card is selected. To edit visible content, click directly on the title, description, or image inside the card. For structured data such as partnerships or fixed excursions, use the dedicated admin section.')}</p>
+      <div className="inspector-heading"><span className="kicker">{adminCopy(lang, 'Card', 'Card')}</span><h2>{selected.label}</h2><p>{selected.section} · {selected.key}</p></div>
+      <p>{adminCopy(lang, 'Questa card è selezionata. Per modificare contenuti visibili, clicca direttamente su titolo, descrizione o immagine dentro la card. Per dati strutturati come collaborazioni o escursioni fisse, usa la sezione admin dedicata.', 'This card is selected. To edit visible content, click directly on the title, description, or image inside the card. For structured data such as partnerships or fixed excursions, use the dedicated admin section.')}</p>
     </aside>
   );
 }
@@ -5321,14 +5321,14 @@ function MediaAdminPage({ lang, session, compactHeader = false }) {
 }
 
 const EXPERIENCE_CONTENT_DEFINITIONS = experiences.flatMap((experience) => [
-  { key: `experiences.${experience.id}.title`, section: 'Esperienze', label_it: `${experience.title} Â· titolo`, label_en: `${experience.title} Â· title`, type: 'text', default_it: experience.title, default_en: experience.title, text_size: 'large', style_variant: 'heading' },
-  { key: `experiences.${experience.id}.summary`, section: 'Esperienze', label_it: `${experience.title} Â· sintesi`, label_en: `${experience.title} Â· summary`, type: 'textarea', default_it: experience.summary.it, default_en: experience.summary.en },
-  { key: `experiences.${experience.id}.best_for`, section: 'Esperienze', label_it: `${experience.title} Â· ideale per`, label_en: `${experience.title} Â· best for`, type: 'textarea', default_it: experience.bestFor.it, default_en: experience.bestFor.en },
-  { key: `experiences.${experience.id}.starting`, section: 'Esperienze', label_it: `${experience.title} Â· indicazione`, label_en: `${experience.title} Â· starting`, type: 'text', default_it: experience.starting.it, default_en: experience.starting.en },
-  { key: `experiences.${experience.id}.description`, section: 'Esperienze', label_it: `${experience.title} Â· descrizione`, label_en: `${experience.title} Â· description`, type: 'textarea', default_it: experience.description.it, default_en: experience.description.en },
-  { key: `experiences.${experience.id}.value`, section: 'Esperienze', label_it: `${experience.title} Â· valore`, label_en: `${experience.title} Â· value`, type: 'textarea', default_it: experience.value.it, default_en: experience.value.en },
-  { key: `experiences.${experience.id}.notes`, section: 'Esperienze', label_it: `${experience.title} Â· note pratiche`, label_en: `${experience.title} Â· practical notes`, type: 'textarea', default_it: experience.notes.it, default_en: experience.notes.en },
-  { key: `experiences.${experience.id}.safety`, section: 'Esperienze', label_it: `${experience.title} Â· sicurezza`, label_en: `${experience.title} Â· safety`, type: 'textarea', default_it: experience.safety.it, default_en: experience.safety.en }
+  { key: `experiences.${experience.id}.title`, section: 'Esperienze', label_it: `${experience.title} · titolo`, label_en: `${experience.title} · title`, type: 'text', default_it: experience.title, default_en: experience.title, text_size: 'large', style_variant: 'heading' },
+  { key: `experiences.${experience.id}.summary`, section: 'Esperienze', label_it: `${experience.title} · sintesi`, label_en: `${experience.title} · summary`, type: 'textarea', default_it: experience.summary.it, default_en: experience.summary.en },
+  { key: `experiences.${experience.id}.best_for`, section: 'Esperienze', label_it: `${experience.title} · ideale per`, label_en: `${experience.title} · best for`, type: 'textarea', default_it: experience.bestFor.it, default_en: experience.bestFor.en },
+  { key: `experiences.${experience.id}.starting`, section: 'Esperienze', label_it: `${experience.title} · indicazione`, label_en: `${experience.title} · starting`, type: 'text', default_it: experience.starting.it, default_en: experience.starting.en },
+  { key: `experiences.${experience.id}.description`, section: 'Esperienze', label_it: `${experience.title} · descrizione`, label_en: `${experience.title} · description`, type: 'textarea', default_it: experience.description.it, default_en: experience.description.en },
+  { key: `experiences.${experience.id}.value`, section: 'Esperienze', label_it: `${experience.title} · valore`, label_en: `${experience.title} · value`, type: 'textarea', default_it: experience.value.it, default_en: experience.value.en },
+  { key: `experiences.${experience.id}.notes`, section: 'Esperienze', label_it: `${experience.title} · note pratiche`, label_en: `${experience.title} · practical notes`, type: 'textarea', default_it: experience.notes.it, default_en: experience.notes.en },
+  { key: `experiences.${experience.id}.safety`, section: 'Esperienze', label_it: `${experience.title} · sicurezza`, label_en: `${experience.title} · safety`, type: 'textarea', default_it: experience.safety.it, default_en: experience.safety.en }
 ]);
 
 const SITE_CONTENT_DEFINITIONS = [
@@ -5368,22 +5368,22 @@ const SITE_CONTENT_DEFINITIONS = [
 
 const ADMIN_CONTENT_DEFINITIONS = [
   { key: 'admin.today.title', section: 'Oggi', label_it: 'Titolo pannello operativo', label_en: 'Operations dashboard title', type: 'text', default_it: 'Pannello operativo', default_en: 'Operations', text_size: 'display', style_variant: 'display' },
-  { key: 'admin.today.helper', section: 'Oggi', label_it: 'Descrizione oggi', label_en: 'Today helper', type: 'textarea', default_it: 'Stato operativo rapido, richieste e attivitÃ  da controllare oggi.', default_en: 'Fast operational status, requests, and activity to review today.', text_size: 'normal', style_variant: 'body' },
+  { key: 'admin.today.helper', section: 'Oggi', label_it: 'Descrizione oggi', label_en: 'Today helper', type: 'textarea', default_it: 'Stato operativo rapido, richieste e attività da controllare oggi.', default_en: 'Fast operational status, requests, and activity to review today.', text_size: 'normal', style_variant: 'body' },
   { key: 'admin.today.pendingToday.label', section: 'Oggi', label_it: 'Scheda pending oggi', label_en: 'Pending today card', type: 'text', default_it: 'Pending oggi', default_en: 'Pending today', style_variant: 'label' },
   { key: 'admin.today.pendingToday.helper', section: 'Oggi', label_it: 'Aiuto pending oggi', label_en: 'Pending today helper', type: 'text', default_it: 'Apri richieste di oggi', default_en: 'Open today requests' },
   { key: 'admin.today.pendingTotal.label', section: 'Oggi', label_it: 'Scheda pending totale', label_en: 'Pending total card', type: 'text', default_it: 'Pending totale', default_en: 'Pending total', style_variant: 'label' },
   { key: 'admin.today.pendingTotal.helper', section: 'Oggi', label_it: 'Aiuto pending totale', label_en: 'Pending total helper', type: 'text', default_it: 'Vai alle richieste', default_en: 'Go to requests' },
   { key: 'admin.today.acceptedToday.label', section: 'Oggi', label_it: 'Scheda accettate oggi', label_en: 'Accepted today card', type: 'text', default_it: 'Accettate oggi', default_en: 'Accepted today', style_variant: 'label' },
   { key: 'admin.today.acceptedToday.helper', section: 'Oggi', label_it: 'Aiuto accettate oggi', label_en: 'Accepted today helper', type: 'text', default_it: 'Vedi confermate', default_en: 'View accepted' },
-  { key: 'admin.today.availabilityToday.label', section: 'Oggi', label_it: 'Scheda disponibilitÃ  oggi', label_en: 'Availability today card', type: 'text', default_it: 'DisponibilitÃ  oggi', default_en: 'Availability issues today', style_variant: 'label' },
-  { key: 'admin.today.availabilityToday.helper', section: 'Oggi', label_it: 'Aiuto disponibilitÃ  oggi', label_en: 'Availability today helper', type: 'text', default_it: 'Gestisci calendario', default_en: 'Manage calendar' },
+  { key: 'admin.today.availabilityToday.label', section: 'Oggi', label_it: 'Scheda disponibilità oggi', label_en: 'Availability today card', type: 'text', default_it: 'Disponibilità oggi', default_en: 'Availability issues today', style_variant: 'label' },
+  { key: 'admin.today.availabilityToday.helper', section: 'Oggi', label_it: 'Aiuto disponibilità oggi', label_en: 'Availability today helper', type: 'text', default_it: 'Gestisci calendario', default_en: 'Manage calendar' },
   { key: 'admin.today.todayRequests.title', section: 'Oggi', label_it: 'Titolo richieste di oggi', label_en: 'Today requests title', type: 'text', default_it: 'Richieste di oggi', default_en: 'Today requests', style_variant: 'heading' },
   { key: 'admin.today.pendingRequests.title', section: 'Oggi', label_it: 'Titolo richieste pending', label_en: 'Pending requests title', type: 'text', default_it: 'Richieste pending da confermare', default_en: 'Pending requests needing attention', style_variant: 'heading' },
   { key: 'admin.today.upcomingOperations.title', section: 'Oggi', label_it: 'Titolo operazioni imminenti', label_en: 'Upcoming operations title', type: 'text', default_it: 'Operazioni imminenti', default_en: 'Upcoming operations', style_variant: 'heading' },
   { key: 'admin.today.acceptedBookings.title', section: 'Oggi', label_it: 'Riga prenotazioni accettate', label_en: 'Accepted bookings row', type: 'text', default_it: 'Prenotazioni accettate', default_en: 'Accepted bookings', style_variant: 'heading' },
   { key: 'admin.today.nearTermBlocks.title', section: 'Oggi', label_it: 'Riga blocchi prossimi', label_en: 'Near-term blocks row', type: 'text', default_it: 'Blocchi prossimi', default_en: 'Near-term blocks', style_variant: 'heading' },
   { key: 'admin.today.recentDecisions.title', section: 'Oggi', label_it: 'Riga decisioni recenti', label_en: 'Recent decisions row', type: 'text', default_it: 'Decisioni recenti', default_en: 'Recent decisions', style_variant: 'heading' },
-  { key: 'admin.calendar.title', section: 'Calendar', label_it: 'Titolo calendario', label_en: 'Calendar title', type: 'text', default_it: 'Calendario disponibilitÃ ', default_en: 'Availability calendar', text_size: 'display', style_variant: 'display' },
+  { key: 'admin.calendar.title', section: 'Calendar', label_it: 'Titolo calendario', label_en: 'Calendar title', type: 'text', default_it: 'Calendario disponibilità', default_en: 'Availability calendar', text_size: 'display', style_variant: 'display' },
   { key: 'admin.calendar.helper', section: 'Calendar', label_it: 'Descrizione calendario', label_en: 'Calendar helper', type: 'textarea', default_it: 'Verde: escursione fissa. Rosso: esperienza prenotata. Grigio: data bloccata o non disponibile.', default_en: 'Green: fixed excursion. Red: booked experience. Grey: blocked or unavailable date.', text_size: 'normal', style_variant: 'body' },
   { key: 'admin.calendar.selected.title', section: 'Calendar', label_it: 'Titolo dettagli data', label_en: 'Selected date title', type: 'text', default_it: 'Dettagli data', default_en: 'Date details', style_variant: 'heading' },
   { key: 'admin.finance.title', section: 'Finance', label_it: 'Titolo finanze', label_en: 'Finance title', type: 'text', default_it: 'Finanze', default_en: 'Finance', style_variant: 'heading' },
@@ -5406,13 +5406,13 @@ const ADMIN_CONTENT_DEFINITIONS = [
   { key: 'admin.requests.helper', section: 'Requests', label_it: 'Descrizione richieste', label_en: 'Requests helper', type: 'textarea', default_it: 'Cerca e filtra richieste da sito, WhatsApp, telefono o email.', default_en: 'Search and filter requests from the website, WhatsApp, phone, or email.' },
   { key: 'admin.requests.results.title', section: 'Requests', label_it: 'Titolo risultati richieste', label_en: 'Request results title', type: 'text', default_it: 'Risultati', default_en: 'Results', style_variant: 'heading' },
   { key: 'admin.upcoming.title', section: 'Upcoming', label_it: 'Titolo prossime prenotazioni', label_en: 'Upcoming bookings title', type: 'text', default_it: 'Prossime prenotazioni', default_en: 'Upcoming bookings', text_size: 'display', style_variant: 'display' },
-  { key: 'admin.upcoming.helper', section: 'Upcoming', label_it: 'Descrizione prossime prenotazioni', label_en: 'Upcoming bookings helper', type: 'textarea', default_it: 'Richieste accettate e blocchi attivi, organizzati per giorno. Nessuna statistica: solo operativitÃ .', default_en: 'Accepted requests and active blocks, organized by date. No analytics: just operations.', text_size: 'normal', style_variant: 'body' },
+  { key: 'admin.upcoming.helper', section: 'Upcoming', label_it: 'Descrizione prossime prenotazioni', label_en: 'Upcoming bookings helper', type: 'textarea', default_it: 'Richieste accettate e blocchi attivi, organizzati per giorno. Nessuna statistica: solo operatività.', default_en: 'Accepted requests and active blocks, organized by date. No analytics: just operations.', text_size: 'normal', style_variant: 'body' },
   { key: 'admin.upcoming.accepted.title', section: 'Upcoming', label_it: 'Titolo prenotazioni accettate', label_en: 'Accepted bookings title', type: 'text', default_it: 'Prenotazioni accettate', default_en: 'Accepted bookings', style_variant: 'heading' },
   { key: 'admin.upcoming.past.title', section: 'Upcoming', label_it: 'Titolo esperienze passate', label_en: 'Past experiences title', type: 'text', default_it: 'Esperienze passate', default_en: 'Past experiences', style_variant: 'heading' },
   { key: 'admin.upcoming.blocks.title', section: 'Upcoming', label_it: 'Titolo blocchi prossimi', label_en: 'Near-term blocks title', type: 'text', default_it: 'Blocchi prossimi', default_en: 'Near-term blocks', style_variant: 'heading' },
-  { key: 'admin.availability.title', section: 'Availability', label_it: 'Titolo disponibilitÃ ', label_en: 'Availability title', type: 'text', default_it: 'DisponibilitÃ ', default_en: 'Availability', style_variant: 'heading' },
-  { key: 'admin.availability.helper', section: 'Availability', label_it: 'Descrizione disponibilitÃ ', label_en: 'Availability helper', type: 'textarea', default_it: 'Gestisci disponibilitÃ  privata e date fisse prenotabili fino a 12 persone.', default_en: 'Manage private availability and fixed excursion dates bookable up to 12 people.' },
-  { key: 'admin.availability.addBlock.title', section: 'Availability', label_it: 'Titolo aggiungi blocco', label_en: 'Add block title', type: 'text', default_it: 'Aggiungi blocco disponibilitÃ ', default_en: 'Add availability block', style_variant: 'heading' },
+  { key: 'admin.availability.title', section: 'Availability', label_it: 'Titolo disponibilità', label_en: 'Availability title', type: 'text', default_it: 'Disponibilità', default_en: 'Availability', style_variant: 'heading' },
+  { key: 'admin.availability.helper', section: 'Availability', label_it: 'Descrizione disponibilità', label_en: 'Availability helper', type: 'textarea', default_it: 'Gestisci disponibilità privata e date fisse prenotabili fino a 12 persone.', default_en: 'Manage private availability and fixed excursion dates bookable up to 12 people.' },
+  { key: 'admin.availability.addBlock.title', section: 'Availability', label_it: 'Titolo aggiungi blocco', label_en: 'Add block title', type: 'text', default_it: 'Aggiungi blocco disponibilità', default_en: 'Add availability block', style_variant: 'heading' },
   { key: 'admin.availability.existingBlocks.title', section: 'Availability', label_it: 'Titolo blocchi esistenti', label_en: 'Existing blocks title', type: 'text', default_it: 'Blocchi esistenti', default_en: 'Existing blocks', style_variant: 'heading' },
   { key: 'admin.reviews.title', section: 'Reviews', label_it: 'Titolo gestione recensioni', label_en: 'Review management title', type: 'text', default_it: 'Gestione recensioni', default_en: 'Review management', style_variant: 'heading' },
   { key: 'admin.partnerships.title', section: 'Collaborations', label_it: 'Titolo collaborazioni', label_en: 'Partnerships title', type: 'text', default_it: 'Collaborazioni', default_en: 'Partnerships', style_variant: 'heading' },
@@ -5421,7 +5421,7 @@ const ADMIN_CONTENT_DEFINITIONS = [
   { key: 'admin.partnerships.saved.title', section: 'Collaborations', label_it: 'Titolo collaborazioni salvate', label_en: 'Saved partnerships title', type: 'text', default_it: 'Collaborazioni salvate', default_en: 'Saved partnerships', style_variant: 'heading' },
   { key: 'admin.reviews.helper', section: 'Reviews', label_it: 'Descrizione gestione recensioni', label_en: 'Review management helper', type: 'textarea', default_it: 'Approva, nascondi, rispondi o elimina recensioni pubbliche.', default_en: 'Approve, hide, reply to, or delete public reviews.' },
   { key: 'admin.edit.title', section: 'Edit', label_it: 'Titolo modifica', label_en: 'Edit page title', type: 'text', default_it: 'Modifica sito e recensioni', default_en: 'Edit website and reviews', text_size: 'display', style_variant: 'display' },
-  { key: 'admin.edit.helper', section: 'Edit', label_it: 'Descrizione modifica', label_en: 'Edit page helper', type: 'textarea', default_it: 'Gestisci contenuti, media e recensioni pubbliche da unâ€™unica area.', default_en: 'Manage public content, media, and reviews from one area.', text_size: 'normal', style_variant: 'body' },
+  { key: 'admin.edit.helper', section: 'Edit', label_it: 'Descrizione modifica', label_en: 'Edit page helper', type: 'textarea', default_it: 'Gestisci contenuti, media e recensioni pubbliche da un’unica area.', default_en: 'Manage public content, media, and reviews from one area.', text_size: 'normal', style_variant: 'body' },
   { key: 'admin.edit.publicSite.title', section: 'Edit', label_it: 'Titolo pannello sito pubblico', label_en: 'Public website panel title', type: 'text', default_it: 'Sito pubblico', default_en: 'Public website', style_variant: 'heading' },
   { key: 'admin.edit.publicSite.helper', section: 'Edit', label_it: 'Descrizione pannello sito pubblico', label_en: 'Public website panel helper', type: 'text', default_it: 'Testi e media', default_en: 'Text and media', style_variant: 'label' },
   { key: 'admin.edit.adminSite.title', section: 'Edit', label_it: 'Titolo pannello sito admin', label_en: 'Admin website panel title', type: 'text', default_it: 'Sito admin', default_en: 'Admin website', style_variant: 'heading' },
@@ -5455,7 +5455,7 @@ function AdminSiteContentPage({ lang, session }) {
     if (!isSupabaseConfigured) {
       setContentRows([]);
       setLoading(false);
-      setError(adminCopy(lang, 'Supabase non Ã¨ configurato. Puoi vedere lâ€™anteprima, ma non salvare modifiche.', 'Supabase is not configured. You can preview the dashboard, but changes cannot be saved.'));
+      setError(adminCopy(lang, 'Supabase non è configurato. Puoi vedere l’anteprima, ma non salvare modifiche.', 'Supabase is not configured. You can preview the dashboard, but changes cannot be saved.'));
       return;
     }
     try {
@@ -5483,7 +5483,7 @@ function AdminSiteContentPage({ lang, session }) {
   function updateMediaDraft() {}
 
   async function saveContentItem(item) {
-    if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non Ã¨ configurato.', 'Supabase is not configured.'));
+    if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non è configurato.', 'Supabase is not configured.'));
     await upsertSiteContent({
       content_key: item.content_key || item.key,
       section: item.section,
@@ -5721,7 +5721,7 @@ function AdminDashboardPreview({ lang, adminContent, editor }) {
         <div>
           <span className="kicker">{adminCopy(lang, 'Oggi', 'Today')}</span>
           <AdminEditableText as="h1" itemKey="admin.today.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Pannello operativo', 'Operations')} />
-          <AdminEditableText as="p" itemKey="admin.today.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Stato operativo rapido, richieste e attivitÃ  da controllare oggi.', 'Fast operational status, requests, and activity to review today.')} />
+          <AdminEditableText as="p" itemKey="admin.today.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Stato operativo rapido, richieste e attività da controllare oggi.', 'Fast operational status, requests, and activity to review today.')} />
         </div>
         <div className="admin-header-actions"><button className="button primary" type="button">{adminCopy(lang, 'Aggiungi richiesta manuale', 'Add manual request')}</button></div>
       </div>
@@ -5729,14 +5729,14 @@ function AdminDashboardPreview({ lang, adminContent, editor }) {
         <AdminPreviewSummaryCard value="2" labelKey="admin.today.pendingToday.label" helperKey="admin.today.pendingToday.helper" lang={lang} adminContent={adminContent} editor={editor} labelFallback={adminCopy(lang, 'Pending oggi', 'Pending today')} helperFallback={adminCopy(lang, 'Apri richieste di oggi', 'Open today requests')} />
         <AdminPreviewSummaryCard value="5" labelKey="admin.today.pendingTotal.label" helperKey="admin.today.pendingTotal.helper" lang={lang} adminContent={adminContent} editor={editor} labelFallback={adminCopy(lang, 'Pending totale', 'Pending total')} helperFallback={adminCopy(lang, 'Vai alle richieste', 'Go to requests')} />
         <AdminPreviewSummaryCard value="3" labelKey="admin.today.acceptedToday.label" helperKey="admin.today.acceptedToday.helper" lang={lang} adminContent={adminContent} editor={editor} labelFallback={adminCopy(lang, 'Accettate oggi', 'Accepted today')} helperFallback={adminCopy(lang, 'Vedi confermate', 'View accepted')} />
-        <AdminPreviewSummaryCard value="1" labelKey="admin.today.availabilityToday.label" helperKey="admin.today.availabilityToday.helper" lang={lang} adminContent={adminContent} editor={editor} labelFallback={adminCopy(lang, 'DisponibilitÃ  oggi', 'Availability issues today')} helperFallback={adminCopy(lang, 'Gestisci calendario', 'Manage calendar')} />
+        <AdminPreviewSummaryCard value="1" labelKey="admin.today.availabilityToday.label" helperKey="admin.today.availabilityToday.helper" lang={lang} adminContent={adminContent} editor={editor} labelFallback={adminCopy(lang, 'Disponibilità oggi', 'Availability issues today')} helperFallback={adminCopy(lang, 'Gestisci calendario', 'Manage calendar')} />
       </div>
       <div className="admin-two-column">
         <section className="admin-panel">
           <details className="admin-archive-details today-requests-details" open>
             <summary><AdminEditableText itemKey="admin.today.todayRequests.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Richieste di oggi', 'Today requests')} /><strong>2</strong></summary>
             <div className="request-card-list compact-list">
-              <article className="request-card compact"><div className="request-card-head"><div><h3>Rita</h3><p>Etna Learning Â· 12/06/2026</p></div><span className="status-pill pending">pending</span></div></article>
+              <article className="request-card compact"><div className="request-card-head"><div><h3>Rita</h3><p>Etna Learning · 12/06/2026</p></div><span className="status-pill pending">pending</span></div></article>
             </div>
           </details>
           <div className="admin-panel-subsection">
@@ -5761,13 +5761,13 @@ function AdminCalendarPreview({ lang, adminContent, editor }) {
       <div className="admin-page-header">
         <div>
           <span className="kicker">{adminCopy(lang, 'Calendario', 'Calendar')}</span>
-          <AdminEditableText as="h1" itemKey="admin.calendar.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Calendario disponibilitÃ ', 'Availability calendar')} />
+          <AdminEditableText as="h1" itemKey="admin.calendar.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Calendario disponibilità', 'Availability calendar')} />
           <AdminEditableText as="p" itemKey="admin.calendar.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Verde: escursione fissa. Rosso: esperienza prenotata. Grigio: data bloccata o non disponibile.', 'Green: fixed excursion. Red: booked experience. Grey: blocked or unavailable date.')} />
         </div>
       </div>
       <div className="admin-calendar-layout">
         <article className="calendar-card admin-calendar-card">
-          <div className="calendar-topline"><button type="button">â€¹</button><h2>Giugno 2026</h2><button type="button">â€º</button></div>
+          <div className="calendar-topline"><button type="button">‹</button><h2>Giugno 2026</h2><button type="button">›</button></div>
           <div className="calendar-legend compact-legend">
             <span><i className="legend-dot fixed" />{adminCopy(lang, 'Verde: escursione fissa', 'Green: fixed excursion')}</span>
             <span><i className="legend-dot booked" />{adminCopy(lang, 'Rosso: esperienza prenotata', 'Red: booked experience')}</span>
@@ -5775,7 +5775,7 @@ function AdminCalendarPreview({ lang, adminContent, editor }) {
           </div>
           <div className="calendar-grid admin-calendar-grid">{[9, 10, 11, 12, 13, 14].map((day) => <button key={day} className={day === 12 ? 'has-fixed' : day === 14 ? 'has-booking' : ''} type="button"><span>{day}</span></button>)}</div>
         </article>
-        <aside className="admin-panel"><AdminEditableText as="h2" itemKey="admin.calendar.selected.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Dettagli data', 'Date details')} /><p className="small-note">Etna Live Â· 12/06/2026</p></aside>
+        <aside className="admin-panel"><AdminEditableText as="h2" itemKey="admin.calendar.selected.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Dettagli data', 'Date details')} /><p className="small-note">Etna Live · 12/06/2026</p></aside>
       </div>
     </section>
   );
@@ -5788,7 +5788,7 @@ function AdminUpcomingPreview({ lang, adminContent, editor }) {
         <div>
           <span className="kicker">{adminCopy(lang, 'Conferme owner', 'Owner confirmations')}</span>
           <AdminEditableText as="h1" itemKey="admin.upcoming.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Prossime prenotazioni', 'Upcoming bookings')} />
-          <AdminEditableText as="p" itemKey="admin.upcoming.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Richieste accettate e blocchi attivi, organizzati per giorno. Nessuna statistica: solo operativitÃ .', 'Accepted requests and active blocks, organized by date. No analytics: just operations.')} />
+          <AdminEditableText as="p" itemKey="admin.upcoming.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Richieste accettate e blocchi attivi, organizzati per giorno. Nessuna statistica: solo operatività.', 'Accepted requests and active blocks, organized by date. No analytics: just operations.')} />
         </div>
       </div>
       <div className="admin-two-column">
@@ -5805,7 +5805,7 @@ function AdminUpcomingPreview({ lang, adminContent, editor }) {
 function AdminEditPreview({ lang, adminContent, editor }) {
   return (
     <section className="admin-page admin-preview-page admin-edit-page">
-      <div className="admin-page-header"><div><span className="kicker">{adminCopy(lang, 'Modifica', 'Edit')}</span><AdminEditableText as="h1" itemKey="admin.edit.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Modifica sito e recensioni', 'Edit website and reviews')} /><AdminEditableText as="p" itemKey="admin.edit.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Gestisci contenuti, media e recensioni pubbliche da unâ€™unica area.', 'Manage public content, media, and reviews from one area.')} /></div></div>
+      <div className="admin-page-header"><div><span className="kicker">{adminCopy(lang, 'Modifica', 'Edit')}</span><AdminEditableText as="h1" itemKey="admin.edit.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Modifica sito e recensioni', 'Edit website and reviews')} /><AdminEditableText as="p" itemKey="admin.edit.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Gestisci contenuti, media e recensioni pubbliche da un’unica area.', 'Manage public content, media, and reviews from one area.')} /></div></div>
       <details className="admin-archive-details edit-workspace-section" open><summary><AdminEditableText itemKey="admin.edit.publicSite.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Sito pubblico', 'Public website')} /><AdminEditableText as="strong" itemKey="admin.edit.publicSite.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Testi e media', 'Text and media')} /></summary></details>
       <details className="admin-archive-details edit-workspace-section"><summary><AdminEditableText itemKey="admin.edit.adminSite.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Sito admin', 'Admin website')} /><AdminEditableText as="strong" itemKey="admin.edit.adminSite.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Testi pannello', 'Panel text')} /></summary></details>
       <details className="admin-archive-details edit-workspace-section"><summary><AdminEditableText itemKey="admin.edit.reviews.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Recensioni', 'Reviews')} /><AdminEditableText as="strong" itemKey="admin.edit.reviews.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Gestione', 'Management')} /></summary></details>
@@ -5830,9 +5830,9 @@ function AdminFinancePreview({ lang, adminContent, editor }) {
         <button className="button secondary" type="button">{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
       </div>
       <div className="admin-summary-grid finance-summary-grid">
-        <SummaryCard label={adminCopy(lang, 'Entrate totali', 'Total earnings')} value="40,00 â‚¬" helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
-        <SummaryCard label={adminCopy(lang, 'Uscite totali', 'Total expenses')} value="0,00 â‚¬" helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
-        <SummaryCard label={adminCopy(lang, 'Utile netto', 'Net profit')} value="40,00 â‚¬" helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
+        <SummaryCard label={adminCopy(lang, 'Entrate totali', 'Total earnings')} value="40,00 €" helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Uscite totali', 'Total expenses')} value="0,00 €" helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Utile netto', 'Net profit')} value="40,00 €" helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
       </div>
       <div className="admin-filter-bar finance-filter-bar"><select><option>{adminCopy(lang, 'Tutte le date', 'All dates')}</option></select><select><option>{adminCopy(lang, 'Tutti i tipi', 'All types')}</option></select><label className="finance-archive-filter"><input type="checkbox" readOnly /> <span>{adminCopy(lang, 'Includi archivio', 'Include archive')}</span></label></div>
       <details className="admin-panel finance-collapsible-panel finance-overview-panel" open><summary className="finance-collapsible-summary"><strong>{adminCopy(lang, 'Tutte le date', 'All dates')}</strong></summary></details>
@@ -5848,8 +5848,8 @@ function AdminFinancePreview({ lang, adminContent, editor }) {
 function AdminAvailabilityPreview({ lang, adminContent, editor }) {
   return (
     <section className="admin-page admin-preview-page">
-      <div className="admin-page-header"><div><span className="kicker">{adminCopy(lang, 'Calendario pubblico', 'Public calendar')}</span><AdminEditableText as="h1" itemKey="admin.availability.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'DisponibilitÃ ', 'Availability')} /><AdminEditableText as="p" itemKey="admin.availability.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Gestisci disponibilitÃ  privata e date fisse prenotabili fino a 12 persone.', 'Manage private availability and fixed excursion dates bookable up to 12 people.')} /></div></div>
-      <div className="admin-two-column availability-columns"><section className="admin-panel"><AdminEditableText as="h2" itemKey="admin.availability.addBlock.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Aggiungi blocco disponibilitÃ ', 'Add availability block')} /></section><section className="admin-panel"><div className="admin-panel-header"><AdminEditableText as="h2" itemKey="admin.availability.existingBlocks.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Blocchi esistenti', 'Existing blocks')} /></div></section></div>
+      <div className="admin-page-header"><div><span className="kicker">{adminCopy(lang, 'Calendario pubblico', 'Public calendar')}</span><AdminEditableText as="h1" itemKey="admin.availability.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Disponibilità', 'Availability')} /><AdminEditableText as="p" itemKey="admin.availability.helper" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Gestisci disponibilità privata e date fisse prenotabili fino a 12 persone.', 'Manage private availability and fixed excursion dates bookable up to 12 people.')} /></div></div>
+      <div className="admin-two-column availability-columns"><section className="admin-panel"><AdminEditableText as="h2" itemKey="admin.availability.addBlock.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Aggiungi blocco disponibilità', 'Add availability block')} /></section><section className="admin-panel"><div className="admin-panel-header"><AdminEditableText as="h2" itemKey="admin.availability.existingBlocks.title" lang={lang} adminContent={adminContent} editor={editor} fallback={adminCopy(lang, 'Blocchi esistenti', 'Existing blocks')} /></div></section></div>
     </section>
   );
 }
@@ -6033,12 +6033,12 @@ function ContentEditorCard({ item, lang, onSave }) {
   return (
     <article className="content-admin-card">
       <div>
-        <span className="micro-label">{item.section} Â· {item.key}</span>
+        <span className="micro-label">{item.section} · {item.key}</span>
         <h3>{lang === 'it' ? item.label_it : item.label_en}</h3>
       </div>
       <label className="admin-field full"><span>Italiano</span><Field rows={4} value={form.value_it} onChange={(event) => setForm((current) => ({ ...current, value_it: event.target.value }))} /></label>
       <label className="admin-field full"><span>English</span><Field rows={4} value={form.value_en} onChange={(event) => setForm((current) => ({ ...current, value_en: event.target.value }))} /></label>
-      <p className="small-note">{adminCopy(lang, 'Fallback IT', 'Fallback IT')}: {item.default_it || 'â€”'}<br />{adminCopy(lang, 'Fallback EN', 'Fallback EN')}: {item.default_en || 'â€”'}</p>
+      <p className="small-note">{adminCopy(lang, 'Fallback IT', 'Fallback IT')}: {item.default_it || '—'}<br />{adminCopy(lang, 'Fallback EN', 'Fallback EN')}: {item.default_en || '—'}</p>
       <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> {adminCopy(lang, 'Attivo', 'Active')}</label>
       <div className="request-actions">
         <button className="button primary" type="button" onClick={() => onSave(item, form)}>{adminCopy(lang, 'Salva', 'Save')}</button>
@@ -6127,7 +6127,7 @@ function addMonthsDate(date, amount) {
 function financeRangeLabel(startDate, endDate, lang, fallback = '') {
   if (!startDate && !endDate) return fallback || adminCopy(lang, 'Tutte le date', 'All dates');
   if (startDate && endDate && startDate === endDate) return formatDateForMessage(startDate, lang);
-  if (startDate && endDate) return `${formatDateForMessage(startDate, lang)} â€“ ${formatDateForMessage(endDate, lang)}`;
+  if (startDate && endDate) return `${formatDateForMessage(startDate, lang)} – ${formatDateForMessage(endDate, lang)}`;
   if (startDate) return `${adminCopy(lang, 'Da', 'From')} ${formatDateForMessage(startDate, lang)}`;
   return `${adminCopy(lang, 'Fino a', 'Until')} ${formatDateForMessage(endDate, lang)}`;
 }
@@ -6366,13 +6366,13 @@ function uniqueCount(rows, key = 'visitor_id') {
 }
 
 function percent(numerator, denominator) {
-  if (!denominator) return 'â€”';
+  if (!denominator) return '—';
   return `${Math.round((numerator / denominator) * 1000) / 10}%`;
 }
 
 function formatDuration(seconds) {
   const value = Math.round(Number(seconds || 0));
-  if (!value) return 'â€”';
+  if (!value) return '—';
   if (value < 60) return `${value}s`;
   const minutes = Math.floor(value / 60);
   const remaining = value % 60;
@@ -6491,7 +6491,7 @@ function displayExperienceLabel(key, lang) {
 }
 
 function analyticsDropoff(current, previous, lang) {
-  if (!previous) return 'â€”';
+  if (!previous) return '—';
   const rate = Math.max(0, 1 - (Number(current || 0) / Number(previous || 0)));
   return `${Math.round(rate * 1000) / 10}%`;
 }
@@ -6551,7 +6551,7 @@ function buildSessionPaths(events, lang) {
       if (labels[labels.length - 1] !== label) labels.push(label);
     });
     if (!labels.length) return;
-    const path = labels.slice(0, 6).join(' â†’ ');
+    const path = labels.slice(0, 6).join(' → ');
     const current = pathCounts.get(path) || { path, sessions: 0, contact_actions: 0, booking_form_opens: 0 };
     current.sessions += 1;
     current.contact_actions += ordered.filter((event) => ['whatsapp_click', 'email_click', 'phone_click'].includes(event.event_name)).length;
@@ -6611,7 +6611,7 @@ function buildDeclaredAttributionRows({ events = [], bookingRequests = [], range
 
   return [...map.values()]
     .filter((row) => row.booking_requests || row.confirmed_bookings || row.contact_events || row.form_events)
-    .map((row) => ({ ...row, details: row.detail_values.size ? [...row.detail_values].join(' Â· ') : 'â€”', detail_values: undefined }))
+    .map((row) => ({ ...row, details: row.detail_values.size ? [...row.detail_values].join(' · ') : '—', detail_values: undefined }))
     .sort((a, b) => (b.booking_requests + b.contact_events + b.form_events) - (a.booking_requests + a.contact_events + a.form_events));
 }
 
@@ -6788,7 +6788,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   const funnelDiagnostics = mainFunnelSteps.map((step, index) => ({
     step: step.label,
     count: step.count,
-    dropoff: index === 0 ? 'â€”' : analyticsDropoff(step.count, mainFunnelSteps[index - 1].count, lang)
+    dropoff: index === 0 ? '—' : analyticsDropoff(step.count, mainFunnelSteps[index - 1].count, lang)
   })).concat([
     { step: adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks'), count: whatsappClicks, dropoff: adminCopy(lang, 'Percorso contatto separato', 'Separate contact path') },
     { step: adminCopy(lang, 'Click email', 'Email clicks'), count: emailClicks, dropoff: adminCopy(lang, 'Percorso contatto separato', 'Separate contact path') },
@@ -6811,8 +6811,8 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
       whatsapp_clicks: 0,
       email_clicks: 0,
       phone_clicks: 0,
-      view_to_request: 'â€”',
-      form_to_request: 'â€”'
+      view_to_request: '—',
+      form_to_request: '—'
     };
     formByExperienceMap.set(normalized, existing);
     return existing;
@@ -6963,23 +6963,23 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
 
   const dataQualityRows = [
     { check: adminCopy(lang, 'Richieste con invio tracciato', 'Requests with tracked submit'), count: requestsWithTrackedSubmit, detail: adminCopy(lang, 'Preferenza: match tramite booking_request_id negli eventi analytics.', 'Preferred match: analytics metadata.booking_request_id.') },
-    { check: adminCopy(lang, 'Richieste senza invio tracciato', 'Requests without tracked submit'), count: requestsWithoutTrackedSubmit, detail: requestsWithoutTrackedSubmit ? trackingIncompleteLabel(lang) : 'â€”' },
+    { check: adminCopy(lang, 'Richieste senza invio tracciato', 'Requests without tracked submit'), count: requestsWithoutTrackedSubmit, detail: requestsWithoutTrackedSubmit ? trackingIncompleteLabel(lang) : '—' },
     { check: adminCopy(lang, 'Richieste admin/manuali escluse', 'Admin/manual requests excluded'), count: adminManualRequestRows.length, detail: adminCopy(lang, 'Escluse dal funnel pubblico sito.', 'Excluded from the public website funnel.') },
-    { check: adminCopy(lang, 'Tracciamento legacy incompleto', 'Incomplete legacy tracking'), count: legacyIncompleteRequests, detail: legacyIncompleteRequests ? adminCopy(lang, 'Dati precedenti alla correzione: non vengono ricostruiti artificialmente.', 'Pre-fix data: not backfilled artificially.') : 'â€”' },
-    { check: adminCopy(lang, 'Richieste senza apertura modulo tracciata', 'Requests without tracked form open'), count: requestsWithoutTrackedFormOpen.reduce((sum, row) => sum + row.booking_requests, 0), detail: requestsWithoutTrackedFormOpen.map((row) => `${row.experience}: ${row.booking_requests}`).join(', ') || 'â€”' },
-    { check: adminCopy(lang, 'Aperture modulo senza posizione CTA', 'Form opens without CTA location'), count: formOpenMissingCtaCount, detail: formOpenMissingCtaCount ? adminCopy(lang, 'Aggiornare i CTA che non inviano cta_location.', 'Update CTAs that do not send cta_location.') : 'â€”' },
+    { check: adminCopy(lang, 'Tracciamento legacy incompleto', 'Incomplete legacy tracking'), count: legacyIncompleteRequests, detail: legacyIncompleteRequests ? adminCopy(lang, 'Dati precedenti alla correzione: non vengono ricostruiti artificialmente.', 'Pre-fix data: not backfilled artificially.') : '—' },
+    { check: adminCopy(lang, 'Richieste senza apertura modulo tracciata', 'Requests without tracked form open'), count: requestsWithoutTrackedFormOpen.reduce((sum, row) => sum + row.booking_requests, 0), detail: requestsWithoutTrackedFormOpen.map((row) => `${row.experience}: ${row.booking_requests}`).join(', ') || '—' },
+    { check: adminCopy(lang, 'Aperture modulo senza posizione CTA', 'Form opens without CTA location'), count: formOpenMissingCtaCount, detail: formOpenMissingCtaCount ? adminCopy(lang, 'Aggiornare i CTA che non inviano cta_location.', 'Update CTAs that do not send cta_location.') : '—' },
     { check: adminCopy(lang, 'Traffico interno escluso', 'Internal traffic excluded'), count: internalEventsExcluded + internalSessionsExcluded, detail: adminCopy(lang, 'Admin, API, CMS/editor, finanze e dashboard analytics esclusi dalle metriche pubbliche.', 'Admin, API, CMS/editor, finance, and analytics dashboard rows excluded from public metrics.') },
-    { check: adminCopy(lang, 'Campione insufficiente per conclusioni marketing', 'Sample too small for marketing conclusions'), count: visitors < 50 ? visitors : 0, detail: visitors < 50 ? adminCopy(lang, 'Usare come diagnostica, non come prova marketing.', 'Use as diagnostics, not as marketing proof.') : 'â€”' }
+    { check: adminCopy(lang, 'Campione insufficiente per conclusioni marketing', 'Sample too small for marketing conclusions'), count: visitors < 50 ? visitors : 0, detail: visitors < 50 ? adminCopy(lang, 'Usare come diagnostica, non come prova marketing.', 'Use as diagnostics, not as marketing proof.') : '—' }
   ];
 
   const warnings = [];
   if (visitors < 50) warnings.push(adminCopy(lang, 'Campione dati ridotto: interpreta questi numeri come diagnostica, non come prova statistica.', 'Small data sample: interpret these numbers as diagnostics, not statistical proof.'));
-  if (websiteRequests > 0 && submitSuccesses === 0) warnings.push(adminCopy(lang, 'Possibile problema di tracciamento: esistono richieste nel database, ma nessun invio riuscito Ã¨ stato registrato negli eventi analytics.', 'Possible tracking issue: booking requests exist in the database, but no successful submission was recorded in analytics events.'));
+  if (websiteRequests > 0 && submitSuccesses === 0) warnings.push(adminCopy(lang, 'Possibile problema di tracciamento: esistono richieste nel database, ma nessun invio riuscito è stato registrato negli eventi analytics.', 'Possible tracking issue: booking requests exist in the database, but no successful submission was recorded in analytics events.'));
   if (requestsWithoutTrackedFormOpen.length) warnings.push(adminCopy(lang, 'Alcune richieste non hanno una apertura modulo tracciata nella stessa esperienza/tipologia.', 'Some requests have no tracked form open for the same experience/request type.'));
   if (formOpenMissingCtaCount) warnings.push(adminCopy(lang, 'Alcune aperture modulo non hanno cta_location.', 'Some form opens have no cta_location.'));
   if (internalEventsExcluded || internalSessionsExcluded) warnings.push(adminCopy(lang, 'Traffico interno/admin escluso dalle metriche pubbliche.', 'Internal/admin traffic was excluded from public metrics.'));
   if (directTrafficShare > 0.8) warnings.push(adminCopy(lang, 'Attribuzione limitata: gran parte del traffico risulta Diretto. Usa link UTM per leggere meglio le sorgenti.', 'Limited attribution: most traffic appears as Direct. Use UTM links to read sources more accurately.'));
-  if (mobileShare > 0.7) warnings.push(adminCopy(lang, 'Il traffico Ã¨ prevalentemente mobile: testa prima il percorso su iPhone Safari e Android Chrome.', 'Traffic is mostly mobile: test the journey first on iPhone Safari and Android Chrome.'));
+  if (mobileShare > 0.7) warnings.push(adminCopy(lang, 'Il traffico è prevalentemente mobile: testa prima il percorso su iPhone Safari e Android Chrome.', 'Traffic is mostly mobile: test the journey first on iPhone Safari and Android Chrome.'));
 
   const conversionMetrics = {
     websiteRequestConversion: percent(websiteRequests, conversionBase),
@@ -7007,7 +7007,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     mapsClicks,
     bookingConversion: conversionMetrics.websiteRequestConversion,
     conversionMetrics,
-    averageEngagement: averageSeconds ? formatDuration(averageSeconds) : 'â€”',
+    averageEngagement: averageSeconds ? formatDuration(averageSeconds) : '—',
     countryRows,
     cityRows,
     topPageRows,
@@ -7082,7 +7082,7 @@ function AnalyticsTable({ columns = [], rows = [], empty }) {
         <tbody>
           {rows.map((row, index) => (
             <tr key={row.id || row.path || row.experience || row.step || `${index}-${columns.map((column) => row[column.key]).join('-')}`}>
-              {columns.map((column) => <td key={column.key}>{row[column.key] ?? 'â€”'}</td>)}
+              {columns.map((column) => <td key={column.key}>{row[column.key] ?? '—'}</td>)}
             </tr>
           ))}
         </tbody>
@@ -7195,7 +7195,7 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
     period_label: analyticsPeriodLabel(period, lang),
     range,
     chatgpt_prompt: lang === 'it'
-      ? 'Analizza queste metriche del sito vulcanIQ. Concentrati su integritÃ  del funnel, comportamento form vs WhatsApp/email, UX mobile, domanda per esperienza, qualitÃ  attribuzione sorgenti e se il campione Ã¨ sufficiente per conclusioni marketing.'
+      ? 'Analizza queste metriche del sito vulcanIQ. Concentrati su integrità del funnel, comportamento form vs WhatsApp/email, UX mobile, domanda per esperienza, qualità attribuzione sorgenti e se il campione è sufficiente per conclusioni marketing.'
       : 'Analyze these vulcanIQ website metrics. Focus on funnel integrity, form vs WhatsApp/email behavior, mobile UX, experience demand, source attribution quality, and whether the sample size is sufficient for marketing conclusions.',
     summary: {
       visitors: model.visitors,
@@ -7276,7 +7276,7 @@ function OwnerOnlyAdminPage({ lang }) {
         <div>
           <span className="kicker">vulcanIQ</span>
           <h1>{adminCopy(lang, 'Accesso owner richiesto', 'Owner access required')}</h1>
-          <p>{adminCopy(lang, 'Questa sezione Ã¨ disponibile solo agli owner attivi.', 'This section is available only to active owners.')}</p>
+          <p>{adminCopy(lang, 'Questa sezione è disponibile solo agli owner attivi.', 'This section is available only to active owners.')}</p>
         </div>
       </div>
       <div className="admin-alert warning" role="status">
@@ -7286,9 +7286,6 @@ function OwnerOnlyAdminPage({ lang }) {
   );
 }
 
-function backupWorkflowUrl() {
-  return import.meta.env.VITE_GITHUB_BACKUP_WORKFLOW_URL || import.meta.env.VITE_GITHUB_ACTIONS_BACKUP_URL || '';
-}
 
 const DEFAULT_BACKUP_SCHEDULE = {
   enabled: true,
@@ -7363,11 +7360,11 @@ function formatBackupSize(bytes, lang) {
 function backupWeekdayOptions(lang) {
   return [
     { value: 0, label: adminCopy(lang, 'Domenica', 'Sunday') },
-    { value: 1, label: adminCopy(lang, 'LunedÃ¬', 'Monday') },
-    { value: 2, label: adminCopy(lang, 'MartedÃ¬', 'Tuesday') },
-    { value: 3, label: adminCopy(lang, 'MercoledÃ¬', 'Wednesday') },
-    { value: 4, label: adminCopy(lang, 'GiovedÃ¬', 'Thursday') },
-    { value: 5, label: adminCopy(lang, 'VenerdÃ¬', 'Friday') },
+    { value: 1, label: adminCopy(lang, 'Lunedì', 'Monday') },
+    { value: 2, label: adminCopy(lang, 'Martedì', 'Tuesday') },
+    { value: 3, label: adminCopy(lang, 'Mercoledì', 'Wednesday') },
+    { value: 4, label: adminCopy(lang, 'Giovedì', 'Thursday') },
+    { value: 5, label: adminCopy(lang, 'Venerdì', 'Friday') },
     { value: 6, label: adminCopy(lang, 'Sabato', 'Saturday') }
   ];
 }
@@ -7384,20 +7381,111 @@ function backupScheduleSummary(schedule, lang) {
   const time = `${backupTimeValue(normalized)} UTC`;
   if (normalized.frequency === 'weekly') {
     const day = backupWeekdayOptions(lang).find((item) => item.value === normalized.weekly_day)?.label || backupWeekdayOptions(lang)[0].label;
-    return `${backupFrequencyLabel('weekly', lang)} Â· ${day} Â· ${time}`;
+    return `${backupFrequencyLabel('weekly', lang)} - ${day} - ${time}`;
   }
   if (normalized.frequency === 'monthly') {
-    return `${backupFrequencyLabel('monthly', lang)} Â· ${adminCopy(lang, 'giorno', 'day')} ${normalized.monthly_day} Â· ${time}`;
+    return `${backupFrequencyLabel('monthly', lang)} - ${adminCopy(lang, 'giorno', 'day')} ${normalized.monthly_day} - ${time}`;
   }
-  return `${backupFrequencyLabel('daily', lang)} Â· ${time}`;
+  return `${backupFrequencyLabel('daily', lang)} - ${time}`;
+}
+
+
+function dateIsAfter(value, reference, slackMs = 60000) {
+  if (!value || !reference) return false;
+  const date = new Date(value).getTime();
+  const ref = new Date(reference).getTime();
+  if (!Number.isFinite(date) || !Number.isFinite(ref)) return false;
+  return date >= (ref - slackMs);
+}
+
+function workflowStatusText(run, lang) {
+  if (!run) return adminCopy(lang, 'Nessuna esecuzione trovata', 'No workflow run found');
+  if (run.status === 'queued') return adminCopy(lang, 'In coda', 'Queued');
+  if (run.status === 'in_progress') return adminCopy(lang, 'In esecuzione', 'Running');
+  if (run.status === 'completed' && run.conclusion === 'success') return adminCopy(lang, 'Completato', 'Completed');
+  if (run.status === 'completed' && run.conclusion) return adminCopy(lang, `Terminato: ${run.conclusion}`, `Finished: ${run.conclusion}`);
+  return run.status || adminCopy(lang, 'Non disponibile', 'Not available');
+}
+
+function backupProgressFromStatus(result, requestedAt, lang) {
+  const run = result?.workflowRun;
+  const latestBackup = result?.latestBackup;
+  if (!run || !dateIsAfter(run.createdAt || run.runStartedAt, requestedAt, 90000)) {
+    return {
+      active: true,
+      value: 25,
+      title: adminCopy(lang, 'Richiesta inviata', 'Request sent'),
+      detail: adminCopy(lang, 'In attesa che GitHub Actions registri la nuova esecuzione.', 'Waiting for GitHub Actions to register the new run.'),
+      done: false,
+      failed: false
+    };
+  }
+
+  if (run.status === 'queued') {
+    return {
+      active: true,
+      value: 35,
+      title: adminCopy(lang, 'Backup in coda', 'Backup queued'),
+      detail: adminCopy(lang, 'La richiesta è stata accettata ed è in attesa di esecuzione.', 'The request was accepted and is waiting to run.'),
+      done: false,
+      failed: false
+    };
+  }
+
+  if (run.status === 'in_progress') {
+    return {
+      active: true,
+      value: 70,
+      title: adminCopy(lang, 'Backup in esecuzione', 'Backup running'),
+      detail: adminCopy(lang, 'GitHub Actions sta creando il dump e preparando lo ZIP.', 'GitHub Actions is creating the dump and preparing the ZIP.'),
+      done: false,
+      failed: false
+    };
+  }
+
+  if (run.status === 'completed' && run.conclusion === 'success') {
+    const artifactReady = latestBackup?.createdAt && dateIsAfter(latestBackup.createdAt, requestedAt, 120000);
+    return {
+      active: true,
+      value: artifactReady ? 100 : 92,
+      title: artifactReady ? adminCopy(lang, 'Backup completato', 'Backup completed') : adminCopy(lang, 'Workflow completato', 'Workflow completed'),
+      detail: artifactReady
+        ? adminCopy(lang, 'Il nuovo backup è pronto e può essere scaricato da questa pagina.', 'The new backup is ready and can be downloaded from this page.')
+        : adminCopy(lang, 'Il workflow è terminato. Attendo la pubblicazione dell\'artifact.', 'The workflow finished. Waiting for the artifact to become available.'),
+      done: artifactReady,
+      failed: false
+    };
+  }
+
+  if (run.status === 'completed') {
+    return {
+      active: true,
+      value: 100,
+      title: adminCopy(lang, 'Backup non completato', 'Backup not completed'),
+      detail: adminCopy(lang, 'L\'ultima esecuzione del workflow non è terminata correttamente. Controlla i dettagli mostrati sotto.', 'The latest workflow run did not finish successfully. Check the details shown below.'),
+      done: true,
+      failed: true
+    };
+  }
+
+  return {
+    active: true,
+    value: 50,
+    title: workflowStatusText(run, lang),
+    detail: adminCopy(lang, 'Stato workflow aggiornato dal server.', 'Workflow status updated by the server.'),
+    done: false,
+    failed: false
+  };
 }
 
 function AdminBackupPage({ lang }) {
   const [actionState, setActionState] = useState({ createLoading: false, downloadLoading: false, message: '', error: '' });
-  const [statusState, setStatusState] = useState({ loading: true, error: '', latestBackup: null, configured: false, message: '' });
+  const [statusState, setStatusState] = useState({ loading: true, error: '', latestBackup: null, workflowRun: null, configured: false, message: '' });
   const [scheduleDraft, setScheduleDraft] = useState(DEFAULT_BACKUP_SCHEDULE);
   const [scheduleState, setScheduleState] = useState({ loading: true, saving: false, message: '', error: '' });
-  const workflowUrl = backupWorkflowUrl();
+  const [showWorkflowDetails, setShowWorkflowDetails] = useState(false);
+  const [backupProgress, setBackupProgress] = useState({ active: false, value: 0, title: '', detail: '', failed: false });
+  const backupPollRef = useRef(null);
 
   async function refreshBackupStatus() {
     setStatusState((current) => ({ ...current, loading: true, error: '' }));
@@ -7407,6 +7495,7 @@ function AdminBackupPage({ lang }) {
         loading: false,
         error: '',
         latestBackup: result?.latestBackup || null,
+        workflowRun: result?.workflowRun || null,
         configured: result?.configured !== false,
         message: result?.message || ''
       });
@@ -7415,6 +7504,7 @@ function AdminBackupPage({ lang }) {
         loading: false,
         error: error?.message || adminCopy(lang, 'Stato backup non disponibile.', 'Backup status is not available.'),
         latestBackup: null,
+        workflowRun: null,
         configured: false,
         message: ''
       });
@@ -7452,6 +7542,7 @@ function AdminBackupPage({ lang }) {
           loading: false,
           error: '',
           latestBackup: statusResult.value?.latestBackup || null,
+          workflowRun: statusResult.value?.workflowRun || null,
           configured: statusResult.value?.configured !== false,
           message: statusResult.value?.message || ''
         });
@@ -7460,6 +7551,7 @@ function AdminBackupPage({ lang }) {
           loading: false,
           error: statusResult.reason?.message || adminCopy(lang, 'Stato backup non disponibile.', 'Backup status is not available.'),
           latestBackup: null,
+          workflowRun: null,
           configured: false,
           message: ''
         });
@@ -7482,13 +7574,82 @@ function AdminBackupPage({ lang }) {
     return () => { alive = false; };
   }, [lang]);
 
+  useEffect(() => () => {
+    if (backupPollRef.current) window.clearInterval(backupPollRef.current);
+  }, []);
+
+  async function pollBackupProgress(requestedAt, immediate = false) {
+    try {
+      const result = await getBackupStatus({ lang });
+      setStatusState({
+        loading: false,
+        error: '',
+        latestBackup: result?.latestBackup || null,
+        workflowRun: result?.workflowRun || null,
+        configured: result?.configured !== false,
+        message: result?.message || ''
+      });
+      const nextProgress = backupProgressFromStatus(result, requestedAt, lang);
+      setBackupProgress(nextProgress);
+      if (nextProgress.done) {
+        if (backupPollRef.current) window.clearInterval(backupPollRef.current);
+        backupPollRef.current = null;
+        if (!nextProgress.failed) {
+          setActionState({ createLoading: false, downloadLoading: false, message: adminCopy(lang, 'Backup completato. Puoi scaricarlo da questa pagina.', 'Backup completed. You can download it from this page.'), error: '' });
+        }
+      }
+    } catch (error) {
+      if (immediate) {
+        setBackupProgress({
+          active: true,
+          value: 25,
+          title: adminCopy(lang, 'Backup avviato', 'Backup started'),
+          detail: adminCopy(lang, 'Stato workflow non ancora disponibile.', 'Workflow status is not available yet.'),
+          failed: false
+        });
+      }
+    }
+  }
+
+  function startBackupProgressPolling(requestedAt) {
+    if (backupPollRef.current) window.clearInterval(backupPollRef.current);
+    pollBackupProgress(requestedAt, true);
+    let attempts = 0;
+    backupPollRef.current = window.setInterval(() => {
+      attempts += 1;
+      if (attempts > 48) {
+        window.clearInterval(backupPollRef.current);
+        backupPollRef.current = null;
+        return;
+      }
+      pollBackupProgress(requestedAt);
+    }, 5000);
+  }
+
   async function handleCreateBackup() {
+    const requestedAt = new Date().toISOString();
+    setBackupProgress({
+      active: true,
+      value: 10,
+      title: adminCopy(lang, 'Invio richiesta backup', 'Sending backup request'),
+      detail: adminCopy(lang, 'Sto chiedendo al server di avviare il workflow di backup.', 'Asking the server to start the backup workflow.'),
+      failed: false
+    });
     setActionState({ createLoading: true, downloadLoading: false, message: '', error: '' });
     try {
       const result = await createDatabaseBackup({ lang });
+      const serverRequestedAt = result?.requestedAt || requestedAt;
       setActionState({ createLoading: false, downloadLoading: false, message: result?.message || adminCopy(lang, 'Backup avviato', 'Backup started'), error: '' });
-      refreshBackupStatus();
+      setBackupProgress({
+        active: true,
+        value: 25,
+        title: adminCopy(lang, 'Backup avviato', 'Backup started'),
+        detail: adminCopy(lang, 'La pagina controllerà lo stato reale del workflow senza aprire GitHub.', 'This page will check the real workflow status without opening GitHub.'),
+        failed: false
+      });
+      startBackupProgressPolling(serverRequestedAt);
     } catch (error) {
+      setBackupProgress({ active: false, value: 0, title: '', detail: '', failed: false });
       setActionState({ createLoading: false, downloadLoading: false, message: '', error: error?.message || adminCopy(lang, 'Impossibile avviare il backup.', 'Could not start backup.') });
     }
   }
@@ -7523,9 +7684,13 @@ function AdminBackupPage({ lang }) {
       ? formatBackupDate(latestBackup.createdAt, lang)
       : adminCopy(lang, 'Nessun backup', 'No backup');
   const latestBackupHelper = latestBackup
-    ? `${adminCopy(lang, 'Dimensione', 'Size')}: ${formatBackupSize(latestBackup.sizeInBytes, lang)} Â· ${adminCopy(lang, 'Scadenza artifact', 'Artifact expiry')}: ${formatBackupDate(latestBackup.expiresAt, lang)}`
+    ? `${adminCopy(lang, 'Dimensione', 'Size')}: ${formatBackupSize(latestBackup.sizeInBytes, lang)} - ${adminCopy(lang, 'Scadenza artifact', 'Artifact expiry')}: ${formatBackupDate(latestBackup.expiresAt, lang)}`
     : (statusState.message || adminCopy(lang, 'Nessun backup scaricabile trovato.', 'No downloadable backup found.'));
   const lastStatusLabel = statusState.configured ? adminCopy(lang, 'Pronto', 'Ready') : adminCopy(lang, 'Da configurare', 'Needs configuration');
+  const workflowRun = statusState.workflowRun;
+  const workflowHelper = workflowRun
+    ? `${workflowStatusText(workflowRun, lang)} - ${formatBackupDate(workflowRun.updatedAt || workflowRun.createdAt, lang)}`
+    : adminCopy(lang, 'Nessuna esecuzione workflow disponibile.', 'No workflow run available.');
 
   return (
     <section className="admin-subpage backup-admin-page">
@@ -7542,25 +7707,59 @@ function AdminBackupPage({ lang }) {
           <button className="button secondary" type="button" disabled={actionState.createLoading || actionState.downloadLoading} onClick={handleCreateBackup}>
             {actionState.createLoading ? adminCopy(lang, 'Avvio backup...', 'Starting backup...') : adminCopy(lang, 'Crea backup', 'Create backup')}
           </button>
-          {workflowUrl && <a className="button secondary" href={workflowUrl} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Vedi workflow', 'View workflow')}</a>}
+          <button className="button secondary" type="button" onClick={() => { setShowWorkflowDetails((value) => !value); refreshBackupStatus(); }}>{adminCopy(lang, 'Vedi stato workflow', 'View workflow status')}</button>
         </div>
       </div>
 
-      {actionState.message && <div className="admin-alert success" role="status">{actionState.message}{actionState.createLoading || actionState.downloadLoading ? null : <><br />{adminCopy(lang, 'Ultimo backup disponibile negli artifact di GitHub Actions.', 'Latest backup available in GitHub Actions artifacts.')}</>}</div>}
+      {actionState.message && <div className="admin-alert success" role="status">{actionState.message}{actionState.createLoading || actionState.downloadLoading ? null : <><br />{adminCopy(lang, 'Il backup sarà scaricabile direttamente da questa pagina appena pronto.', 'The backup will be downloadable directly from this page as soon as it is ready.')}</>}</div>}
       {actionState.error && <div className="admin-alert error" role="alert">{actionState.error}</div>}
       {statusState.error && <div className="admin-alert warning" role="status">{statusState.error}</div>}
+      {backupProgress.active && (
+        <div className={`backup-progress-panel ${backupProgress.failed ? 'failed' : ''}`} role="status" aria-live="polite">
+          <div className="backup-progress-head">
+            <strong>{backupProgress.title}</strong>
+            <span>{Math.round(backupProgress.value)}%</span>
+          </div>
+          <div className="backup-progress-track" aria-label={adminCopy(lang, 'Avanzamento backup', 'Backup progress')}>
+            <span style={{ width: `${Math.max(0, Math.min(100, backupProgress.value))}%` }} />
+          </div>
+          {backupProgress.detail && <p>{backupProgress.detail}</p>}
+        </div>
+      )}
 
       <div className="admin-summary-grid backup-summary-grid">
         <SummaryCard label={adminCopy(lang, 'Ultimo backup', 'Last backup')} value={latestBackupLabel} helper={latestBackupHelper} />
-        <SummaryCard label={adminCopy(lang, 'Ultimo stato', 'Last status')} value={lastStatusLabel} helper={latestBackup?.artifactName || adminCopy(lang, 'Lo stato dettagliato resta nella pagina Actions di GitHub.', 'Detailed status remains on the GitHub Actions page.')} />
+        <SummaryCard label={adminCopy(lang, 'Ultimo stato', 'Last status')} value={lastStatusLabel} helper={latestBackup?.artifactName || workflowHelper} />
         <SummaryCard label={adminCopy(lang, 'Programmazione backup', 'Backup schedule')} value={backupFrequencyLabel(scheduleDraft.frequency, lang)} helper={backupScheduleSummary(scheduleDraft, lang)} />
       </div>
+
+      {showWorkflowDetails && (
+        <section className="admin-panel backup-panel backup-workflow-panel">
+          <div className="admin-panel-header">
+            <h2>{adminCopy(lang, 'Stato workflow backup', 'Backup workflow status')}</h2>
+            <button className="button secondary small-button" type="button" onClick={refreshBackupStatus}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+          </div>
+          <p>{adminCopy(lang, 'Questi dettagli vengono letti server-side da GitHub Actions e mostrati qui: l\'admin non deve avere accesso a GitHub.', 'These details are read server-side from GitHub Actions and shown here: the admin does not need GitHub access.')}</p>
+          {workflowRun ? (
+            <dl className="backup-workflow-grid">
+              <div><dt>{adminCopy(lang, 'Esecuzione', 'Run')}</dt><dd>{workflowRun.runNumber ? `#${workflowRun.runNumber}` : '-'}</dd></div>
+              <div><dt>{adminCopy(lang, 'Stato', 'Status')}</dt><dd>{workflowStatusText(workflowRun, lang)}</dd></div>
+              <div><dt>{adminCopy(lang, 'Tipo', 'Type')}</dt><dd>{workflowRun.event || '-'}</dd></div>
+              <div><dt>{adminCopy(lang, 'Creata', 'Created')}</dt><dd>{formatBackupDate(workflowRun.createdAt, lang)}</dd></div>
+              <div><dt>{adminCopy(lang, 'Aggiornata', 'Updated')}</dt><dd>{formatBackupDate(workflowRun.updatedAt, lang)}</dd></div>
+              <div><dt>{adminCopy(lang, 'Risultato', 'Conclusion')}</dt><dd>{workflowRun.conclusion || adminCopy(lang, 'In corso', 'In progress')}</dd></div>
+            </dl>
+          ) : (
+            <div className="admin-alert warning">{adminCopy(lang, 'Nessuna esecuzione workflow disponibile.', 'No workflow run available.')}</div>
+          )}
+        </section>
+      )}
 
       <section className="admin-panel backup-panel">
         <div className="admin-panel-header">
           <h2>{adminCopy(lang, 'Programmazione backup', 'Backup schedule')}</h2>
         </div>
-        <p>{adminCopy(lang, 'Backup automatico gestito da GitHub Actions. Il workflow controlla la programmazione salvata e crea il backup solo quando Ã¨ dovuto.', 'Automatic backup managed by GitHub Actions. The workflow checks the saved schedule and creates a backup only when it is due.')}</p>
+        <p>{adminCopy(lang, 'Backup automatico gestito dal server. Il workflow controlla la programmazione salvata e crea il backup solo quando è dovuto.', 'Automatic backup managed by the server. The workflow checks the saved schedule and creates a backup only when it is due.')}</p>
 
         <div className="backup-schedule-form">
           <label className="backup-toggle-row">
@@ -7610,32 +7809,82 @@ function AdminBackupPage({ lang }) {
         </div>
         {scheduleState.message && <div className="admin-alert success" role="status">{scheduleState.message}</div>}
         {scheduleState.error && <div className="admin-alert warning" role="status">{scheduleState.error}</div>}
-        <p className="small-note">{adminCopy(lang, 'Il workflow GitHub viene eseguito ogni ora e usa questa programmazione salvata per decidere se creare un nuovo backup.', 'The GitHub workflow runs hourly and uses this saved schedule to decide whether to create a new backup.')}</p>
+        <p className="small-note">{adminCopy(lang, 'Il controllo automatico viene eseguito ogni ora e usa questa programmazione salvata per decidere se creare un nuovo backup.', 'The automatic check runs hourly and uses this saved schedule to decide whether to create a new backup.')}</p>
       </section>
 
-      <section className="admin-panel backup-panel">
-        <div className="admin-panel-header">
-          <h2>{adminCopy(lang, 'Come ripristinare', 'How to restore')}</h2>
-        </div>
-        <ol className="backup-restore-list">
-          <li>{adminCopy(lang, 'Crea un nuovo progetto Supabase.', 'Create a new Supabase project.')}</li>
-          <li>{adminCopy(lang, 'Abilita Data API.', 'Enable Data API.')}</li>
-          <li>{adminCopy(lang, 'Imposta gli schemi esposti su public.', 'Set exposed schemas to public.')}</li>
-          <li>{adminCopy(lang, 'Ripristina i file SQL inclusi nello ZIP.', 'Restore the SQL files included in the ZIP.')}</li>
-          <li>{adminCopy(lang, 'Ricrea/verifica gli utenti Auth.', 'Recreate/verify Auth users.')}</li>
-          <li>{adminCopy(lang, 'Aggiorna le variabili Cloudflare.', 'Update Cloudflare variables.')}</li>
-          <li>{adminCopy(lang, 'Esegui un nuovo deploy.', 'Redeploy.')}</li>
-          <li>{adminCopy(lang, 'Verifica /admin e una richiesta booking di test.', 'Verify /admin and one test booking request.')}</li>
-        </ol>
-      </section>
+      <details className="admin-panel backup-panel backup-restore-details">
+        <summary>
+          <span>
+            <strong>{adminCopy(lang, 'Come ripristinare', 'How to restore')}</strong>
+            <small>{adminCopy(lang, 'Apri la guida completa per sostituire il database con il backup estratto.', 'Open the complete guide to replace the database with the extracted backup.')}</small>
+          </span>
+        </summary>
+        <div className="backup-restore-content">
+          <p>{adminCopy(lang, 'Usa questa procedura solo in caso di ripristino reale o migrazione controllata. Il backup contiene i dati del database: trattalo come materiale riservato.', 'Use this procedure only for a real restore or controlled migration. The backup contains database data: treat it as confidential material.')}</p>
 
-      <section className="admin-panel backup-panel">
-        <div className="admin-panel-header">
-          <h2>{adminCopy(lang, 'Configurazione sicura', 'Secure configuration')}</h2>
+          <h3>{adminCopy(lang, '1. Estrai lo ZIP', '1. Extract the ZIP')}</h3>
+          <p>{adminCopy(lang, 'Scarica il backup da questa pagina ed estrailo in una cartella locale. La cartella deve contenere questi file:', 'Download the backup from this page and extract it into a local folder. The folder must contain these files:')}</p>
+          <ul className="backup-restore-list">
+            <li><code>00_project_info.json</code></li>
+            <li><code>01_roles.sql</code></li>
+            <li><code>02_schema.sql</code></li>
+            <li><code>03_data.sql</code></li>
+            <li><code>README_RESTORE.md</code></li>
+            <li><code>restore-supabase.ps1</code> / <code>restore-supabase.sh</code></li>
+            <li><code>cloudflare-env-template.txt</code></li>
+            <li><code>storage-assets/README_STORAGE.md</code></li>
+          </ul>
+
+          <h3>{adminCopy(lang, '2. Prepara il progetto Supabase di destinazione', '2. Prepare the target Supabase project')}</h3>
+          <ol className="backup-restore-list">
+            <li>{adminCopy(lang, 'Crea un nuovo progetto Supabase oppure scegli il progetto vuoto da sostituire.', 'Create a new Supabase project or choose the empty project to replace.')}</li>
+            <li>{adminCopy(lang, 'Apri Project Settings > Database e copia la connection string PostgreSQL diretta.', 'Open Project Settings > Database and copy the direct PostgreSQL connection string.')}</li>
+            <li>{adminCopy(lang, 'Sostituisci la password nella connection string.', 'Replace the password in the connection string.')}</li>
+            <li>{adminCopy(lang, 'In API Settings abilita la Data API, esponi lo schema public e usa public, extensions come extra search path.', 'In API Settings enable Data API, expose the public schema, and use public, extensions as extra search path.')}</li>
+          </ol>
+
+          <h3>{adminCopy(lang, '3. Ripristina ruoli, schema e dati', '3. Restore roles, schema, and data')}</h3>
+          <p>{adminCopy(lang, 'Apri un terminale nella cartella estratta e lancia uno dei comandi sotto. Serve psql installato sul computer.', 'Open a terminal in the extracted folder and run one of the commands below. psql must be installed on the computer.')}</p>
+          <div className="backup-code-grid">
+            <div>
+              <strong>PowerShell</strong>
+              <code>{`.\\restore-supabase.ps1 -NewDbUrl "postgresql://postgres:[PASSWORD]@db.YOUR-REF.supabase.co:5432/postgres"`}</code>
+            </div>
+            <div>
+              <strong>Bash/macOS/Linux</strong>
+              <code>{`./restore-supabase.sh 'postgresql://postgres:[PASSWORD]@db.YOUR-REF.supabase.co:5432/postgres'`}</code>
+            </div>
+          </div>
+          <p>{adminCopy(lang, 'Ordine di ripristino: prima 01_roles.sql, poi 02_schema.sql, poi 03_data.sql. Non invertire l\'ordine.', 'Restore order: first 01_roles.sql, then 02_schema.sql, then 03_data.sql. Do not change the order.')}</p>
+
+          <h3>{adminCopy(lang, '4. Ricrea accessi e owner', '4. Recreate logins and owners')}</h3>
+          <ol className="backup-restore-list">
+            <li>{adminCopy(lang, 'Supabase Auth non viene clonato completamente dal dump SQL: crea o verifica gli utenti in Authentication > Users.', 'Supabase Auth is not fully cloned by the SQL dump: create or verify users in Authentication > Users.')}</li>
+            <li>{adminCopy(lang, 'Per ogni owner che deve accedere ai backup, verifica una riga attiva in public.admin_profiles con role = owner.', 'For every owner who must access backups, verify an active row in public.admin_profiles with role = owner.')}</li>
+            <li>{adminCopy(lang, 'Esegui la migrazione system_backup_settings se la tabella della programmazione non esiste.', 'Run the system_backup_settings migration if the schedule table does not exist.')}</li>
+          </ol>
+
+          <h3>{adminCopy(lang, '5. Aggiorna Cloudflare Pages', '5. Update Cloudflare Pages')}</h3>
+          <p>{adminCopy(lang, 'Nel progetto Cloudflare Pages aggiorna le variabili con i valori del nuovo progetto Supabase e dei segreti GitHub server-side. Non creare variabili VITE per token GitHub o service role.', 'In the Cloudflare Pages project, update variables with the new Supabase project values and server-side GitHub secrets. Do not create VITE variables for GitHub tokens or service-role keys.')}</p>
+          <ul className="backup-restore-list">
+            <li><code>VITE_SUPABASE_URL</code> / <code>VITE_SUPABASE_ANON_KEY</code></li>
+            <li><code>{'SUPABASE_' + 'URL'}</code> / <code>{'SUPABASE_' + 'SERVICE_' + 'ROLE_' + 'KEY'}</code></li>
+            <li><code>GITHUB_OWNER</code>, <code>GITHUB_REPO</code>, <code>{'GITHUB_' + 'BACKUP_' + 'WORKFLOW_' + 'ID'}</code>, <code>{'GITHUB_' + 'BACKUP_' + 'REF'}</code>, <code>{'GITHUB_' + 'BACKUP_' + 'TOKEN'}</code></li>
+          </ul>
+
+          <h3>{adminCopy(lang, '6. Ridistribuisci e verifica', '6. Redeploy and verify')}</h3>
+          <ol className="backup-restore-list">
+            <li>{adminCopy(lang, 'Ridistribuisci Cloudflare Pages.', 'Redeploy Cloudflare Pages.')}</li>
+            <li>{adminCopy(lang, 'Accedi a /admin con un owner attivo.', 'Log in to /admin with an active owner.')}</li>
+            <li>{adminCopy(lang, 'Verifica calendario, richieste, analytics, recensioni e finanze.', 'Verify calendar, requests, analytics, reviews, and finance.')}</li>
+            <li>{adminCopy(lang, 'Crea una richiesta booking di test e controlla che appaia in admin.', 'Create a test booking request and check that it appears in admin.')}</li>
+            <li>{adminCopy(lang, 'Crea un nuovo backup e scaricalo da questa pagina.', 'Create a new backup and download it from this page.')}</li>
+          </ol>
+
+          <h3>{adminCopy(lang, 'Nota Storage', 'Storage note')}</h3>
+          <p>{adminCopy(lang, 'Il dump database non include i file binari di Supabase Storage. Dopo il ripristino controlla bucket, immagini, PDF, leaflet e altri asset caricati, poi ricarica i file mancanti.', 'The database dump does not include Supabase Storage binary files. After restore, check buckets, images, PDFs, leaflets, and other uploaded assets, then re-upload missing files.')}</p>
         </div>
-        <p>{adminCopy(lang, 'Configura i segreti richiesti nella pagina Actions del repository GitHub. Il token GitHub per avviare e scaricare il backup va salvato solo nelle variabili server-side di Cloudflare Pages.', 'Configure the required secrets in the GitHub repository Actions settings. The GitHub token used to start and download the backup must be stored only in Cloudflare Pages server-side variables.')}</p>
-        <p className="small-note">{adminCopy(lang, 'Non inserire mai URL database, chiave service role, access token Supabase o token GitHub in src, .env.local committati o variabili VITE pubbliche.', 'Never put database URLs, service role keys, Supabase access tokens, or GitHub tokens in src, committed .env.local files, or public VITE variables.')}</p>
-      </section>
+      </details>
     </section>
   );
 }
@@ -7643,7 +7892,7 @@ function AdminBackupPage({ lang }) {
 function analyticsAdminErrorMessage(lang, error) {
   const raw = `${error?.message || error || ''}`.toLowerCase();
   if (raw.includes('analytics_events') || raw.includes('analytics_sessions') || raw.includes('schema cache') || raw.includes('pgrst')) {
-    return adminCopy(lang, 'La tabella degli eventi analytics non Ã¨ disponibile o non Ã¨ ancora sincronizzata.', 'The analytics events table is not available or has not synced yet.');
+    return adminCopy(lang, 'La tabella degli eventi analytics non è disponibile o non è ancora sincronizzata.', 'The analytics events table is not available or has not synced yet.');
   }
   return adminCopy(lang, 'Analytics non disponibili al momento.', 'Analytics are not available right now.');
 }
@@ -7722,7 +7971,7 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           <AnalyticsStaticPanel title={<AdminEditableText itemKey="admin.analytics.overview.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Panoramica', 'Overview')} />}>
             <AnalyticsWarningList warnings={model.warnings} />
             <div className="admin-summary-grid analytics-summary-grid">
-              <SummaryCard label={adminCopy(lang, 'Visitatori', 'Visitors')} value={model.visitors || 'â€”'} />
+              <SummaryCard label={adminCopy(lang, 'Visitatori', 'Visitors')} value={model.visitors || '—'} />
               <SummaryCard label={adminCopy(lang, 'Visualizzazioni pagina', 'Page views')} value={model.pageViews} />
               <SummaryCard label={adminCopy(lang, 'Aperture modulo', 'Form opens')} value={model.formOpens} />
               <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} />
@@ -7734,8 +7983,8 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
             </div>
           </AnalyticsStaticPanel>
 
-          <AnalyticsPanel title={adminCopy(lang, 'QualitÃ  dati', 'Data quality')}>
-            <AnalyticsHelperNote>{adminCopy(lang, 'Avvisi diagnostici per capire quando il funnel non Ã¨ internamente coerente. Le metriche pubbliche escludono traffico admin/API.', 'Diagnostic warnings for identifying when the funnel is not internally coherent. Public metrics exclude admin/API traffic.')}</AnalyticsHelperNote>
+          <AnalyticsPanel title={adminCopy(lang, 'Qualità dati', 'Data quality')}>
+            <AnalyticsHelperNote>{adminCopy(lang, 'Avvisi diagnostici per capire quando il funnel non è internamente coerente. Le metriche pubbliche escludono traffico admin/API.', 'Diagnostic warnings for identifying when the funnel is not internally coherent. Public metrics exclude admin/API traffic.')}</AnalyticsHelperNote>
             <AnalyticsTable
               columns={[
                 { key: 'check', label: adminCopy(lang, 'Controllo', 'Check') },
@@ -7761,7 +8010,7 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
                 empty={emptyText}
               />
             </AnalyticsSubsection>
-            <AnalyticsSubsection title={adminCopy(lang, 'IntegritÃ  richieste', 'Request tracking integrity')}>
+            <AnalyticsSubsection title={adminCopy(lang, 'Integrità richieste', 'Request tracking integrity')}>
               <AnalyticsTable
                 columns={[
                   { key: 'created_at', label: adminCopy(lang, 'Creata il', 'Created at') },
@@ -7793,11 +8042,11 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
                     { key: 'whatsapp_clicks', label: 'WhatsApp' },
                     { key: 'email_clicks', label: 'Email' },
                     { key: 'phone_clicks', label: adminCopy(lang, 'Telefono', 'Phone') },
-                    { key: 'view_to_request', label: adminCopy(lang, 'Vista â†’ richiesta', 'View â†’ request') },
-                    { key: 'form_to_request', label: adminCopy(lang, 'Modulo â†’ richiesta', 'Form â†’ request') }
+                    { key: 'view_to_request', label: adminCopy(lang, 'Vista → richiesta', 'View → request') },
+                    { key: 'form_to_request', label: adminCopy(lang, 'Modulo → richiesta', 'Form → request') }
                   ]}
                   rows={model.formByExperience}
-                  empty={adminCopy(lang, 'Nessuna esperienza specificata nei dati del periodo.', 'No experience specified in this periodâ€™s data.')}
+                  empty={adminCopy(lang, 'Nessuna esperienza specificata nei dati del periodo.', 'No experience specified in this period’s data.')}
                 />
               </AnalyticsSubsection>
               <AnalyticsSubsection title={adminCopy(lang, 'Conversioni principali', 'Core conversions')}>
@@ -7838,7 +8087,7 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           <AnalyticsPanel title={<AdminEditableText itemKey="admin.analytics.sources.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Fonti traffico', 'Traffic sources')} />}>
             {model.directTrafficShare !== '0%' && <AnalyticsHelperNote>{adminCopy(lang, 'Molto traffico risulta Diretto. Usa link UTM per Instagram, WhatsApp, QR code, biglietti da visita e partner per capire da dove arrivano gli utenti.', 'Most traffic appears as Direct. Use UTM links for Instagram, WhatsApp, QR codes, business cards, and partners to understand where users come from.')}</AnalyticsHelperNote>}
             <div className="analytics-two-column-grid">
-              <AnalyticsSubsection title={adminCopy(lang, 'QualitÃ  attribuzione', 'Attribution quality')}>
+              <AnalyticsSubsection title={adminCopy(lang, 'Qualità attribuzione', 'Attribution quality')}>
                 <AnalyticsTable
                   columns={[
                     { key: 'source', label: adminCopy(lang, 'Sorgente', 'Source') },
@@ -7931,7 +8180,7 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
               <AnalyticsSubsection title={adminCopy(lang, 'Geografia: ipotesi', 'Geography: hypotheses')}>
                 <AnalyticsTable
                   columns={[
-                    { key: 'country_city', label: adminCopy(lang, 'Paese/cittÃ ', 'Country/city') },
+                    { key: 'country_city', label: adminCopy(lang, 'Paese/città', 'Country/city') },
                     { key: 'actions', label: adminCopy(lang, 'Azioni', 'Actions') },
                     { key: 'language', label: adminCopy(lang, 'Lingua', 'Language') },
                     { key: 'form_opens', label: adminCopy(lang, 'Aperture modulo', 'Form opens') },
@@ -7945,8 +8194,8 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
               <AnalyticsSubsection title={adminCopy(lang, 'Geografia', 'Geography')}>
                 <h4>{adminCopy(lang, 'Paesi principali', 'Top countries')}</h4>
                 <AnalyticsRowList rows={model.countryRows} total={state.events.length || 1} empty={emptyText} />
-                <h4>{adminCopy(lang, 'CittÃ  principali', 'Top cities')}</h4>
-                <AnalyticsRowList rows={model.cityRows} total={state.events.length || 1} empty={adminCopy(lang, 'CittÃ  non disponibile se Cloudflare non la fornisce.', 'City is unavailable if Cloudflare does not provide it.')} />
+                <h4>{adminCopy(lang, 'Città principali', 'Top cities')}</h4>
+                <AnalyticsRowList rows={model.cityRows} total={state.events.length || 1} empty={adminCopy(lang, 'Città non disponibile se Cloudflare non la fornisce.', 'City is unavailable if Cloudflare does not provide it.')} />
               </AnalyticsSubsection>
             </div>
             <div className="analytics-two-column-grid">
@@ -7959,7 +8208,7 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
                     { key: 'booking_form_opens', label: adminCopy(lang, 'Aperture modulo', 'Booking form opens') }
                   ]}
                   rows={model.sessionPaths}
-                  empty={adminCopy(lang, 'Servono piÃ¹ eventi ordinati per mostrare i percorsi sessione.', 'More ordered events are needed to show session paths.')}
+                  empty={adminCopy(lang, 'Servono più eventi ordinati per mostrare i percorsi sessione.', 'More ordered events are needed to show session paths.')}
                 />
               </AnalyticsSubsection>
               <AnalyticsSubsection title={adminCopy(lang, 'Flusso sito', 'Website flow')}>
@@ -8221,14 +8470,14 @@ function FinanceOverview({ lang, summary, rangeLabel, onOpen }) {
           title={adminCopy(lang, 'Entrate per categoria', 'Income by category')}
           empty={empty}
           categories={summary.incomeCategories}
-          onOpen={(category) => onOpen({ key: `income-${category.key}`, title: `${adminCopy(lang, 'Entrate', 'Income')} Â· ${financeCategoryLabel(category.key, lang)}`, entries: category.entries, total: category.total })}
+          onOpen={(category) => onOpen({ key: `income-${category.key}`, title: `${adminCopy(lang, 'Entrate', 'Income')} · ${financeCategoryLabel(category.key, lang)}`, entries: category.entries, total: category.total })}
         />
         <FinanceCategoryBreakdown
           lang={lang}
           title={adminCopy(lang, 'Uscite per categoria', 'Expenses by category')}
           empty={empty}
           categories={summary.expenseCategories}
-          onOpen={(category) => onOpen({ key: `expense-${category.key}`, title: `${adminCopy(lang, 'Uscite', 'Expenses')} Â· ${financeCategoryLabel(category.key, lang)}`, entries: category.entries, total: category.total })}
+          onOpen={(category) => onOpen({ key: `expense-${category.key}`, title: `${adminCopy(lang, 'Uscite', 'Expenses')} · ${financeCategoryLabel(category.key, lang)}`, entries: category.entries, total: category.total })}
         />
       </div>
       </div>
@@ -8289,7 +8538,7 @@ function FinanceCategoryBreakdown({ lang, title, categories, empty, onOpen }) {
             <button type="button" className="finance-category-row" key={category.key} onClick={() => onOpen(category)}>
               <span>
                 <strong>{financeCategoryLabel(category.key, lang)}</strong>
-                <small>{category.entries.length} {category.entries.length === 1 ? adminCopy(lang, 'movimento', 'movement') : adminCopy(lang, 'movimenti', 'movements')} Â· {category.percentage}%</small>
+                <small>{category.entries.length} {category.entries.length === 1 ? adminCopy(lang, 'movimento', 'movement') : adminCopy(lang, 'movimenti', 'movements')} · {category.percentage}%</small>
               </span>
               <strong className={`finance-amount ${category.type}`}>{formatMoney(category.total)}</strong>
             </button>
@@ -8337,7 +8586,7 @@ function FinanceMovementRow({ entry, lang, onClick }) {
     <button type="button" className="finance-detail-entry finance-movement-row finance-movement-row--clickable" onClick={onClick}>
       <div>
         <strong>{entry.title || '-'}</strong>
-        <p>{formatDateForMessage(entry.entry_date, lang)} Â· {financeCategoryLabel(entry.category, lang)} Â· {entry.payment_method || adminCopy(lang, 'Metodo non indicato', 'No payment method')}</p>
+        <p>{formatDateForMessage(entry.entry_date, lang)} · {financeCategoryLabel(entry.category, lang)} · {entry.payment_method || adminCopy(lang, 'Metodo non indicato', 'No payment method')}</p>
         {financeEntryCustomerName(entry) && <p className="small-note">{financeEntryCustomerName(entry)}</p>}
         {entry.description && <p className="small-note">{entry.description}</p>}
         <p className="small-note">{financeEntryIsLinked(entry) ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Unlinked')}</p>
@@ -8352,14 +8601,14 @@ function FinanceMovementDetail({ entry, lang }) {
   const fixed = entry.linkedFixedExcursion;
   const leaflet = entry.linkedLeaflet;
   const missing = adminCopy(lang, 'Non disponibile', 'Not available');
-  const guests = [booking?.adults ? `${booking.adults} ${adminCopy(lang, 'adulti', 'adults')}` : '', booking?.children ? `${booking.children} ${adminCopy(lang, 'bambini', 'children')}` : ''].filter(Boolean).join(' Â· ');
+  const guests = [booking?.adults ? `${booking.adults} ${adminCopy(lang, 'adulti', 'adults')}` : '', booking?.children ? `${booking.children} ${adminCopy(lang, 'bambini', 'children')}` : ''].filter(Boolean).join(' · ');
   return (
     <div className="finance-movement-detail">
       <section className="finance-movement-hero">
         <div>
           <span className="kicker">{entry.type === 'expense' ? adminCopy(lang, 'Uscita', 'Expense') : adminCopy(lang, 'Entrata', 'Income')}</span>
           <h3>{entry.title || missing}</h3>
-          <p>{formatDateForMessage(entry.entry_date, lang)} Â· {financeCategoryLabel(entry.category, lang)}</p>
+          <p>{formatDateForMessage(entry.entry_date, lang)} · {financeCategoryLabel(entry.category, lang)}</p>
         </div>
         <strong className={`finance-amount ${entry.type}`}>{entry.type === 'expense' ? '-' : '+'}{formatMoney(entry.amount, entry.currency)}</strong>
       </section>
@@ -8372,7 +8621,7 @@ function FinanceMovementDetail({ entry, lang }) {
           <FinanceDetailRow label={adminCopy(lang, 'Categoria', 'Category')} value={financeCategoryLabel(entry.category, lang)} />
           <FinanceDetailRow label={adminCopy(lang, 'Metodo pagamento', 'Payment method')} value={entry.payment_method || missing} />
           <FinanceDetailRow label={adminCopy(lang, 'Stato', 'Status')} value={financeEntryIsLinked(entry) ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Unlinked')} />
-          <FinanceDetailRow label={adminCopy(lang, 'Archiviata', 'Archived')} value={entry.active === false ? adminCopy(lang, 'SÃ¬', 'Yes') : adminCopy(lang, 'No', 'No')} />
+          <FinanceDetailRow label={adminCopy(lang, 'Archiviata', 'Archived')} value={entry.active === false ? adminCopy(lang, 'Sì', 'Yes') : adminCopy(lang, 'No', 'No')} />
           <FinanceDetailRow label={adminCopy(lang, 'Creata', 'Created')} value={entry.created_at ? formatDateForMessage(String(entry.created_at).slice(0, 10), lang) : missing} />
           <FinanceDetailRow label={adminCopy(lang, 'Aggiornata', 'Updated')} value={entry.updated_at ? formatDateForMessage(String(entry.updated_at).slice(0, 10), lang) : missing} />
         </FinanceDetailSection>
@@ -8406,9 +8655,9 @@ function FinanceMovementDetail({ entry, lang }) {
             <>
               <FinanceDetailRow label={adminCopy(lang, 'Titolo', 'Title')} value={fixedExcursionTitle(fixed, lang) || missing} />
               <FinanceDetailRow label={adminCopy(lang, 'Data', 'Date')} value={formatDateForMessage(fixed.date, lang) || missing} />
-              <FinanceDetailRow label={adminCopy(lang, 'Orario', 'Time')} value={`${fixed.start_time ? String(fixed.start_time).slice(0, 5) : ''}${fixed.end_time ? `â€“${String(fixed.end_time).slice(0, 5)}` : ''}` || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Orario', 'Time')} value={`${fixed.start_time ? String(fixed.start_time).slice(0, 5) : ''}${fixed.end_time ? `–${String(fixed.end_time).slice(0, 5)}` : ''}` || missing} />
               <FinanceDetailRow label={adminCopy(lang, 'Esperienza', 'Experience')} value={adminExperienceLabel(fixed.experience_id, lang)} />
-              <FinanceDetailRow label={adminCopy(lang, 'Punto dâ€™incontro', 'Meeting point')} value={fixedExcursionField(fixed, 'meeting_point', lang) || missing} />
+              <FinanceDetailRow label={adminCopy(lang, 'Punto d’incontro', 'Meeting point')} value={fixedExcursionField(fixed, 'meeting_point', lang) || missing} />
               <FinanceDetailRow label={adminCopy(lang, 'Posti disponibili', 'Places remaining')} value={fixed.places_remaining !== undefined ? `${fixed.places_remaining}/${fixed.capacity || '-'}` : missing} />
             </>
           ) : <p className="small-note">{adminCopy(lang, 'Nessuna escursione fissa collegata.', 'No linked fixed excursion.')}</p>}
@@ -8440,18 +8689,18 @@ function FinanceDetailRow({ label, value }) {
 
 function requestFinanceLabel(request, lang) {
   if (!request) return '-';
-  return `${formatDateForMessage(request.requested_date, lang) || '-'} Â· ${request.customer_name || '-'} Â· ${adminExperienceLabel(request.experience_id, lang)}${request.booking_code ? ` Â· ${request.booking_code}` : ''}`;
+  return `${formatDateForMessage(request.requested_date, lang) || '-'} · ${request.customer_name || '-'} · ${adminExperienceLabel(request.experience_id, lang)}${request.booking_code ? ` · ${request.booking_code}` : ''}`;
 }
 
 function FinanceEntryCard({ entry, lang, onOpen, onEdit, onArchive }) {
   return (
     <article className={`finance-entry-card ${entry.active === false ? 'inactive' : ''}`}>
       <div className="request-card-head">
-        <div><h3>{entry.title}</h3><p>{formatDateForMessage(entry.entry_date, lang)} Â· {financeCategoryLabel(entry.category, lang)}</p></div>
+        <div><h3>{entry.title}</h3><p>{formatDateForMessage(entry.entry_date, lang)} · {financeCategoryLabel(entry.category, lang)}</p></div>
         <strong className={`finance-amount ${entry.type}`}>{entry.type === 'expense' ? '-' : '+'}{formatMoney(entry.amount, entry.currency)}</strong>
       </div>
       {entry.description && <p>{entry.description}</p>}
-      <p className="small-note">{entry.payment_method || adminCopy(lang, 'Metodo non indicato', 'No payment method')} Â· {financeEntryIsLinked(entry) ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Unlinked')}{financeEntryCustomerName(entry) ? ` Â· ${financeEntryCustomerName(entry)}` : ''}</p>
+      <p className="small-note">{entry.payment_method || adminCopy(lang, 'Metodo non indicato', 'No payment method')} · {financeEntryIsLinked(entry) ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Unlinked')}{financeEntryCustomerName(entry) ? ` · ${financeEntryCustomerName(entry)}` : ''}</p>
       <div className="request-actions">
         <button className="button secondary" type="button" onClick={onOpen}>{adminCopy(lang, 'Dettaglio', 'Details')}</button>
         <button className="button secondary" type="button" onClick={onEdit}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
@@ -8504,11 +8753,11 @@ function TodayDashboard({ lang, session, navigate, adminContent = {} }) {
         <div>
           <span className="kicker">{adminCopy(lang, 'Oggi', 'Today')}</span>
           <AdminEditableText as="h1" itemKey="admin.today.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Pannello operativo', 'Operations')} />
-          <AdminEditableText as="p" itemKey="admin.today.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Stato operativo rapido, richieste e attivitÃ  da controllare oggi.', 'Fast operational status, requests, and activity to review today.')} />
+          <AdminEditableText as="p" itemKey="admin.today.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Stato operativo rapido, richieste e attività da controllare oggi.', 'Fast operational status, requests, and activity to review today.')} />
         </div>
         <div className="admin-header-actions">
           <button className="button primary" type="button" onClick={() => setManualOpen(true)}>{adminCopy(lang, 'Aggiungi richiesta manuale', 'Add manual request')}</button>
-          <button className="button secondary" type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Gestisci disponibilitÃ ', 'Manage availability')}</button>
+          <button className="button secondary" type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Gestisci disponibilità', 'Manage availability')}</button>
         </div>
       </div>
 
@@ -8519,7 +8768,7 @@ function TodayDashboard({ lang, session, navigate, adminContent = {} }) {
         <SummaryCard label={<AdminEditableText itemKey="admin.today.pendingToday.label" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Pending oggi', 'Pending today')} />} value={pendingToday.length} onClick={() => document.getElementById('adminTodayRequests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} helper={<AdminEditableText as="small" itemKey="admin.today.pendingToday.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Apri richieste di oggi', 'Open today requests')} />} ariaLabel={`${contentText(adminContent, 'admin.today.pendingToday.label', lang, adminCopy(lang, 'Pending oggi', 'Pending today'))}: ${pendingToday.length}`} />
         <SummaryCard label={<AdminEditableText itemKey="admin.today.pendingTotal.label" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Pending totale', 'Pending total')} />} value={pending.length} onClick={() => navigate('/admin/requests')} helper={<AdminEditableText as="small" itemKey="admin.today.pendingTotal.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Vai alle richieste', 'Go to requests')} />} ariaLabel={`${contentText(adminContent, 'admin.today.pendingTotal.label', lang, adminCopy(lang, 'Pending totale', 'Pending total'))}: ${pending.length}`} />
         <SummaryCard label={<AdminEditableText itemKey="admin.today.acceptedToday.label" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Accettate oggi', 'Accepted today')} />} value={acceptedToday.length} onClick={() => navigate('/admin/upcoming')} helper={<AdminEditableText as="small" itemKey="admin.today.acceptedToday.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Vedi confermate', 'View accepted')} />} ariaLabel={`${contentText(adminContent, 'admin.today.acceptedToday.label', lang, adminCopy(lang, 'Accettate oggi', 'Accepted today'))}: ${acceptedToday.length}`} />
-        <SummaryCard label={<AdminEditableText itemKey="admin.today.availabilityToday.label" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'DisponibilitÃ  oggi', 'Availability issues today')} />} value={availabilityIssuesToday.length} onClick={() => navigate('/admin/availability')} helper={<AdminEditableText as="small" itemKey="admin.today.availabilityToday.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestisci calendario', 'Manage calendar')} />} ariaLabel={`${contentText(adminContent, 'admin.today.availabilityToday.label', lang, adminCopy(lang, 'DisponibilitÃ  oggi', 'Availability issues today'))}: ${availabilityIssuesToday.length}`} />
+        <SummaryCard label={<AdminEditableText itemKey="admin.today.availabilityToday.label" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Disponibilità oggi', 'Availability issues today')} />} value={availabilityIssuesToday.length} onClick={() => navigate('/admin/availability')} helper={<AdminEditableText as="small" itemKey="admin.today.availabilityToday.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestisci calendario', 'Manage calendar')} />} ariaLabel={`${contentText(adminContent, 'admin.today.availabilityToday.label', lang, adminCopy(lang, 'Disponibilità oggi', 'Availability issues today'))}: ${availabilityIssuesToday.length}`} />
       </div>
 
       <div className="admin-two-column">
@@ -8559,7 +8808,7 @@ function TodayDashboard({ lang, session, navigate, adminContent = {} }) {
             <AdminMiniList
               items={operational}
               empty={adminCopy(lang, 'Nessuna conferma nei prossimi 7 giorni.', 'No accepted bookings in the next 7 days.')}
-              render={(request) => <span><strong>{formatDateForMessage(request.requested_date, lang)}</strong> Â· {request.customer_name || '-'} Â· {adminExperienceLabel(request.experience_id, lang)}</span>}
+              render={(request) => <span><strong>{formatDateForMessage(request.requested_date, lang)}</strong> · {request.customer_name || '-'} · {adminExperienceLabel(request.experience_id, lang)}</span>}
             />
             <button className="button secondary admin-inline-button" type="button" onClick={() => navigate('/admin/upcoming')}>{adminCopy(lang, 'Apri prossime prenotazioni', 'Open upcoming bookings')}</button>
           </details>
@@ -8568,7 +8817,7 @@ function TodayDashboard({ lang, session, navigate, adminContent = {} }) {
             <AdminMiniList
               items={blocks.slice(0, 8)}
               empty={adminCopy(lang, 'Nessun blocco attivo nei prossimi 30 giorni.', 'No active blocks in the next 30 days.')}
-              render={(block) => <span><strong>{formatDateForMessage(block.date, lang)}</strong> Â· {adminAvailabilityStatusLabels[block.status]?.[lang] || block.status} Â· {block.experience_id ? adminExperienceLabel(block.experience_id, lang) : adminCopy(lang, 'Tutte', 'All')}</span>}
+              render={(block) => <span><strong>{formatDateForMessage(block.date, lang)}</strong> · {adminAvailabilityStatusLabels[block.status]?.[lang] || block.status} · {block.experience_id ? adminExperienceLabel(block.experience_id, lang) : adminCopy(lang, 'Tutte', 'All')}</span>}
             />
           </details>
           <details className="admin-archive-details admin-operation-group">
@@ -8576,7 +8825,7 @@ function TodayDashboard({ lang, session, navigate, adminContent = {} }) {
             <AdminMiniList
               items={recentDecisions}
               empty={adminCopy(lang, 'Nessuna decisione recente.', 'No recent decisions.')}
-              render={(request) => <span><strong>{requestStatusLabels[request.status]?.[lang] || request.status}</strong> Â· {request.customer_name || '-'} Â· {formatDateForMessage(request.requested_date, lang) || '-'}{request.decision_note ? ` Â· ${request.decision_note}` : ''}</span>}
+              render={(request) => <span><strong>{requestStatusLabels[request.status]?.[lang] || request.status}</strong> · {request.customer_name || '-'} · {formatDateForMessage(request.requested_date, lang) || '-'}{request.decision_note ? ` · ${request.decision_note}` : ''}</span>}
             />
           </details>
           <div className="admin-action-groups">
@@ -8584,7 +8833,7 @@ function TodayDashboard({ lang, session, navigate, adminContent = {} }) {
               <button type="button" onClick={() => setManualOpen(true)}>{adminCopy(lang, 'Aggiungi richiesta', 'Add request')}</button>
               <button type="button" onClick={() => navigate('/admin/requests')}>{adminCopy(lang, 'Storico richieste', 'Request history')}</button>
             </AdminActionGroup>
-            <AdminActionGroup title={adminCopy(lang, 'DisponibilitÃ ', 'Availability')}>
+            <AdminActionGroup title={adminCopy(lang, 'Disponibilità', 'Availability')}>
               <button type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Blocca data', 'Block date')}</button>
               <button type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Segna limitata', 'Mark limited')}</button>
               <button type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Segna su richiesta', 'Mark on request')}</button>
@@ -8612,7 +8861,7 @@ function bucketUpcomingRequests(requests) {
     { key: 'today', title: { it: 'Oggi', en: 'Today' }, items: [] },
     { key: 'tomorrow', title: { it: 'Domani', en: 'Tomorrow' }, items: [] },
     { key: 'next7', title: { it: 'Prossimi 7 giorni', en: 'Next 7 days' }, items: [] },
-    { key: 'later', title: { it: 'PiÃ¹ avanti', en: 'Later upcoming' }, items: [] }
+    { key: 'later', title: { it: 'Più avanti', en: 'Later upcoming' }, items: [] }
   ];
 
   requests.forEach((request) => {
@@ -8663,11 +8912,11 @@ function UpcomingPage({ lang, session, navigate, adminContent = {} }) {
         <div>
           <span className="kicker">{adminCopy(lang, 'Conferme owner', 'Owner confirmations')}</span>
           <AdminEditableText as="h1" itemKey="admin.upcoming.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Prossime prenotazioni', 'Upcoming bookings')} />
-          <AdminEditableText as="p" itemKey="admin.upcoming.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Richieste accettate e blocchi attivi, organizzati per giorno. Nessuna statistica: solo operativitÃ .', 'Accepted requests and active blocks, organized by date. No analytics: just operations.')} />
+          <AdminEditableText as="p" itemKey="admin.upcoming.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Richieste accettate e blocchi attivi, organizzati per giorno. Nessuna statistica: solo operatività.', 'Accepted requests and active blocks, organized by date. No analytics: just operations.')} />
         </div>
         <div className="admin-header-actions">
           <button className="button secondary" type="button" onClick={refreshAll}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
-          <button className="button primary" type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Gestisci disponibilitÃ ', 'Manage availability')}</button>
+          <button className="button primary" type="button" onClick={() => navigate('/admin/availability')}>{adminCopy(lang, 'Gestisci disponibilità', 'Manage availability')}</button>
         </div>
       </div>
       {(error || blocksError) && <div className="admin-alert error" role="alert">{error || blocksError}</div>}
@@ -8702,7 +8951,7 @@ function UpcomingPage({ lang, session, navigate, adminContent = {} }) {
           <AdminMiniList
             items={nearBlocks}
             empty={adminCopy(lang, 'Nessun blocco attivo nei prossimi 30 giorni.', 'No active blocks in the next 30 days.')}
-            render={(block) => <span><strong>{formatDateForMessage(block.date, lang)}</strong> Â· {adminAvailabilityStatusLabels[block.status]?.[lang] || block.status} Â· {block.experience_id ? adminExperienceLabel(block.experience_id, lang) : adminCopy(lang, 'Tutte le esperienze', 'All experiences')}</span>}
+            render={(block) => <span><strong>{formatDateForMessage(block.date, lang)}</strong> · {adminAvailabilityStatusLabels[block.status]?.[lang] || block.status} · {block.experience_id ? adminExperienceLabel(block.experience_id, lang) : adminCopy(lang, 'Tutte le esperienze', 'All experiences')}</span>}
           />
           <div className="admin-action-groups">
             <AdminActionGroup title={adminCopy(lang, 'Scorciatoie', 'Shortcuts')}>
@@ -8743,7 +8992,7 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
       <div className="request-card-head">
         <div>
           <h3>{request.customer_name || adminCopy(lang, 'Cliente senza nome', 'Unnamed customer')}</h3>
-          <p>{request.customer_phone || 'â€”'} Â· {request.customer_email || 'â€”'}</p>
+          <p>{request.customer_phone || '—'} · {request.customer_email || '—'}</p>
         </div>
         <span className={`status-pill ${request.status}`}>{requestStatusLabels[request.status]?.[lang] || request.status}</span>
       </div>
@@ -8756,17 +9005,17 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
         <div><dt>{adminCopy(lang, 'Data richiesta', 'Requested date')}</dt><dd>{formatDateForMessage(request.requested_date, lang) || '-'}</dd></div>
         <div><dt>{adminCopy(lang, 'Alternativa', 'Alternative')}</dt><dd>{formatDateForMessage(request.alternative_date, lang) || '-'}</dd></div>
         <div><dt>{adminCopy(lang, 'Lingua', 'Language')}</dt><dd>{request.language || 'it'}</dd></div>
-        <div><dt>{adminCopy(lang, 'Gruppo', 'Party')}</dt><dd>{[request.adults ? `${request.adults} adulti/adults` : '', request.children ? `${request.children} bambini/children` : ''].filter(Boolean).join(' Â· ') || request.party_type || '-'}</dd></div>
+        <div><dt>{adminCopy(lang, 'Gruppo', 'Party')}</dt><dd>{[request.adults ? `${request.adults} adulti/adults` : '', request.children ? `${request.children} bambini/children` : ''].filter(Boolean).join(' · ') || request.party_type || '-'}</dd></div>
         <div><dt>{adminCopy(lang, 'Totale', 'Total')}</dt><dd>{Number(request.adults || 0) + Number(request.children || 0) || '-'}</dd></div>
         {request.booking_code && <div><dt>{adminCopy(lang, 'Codice prenotazione', 'Booking code')}</dt><dd>{request.booking_code}</dd></div>}
-        <div><dt>{adminCopy(lang, 'Privata', 'Private')}</dt><dd>{request.private_experience === true ? adminCopy(lang, 'SÃ¬', 'Yes') : request.private_experience === false ? adminCopy(lang, 'No', 'No') : '-'}</dd></div>
+        <div><dt>{adminCopy(lang, 'Privata', 'Private')}</dt><dd>{request.private_experience === true ? adminCopy(lang, 'Sì', 'Yes') : request.private_experience === false ? adminCopy(lang, 'No', 'No') : '-'}</dd></div>
         {request.fixed_excursion_id && <div><dt>{adminCopy(lang, 'Escursione fissa', 'Fixed excursion')}</dt><dd>{request.fixed_excursion_id}</dd></div>}
       </dl>
       {request.children_under_3 && <div className="admin-alert warning compact-alert">{adminCopy(lang, 'Attenzione: bambini sotto i 3 anni. Percorso da valutare con particolare cura.', 'Warning: children under 3. Route must be assessed carefully.')}</div>}
       {request.message && <p className="request-message">{request.message}</p>}
       {request.admin_note && <p className="small-note"><strong>Note:</strong> {request.admin_note}</p>}
       {request.status !== 'pending' && (
-        <p className="small-note decision-note"><strong>{adminCopy(lang, 'Decisione', 'Decision')}:</strong> {request.decision_note || '-'} Â· {request.decided_at ? formatDateForMessage(String(request.decided_at).slice(0, 10), lang) : '-'}{request.decided_by ? ` Â· ${request.decided_by}` : ''}</p>
+        <p className="small-note decision-note"><strong>{adminCopy(lang, 'Decisione', 'Decision')}:</strong> {request.decision_note || '-'} · {request.decided_at ? formatDateForMessage(String(request.decided_at).slice(0, 10), lang) : '-'}{request.decided_by ? ` · ${request.decided_by}` : ''}</p>
       )}
       <ReplyTools request={request} lang={lang} />
       {request.status === 'pending' && (
@@ -8808,14 +9057,14 @@ function ReplyTools({ request, lang }) {
       <div className="reply-tool-buttons">
         {phone ? <a href={`https://wa.me/${phone}?text=${encode(prepared)}`} target="_blank" rel="noopener noreferrer">WhatsApp</a> : <button type="button" onClick={() => copy('reply', prepared)}>{adminCopy(lang, 'Copia risposta', 'Copy reply')}</button>}
         <button type="button" onClick={() => setEmailOpen((open) => !open)}>{adminCopy(lang, 'Email', 'Email')}</button>
-        <button type="button" onClick={() => copy('reply', prepared)}>{adminCopy(lang, 'Copia messaggio', 'Copy message')} {copied === 'reply' ? 'Â· âœ“' : ''}</button>
+        <button type="button" onClick={() => copy('reply', prepared)}>{adminCopy(lang, 'Copia messaggio', 'Copy message')} {copied === 'reply' ? '· ✓' : ''}</button>
       </div>
       {phoneNeedsCountry && <p className="small-note">{adminCopy(lang, 'Il numero potrebbe richiedere il prefisso internazionale prima di aprire WhatsApp.', 'Phone number may need country code before opening WhatsApp.')}</p>}
       {emailOpen && (
         <div className="admin-email-panel">
           {customerEmail ? <button type="button" onClick={() => openDefaultEmailApp(customerEmail, subject, prepared)}>{adminCopy(lang, 'Apri app email predefinita', 'Open default email app')}</button> : <span>{adminCopy(lang, 'Email cliente non disponibile.', 'Customer email unavailable.')}</span>}
           {customerEmail && <a href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encode(customerEmail)}&su=${encode(subject)}&body=${encode(prepared)}`} target="_blank" rel="noopener noreferrer">Gmail</a>}
-          {customerEmail && <button type="button" onClick={() => copy('email', customerEmail)}>{adminCopy(lang, 'Copia email cliente', 'Copy customer email')} {copied === 'email' ? 'Â· âœ“' : ''}</button>}
+          {customerEmail && <button type="button" onClick={() => copy('email', customerEmail)}>{adminCopy(lang, 'Copia email cliente', 'Copy customer email')} {copied === 'email' ? '· ✓' : ''}</button>}
           <button type="button" onClick={() => copy('reply', prepared)}>{adminCopy(lang, 'Copia messaggio preparato', 'Copy prepared message')}</button>
         </div>
       )}
@@ -8839,7 +9088,7 @@ function DecisionModal({ lang, session, decision, onClose, onDone }) {
       if (decision.type === 'approve') {
         const result = await approveBookingRequest({ request: decision.request, userId: session.user.id, mode, decisionNote: note, limitedScope });
         if (result.availabilityError) {
-          onDone(adminCopy(lang, 'Richiesta accettata, ma la disponibilitÃ  non Ã¨ stata aggiornata. Blocca la data manualmente.', 'Request was accepted, but availability was not updated. Please block the date manually.'));
+          onDone(adminCopy(lang, 'Richiesta accettata, ma la disponibilità non è stata aggiornata. Blocca la data manualmente.', 'Request was accepted, but availability was not updated. Please block the date manually.'));
           return;
         }
         onDone(adminCopy(lang, 'Richiesta accettata.', 'Request accepted.'));
@@ -8862,9 +9111,9 @@ function DecisionModal({ lang, session, decision, onClose, onDone }) {
       <section className="admin-modal" role="dialog" aria-modal="true" aria-labelledby="decisionTitle">
         <div className="admin-modal-header">
           <h2 id="decisionTitle">{decision.type === 'approve' ? adminCopy(lang, 'Approva richiesta', 'Approve request') : decision.type === 'remove' ? adminCopy(lang, 'Rimuovi richiesta accettata', 'Remove accepted request') : adminCopy(lang, 'Rifiuta richiesta', 'Decline request')}</h2>
-          <button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>Ã—</button>
+          <button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>×</button>
         </div>
-        <p>{decision.request.customer_name || adminCopy(lang, 'Cliente senza nome', 'Unnamed customer')} Â· {adminExperienceLabel(decision.request.experience_id, lang)} Â· {formatDateForMessage(decision.request.requested_date, lang) || '-'}</p>
+        <p>{decision.request.customer_name || adminCopy(lang, 'Cliente senza nome', 'Unnamed customer')} · {adminExperienceLabel(decision.request.experience_id, lang)} · {formatDateForMessage(decision.request.requested_date, lang) || '-'}</p>
         {decision.type === 'approve' ? (
           <>
             <label className="field-label" htmlFor="approvalMode">{adminCopy(lang, 'Opzione approvazione', 'Approval option')}</label>
@@ -8872,7 +9121,7 @@ function DecisionModal({ lang, session, decision, onClose, onDone }) {
               <option value="accept-only">{adminCopy(lang, 'Accetta soltanto', 'Accept request only')}</option>
               <option value="close-experience">{adminCopy(lang, 'Accetta e chiudi questa esperienza', 'Accept and close this experience')}</option>
               <option value="close-global">{adminCopy(lang, 'Accetta e chiudi tutte le esperienze', 'Accept and close all experiences')}</option>
-              <option value="limited">{adminCopy(lang, 'Accetta e segna disponibilitÃ  limitata', 'Accept and mark limited availability')}</option>
+              <option value="limited">{adminCopy(lang, 'Accetta e segna disponibilità limitata', 'Accept and mark limited availability')}</option>
             </select>
             {mode === 'limited' && (
               <>
@@ -8949,7 +9198,7 @@ function ManualRequestModal({ lang, session, onClose, onSaved }) {
       <section className="admin-modal wide" role="dialog" aria-modal="true" aria-labelledby="manualRequestTitle">
         <div className="admin-modal-header">
           <h2 id="manualRequestTitle">{adminCopy(lang, 'Aggiungi richiesta manuale', 'Add manual request')}</h2>
-          <button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>Ã—</button>
+          <button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>×</button>
         </div>
         <form className="admin-form-grid" onSubmit={submit}>
           <AdminInput label={adminCopy(lang, 'Nome cliente', 'Customer name')} value={form.customer_name} onChange={(value) => update('customer_name', value)} />
@@ -9128,13 +9377,13 @@ function AdminReviewsPanel({ lang, adminContent = {} }) {
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : reviews.length === 0 ? <p>{adminCopy(lang, 'Nessuna recensione ricevuta.', 'No reviews received.')}</p> : (
         <>
-          <p className="small-note admin-review-delete-note">{adminCopy(lang, 'Per eliminare una recensione pubblica, usa il pulsante rosso â€œElimina definitivamenteâ€ sulla card della recensione.', 'To delete a public review, use the red â€œDelete permanentlyâ€ button on that review card.')}</p>
+          <p className="small-note admin-review-delete-note">{adminCopy(lang, 'Per eliminare una recensione pubblica, usa il pulsante rosso “Elimina definitivamente” sulla card della recensione.', 'To delete a public review, use the red “Delete permanently” button on that review card.')}</p>
           <div className="admin-review-list">
             {reviews.map((review) => (
               <article className={`admin-review-card ${review.active ? '' : 'inactive'}`} key={review.id}>
                 <div>
                   <div className="admin-review-title-row">
-                    <strong>{review.reviewer_name || 'Guest'} Â· {review.rating || '-'}/5</strong>
+                    <strong>{review.reviewer_name || 'Guest'} · {review.rating || '-'}/5</strong>
                     <span className={`status-pill ${review.active && review.approved ? 'accepted' : 'cancelled'}`}>{review.active && review.approved ? adminCopy(lang, 'Pubblica sul sito', 'Public on website') : adminCopy(lang, 'Non pubblica', 'Not public')}</span>
                   </div>
                   <div className="admin-review-body">{normalizeReviewText(review.review_text).map((paragraph, index) => <p key={`${review.id}-body-${index}`}>{paragraph}</p>)}</div>
@@ -9144,7 +9393,7 @@ function AdminReviewsPanel({ lang, adminContent = {} }) {
                       {normalizeReviewText(review.admin_reply).map((paragraph, index) => <p key={`${review.id}-reply-${index}`}>{paragraph}</p>)}
                     </div>
                   )}
-                  <p className="small-note">{review.booking_code} Â· {review.language || '-'}</p>
+                  <p className="small-note">{review.booking_code} · {review.language || '-'}</p>
                   <label className="field-label" htmlFor={`reviewReply-${review.id}`}>{review.admin_reply ? adminCopy(lang, 'Modifica risposta', 'Edit response') : adminCopy(lang, 'Rispondi alla recensione', 'Reply to review')}</label>
                   <textarea id={`reviewReply-${review.id}`} className="admin-review-reply-input" value={replyDraft(review)} onChange={(event) => updateReplyDraft(review, event.target.value)} placeholder={adminCopy(lang, 'Scrivi una risposta pubblica da mostrare sotto la recensione.', 'Write a public response to show below the review.')} />
                 </div>
@@ -9166,7 +9415,7 @@ function AdminReviewsPanel({ lang, adminContent = {} }) {
               <h2>{adminCopy(lang, 'Conferma eliminazione', 'Confirm deletion')}</h2>
               <button className="modal-close-button" type="button" onClick={() => setConfirmReview(null)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>
             </div>
-            <p>{adminCopy(lang, 'Sei sicuro di voler eliminare questa recensione? Questa azione non puÃ² essere annullata.', 'Are you sure you want to delete this review? This action cannot be undone.')}</p>
+            <p>{adminCopy(lang, 'Sei sicuro di voler eliminare questa recensione? Questa azione non può essere annullata.', 'Are you sure you want to delete this review? This action cannot be undone.')}</p>
             <blockquote className="review-delete-preview">{confirmReview.review_text}</blockquote>
             <div className="modal-actions">
               <button className="button secondary" type="button" onClick={() => setConfirmReview(null)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>
@@ -9216,7 +9465,7 @@ function RequestsPage({ lang, session, adminContent = {} }) {
         <input aria-label="To date" type="date" value={filters.toDate} onChange={(event) => updateFilter('toDate', event.target.value)} />
       </div>
       <section className="admin-panel">
-        <div className="admin-panel-header"><h2><AdminEditableText itemKey="admin.requests.results.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Risultati', 'Results')} /> Â· {requests.length}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
+        <div className="admin-panel-header"><h2><AdminEditableText itemKey="admin.requests.results.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Risultati', 'Results')} /> · {requests.length}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
         {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : requests.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta trovata.', 'No requests found.')}</p> : (
           <RequestStatusAccordions
             requests={requests}
@@ -9275,7 +9524,7 @@ function PartnershipsAdminPage({ lang, session, adminContent = {} }) {
     setError('');
     setFeedback('');
     if (!form.name.trim()) {
-      setError(adminCopy(lang, 'Il nome Ã¨ obbligatorio.', 'Name is required.'));
+      setError(adminCopy(lang, 'Il nome è obbligatorio.', 'Name is required.'));
       return;
     }
     if (!isValidOptionalUrl(form.website_url) || (!form.imageFile && !isValidOptionalUrl(form.image_url))) {
@@ -9359,7 +9608,7 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
   async function save() {
     setError('');
     if (!form.name.trim()) {
-      setError(adminCopy(lang, 'Il nome Ã¨ obbligatorio.', 'Name is required.'));
+      setError(adminCopy(lang, 'Il nome è obbligatorio.', 'Name is required.'));
       return;
     }
     if (!isValidOptionalUrl(form.website_url) || (!form.imageFile && !form.removeImage && !isValidOptionalUrl(form.image_url))) {
@@ -9421,7 +9670,7 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
         <>
           {item.image_url && <img className="admin-card-preview-image" src={item.image_url} alt={item.name} />}
           {(item.description_it || item.description_en) && <p>{lang === 'it' ? item.description_it || item.description_en : item.description_en || item.description_it}</p>}
-          <p className="small-note">{item.website_url || '-'} Â· {item.image_name || adminCopy(lang, 'Nessuna immagine', 'No image')} Â· {adminCopy(lang, 'Ordine', 'Order')} {item.display_order}</p>
+          <p className="small-note">{item.website_url || '-'} · {item.image_name || adminCopy(lang, 'Nessuna immagine', 'No image')} · {adminCopy(lang, 'Ordine', 'Order')} {item.display_order}</p>
           {error && <div className="admin-alert error">{error}</div>}
           <div className="request-actions"><button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>{item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}</div>
         </>
@@ -9486,7 +9735,7 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
     try {
       await createAvailabilityBlock({ ...form, created_by: session.user.id, updated_by: session.user.id });
       setForm({ date: '', experience_id: '', status: 'closed', reason_it: '', reason_en: '', internal_note: '' });
-      setFeedback(adminCopy(lang, 'DisponibilitÃ  aggiornata.', 'Availability updated.'));
+      setFeedback(adminCopy(lang, 'Disponibilità aggiornata.', 'Availability updated.'));
       refresh();
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Blocco non salvato.', 'Block not saved.'));
@@ -9545,12 +9794,12 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
       <div className="admin-page-header">
         <div>
           <span className="kicker">{adminCopy(lang, 'Calendario pubblico', 'Public calendar')}</span>
-          <AdminEditableText as="h1" itemKey="admin.availability.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'DisponibilitÃ ', 'Availability')} />
-          <AdminEditableText as="p" itemKey="admin.availability.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestisci disponibilitÃ  privata e date fisse prenotabili fino a 12 persone.', 'Manage private availability and fixed excursion dates bookable up to 12 people.')} />
+          <AdminEditableText as="h1" itemKey="admin.availability.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Disponibilità', 'Availability')} />
+          <AdminEditableText as="p" itemKey="admin.availability.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestisci disponibilità privata e date fisse prenotabili fino a 12 persone.', 'Manage private availability and fixed excursion dates bookable up to 12 people.')} />
         </div>
       </div>
       <div className="mode-toggle admin-tabs" role="tablist" aria-label="Calendar admin tabs">
-        <button type="button" className={tab === 'blocks' ? 'active' : ''} onClick={() => setTab('blocks')}>{adminCopy(lang, 'Blocchi disponibilitÃ ', 'Availability blocks')}</button>
+        <button type="button" className={tab === 'blocks' ? 'active' : ''} onClick={() => setTab('blocks')}>{adminCopy(lang, 'Blocchi disponibilità', 'Availability blocks')}</button>
         <button type="button" className={tab === 'fixed' ? 'active' : ''} onClick={() => setTab('fixed')}>{adminCopy(lang, 'Escursioni fisse', 'Fixed excursions')}</button>
         <button type="button" className={tab === 'leaflets' ? 'active' : ''} onClick={() => setTab('leaflets')}>{adminCopy(lang, 'Calendari mensili', 'Monthly leaflets')}</button>
       </div>
@@ -9560,7 +9809,7 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
       {tab === 'blocks' ? (
         <div className="admin-two-column availability-columns">
           <section className="admin-panel">
-            <AdminEditableText as="h2" itemKey="admin.availability.addBlock.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Aggiungi blocco disponibilitÃ ', 'Add availability block')} />
+            <AdminEditableText as="h2" itemKey="admin.availability.addBlock.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Aggiungi blocco disponibilità', 'Add availability block')} />
             <form className="admin-form-grid" onSubmit={submit}>
               <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.date} onChange={(value) => update('date', value)} />
               <AdminSelect label={adminCopy(lang, 'Ambito', 'Scope')} value={form.experience_id} onChange={(value) => update('experience_id', value)} options={['', 'etna-premium', 'etna-learning', 'etna-live', 'etna-stories']} formatter={(value) => value ? adminExperienceLabel(value, lang) : adminCopy(lang, 'Tutte le esperienze', 'All experiences')} />
@@ -9631,7 +9880,7 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
               <label className="admin-field full"><span>Description EN</span><textarea value={fixedForm.description_en} onChange={(event) => updateFixed('description_en', event.target.value)} rows={3} /></label>
               <AdminInput label="Meeting point IT" value={fixedForm.meeting_point_it} onChange={(value) => updateFixed('meeting_point_it', value)} />
               <AdminInput label="Meeting point EN" value={fixedForm.meeting_point_en} onChange={(value) => updateFixed('meeting_point_en', value)} />
-              <AdminInput label={adminCopy(lang, 'Link Google Maps del punto dâ€™incontro', 'Google Maps meeting point link')} value={fixedForm.meeting_point_maps_url} placeholder="https://maps.google.com/..." onChange={(value) => updateFixed('meeting_point_maps_url', value)} />
+              <AdminInput label={adminCopy(lang, 'Link Google Maps del punto d’incontro', 'Google Maps meeting point link')} value={fixedForm.meeting_point_maps_url} placeholder="https://maps.google.com/..." onChange={(value) => updateFixed('meeting_point_maps_url', value)} />
               <AdminInput label="Difficulty IT" value={fixedForm.difficulty_it} onChange={(value) => updateFixed('difficulty_it', value)} />
               <AdminInput label="Difficulty EN" value={fixedForm.difficulty_en} onChange={(value) => updateFixed('difficulty_en', value)} />
               <AdminInput label="Price note IT" value={fixedForm.price_note_it} onChange={(value) => updateFixed('price_note_it', value)} />
@@ -9665,7 +9914,7 @@ function leafletLabel(item, lang) {
   if (!item) return '-';
   const title = lang === 'it' ? item.title_it || item.title_en : item.title_en || item.title_it;
   const base = `${String(item.month).padStart(2, '0')}/${item.year}`;
-  return title ? `${base} Â· ${title}` : base;
+  return title ? `${base} · ${title}` : base;
 }
 
 function MonthlyLeafletCard({ item, lang, userId, onChanged }) {
@@ -9783,7 +10032,7 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
           <label className="admin-field full"><span>Description EN</span><textarea value={form.description_en} onChange={(event) => setForm((current) => ({ ...current, description_en: event.target.value }))} rows={3} /></label>
           <AdminInput label="Meeting point IT" value={form.meeting_point_it} onChange={(value) => setForm((current) => ({ ...current, meeting_point_it: value }))} />
           <AdminInput label="Meeting point EN" value={form.meeting_point_en} onChange={(value) => setForm((current) => ({ ...current, meeting_point_en: value }))} />
-          <AdminInput label={adminCopy(lang, 'Link Google Maps del punto dâ€™incontro', 'Google Maps meeting point link')} value={form.meeting_point_maps_url} placeholder="https://maps.google.com/..." onChange={(value) => setForm((current) => ({ ...current, meeting_point_maps_url: value }))} />
+          <AdminInput label={adminCopy(lang, 'Link Google Maps del punto d’incontro', 'Google Maps meeting point link')} value={form.meeting_point_maps_url} placeholder="https://maps.google.com/..." onChange={(value) => setForm((current) => ({ ...current, meeting_point_maps_url: value }))} />
           <AdminInput label="Difficulty IT" value={form.difficulty_it} onChange={(value) => setForm((current) => ({ ...current, difficulty_it: value }))} />
           <AdminInput label="Difficulty EN" value={form.difficulty_en} onChange={(value) => setForm((current) => ({ ...current, difficulty_en: value }))} />
           <AdminInput label="Price note IT" value={form.price_note_it} onChange={(value) => setForm((current) => ({ ...current, price_note_it: value }))} />
@@ -9791,7 +10040,7 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
           <label className="admin-field full"><span>{adminCopy(lang, 'File calendario date occupate', 'Blocked dates calendar file')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => setForm((current) => ({ ...current, blockedDatesFile: event.target.files?.[0] || null, removeBlockedDatesFile: false }))} /></label>
           {form.blocked_dates_file_url && !form.removeBlockedDatesFile && <p className="small-note full"><a href={form.blocked_dates_file_url} target="_blank" rel="noopener noreferrer">{form.blocked_dates_file_name || adminCopy(lang, 'File esistente', 'Existing file')}</a> <button type="button" className="inline-danger-button" onClick={() => setForm((current) => ({ ...current, removeBlockedDatesFile: true, blockedDatesFile: null }))}>{adminCopy(lang, 'Rimuovi file', 'Remove file')}</button></p>}
           {form.blockedDatesFile && <p className="small-note full">{adminCopy(lang, 'Nuovo file', 'New file')}: {form.blockedDatesFile.name}</p>}
-          {form.removeBlockedDatesFile && <p className="small-note full">{adminCopy(lang, 'Il file verrÃ  rimosso al salvataggio.', 'The file will be removed on save.')}</p>}
+          {form.removeBlockedDatesFile && <p className="small-note full">{adminCopy(lang, 'Il file verrà rimosso al salvataggio.', 'The file will be removed on save.')}</p>}
           <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
           {error && <div className="admin-alert error full">{error}</div>}
           <div className="modal-actions full"><button className="button primary" type="button" onClick={save}>{adminCopy(lang, 'Salva', 'Save')}</button><button className="button secondary" type="button" onClick={() => setEditing(false)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
@@ -9859,7 +10108,7 @@ function AvailabilityBlockCard({ block, lang, userId, onChanged }) {
         <>
           <p>{block.reason_it || block.reason_en || '-'}</p>
           {block.internal_note && <p className="small-note"><strong>Internal:</strong> {block.internal_note}</p>}
-          <p className="small-note">{block.active ? adminCopy(lang, 'Attivo', 'Active') : adminCopy(lang, 'Inattivo', 'Inactive')} Â· {adminCopy(lang, 'Creato', 'Created')} {formatDateForMessage(String(block.created_at || '').slice(0, 10), lang)}</p>
+          <p className="small-note">{block.active ? adminCopy(lang, 'Attivo', 'Active') : adminCopy(lang, 'Inattivo', 'Inactive')} · {adminCopy(lang, 'Creato', 'Created')} {formatDateForMessage(String(block.created_at || '').slice(0, 10), lang)}</p>
           {error && <div className="admin-alert error">{error}</div>}
           <div className="request-actions"><button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>{block.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva / sblocca', 'Deactivate / unblock')}</button>}</div>
         </>
@@ -10007,4 +10256,3 @@ function App() {
 }
 
 createRoot(document.getElementById('root')).render(<App />);
-

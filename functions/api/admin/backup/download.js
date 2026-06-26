@@ -23,11 +23,18 @@ export async function onRequestGet(context) {
     return json(404, { ok: false, message: backupErrorMessage(language, 'no_backup_artifacts') });
   }
 
-  const response = await githubFetch(
+  let response = await githubFetch(
     latest.config,
     `/repos/${encodeURIComponent(latest.config.owner)}/${encodeURIComponent(latest.config.repo)}/actions/artifacts/${encodeURIComponent(artifact.id)}/zip`,
-    { headers: { Accept: 'application/zip' } }
+    { redirect: 'manual' }
   );
+
+  if (response.status >= 300 && response.status < 400 && response.headers.get('Location')) {
+    response = await fetch(response.headers.get('Location'), {
+      method: 'GET',
+      headers: { Accept: 'application/zip' }
+    });
+  }
 
   if (!response.ok) {
     const code = response.status ? githubErrorCode(response.status) : 'artifact_download_failed';

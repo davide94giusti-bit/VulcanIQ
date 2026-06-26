@@ -1,4 +1,4 @@
-﻿# vulcanIQ backup and restore
+# vulcanIQ backup and restore
 
 ## Owner workflow
 
@@ -70,7 +70,6 @@ Set these in Cloudflare Pages as non-public server-side variables for the Pages 
 
 Optional public frontend variable for the diagnostic workflow link:
 
-- `VITE_GITHUB_BACKUP_WORKFLOW_URL`
 
 ## Schedule
 
