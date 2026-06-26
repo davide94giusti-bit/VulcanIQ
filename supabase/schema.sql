@@ -51,6 +51,345 @@ as $$
   );
 $$;
 
+
+create or replace function public.is_owner()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.admin_profiles ap
+    where ap.user_id = auth.uid()
+      and ap.active = true
+      and ap.role = 'owner'
+  );
+$$;
+
+create table if not exists public.system_backup_settings (
+  id text primary key default 'default',
+  enabled boolean not null default true,
+  frequency text not null default 'daily',
+  utc_hour integer not null default 2,
+  utc_minute integer not null default 0,
+  weekly_day integer,
+  monthly_day integer,
+  updated_at timestamptz not null default now(),
+  updated_by uuid references auth.users(id),
+  last_scheduled_backup_at timestamptz,
+  constraint system_backup_settings_singleton check (id = 'default'),
+  constraint system_backup_settings_frequency_check check (frequency in ('daily', 'weekly', 'monthly')),
+  constraint system_backup_settings_utc_hour_check check (utc_hour between 0 and 23),
+  constraint system_backup_settings_utc_minute_check check (utc_minute between 0 and 59),
+  constraint system_backup_settings_weekly_day_check check (weekly_day is null or weekly_day between 0 and 6),
+  constraint system_backup_settings_monthly_day_check check (monthly_day is null or monthly_day between 1 and 28)
+);
+
+drop trigger if exists system_backup_settings_set_updated_at on public.system_backup_settings;
+create trigger system_backup_settings_set_updated_at
+before update on public.system_backup_settings
+for each row execute function public.set_updated_at();
+
+insert into public.system_backup_settings (id, enabled, frequency, utc_hour, utc_minute, weekly_day, monthly_day)
+values ('default', true, 'daily', 2, 0, null, null)
+on conflict (id) do nothing;
+
+-- -----------------------------------------------------------------------------
+-- Analytics events and sessions
+-- -----------------------------------------------------------------------------
+create table if not exists public.analytics_sessions (
+  id uuid primary key default gen_random_uuid(),
+  session_id text unique not null,
+  visitor_id text,
+  started_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  duration_seconds integer not null default 0,
+  pageview_count integer not null default 0,
+  entry_path text,
+  exit_path text,
+  referrer_domain text,
+  traffic_source text,
+  country_code text,
+  country_name text,
+  city text,
+  language text,
+  device_type text,
+  browser text,
+  operating_system text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.analytics_events (
+  id uuid primary key default gen_random_uuid(),
+  event_name text not null,
+  session_id text,
+  visitor_id text,
+  occurred_at timestamptz not null default now(),
+  path text,
+  section text,
+  language text,
+  referrer_domain text,
+  traffic_source text,
+  country_code text,
+  country_name text,
+  city text,
+  device_type text,
+  browser text,
+  operating_system text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table public.analytics_sessions add column if not exists session_id text;
+alter table public.analytics_sessions add column if not exists visitor_id text;
+alter table public.analytics_sessions add column if not exists started_at timestamptz not null default now();
+alter table public.analytics_sessions add column if not exists last_seen_at timestamptz not null default now();
+alter table public.analytics_sessions add column if not exists duration_seconds integer not null default 0;
+alter table public.analytics_sessions add column if not exists pageview_count integer not null default 0;
+alter table public.analytics_sessions add column if not exists entry_path text;
+alter table public.analytics_sessions add column if not exists exit_path text;
+alter table public.analytics_sessions add column if not exists referrer_domain text;
+alter table public.analytics_sessions add column if not exists traffic_source text;
+alter table public.analytics_sessions add column if not exists country_code text;
+alter table public.analytics_sessions add column if not exists country_name text;
+alter table public.analytics_sessions add column if not exists city text;
+alter table public.analytics_sessions add column if not exists language text;
+alter table public.analytics_sessions add column if not exists device_type text;
+alter table public.analytics_sessions add column if not exists browser text;
+alter table public.analytics_sessions add column if not exists operating_system text;
+alter table public.analytics_sessions add column if not exists created_at timestamptz not null default now();
+alter table public.analytics_sessions add column if not exists updated_at timestamptz not null default now();
+
+alter table public.analytics_events add column if not exists event_name text;
+alter table public.analytics_events add column if not exists session_id text;
+alter table public.analytics_events add column if not exists visitor_id text;
+alter table public.analytics_events add column if not exists occurred_at timestamptz not null default now();
+alter table public.analytics_events add column if not exists path text;
+alter table public.analytics_events add column if not exists section text;
+alter table public.analytics_events add column if not exists language text;
+alter table public.analytics_events add column if not exists referrer_domain text;
+alter table public.analytics_events add column if not exists traffic_source text;
+alter table public.analytics_events add column if not exists country_code text;
+alter table public.analytics_events add column if not exists country_name text;
+alter table public.analytics_events add column if not exists city text;
+alter table public.analytics_events add column if not exists device_type text;
+alter table public.analytics_events add column if not exists browser text;
+alter table public.analytics_events add column if not exists operating_system text;
+alter table public.analytics_events add column if not exists metadata jsonb not null default '{}'::jsonb;
+alter table public.analytics_events add column if not exists created_at timestamptz not null default now();
+
+alter table public.analytics_events
+  drop constraint if exists analytics_events_event_name_check;
+
+alter table public.analytics_events
+  add constraint analytics_events_event_name_check
+  check (
+    event_name in (
+      'page_view',
+      'language_switch',
+      'excursion_view',
+      'experience_card_view',
+      'experience_detail_open',
+      'calendar_date_select',
+      'booking_form_open',
+      'booking_form_field_start',
+      'request_details_open',
+      'fixed_excursion_options_open',
+      'private_excursion_options_open',
+      'fixed_leaflet_open_from_request',
+      'private_excursion_detail_open_from_request',
+      'booking_form_submit_attempt',
+      'booking_form_validation_error',
+      'booking_form_submit_success',
+      'booking_form_submit_error',
+      'booking_submit',
+      'booking_submit_attempt',
+      'booking_submit_validation_error',
+      'booking_submit_success',
+      'booking_submit_error',
+      'booking_request_created',
+      'whatsapp_click',
+      'email_click',
+      'phone_click',
+      'google_maps_click',
+      'maps_click',
+      'review_view',
+      'session_start',
+      'session_heartbeat',
+      'session_end'
+    )
+  );
+
+alter table public.analytics_sessions
+  drop constraint if exists analytics_sessions_duration_nonnegative_check;
+
+alter table public.analytics_sessions
+  add constraint analytics_sessions_duration_nonnegative_check
+  check (duration_seconds >= 0 and duration_seconds <= 1800);
+
+alter table public.analytics_sessions
+  drop constraint if exists analytics_sessions_pageview_nonnegative_check;
+
+alter table public.analytics_sessions
+  add constraint analytics_sessions_pageview_nonnegative_check
+  check (pageview_count >= 0);
+
+create unique index if not exists analytics_sessions_session_id_key
+on public.analytics_sessions(session_id);
+
+create index if not exists analytics_events_occurred_at_idx
+on public.analytics_events(occurred_at desc);
+
+create index if not exists analytics_events_created_at_idx
+on public.analytics_events(created_at desc);
+
+create index if not exists analytics_events_event_name_idx
+on public.analytics_events(event_name);
+
+create index if not exists analytics_events_session_id_idx
+on public.analytics_events(session_id);
+
+create index if not exists analytics_events_visitor_id_idx
+on public.analytics_events(visitor_id);
+
+create index if not exists analytics_events_path_idx
+on public.analytics_events(path);
+
+create index if not exists analytics_events_country_code_idx
+on public.analytics_events(country_code);
+
+create index if not exists analytics_events_traffic_source_idx
+on public.analytics_events(traffic_source);
+
+create index if not exists analytics_sessions_started_at_idx
+on public.analytics_sessions(started_at desc);
+
+create index if not exists analytics_sessions_visitor_id_idx
+on public.analytics_sessions(visitor_id);
+
+create index if not exists analytics_sessions_country_code_idx
+on public.analytics_sessions(country_code);
+
+create index if not exists analytics_sessions_traffic_source_idx
+on public.analytics_sessions(traffic_source);
+
+create or replace function public.set_analytics_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists analytics_sessions_set_updated_at on public.analytics_sessions;
+create trigger analytics_sessions_set_updated_at
+before update on public.analytics_sessions
+for each row execute function public.set_analytics_updated_at();
+
+alter table public.analytics_events enable row level security;
+alter table public.analytics_sessions enable row level security;
+
+drop policy if exists "Public can insert analytics events" on public.analytics_events;
+create policy "Public can insert analytics events"
+on public.analytics_events
+for insert
+to anon, authenticated
+with check (
+  event_name in (
+    'page_view',
+    'language_switch',
+    'excursion_view',
+    'experience_card_view',
+    'experience_detail_open',
+    'calendar_date_select',
+    'booking_form_open',
+    'booking_form_field_start',
+    'request_details_open',
+    'fixed_excursion_options_open',
+    'private_excursion_options_open',
+    'fixed_leaflet_open_from_request',
+    'private_excursion_detail_open_from_request',
+    'booking_form_submit_attempt',
+    'booking_form_validation_error',
+    'booking_form_submit_success',
+    'booking_form_submit_error',
+    'booking_submit',
+    'booking_submit_attempt',
+    'booking_submit_validation_error',
+    'booking_submit_success',
+    'booking_submit_error',
+    'booking_request_created',
+    'whatsapp_click',
+    'email_click',
+    'phone_click',
+    'google_maps_click',
+    'maps_click',
+    'review_view',
+    'session_start',
+    'session_heartbeat',
+    'session_end'
+  )
+  and coalesce(metadata, '{}'::jsonb) = metadata
+  and not (metadata ? 'name')
+  and not (metadata ? 'email')
+  and not (metadata ? 'phone')
+  and not (metadata ? 'message')
+  and not (metadata ? 'customer_name')
+  and not (metadata ? 'customer_email')
+  and not (metadata ? 'customer_phone')
+);
+
+drop policy if exists "Public can insert analytics sessions" on public.analytics_sessions;
+create policy "Public can insert analytics sessions"
+on public.analytics_sessions
+for insert
+to anon, authenticated
+with check (
+  session_id is not null
+  and duration_seconds >= 0
+  and duration_seconds <= 1800
+  and pageview_count >= 0
+);
+
+drop policy if exists "Admins can read analytics events" on public.analytics_events;
+create policy "Admins can read analytics events"
+on public.analytics_events
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "Admins can delete analytics events" on public.analytics_events;
+create policy "Admins can delete analytics events"
+on public.analytics_events
+for delete
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "Admins can read analytics sessions" on public.analytics_sessions;
+create policy "Admins can read analytics sessions"
+on public.analytics_sessions
+for select
+to authenticated
+using (public.is_admin());
+
+drop policy if exists "Admins can delete analytics sessions" on public.analytics_sessions;
+create policy "Admins can delete analytics sessions"
+on public.analytics_sessions
+for delete
+to authenticated
+using (public.is_admin());
+
+grant insert on public.analytics_events to anon, authenticated;
+grant insert on public.analytics_sessions to anon, authenticated;
+grant select, delete on public.analytics_events to authenticated;
+grant select, delete on public.analytics_sessions to authenticated;
+
+
 -- -----------------------------------------------------------------------------
 -- Booking requests
 -- -----------------------------------------------------------------------------
@@ -160,6 +499,116 @@ drop trigger if exists booking_requests_set_updated_at on public.booking_request
 create trigger booking_requests_set_updated_at
 before update on public.booking_requests
 for each row execute function public.set_updated_at();
+
+-- Booking submit analytics integrity support.
+-- Public users can insert booking requests and receive only the created request id.
+-- This avoids opening public SELECT access on public.booking_requests.
+
+create or replace function public.create_public_booking_request(request_payload jsonb)
+returns table(id uuid, status text, created_at timestamptz)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  inserted public.booking_requests%rowtype;
+  raw_request_type text := nullif(btrim(coalesce(request_payload->>'request_type', 'private')), '');
+  raw_heard_about_us text := nullif(btrim(coalesce(request_payload->>'heard_about_us', '')), '');
+begin
+  if request_payload is null or jsonb_typeof(request_payload) <> 'object' then
+    raise exception 'Invalid booking request payload';
+  end if;
+
+  if raw_request_type is null or raw_request_type not in ('private', 'fixed') then
+    raw_request_type := 'private';
+  end if;
+
+  -- "not_specified" remains admin-only in the UI/path. Public submissions store null instead.
+  if raw_heard_about_us = 'not_specified' then
+    raw_heard_about_us := null;
+  end if;
+
+  insert into public.booking_requests (
+    customer_name,
+    customer_email,
+    customer_phone,
+    preferred_contact,
+    experience_id,
+    requested_date,
+    alternative_date,
+    language,
+    party_type,
+    request_type,
+    fixed_excursion_id,
+    booking_code,
+    adults,
+    children,
+    children_under_3,
+    private_experience,
+    main_interest,
+    preferred_pace,
+    message,
+    heard_about_us,
+    heard_about_us_label,
+    heard_about_us_detail,
+    source,
+    source_section,
+    source_cta,
+    cta_location,
+    selected_date,
+    has_fixed_excursion,
+    traffic_source,
+    utm_source,
+    utm_medium,
+    utm_campaign,
+    utm_content,
+    status,
+    created_by_admin
+  ) values (
+    nullif(btrim(coalesce(request_payload->>'customer_name', '')), ''),
+    nullif(btrim(coalesce(request_payload->>'customer_email', '')), ''),
+    nullif(btrim(coalesce(request_payload->>'customer_phone', '')), ''),
+    coalesce(nullif(btrim(coalesce(request_payload->>'preferred_contact', '')), ''), 'unknown'),
+    coalesce(nullif(btrim(coalesce(request_payload->>'experience_id', '')), ''), 'unsure'),
+    nullif(btrim(coalesce(request_payload->>'requested_date', '')), '')::date,
+    nullif(btrim(coalesce(request_payload->>'alternative_date', '')), '')::date,
+    coalesce(nullif(btrim(coalesce(request_payload->>'language', '')), ''), 'it'),
+    nullif(btrim(coalesce(request_payload->>'party_type', '')), ''),
+    raw_request_type,
+    nullif(btrim(coalesce(request_payload->>'fixed_excursion_id', '')), '')::uuid,
+    nullif(btrim(coalesce(request_payload->>'booking_code', '')), ''),
+    nullif(btrim(coalesce(request_payload->>'adults', '')), '')::integer,
+    nullif(btrim(coalesce(request_payload->>'children', '')), '')::integer,
+    coalesce((request_payload->>'children_under_3')::boolean, false),
+    case when request_payload ? 'private_experience' then (request_payload->>'private_experience')::boolean else raw_request_type = 'private' end,
+    nullif(btrim(coalesce(request_payload->>'main_interest', '')), ''),
+    nullif(btrim(coalesce(request_payload->>'preferred_pace', '')), ''),
+    nullif(btrim(coalesce(request_payload->>'message', '')), ''),
+    raw_heard_about_us,
+    nullif(btrim(coalesce(request_payload->>'heard_about_us_label', '')), ''),
+    nullif(btrim(coalesce(request_payload->>'heard_about_us_detail', '')), ''),
+    'website',
+    nullif(btrim(coalesce(request_payload->>'source_section', '')), ''),
+    nullif(btrim(coalesce(request_payload->>'source_cta', '')), ''),
+    nullif(btrim(coalesce(request_payload->>'cta_location', '')), ''),
+    nullif(btrim(coalesce(request_payload->>'selected_date', '')), '')::date,
+    coalesce((request_payload->>'has_fixed_excursion')::boolean, raw_request_type = 'fixed'),
+    nullif(btrim(coalesce(request_payload->>'traffic_source', '')), ''),
+    nullif(btrim(coalesce(request_payload->>'utm_source', '')), ''),
+    nullif(btrim(coalesce(request_payload->>'utm_medium', '')), ''),
+    nullif(btrim(coalesce(request_payload->>'utm_campaign', '')), ''),
+    nullif(btrim(coalesce(request_payload->>'utm_content', '')), ''),
+    'pending',
+    null
+  ) returning * into inserted;
+
+  return query select inserted.id, inserted.status, inserted.created_at;
+end;
+$$;
+
+revoke all on function public.create_public_booking_request(jsonb) from public;
+grant execute on function public.create_public_booking_request(jsonb) to anon, authenticated;
+
 
 -- -----------------------------------------------------------------------------
 -- Availability blocks for private/general availability
@@ -831,6 +1280,7 @@ alter table public.site_content enable row level security;
 alter table public.finance_entries enable row level security;
 alter table public.reviews enable row level security;
 alter table public.activity_log enable row level security;
+alter table public.system_backup_settings enable row level security;
 
 -- admin_profiles: only active admins can read/administer profiles.
 drop policy if exists "Admins can read admin profiles" on public.admin_profiles;
@@ -847,6 +1297,23 @@ for all
 to authenticated
 using (public.is_admin())
 with check (public.is_admin());
+
+
+-- system_backup_settings: only active owners can read and manage backup scheduling.
+drop policy if exists "Owners can read backup settings" on public.system_backup_settings;
+create policy "Owners can read backup settings"
+on public.system_backup_settings
+for select
+to authenticated
+using (public.is_owner());
+
+drop policy if exists "Owners can manage backup settings" on public.system_backup_settings;
+create policy "Owners can manage backup settings"
+on public.system_backup_settings
+for all
+to authenticated
+using (public.is_owner())
+with check (public.is_owner());
 
 -- booking_requests: public can insert, never read. Owners can read/update/create.
 drop policy if exists "Public can insert booking requests" on public.booking_requests;
@@ -1134,8 +1601,10 @@ grant select on public.public_site_media to anon, authenticated;
 grant select on public.public_site_content to anon, authenticated;
 grant select on public.public_reviews to anon, authenticated;
 grant execute on function public.submit_public_review(text, text, text, integer, text) to anon, authenticated;
+grant execute on function public.is_owner() to authenticated;
 grant insert on public.booking_requests to anon, authenticated;
 grant select, insert, update on public.admin_profiles to authenticated;
+grant select, insert, update on public.system_backup_settings to authenticated;
 grant select, insert, update on public.booking_requests to authenticated;
 grant select, insert, update on public.availability_blocks to authenticated;
 grant select, insert, update on public.fixed_excursions to authenticated;

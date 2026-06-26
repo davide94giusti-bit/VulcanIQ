@@ -1,0 +1,437 @@
+name: vulcanIQ Supabase backup
+
+on:
+  workflow_dispatch:
+    inputs:
+      requested_by:
+        description: Admin/user who requested the backup from the vulcanIQ admin UI
+        required: false
+        type: string
+      language:
+        description: UI language used by the requester
+        required: false
+        default: en
+        type: choice
+        options:
+          - en
+          - it
+  schedule:
+    # Runs hourly. The job reads public.system_backup_settings and exits when no backup is due.
+    - cron: "0 * * * *"
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+  SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+  SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+jobs:
+  backup:
+    name: Create import-ready database and storage artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Install PostgreSQL client
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Install Node dependencies
+        run: |
+          set -euo pipefail
+          npm install --no-audit --no-fund
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_ACCESS_TOKEN}"
+          test -n "${SUPABASE_PROJECT_REF}"
+          test -n "${SUPABASE_DB_URL}"
+          test -n "${SUPABASE_SERVICE_ROLE_KEY}"
+          if [ -z "${SUPABASE_URL:-}" ]; then
+            echo "SUPABASE_URL=https://${SUPABASE_PROJECT_REF}.supabase.co" >> "$GITHUB_ENV"
+          fi
+
+      - name: Check scheduled backup due
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual backup requested."
+            echo "SHOULD_RUN=true" >> "$GITHUB_ENV"
+            echo "BACKUP_TRIGGER=manual" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          TABLE_EXISTS="$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atc "select to_regclass('public.system_backup_settings') is not null")"
+          if [ "$TABLE_EXISTS" != "t" ]; then
+            CURRENT_HOUR="$(date -u +'%H')"
+            if [ "$CURRENT_HOUR" = "02" ]; then
+              echo "Backup settings table missing; using default daily 02:00 UTC schedule."
+              echo "SHOULD_RUN=true" >> "$GITHUB_ENV"
+            else
+              echo "Backup settings table missing and no default backup is due."
+              echo "SHOULD_RUN=false" >> "$GITHUB_ENV"
+            fi
+            echo "BACKUP_TRIGGER=schedule" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          RESULT="$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atc "
+            with s as (
+              select
+                id,
+                enabled,
+                frequency,
+                utc_hour,
+                utc_minute,
+                coalesce(weekly_day, 0) as weekly_day,
+                coalesce(monthly_day, 1) as monthly_day,
+                last_scheduled_backup_at
+              from public.system_backup_settings
+              where id = 'default'
+              union all
+              select 'default', true, 'daily', 2, 0, 0, 1, null::timestamptz
+              where not exists (select 1 from public.system_backup_settings where id = 'default')
+              limit 1
+            ),
+            n as (
+              select now() as now_tz, timezone('utc', now()) as now_utc
+            ),
+            c as (
+              select
+                s.*,
+                n.now_tz,
+                n.now_utc,
+                case
+                  when frequency = 'daily' then
+                    date_trunc('day', n.now_utc) + make_interval(hours => utc_hour, mins => utc_minute)
+                  when frequency = 'weekly' then
+                    date_trunc('day', n.now_utc)
+                    - (((extract(dow from n.now_utc)::int - weekly_day + 7) % 7) * interval '1 day')
+                    + make_interval(hours => utc_hour, mins => utc_minute)
+                  when frequency = 'monthly' then
+                    make_timestamp(
+                      extract(year from n.now_utc)::int,
+                      extract(month from n.now_utc)::int,
+                      least(monthly_day, 28),
+                      utc_hour,
+                      utc_minute,
+                      0
+                    )
+                end as due_utc
+              from s cross join n
+            )
+            select
+              case
+                when enabled = true
+                  and now_utc >= due_utc
+                  and (last_scheduled_backup_at is null or last_scheduled_backup_at < (due_utc at time zone 'UTC'))
+                then 'true'
+                else 'false'
+              end || '|' || coalesce(to_char(due_utc, 'YYYY-MM-DD') || 'T' || to_char(due_utc, 'HH24:MI:SS') || 'Z', '')
+            from c;")"
+
+          SHOULD_RUN="${RESULT%%|*}"
+          DUE_AT="${RESULT#*|}"
+          echo "SHOULD_RUN=${SHOULD_RUN}" >> "$GITHUB_ENV"
+          echo "SCHEDULED_BACKUP_DUE_AT=${DUE_AT}" >> "$GITHUB_ENV"
+          echo "BACKUP_TRIGGER=schedule" >> "$GITHUB_ENV"
+
+          if [ "$SHOULD_RUN" = "true" ]; then
+            echo "Scheduled backup is due at ${DUE_AT}."
+          else
+            echo "No scheduled backup due."
+          fi
+
+      - name: Prepare backup files
+        if: ${{ env.SHOULD_RUN == 'true' }}
+        run: |
+          set -euo pipefail
+          BACKUP_CREATED_AT_UTC="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          BACKUP_STAMP="$(date -u +'%Y-%m-%d_%H-%M-UTC')"
+          ARTIFACT_NAME="vulcaniq-supabase-backup-${BACKUP_STAMP}"
+          echo "BACKUP_CREATED_AT_UTC=${BACKUP_CREATED_AT_UTC}" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> "$GITHUB_ENV"
+
+          rm -rf backup
+          mkdir -p backup/storage-assets
+          cp scripts/restore-storage.js backup/restore-storage.js
+
+          cat > backup/00_project_info.json <<INFO
+          {
+            "app": "vulcanIQ",
+            "backup_created_at_utc": "${BACKUP_CREATED_AT_UTC}",
+            "supabase_project_ref": "${SUPABASE_PROJECT_REF}",
+            "requested_by": "${{ github.event.inputs.requested_by || github.actor }}",
+            "trigger": "${{ github.event_name }}",
+            "backup_trigger": "${BACKUP_TRIGGER}",
+            "scheduled_backup_due_at_utc": "${SCHEDULED_BACKUP_DUE_AT:-}",
+            "includes_roles": true,
+            "includes_schema": true,
+            "includes_data": true,
+            "includes_auth_schema": false,
+            "includes_auth_data": false,
+            "includes_storage_metadata": false,
+            "includes_storage_files": false,
+            "storage_bucket_count": null,
+            "storage_object_count": null,
+            "storage_total_bytes": null,
+            "storage_failure_count": null
+          }
+          INFO
+
+          cat > backup/cloudflare-env-template.txt <<'ENVFILE'
+          # Cloudflare Pages variables for the restored vulcanIQ project.
+          # Set production and preview values in Cloudflare Pages > Settings > Environment variables.
+          VITE_SUPABASE_URL=https://YOUR-NEW-PROJECT-REF.supabase.co
+          SUPABASE_URL=https://YOUR-NEW-PROJECT-REF.supabase.co
+          VITE_SUPABASE_ANON_KEY=YOUR-PUBLISHABLE-OR-ANON-KEY
+          SUPABASE_ANON_KEY=YOUR-PUBLISHABLE-OR-ANON-KEY
+          SUPABASE_SERVICE_ROLE_KEY=YOUR-SERVICE-ROLE-KEY
+          GITHUB_OWNER=YOUR-GITHUB-OWNER
+          GITHUB_REPO=YOUR-GITHUB-REPO
+          GITHUB_BACKUP_WORKFLOW_ID=vulcaniq-db-backup.yml
+          GITHUB_BACKUP_REF=main
+          GITHUB_BACKUP_TOKEN=YOUR-GITHUB-PAT-WITH-ACTIONS-WORKFLOW-PERMISSION
+          NODE_VERSION=20
+          ENVFILE
+
+          cat > backup/restore-supabase.sh <<'RESTORESH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          NEW_DB_URL="${1:-}"
+
+          if [ -z "$NEW_DB_URL" ]; then
+            echo "Usage: ./restore-supabase.sh '<postgres-connection-string>'"
+            exit 1
+          fi
+
+          psql --set ON_ERROR_STOP=on --file "./01_roles.sql" "$NEW_DB_URL"
+          psql --set ON_ERROR_STOP=on --file "./02_schema.sql" "$NEW_DB_URL"
+          psql --set ON_ERROR_STOP=on --file "./03_data.sql" "$NEW_DB_URL"
+          RESTORESH
+          chmod +x backup/restore-supabase.sh
+
+          cat > backup/restore-supabase.ps1 <<'RESTOREPS1'
+          param(
+            [Parameter(Mandatory=$true)]
+            [string]$NewDbUrl
+          )
+
+          $ErrorActionPreference = "Stop"
+
+          psql --set ON_ERROR_STOP=on --file ".\01_roles.sql" "$NewDbUrl"
+          psql --set ON_ERROR_STOP=on --file ".\02_schema.sql" "$NewDbUrl"
+          psql --set ON_ERROR_STOP=on --file ".\03_data.sql" "$NewDbUrl"
+          RESTOREPS1
+
+          cat > backup/storage-assets/README_STORAGE.md <<'STORAGEREADME'
+          # Supabase Storage backup
+
+          This folder is populated by the GitHub Actions Storage export step.
+
+          If this folder contains only this README and no manifest.json, the artifact is database-only. In that case, check Supabase Storage manually and re-upload missing images, PDFs, leaflets, and other uploaded assets.
+          STORAGEREADME
+
+          cat > backup/README_RESTORE.md <<'RESTOREREADME'
+          # vulcanIQ Supabase restore checklist
+
+          This artifact is generated by GitHub Actions. When downloaded from the vulcanIQ admin area, it is a single ZIP containing logical SQL dumps for roles, schema, and data, Storage export files where available, restore scripts, and Cloudflare environment-variable guidance.
+
+          ## What is included
+
+          - `00_project_info.json` - backup metadata.
+          - `01_roles.sql` - database role dump from Supabase CLI.
+          - `02_schema.sql` - database schema dump from Supabase CLI.
+          - `03_data.sql` - database data dump from Supabase CLI.
+          - `restore-supabase.sh` - Bash database restore helper.
+          - `restore-supabase.ps1` - PowerShell database restore helper.
+          - `restore-storage.js` - Supabase Storage restore helper.
+          - `cloudflare-env-template.txt` - variables to recreate in Cloudflare Pages.
+          - `storage-assets/manifest.json` - Storage bucket and object manifest when Storage export succeeded.
+          - `storage-assets/<bucket-name>/<object-path>` - downloaded Storage binary files when buckets/files exist.
+
+          ## Restore steps
+
+          1. Download latest backup from admin page.
+          2. Extract ZIP locally.
+          3. Verify required files exist.
+          4. Create or prepare target Supabase project.
+          5. Restore roles with `01_roles.sql` if applicable.
+          6. Restore schema with `02_schema.sql`.
+          7. Restore data with `03_data.sql`.
+          8. Recreate/reconnect Supabase Auth users manually if needed.
+          9. Set owner/admin rows correctly in `public.admin_profiles`.
+          10. Restore Storage with `restore-storage.js`.
+          11. Update Cloudflare variables and secrets.
+          12. Redeploy Cloudflare Pages.
+          13. Verify public website.
+          14. Verify admin login.
+          15. Verify backup page.
+          16. Verify images, PDFs, leaflets, uploaded assets.
+          17. Run test booking/questionnaire flow.
+
+          ## Database restore - Bash
+
+          ```bash
+          ./restore-supabase.sh 'postgresql://postgres:[PASSWORD]@db.YOUR-REF.supabase.co:5432/postgres'
+          ```
+
+          ## Database restore - PowerShell
+
+          ```powershell
+          .\restore-supabase.ps1 -NewDbUrl 'postgresql://postgres:[PASSWORD]@db.YOUR-REF.supabase.co:5432/postgres'
+          ```
+
+          ## Check and restore Supabase Storage
+
+          The database dump does not include Supabase Storage binary files unless this backup was generated with Storage export enabled. After restore, check buckets, images, PDFs, leaflets, and other uploaded assets, then re-upload missing files.
+
+          This backup includes Supabase Storage files under storage-assets/. After restore, verify all buckets, images, PDFs, leaflets, and uploaded assets. If any file is missing or failed to upload, re-upload it manually.
+
+          Run this from the extracted backup folder:
+
+          ```bash
+          SUPABASE_URL="https://target-project.supabase.co" SUPABASE_SERVICE_ROLE_KEY="..." node restore-storage.js
+          ```
+
+          Windows PowerShell:
+
+          ```powershell
+          $env:SUPABASE_URL="https://target-project.supabase.co"
+          $env:SUPABASE_SERVICE_ROLE_KEY="..."
+          node restore-storage.js
+          ```
+
+          If `storage-assets/manifest.json` or `restore-storage.js` is missing, this is an older database-only backup. Check Storage manually and re-upload missing files.
+
+          ## Verifica e ripristino Supabase Storage
+
+          Il dump del database non include i file binari di Supabase Storage, salvo che questo backup sia stato generato con l'esportazione Storage attiva. Dopo il ripristino, controlla bucket, immagini, PDF, volantini e altri asset caricati, quindi ricarica manualmente eventuali file mancanti.
+
+          Questo backup include i file Supabase Storage nella cartella storage-assets/. Dopo il ripristino, verifica tutti i bucket, le immagini, i PDF, i volantini e gli asset caricati. Se un file manca o il caricamento fallisce, ricaricalo manualmente.
+
+          ## Required GitHub repository secrets
+
+          Set these in GitHub > Repository > Settings > Secrets and variables > Actions > New repository secret:
+
+          - `SUPABASE_ACCESS_TOKEN`
+          - `SUPABASE_PROJECT_REF`
+          - `SUPABASE_DB_URL`
+          - `SUPABASE_URL`
+          - `SUPABASE_SERVICE_ROLE_KEY`
+
+          Do not commit these values to Git and do not place them in frontend `VITE_` variables.
+
+          ## Scheduling and artifact retention
+
+          The workflow runs hourly and checks `public.system_backup_settings`. If no backup is due, it exits successfully without creating an artifact. The vulcanIQ owner can edit the active schedule from the Backup page in the admin area.
+
+          After a successful upload, the workflow keeps only the newest 3 artifacts whose name starts with `vulcaniq-supabase-backup-` and deletes older matching artifacts. Unrelated artifacts are not deleted.
+          RESTOREREADME
+
+      - name: Dump database roles
+        if: ${{ env.SHOULD_RUN == 'true' }}
+        run: |
+          set -euo pipefail
+          supabase db dump --db-url "$SUPABASE_DB_URL" --role-only -f backup/01_roles.sql
+
+      - name: Dump database schema
+        if: ${{ env.SHOULD_RUN == 'true' }}
+        run: |
+          set -euo pipefail
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/02_schema.sql
+
+      - name: Dump database data
+        if: ${{ env.SHOULD_RUN == 'true' }}
+        run: |
+          set -euo pipefail
+          supabase db dump --db-url "$SUPABASE_DB_URL" --data-only --use-copy -f backup/03_data.sql
+
+      - name: Export Supabase Storage
+        if: ${{ env.SHOULD_RUN == 'true' }}
+        env:
+          STORAGE_EXPORT_DIR: backup/storage-assets
+          PROJECT_INFO_PATH: backup/00_project_info.json
+        run: |
+          set -euo pipefail
+          node scripts/export-supabase-storage.mjs
+
+      - name: Validate backup files
+        if: ${{ env.SHOULD_RUN == 'true' }}
+        run: |
+          set -euo pipefail
+          test -s backup/00_project_info.json
+          test -s backup/01_roles.sql
+          test -s backup/02_schema.sql
+          test -s backup/03_data.sql
+          test -s backup/README_RESTORE.md
+          test -s backup/cloudflare-env-template.txt
+          test -s backup/restore-supabase.sh
+          test -s backup/restore-supabase.ps1
+          test -s backup/restore-storage.js
+          test -s backup/storage-assets/README_STORAGE.md
+          test -s backup/storage-assets/manifest.json
+
+      - name: Upload backup artifact
+        if: ${{ env.SHOULD_RUN == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: backup/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Keep only newest 3 backup artifacts
+        if: ${{ env.SHOULD_RUN == 'true' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prefix = 'vulcaniq-supabase-backup-';
+            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            const backups = artifacts
+              .filter((artifact) => artifact && typeof artifact.name === 'string' && artifact.name.startsWith(prefix))
+              .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+            const keep = backups.slice(0, 3);
+            const remove = backups.slice(3);
+            for (const artifact of remove) {
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: artifact.id
+              });
+              core.info(`Deleted old backup artifact: ${artifact.name}`);
+            }
+            core.info('Backup artifact cleanup:');
+            core.info(`Kept ${keep.length} newest backup artifacts.`);
+            core.info(`Deleted ${remove.length} old backup artifacts.`);
+
+      - name: Mark scheduled backup completed
+        if: ${{ github.event_name == 'schedule' && env.SHOULD_RUN == 'true' }}
+        run: |
+          set -euo pipefail
+          TABLE_EXISTS="$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atc "select to_regclass('public.system_backup_settings') is not null")"
+          if [ "$TABLE_EXISTS" = "t" ]; then
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "update public.system_backup_settings set last_scheduled_backup_at = now() where id = 'default';"
+          fi

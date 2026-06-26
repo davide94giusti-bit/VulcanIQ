@@ -291,6 +291,9 @@ function buildPayload(eventName, metadata = {}, options = {}) {
   const session = ensureSession(section);
   const { referrer_domain, traffic_source } = referrerParts();
   const info = deviceInfo();
+  if (!cleanMetadata.traffic_source && traffic_source) cleanMetadata.traffic_source = traffic_source;
+  if (!cleanMetadata.referrer_domain && referrer_domain) cleanMetadata.referrer_domain = referrer_domain;
+  if (!cleanMetadata.device_type && info.device_type) cleanMetadata.device_type = info.device_type;
   const pageviewCount = updatePageviewCount(eventName);
   const durationSeconds = currentSessionDurationSeconds(session);
   return {
@@ -384,11 +387,11 @@ async function sendPayload(payload, options = {}) {
   await directSupabaseFallback(payload);
 }
 
-export function trackEvent(eventName, metadata = {}, options = {}) {
-  if (!EVENT_NAMES.has(eventName) || !canTrack()) return;
+export async function trackEvent(eventName, metadata = {}, options = {}) {
+  if (!EVENT_NAMES.has(eventName) || !canTrack()) return undefined;
   const payload = buildPayload(eventName, metadata, options);
-  if (options.dedupe !== false && shouldDedupe(eventName, payload)) return;
-  sendPayload(payload, options);
+  if (options.dedupe !== false && shouldDedupe(eventName, payload)) return undefined;
+  return sendPayload(payload, options);
 }
 
 export function trackPageView(section, metadata = {}) {
@@ -447,6 +450,7 @@ function bookingContext(metadata = {}) {
     source_section: metadata.source_section || metadata.section || 'contact',
     source_cta: metadata.source_cta || 'prepare_request',
     cta_location: metadata.cta_location || metadata.location || 'contact_section',
+    booking_journey_version: metadata.booking_journey_version || '20260616-submit-integrity',
     ...metadata
   };
 }
@@ -475,46 +479,58 @@ export function trackBookingFormFieldStart(experience, metadata = {}) {
   trackEvent('booking_form_field_start', experienceMetadata(experience, bookingContext({ source: 'booking_form', ...metadata })), { dedupe: false });
 }
 
-export function trackBookingSubmitAttempt(experience, adults, children, metadata = {}) {
+export async function trackBookingSubmitAttempt(experience, adults, children, metadata = {}) {
   const base = {
     ...experienceMetadata(experience, bookingContext(metadata)),
+    participants: Number(adults || 0) + Number(children || 0),
     guests_bucket: guestBucket(adults, children),
     source: 'booking_form'
   };
-  trackEvent('booking_form_submit_attempt', base, { dedupe: false });
-  trackEvent('booking_submit_attempt', base, { dedupe: false });
+  await Promise.allSettled([
+    trackEvent('booking_form_submit_attempt', base, { dedupe: false }),
+    trackEvent('booking_submit_attempt', base, { dedupe: false })
+  ]);
 }
 
-export function trackBookingSubmitValidationError(experience, reason, metadata = {}) {
+export async function trackBookingSubmitValidationError(experience, reason, metadata = {}) {
   const base = {
     ...experienceMetadata(experience, bookingContext(metadata)),
     validation_reason: reason || 'unknown',
     source: 'booking_form'
   };
-  trackEvent('booking_form_validation_error', base, { dedupe: false });
-  trackEvent('booking_submit_validation_error', base, { dedupe: false });
+  await Promise.allSettled([
+    trackEvent('booking_form_validation_error', base, { dedupe: false }),
+    trackEvent('booking_submit_validation_error', base, { dedupe: false })
+  ]);
 }
 
-export function trackBookingSubmitSuccess(experience, adults, children, metadata = {}) {
+export async function trackBookingSubmitSuccess(experience, adults, children, metadata = {}) {
+  const bookingRequestId = metadata.booking_request_id || metadata.request_id || '';
   const base = {
     ...experienceMetadata(experience, bookingContext(metadata)),
+    ...(bookingRequestId ? { booking_request_id: bookingRequestId, request_id: bookingRequestId } : {}),
+    participants: Number(adults || 0) + Number(children || 0),
     guests_bucket: guestBucket(adults, children),
     source: 'booking_form'
   };
-  trackEvent('booking_form_submit_success', base, { dedupe: false });
-  trackEvent('booking_request_created', base, { dedupe: false });
-  trackEvent('booking_submit_success', base, { dedupe: false });
-  trackEvent('booking_submit', base, { dedupe: false });
+  await Promise.allSettled([
+    trackEvent('booking_form_submit_success', base, { dedupe: false }),
+    trackEvent('booking_request_created', base, { dedupe: false }),
+    trackEvent('booking_submit_success', base, { dedupe: false }),
+    trackEvent('booking_submit', base, { dedupe: false })
+  ]);
 }
 
-export function trackBookingSubmitError(experience, errorType, metadata = {}) {
+export async function trackBookingSubmitError(experience, errorType, metadata = {}) {
   const base = {
     ...experienceMetadata(experience, bookingContext(metadata)),
     error_type: errorType || 'supabase_or_unexpected_error',
     source: 'booking_form'
   };
-  trackEvent('booking_form_submit_error', base, { dedupe: false });
-  trackEvent('booking_submit_error', base, { dedupe: false });
+  await Promise.allSettled([
+    trackEvent('booking_form_submit_error', base, { dedupe: false }),
+    trackEvent('booking_submit_error', base, { dedupe: false })
+  ]);
 }
 
 export function trackBookingSubmit(experience, adults, children) {

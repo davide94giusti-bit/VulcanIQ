@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { blockedDates, defaultExperienceAvailability } from './data/availability.js';
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
-import { createPublicBookingRequest, createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
+import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
 import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
 import { loadPublicReviews, submitPublicReview, listReviews, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply, deleteReview } from './services/reviewsService.js';
@@ -11,8 +11,10 @@ import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFil
 import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
 import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
 import { listAnalyticsEvents, listAnalyticsSessions } from './services/analyticsService.js';
-import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormFieldStart, trackBookingSubmitAttempt, trackBookingSubmitValidationError, trackBookingSubmitSuccess, trackBookingSubmitError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat } from './analytics.js';
+import { createDatabaseBackup, downloadLatestDatabaseBackup, getBackupSchedule, getBackupStatus, saveBackupSchedule } from './services/backupService.js';
+import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat } from './analytics.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
+import { submitPublicBookingRequestWithTracking } from './services/publicBookingSubmit.js';
 import './styles.css';
 
 const PHONE_DISPLAY = '+39 334 929 8246';
@@ -36,6 +38,7 @@ const ADMIN_NAV_SECTIONS = [
   { key: 'edit', path: '/admin/edit', labelIt: 'Modifica', labelEn: 'Edit', editable: true },
   { key: 'finance', path: '/admin/finance', labelIt: 'Finanze', labelEn: 'Finance', editable: true },
   { key: 'analytics', path: '/admin/analytics', labelIt: 'Dati', labelEn: 'Analytics', editable: true },
+  { key: 'backup', path: '/admin/system/backup', labelIt: 'Sistema', labelEn: 'System', editable: false, ownerOnly: true },
   { key: 'publicSite', path: '/', labelIt: 'Sito pubblico', labelEn: 'Public site', editable: true, external: true }
 ];
 
@@ -46,6 +49,7 @@ function adminNavLabel(section, lang) {
 function isAdminNavSectionActive(normalizedPath, section) {
   if (!section || section.external) return false;
   if (section.key === 'analytics') return normalizedPath.includes('/analytics') || normalizedPath.includes('/data');
+  if (section.key === 'backup') return normalizedPath.includes('/system') || normalizedPath.includes('/backup');
   if (section.key === 'edit') return normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media');
   if (section.key === 'partnerships') return normalizedPath.includes('/partnerships');
   return normalizedPath.includes(`/${section.key}`);
@@ -54,6 +58,11 @@ function isAdminNavSectionActive(normalizedPath, section) {
 function adminPathFromLocation(pathname) {
   const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
   return ADMIN_NAV_SECTIONS.find((section) => !section.external && isAdminNavSectionActive(normalizedPath, section))?.path || '/admin/today';
+}
+
+function visibleAdminNavSections(profile) {
+  const isOwner = profile?.role === 'owner' && profile?.active !== false;
+  return ADMIN_NAV_SECTIONS.filter((section) => !section.ownerOnly || isOwner);
 }
 
 const MEDIA = {
@@ -121,6 +130,62 @@ function useBodyScrollLock(isLocked) {
   }, [isLocked]);
 }
 
+
+
+const MOTION_DURATION_MS = 220;
+
+function useTransitionPresence(isOpen, duration = MOTION_DURATION_MS) {
+  const [shouldRender, setShouldRender] = useState(Boolean(isOpen));
+  const [isClosing, setIsClosing] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true);
+      setIsClosing(false);
+      return undefined;
+    }
+
+    if (!shouldRender) {
+      setIsClosing(false);
+      return undefined;
+    }
+
+    setIsClosing(true);
+    const timeout = window.setTimeout(() => {
+      setShouldRender(false);
+      setIsClosing(false);
+    }, duration);
+
+    return () => window.clearTimeout(timeout);
+  }, [isOpen, shouldRender, duration]);
+
+  return { shouldRender, isClosing };
+}
+
+function useTransitionValue(value, duration = MOTION_DURATION_MS) {
+  const presence = useTransitionPresence(Boolean(value), duration);
+  const [renderedValue, setRenderedValue] = useState(value);
+
+  useEffect(() => {
+    if (value) {
+      setRenderedValue(value);
+      return;
+    }
+
+    if (!presence.shouldRender) setRenderedValue(null);
+  }, [value, presence.shouldRender]);
+
+  return { ...presence, renderedValue: presence.shouldRender ? renderedValue : null };
+}
+
+
+function prefersReducedMotion() {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+}
+
+function motionScrollBehavior() {
+  return prefersReducedMotion() ? 'auto' : 'smooth';
+}
 
 function buildMediaMap(items = []) {
   return (items || []).reduce((acc, item) => {
@@ -252,6 +317,33 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     formKicker: 'Modulo contatto',
     formTitle: 'Prepara la richiesta.',
     formIntro: 'Scegli una data fissa o una richiesta privata, indica il numero di persone e lascia un contatto: il team risponderà direttamente.',
+    startQuestionnaire: 'Inizia il questionario',
+    prepareYourRequest: 'Prepara la tua richiesta',
+    contactQuestionnaireIntro: 'Rispondi una domanda alla volta: alla fine potrai controllare e modificare il messaggio prima di inviarlo.',
+    contactQuestionnaireTitle: 'Prepara la tua richiesta',
+    contactQuestionnaireProgress: 'Passaggio {current} di {total}',
+    contactQuestionnaireCloseConfirm: 'Vuoi chiudere il questionario? Le risposte inserite potrebbero andare perse.',
+    next: 'Avanti',
+    back: 'Indietro',
+    reviewMessage: 'Controlla il messaggio',
+    regenerateMessage: 'Rigenera messaggio dalle risposte',
+    dateTodayOrFuture: 'Seleziona una data di oggi o futura.',
+    requestTypeQuestion: 'Che tipo di esperienza vuoi richiedere?',
+    experienceQuestion: 'Quale esperienza ti interessa?',
+    dateQuestion: 'Quando vorresti vivere l’esperienza?',
+    participantsQuestion: 'Chi parteciperà?',
+    contactQuestion: 'Come possiamo ricontattarti?',
+    attributionQuestion: 'Dove hai sentito parlare di vulcanIQ?',
+    notSure: 'Non sono sicuro',
+    noDateYet: 'Non ho ancora una data precisa',
+    chooseExperienceOptional: 'Scegli un’esperienza o indica che non sei sicuro.',
+    contactPhoneRequired: 'Inserisci un numero di telefono per essere ricontattato via WhatsApp o telefono.',
+    contactEmailRequired: 'Inserisci un indirizzo email per essere ricontattato via email.',
+    contactPhoneInvalid: 'Inserisci un numero di telefono valido usando solo numeri e, se necessario, un + iniziale.',
+    contactEmailInvalid: 'Inserisci un indirizzo email valido con @.',
+    answerRequired: 'Rispondi a questa domanda per continuare.',
+    fixedExcursionRequired: 'Scegli un’escursione fissa disponibile oppure seleziona “Non sono sicuro”.',
+    finalMessageHelp: 'Questo messaggio è generato dalle tue risposte. Puoi modificarlo prima di inviarlo.',
     submitRequest: 'Invia richiesta',
     requestSent: 'La tua richiesta è stata inviata. Leonardo o il team vulcanIQ ti risponderà direttamente.',
     requestFallbackError: 'Non siamo riusciti a salvare la richiesta automaticamente. Puoi contattarci su WhatsApp o email.',
@@ -483,6 +575,33 @@ This is how a new way of experiencing Sicily takes shape: through the stories of
     formKicker: 'Contact form',
     formTitle: 'Prepare your request.',
     formIntro: 'Choose a fixed date or a private request, add the number of people, and leave a contact: the team will reply directly.',
+    startQuestionnaire: 'Start the questionnaire',
+    prepareYourRequest: 'Prepare your request',
+    contactQuestionnaireIntro: 'Answer one question at a time: at the end you can review and edit the message before sending it.',
+    contactQuestionnaireTitle: 'Prepare your request',
+    contactQuestionnaireProgress: 'Step {current} of {total}',
+    contactQuestionnaireCloseConfirm: 'Do you want to close the questionnaire? Your answers may be lost.',
+    next: 'Next',
+    back: 'Back',
+    reviewMessage: 'Review your message',
+    regenerateMessage: 'Regenerate message from answers',
+    dateTodayOrFuture: 'Please select today or a future date.',
+    requestTypeQuestion: 'What type of experience would you like to request?',
+    experienceQuestion: 'Which experience are you interested in?',
+    dateQuestion: 'When would you like to do the experience?',
+    participantsQuestion: 'Who will participate?',
+    contactQuestion: 'How can we contact you?',
+    attributionQuestion: 'Where did you hear about vulcanIQ?',
+    notSure: 'I am not sure',
+    noDateYet: 'I do not have a precise date yet',
+    chooseExperienceOptional: 'Choose an experience or say you are not sure.',
+    contactPhoneRequired: 'Enter a phone number so we can contact you by WhatsApp or phone.',
+    contactEmailRequired: 'Enter an email address so we can contact you by email.',
+    contactPhoneInvalid: 'Enter a valid phone number using only numbers and, if needed, one leading +.',
+    contactEmailInvalid: 'Enter a valid email address containing @.',
+    answerRequired: 'Answer this question to continue.',
+    fixedExcursionRequired: 'Choose an available fixed excursion or select “I am not sure”.',
+    finalMessageHelp: 'This message is generated from your answers. You can edit it before sending.',
     submitRequest: 'Submit request',
     requestSent: 'Your request has been sent. Leonardo or the vulcanIQ team will reply directly.',
     requestFallbackError: 'We could not save the request automatically. You can contact us by WhatsApp or email.',
@@ -1063,6 +1182,206 @@ function buildQuestionnaireMessage(result, lang) {
 }
 
 
+function isPastPublicDate(value) {
+  const clean = String(value || '').trim();
+  if (!clean) return false;
+  return clean < todayIso();
+}
+
+function sanitizePublicPhoneInput(value) {
+  const raw = String(value || '');
+  const hasLeadingPlus = raw.trimStart().startsWith('+');
+  const digits = raw.replace(/\D/g, '');
+  return `${hasLeadingPlus ? '+' : ''}${digits}`;
+}
+
+function isValidPublicPhone(value) {
+  const clean = sanitizePublicPhoneInput(value);
+  if (!clean) return true;
+  const digits = clean.replace(/\D/g, '');
+  return digits.length >= 5 && /^\+?\d+$/.test(clean);
+}
+
+function isValidPublicEmail(value) {
+  const clean = String(value || '').trim();
+  if (!clean) return true;
+  return clean.includes('@') && !/\s/.test(clean) && clean.indexOf('@') > 0 && clean.indexOf('@') < clean.length - 1;
+}
+
+function preventInvalidPhoneInput(event) {
+  const data = event.data;
+  if (!data) return;
+  if (!/^[0-9+]$/.test(data)) {
+    event.preventDefault();
+    return;
+  }
+  if (data === '+') {
+    const value = String(event.currentTarget.value || '');
+    const start = event.currentTarget.selectionStart ?? value.length;
+    if (start !== 0 || value.includes('+')) event.preventDefault();
+  }
+}
+
+function safeParticipantNumber(value, fallback = 0) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return parsed;
+}
+
+function requestChoiceLabel(value, lang) {
+  if (value === 'fixed') return text(lang, 'fixedExcursion');
+  if (value === 'unsure') return text(lang, 'notSure');
+  return text(lang, 'privateExcursion');
+}
+
+function partyTypeLabel(value, lang) {
+  const labels = {
+    solo: { it: 'Singolo', en: 'Solo traveler' },
+    couple: { it: 'Coppia', en: 'Couple' },
+    family: { it: 'Famiglia', en: 'Family' },
+    group: { it: 'Gruppo', en: 'Group' },
+    company: { it: 'Azienda', en: 'Company' },
+    school: { it: 'Scuola', en: 'School' },
+    other: { it: 'Altro', en: 'Other' }
+  };
+  return labels[value]?.[lang] || labels.solo[lang];
+}
+
+function preferredContactLabel(value, lang) {
+  if (value === 'email') return 'Email';
+  if (value === 'phone') return lang === 'it' ? 'Telefono' : 'Phone';
+  return 'WhatsApp';
+}
+
+function hasMessageValue(value) {
+  const clean = String(value || '').trim();
+  return Boolean(clean && clean !== '-');
+}
+
+function messageLine(label, value, { trailingPeriod = false } = {}) {
+  const clean = String(value || '').trim();
+  if (!hasMessageValue(clean)) return '';
+  const suffix = trailingPeriod && !/[.!?]$/.test(clean) ? '.' : '';
+  return `• ${label}: ${clean}${suffix}`;
+}
+
+function joinMessageLines(lines) {
+  return lines.filter(Boolean).join('\n');
+}
+
+function cleanDateForMessage(value, lang) {
+  const clean = String(value || '').trim();
+  if (!hasMessageValue(clean)) return '';
+  return formatDateForMessage(clean, lang);
+}
+
+function peopleSummary({ adults, children, childrenUnder3Count, lang }) {
+  const adultCount = safeParticipantNumber(adults, 0);
+  const childCount = safeParticipantNumber(children, 0);
+  const under3Count = safeParticipantNumber(childrenUnder3Count, 0);
+  const olderChildrenCount = Math.max(childCount - under3Count, 0);
+  const parts = [];
+
+  if (adultCount > 0) {
+    parts.push(lang === 'it'
+      ? `${adultCount} ${adultCount === 1 ? 'adulto' : 'adulti'}`
+      : `${adultCount} ${adultCount === 1 ? 'adult' : 'adults'}`);
+  }
+
+  if (olderChildrenCount > 0) {
+    parts.push(lang === 'it'
+      ? `${olderChildrenCount} ${olderChildrenCount === 1 ? 'bambino' : 'bambini'}`
+      : `${olderChildrenCount} ${olderChildrenCount === 1 ? 'child' : 'children'}`);
+  }
+
+  if (under3Count > 0) {
+    parts.push(lang === 'it'
+      ? `${under3Count} ${under3Count === 1 ? 'bambino sotto i 3 anni' : 'bambini sotto i 3 anni'}`
+      : `${under3Count} ${under3Count === 1 ? 'child under 3' : 'children under 3'}`);
+  }
+
+  return parts.join(', ');
+}
+
+function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
+  const requestChoice = formState.requestTypeChoice || formState.requestType || 'private';
+  const requestType = requestChoice === 'fixed' ? 'fixed' : 'private';
+  const experienceId = requestType === 'fixed' && selectedFixed?.experience_id ? selectedFixed.experience_id : (formState.experienceId || 'unsure');
+  const experienceName = experienceId && experienceId !== 'unsure' ? adminExperienceLabel(experienceId, lang) : text(lang, 'notSure');
+  const requestedDate = selectedFixed?.date || formState.requestedDate || '';
+  const alternativeDate = formState.alternativeDate || '';
+  const fixedTitle = requestType === 'fixed' && selectedFixed ? fixedExcursionTitle(selectedFixed, lang) : '';
+  const requestTypeText = requestType === 'fixed' && fixedTitle
+    ? `${text(lang, 'fixedExcursion')} - "${fixedTitle}"`
+    : requestChoiceLabel(requestChoice, lang);
+  const heard = normalizeHeardAboutUs(formState.heardAboutUs);
+  const heardDisplay = heard ? heardAboutUsDisplay(heard, formState.heardAboutUsDetail, lang) : '';
+  const phone = String(formState.phone || '').trim();
+  const email = String(formState.email || '').trim();
+  const name = String(formState.name || '').trim();
+  const preferredContact = preferredContactLabel(formState.preferredContact || 'whatsapp', lang);
+  const people = peopleSummary({
+    adults: formState.adults,
+    children: formState.children,
+    childrenUnder3Count: formState.childrenUnder3Count,
+    lang
+  });
+
+  if (lang === 'it') {
+    const requestLines = joinMessageLines([
+      messageLine('Tipo', requestTypeText),
+      messageLine('Esperienza', experienceName),
+      messageLine(requestType === 'fixed' ? 'Data' : 'Data preferita', cleanDateForMessage(requestedDate, lang)),
+      requestType === 'private' ? messageLine('Data alternativa', cleanDateForMessage(alternativeDate, lang)) : '',
+      messageLine('Persone', people)
+    ]);
+    const contactLines = joinMessageLines([
+      messageLine('Nome', name),
+      messageLine('WhatsApp/telefono', phone),
+      messageLine('Email', email),
+      messageLine('Contatto preferito', preferredContact, { trailingPeriod: true })
+    ]);
+    const opening = heardDisplay
+      ? `Ho sentito parlare di vulcanIQ da ${heardDisplay} e vorrei informazioni per un’esperienza vulcanIQ sull’Etna.`
+      : 'Vorrei informazioni per un’esperienza vulcanIQ sull’Etna.';
+    const sections = [
+      `Ciao Leonardo,\n\n${opening}`,
+      requestLines ? `Richiesta:\n${requestLines}` : '',
+      contactLines ? `Contatti:\n${contactLines}` : '',
+      'Vorrei sapere se la richiesta può essere confermata e ricevere dettagli su disponibilità, durata, prezzo e abbigliamento consigliato.',
+      'Grazie.',
+      hasMessageValue(name) ? name : ''
+    ];
+    return sections.filter(Boolean).join('\n\n');
+  }
+
+  const requestLines = joinMessageLines([
+    messageLine('Type', requestTypeText),
+    messageLine('Experience', experienceName),
+    messageLine(requestType === 'fixed' ? 'Date' : 'Preferred date', cleanDateForMessage(requestedDate, lang)),
+    requestType === 'private' ? messageLine('Alternative date', cleanDateForMessage(alternativeDate, lang)) : '',
+    messageLine('People', people)
+  ]);
+  const contactLines = joinMessageLines([
+    messageLine('Name', name),
+    messageLine('WhatsApp/phone', phone),
+    messageLine('Email', email),
+    messageLine('Preferred contact', preferredContact, { trailingPeriod: true })
+  ]);
+  const opening = heardDisplay
+    ? `I heard about vulcanIQ from ${heardDisplay} and I would like information about a vulcanIQ experience on Mount Etna.`
+    : 'I would like information about a vulcanIQ experience on Mount Etna.';
+  const sections = [
+    `Hi Leonardo,\n\n${opening}`,
+    requestLines ? `Request:\n${requestLines}` : '',
+    contactLines ? `Contact:\n${contactLines}` : '',
+    'I would like to know whether the request can be confirmed and receive details about availability, duration, price, and recommended clothing.',
+    'Thank you.',
+    hasMessageValue(name) ? name : ''
+  ];
+  return sections.filter(Boolean).join('\n\n');
+}
+
 function fixedExcursionField(item, field, lang) {
   if (!item) return '';
   return item[`${field}_${lang}`] || item[`${field}_${lang === 'it' ? 'en' : 'it'}`] || '';
@@ -1248,16 +1567,6 @@ Children under 3: ${under3Count}
 I would like to know whether the date is available and receive details about duration, price, and recommended clothing.
 
 Thank you.`;
-}
-
-function appendUnder3CountToMessage(message, count, lang) {
-  const cleanCount = Number.parseInt(count || '0', 10) || 0;
-  const base = String(message || text(lang, 'defaultMessage')).trimEnd();
-  if (cleanCount <= 0) return base;
-  const label = lang === 'it' ? 'Bambini sotto i 3 anni' : 'Children under 3';
-  return `${base}
-
-${label}: ${cleanCount}`;
 }
 
 function buildCalendarMessage({ experience, date, status, note }, lang) {
@@ -1523,6 +1832,11 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
   const [dateModalOpen, setDateModalOpen] = useState(false);
   const [dateRequest, setDateRequest] = useState({ experienceId: 'etna-premium', adults: '1', children: '0', childrenUnder3Count: '0' });
   const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
+  const dateModalTransition = useTransitionPresence(dateModalOpen);
+  const experienceModalTransition = useTransitionValue(selectedExperience);
+  const leafletModalTransition = useTransitionValue(activeLeaflet);
+  const renderedExperience = experienceModalTransition.renderedValue;
+  const renderedLeaflet = leafletModalTransition.renderedValue;
 
   useEffect(() => {
     let active = true;
@@ -1551,7 +1865,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
     return () => { active = false; };
   }, []);
 
-  useBodyScrollLock(Boolean(selectedExperience || activeLeaflet || dateModalOpen));
+  useBodyScrollLock(Boolean(dateModalTransition.shouldRender || experienceModalTransition.shouldRender || leafletModalTransition.shouldRender));
 
   useEffect(() => {
     function closeOnEscape(event) {
@@ -1826,9 +2140,9 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         )}
       </div>
 
-      {dateModalOpen && (
-        <div className="date-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="date-modal-title" onClick={() => setDateModalOpen(false)}>
-          <article className="date-modal" onClick={(event) => event.stopPropagation()}>
+      {dateModalTransition.shouldRender && (
+        <div className={`date-modal-overlay motion-backdrop ${dateModalTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="date-modal-title" onClick={() => setDateModalOpen(false)}>
+          <article className="date-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="date-modal-header">
               <div>
                 <span className="micro-label details-label">{selectedItems.length ? text(lang, 'scheduledExcursion') : text(lang, 'availableDates')}</span>
@@ -1843,25 +2157,25 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         </div>
       )}
 
-      {selectedExperience && (
-        <div className="experience-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="experience-modal-title" onClick={() => setSelectedExperience(null)}>
-          <article className="experience-modal" onClick={(event) => event.stopPropagation()}>
+      {renderedExperience && (
+        <div className={`experience-modal-overlay motion-backdrop ${experienceModalTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="experience-modal-title" onClick={() => setSelectedExperience(null)}>
+          <article className="experience-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="experience-modal-header">
-              <h2 id="experience-modal-title">{selectedExperience.title}</h2>
+              <h2 id="experience-modal-title">{renderedExperience.title}</h2>
               <button className="experience-modal-close" type="button" onClick={() => setSelectedExperience(null)}>{text(lang, 'close')}</button>
             </div>
             <div className="experience-detail-content">
-              <EditableImage mediaKey={experienceMediaKey(selectedExperience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={selectedExperience.image} fallbackAlt={`${selectedExperience.title} vulcanIQ`} className="experience-modal-image" />
+              <EditableImage mediaKey={experienceMediaKey(renderedExperience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={renderedExperience.image} fallbackAlt={`${renderedExperience.title} vulcanIQ`} className="experience-modal-image" />
               <div className="experience-detail-copy">
-                <EditableText as="p" itemKey={`experiences.${selectedExperience.id}.description`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.description[lang]} />
+                <EditableText as="p" itemKey={`experiences.${renderedExperience.id}.description`} lang={lang} siteContent={siteContent} editor={editor} fallback={renderedExperience.description[lang]} />
                 <dl>
-                  <div><dt>{text(lang, 'bestFor')}</dt><dd><EditableText itemKey={`experiences.${selectedExperience.id}.best_for`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.bestFor[lang]} /></dd></div>
-                  <div><dt>{text(lang, 'practical')}</dt><dd><EditableText itemKey={`experiences.${selectedExperience.id}.notes`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.notes[lang]} /></dd></div>
-                  <div><dt>{text(lang, 'safety')}</dt><dd><EditableText itemKey={`experiences.${selectedExperience.id}.safety`} lang={lang} siteContent={siteContent} editor={editor} fallback={selectedExperience.safety[lang]} /></dd></div>
+                  <div><dt>{text(lang, 'bestFor')}</dt><dd><EditableText itemKey={`experiences.${renderedExperience.id}.best_for`} lang={lang} siteContent={siteContent} editor={editor} fallback={renderedExperience.bestFor[lang]} /></dd></div>
+                  <div><dt>{text(lang, 'practical')}</dt><dd><EditableText itemKey={`experiences.${renderedExperience.id}.notes`} lang={lang} siteContent={siteContent} editor={editor} fallback={renderedExperience.notes[lang]} /></dd></div>
+                  <div><dt>{text(lang, 'safety')}</dt><dd><EditableText itemKey={`experiences.${renderedExperience.id}.safety`} lang={lang} siteContent={siteContent} editor={editor} fallback={renderedExperience.safety[lang]} /></dd></div>
                 </dl>
                 <div className="request-action-row experience-modal-actions">
-                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestExperience(selectedExperience)}>{text(lang, 'request')}</button>
-                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: buildBookingTrackingContext({ experienceId: selectedExperience?.id || '', requestType: 'private', sourceSection: 'experiences', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
+                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestExperience(renderedExperience)}>{text(lang, 'request')}</button>
+                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(renderedExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(renderedExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: buildBookingTrackingContext({ experienceId: renderedExperience?.id || '', requestType: 'private', sourceSection: 'experiences', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
                 </div>
               </div>
             </div>
@@ -1869,18 +2183,18 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         </div>
       )}
 
-      {activeLeaflet?.leaflet && (
-        <div className="leaflet-fullscreen-overlay" role="dialog" aria-modal="true" aria-label={activeLeaflet.label || text(lang, 'openProgram')} onClick={() => setActiveLeaflet(null)}>
-          <article className="leaflet-fullscreen-modal" onClick={(event) => event.stopPropagation()}>
+      {renderedLeaflet?.leaflet && (
+        <div className={`leaflet-fullscreen-overlay motion-backdrop ${leafletModalTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-label={renderedLeaflet.label || text(lang, 'openProgram')} onClick={() => setActiveLeaflet(null)}>
+          <article className="leaflet-fullscreen-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="leaflet-fullscreen-header">
-              <h2>{activeLeaflet.label || text(lang, 'openProgram')}</h2>
+              <h2>{renderedLeaflet.label || text(lang, 'openProgram')}</h2>
               <button className="date-modal-close" type="button" onClick={() => setActiveLeaflet(null)}>{text(lang, 'close')}</button>
             </div>
             <div className="leaflet-fullscreen-body">
-              {String(activeLeaflet.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(activeLeaflet.leaflet.file_url) ? (
-                <img className="leaflet-fullscreen-image" src={activeLeaflet.leaflet.file_url} alt={activeLeaflet.label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
+              {String(renderedLeaflet.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(renderedLeaflet.leaflet.file_url) ? (
+                <img className="leaflet-fullscreen-image" src={renderedLeaflet.leaflet.file_url} alt={renderedLeaflet.label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
               ) : (
-                <iframe className="leaflet-fullscreen-frame" src={activeLeaflet.leaflet.file_url} title={activeLeaflet.label || text(lang, 'openProgram')} />
+                <iframe className="leaflet-fullscreen-frame" src={renderedLeaflet.leaflet.file_url} title={renderedLeaflet.label || text(lang, 'openProgram')} />
               )}
             </div>
           </article>
@@ -2550,7 +2864,8 @@ function buildBookingTrackingContext({
     cta_location: ctaLocation || 'unknown',
     selected_date: selectedDate || '',
     has_fixed_excursion: Boolean(hasFixedExcursion),
-    language: language || 'it'
+    language: language || 'it',
+    booking_journey_version: '20260616-submit-integrity'
   };
 }
 
@@ -2563,30 +2878,58 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
   const [submitState, setSubmitState] = useState({ loading: false, error: '', success: '' });
   const [fixedExcursions, setFixedExcursions] = useState([]);
-  const requestType = formState.requestType || 'private';
+  const [questionnaireOpen, setQuestionnaireOpen] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [stepError, setStepError] = useState('');
+  const [messageManuallyEdited, setMessageManuallyEdited] = useState(false);
+  const requestChoice = formState.requestTypeChoice || formState.requestType || 'private';
+  const requestType = requestChoice === 'fixed' ? 'fixed' : 'private';
   const message = formState.message || text(lang, 'defaultMessage');
   const experienceId = formState.experienceId || '';
   const selectedFixed = fixedExcursions.find((item) => item.id === formState.fixedExcursionId) || null;
   const effectiveExperienceId = requestType === 'fixed' && selectedFixed?.experience_id ? selectedFixed.experience_id : experienceId;
-  const selectedTitle = effectiveExperienceId ? experienceById(effectiveExperienceId).title : '';
-  const adults = Number.parseInt(formState.adults || '0', 10) || 0;
-  const children = Number.parseInt(formState.children || '0', 10) || 0;
-  const childrenUnder3Count = Number.parseInt(formState.childrenUnder3Count || '0', 10) || 0;
+  const adults = safeParticipantNumber(formState.adults, 1);
+  const children = safeParticipantNumber(formState.children, 0);
+  const childrenUnder3Count = safeParticipantNumber(formState.childrenUnder3Count, 0);
   const totalPeople = adults + children;
   const over12 = totalPeople > 12;
   const selectedHeardAboutUs = normalizeHeardAboutUs(formState.heardAboutUs);
   const selectedHeardAboutUsDetail = cleanHeardAboutUsDetail(formState.heardAboutUsDetail);
   const selectedHeardAboutUsNeedsDetail = needsHeardAboutUsDetail(selectedHeardAboutUs);
-  const fullMessage = appendHeardAboutUsToMessage(appendUnder3CountToMessage(message, childrenUnder3Count, lang), selectedHeardAboutUs, selectedHeardAboutUsDetail, lang);
+  const fullMessage = String(message || text(lang, 'defaultMessage')).trim();
   const preferredContactValue = ['whatsapp', 'phone', 'email'].includes(formState.preferredContact) ? formState.preferredContact : 'whatsapp';
   const selectedHeardAboutUsMetadata = heardAboutUsMetadata(selectedHeardAboutUs, lang, selectedHeardAboutUsDetail);
   const trackedFormOpenRef = useRef(new Set());
+  const modalRef = useRef(null);
+  const previousFocusRef = useRef(null);
   const [leaflets, setLeaflets] = useState([]);
   const [fixedOptionsOpen, setFixedOptionsOpen] = useState(false);
   const [privateOptionsOpen, setPrivateOptionsOpen] = useState(false);
   const [detailsMonthDate, setDetailsMonthDate] = useState(startOfMonth(new Date()));
   const [activeLeaflet, setActiveLeaflet] = useState(null);
   const [selectedPrivateExperience, setSelectedPrivateExperience] = useState(null);
+  const [selectedFixedExcursionDetails, setSelectedFixedExcursionDetails] = useState(null);
+  const questionnaireTransition = useTransitionPresence(questionnaireOpen);
+  const fixedOptionsTransition = useTransitionPresence(fixedOptionsOpen);
+  const privateOptionsTransition = useTransitionPresence(privateOptionsOpen);
+  const requestLeafletTransition = useTransitionValue(activeLeaflet);
+  const privateDetailTransition = useTransitionValue(selectedPrivateExperience);
+  const fixedDetailTransition = useTransitionValue(selectedFixedExcursionDetails);
+  const renderedRequestLeaflet = requestLeafletTransition.renderedValue;
+  const renderedPrivateExperience = privateDetailTransition.renderedValue;
+  const renderedFixedExcursionDetails = fixedDetailTransition.renderedValue;
+
+  const questionnaireSteps = [
+    { key: 'request_type', title: text(lang, 'requestTypeQuestion') },
+    { key: 'experience', title: text(lang, 'experienceQuestion') },
+    { key: 'date', title: text(lang, 'dateQuestion') },
+    { key: 'participants', title: text(lang, 'participantsQuestion') },
+    { key: 'contact', title: text(lang, 'contactQuestion') },
+    { key: 'attribution', title: text(lang, 'attributionQuestion') },
+    { key: 'message', title: text(lang, 'reviewMessage') }
+  ];
+  const currentStep = questionnaireSteps[stepIndex] || questionnaireSteps[0];
+  const todayMinDate = todayIso();
 
   useEffect(() => {
     let active = true;
@@ -2595,7 +2938,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       loadPublicMonthlyLeaflets().catch(() => [])
     ]).then(([fixedRows, leafletRows]) => {
       if (!active) return;
-      setFixedExcursions(fixedRows || []);
+      setFixedExcursions((fixedRows || []).filter((item) => !item.date || item.date >= todayIso()));
       setLeaflets(leafletRows || []);
     }).catch(() => {
       if (!active) return;
@@ -2605,37 +2948,67 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     return () => { active = false; };
   }, []);
 
-  useBodyScrollLock(Boolean(fixedOptionsOpen || privateOptionsOpen || activeLeaflet || selectedPrivateExperience));
+  useBodyScrollLock(Boolean(questionnaireTransition.shouldRender || fixedOptionsTransition.shouldRender || privateOptionsTransition.shouldRender || requestLeafletTransition.shouldRender || privateDetailTransition.shouldRender || fixedDetailTransition.shouldRender));
+
+  useEffect(() => {
+    if (!questionnaireOpen) return undefined;
+    previousFocusRef.current = document.activeElement;
+    window.setTimeout(() => modalRef.current?.querySelector('button, input, select, textarea')?.focus(), 0);
+    return () => {
+      const previous = previousFocusRef.current;
+      if (previous && typeof previous.focus === 'function') window.setTimeout(() => previous.focus(), 0);
+    };
+  }, [questionnaireOpen]);
+
+  useEffect(() => {
+    if (!questionnaireOpen) return undefined;
+    const timeout = window.setTimeout(() => {
+      const scrollTarget = modalRef.current?.querySelector?.('.questionnaire-body') || modalRef.current;
+      scrollTarget?.scrollTo?.({ top: 0, behavior: motionScrollBehavior() });
+    }, 40);
+    return () => window.clearTimeout(timeout);
+  }, [questionnaireOpen, stepIndex]);
 
   useEffect(() => {
     function closeOnEscape(event) {
       if (event.key !== 'Escape') return;
       if (activeLeaflet) { setActiveLeaflet(null); return; }
+      if (selectedFixedExcursionDetails) { setSelectedFixedExcursionDetails(null); return; }
       if (selectedPrivateExperience) { setSelectedPrivateExperience(null); return; }
-      setFixedOptionsOpen(false);
-      setPrivateOptionsOpen(false);
+      if (fixedOptionsOpen) { setFixedOptionsOpen(false); return; }
+      if (privateOptionsOpen) { setPrivateOptionsOpen(false); return; }
+      if (questionnaireOpen) attemptCloseQuestionnaire();
     }
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [activeLeaflet, selectedPrivateExperience]);
+  }, [activeLeaflet, selectedFixedExcursionDetails, selectedPrivateExperience, fixedOptionsOpen, privateOptionsOpen, questionnaireOpen, formState]);
 
   const fixedOptions = useMemo(() => monthlyOptionsLeaflets({ leaflets, fixedExcursions, monthDate: detailsMonthDate, lang }), [leaflets, fixedExcursions, detailsMonthDate, lang]);
   const canGoPreviousDetailsMonth = isCurrentOrFutureMonth(new Date(detailsMonthDate.getFullYear(), detailsMonthDate.getMonth() - 1, 1));
 
+  const currentTrackingMetadata = mergeTrackingContext(mergeTrackingContext(buildBookingTrackingContext({
+    experienceId: effectiveExperienceId,
+    requestType,
+    sourceSection: 'contact',
+    sourceCta: 'prepare_request',
+    ctaLocation: 'questionnaire_modal',
+    selectedDate: selectedFixed?.date || formState.requestedDate || '',
+    hasFixedExcursion: requestType === 'fixed',
+    language: formState.language || lang
+  }), formState.trackingContext), {
+    ...selectedHeardAboutUsMetadata,
+    questionnaire_version: 'contact_request_v1',
+    questionnaire_step: stepIndex + 1,
+    questionnaire_step_key: currentStep.key,
+    questionnaire_completed: currentStep.key === 'message'
+  });
+
   function update(field, value) {
     if (!trackedFormOpenRef.current.has('field_start')) {
       trackedFormOpenRef.current.add('field_start');
-      trackBookingFormFieldStart(effectiveExperienceId || requestType || 'unsure', mergeTrackingContext(mergeTrackingContext(buildBookingTrackingContext({
-        experienceId: effectiveExperienceId,
-        requestType,
-        sourceSection: 'contact',
-        sourceCta: 'prepare_request',
-        ctaLocation: 'booking_modal',
-        selectedDate: selectedFixed?.date || formState.requestedDate || '',
-        hasFixedExcursion: requestType === 'fixed',
-        language: formState.language || lang
-      }), formState.trackingContext), heardAboutUsMetadata(field === 'heardAboutUs' ? value : formState.heardAboutUs, lang, field === 'heardAboutUsDetail' ? value : formState.heardAboutUsDetail)));
+      trackBookingFormFieldStart(effectiveExperienceId || requestType || 'private', currentTrackingMetadata);
     }
+    setStepError('');
     setFormState((current) => {
       if (field === 'heardAboutUs') {
         return { ...current, heardAboutUs: value, heardAboutUsDetail: needsHeardAboutUsDetail(value) ? current.heardAboutUsDetail : '' };
@@ -2644,26 +3017,35 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     });
   }
 
+  function updateMessage(value) {
+    setMessageManuallyEdited(true);
+    update('message', value);
+  }
+
   function updateRequestType(value) {
+    setStepError('');
     setFormState((current) => ({
       ...current,
-      requestType: value,
-      privateExperience: value === 'private',
+      requestTypeChoice: value,
+      requestType: value === 'fixed' ? 'fixed' : 'private',
+      privateExperience: value !== 'fixed',
       fixedExcursionId: value === 'fixed' ? current.fixedExcursionId : '',
-      requestedDate: value === 'private' ? current.requestedDate : current.requestedDate
+      experienceId: value === 'unsure' ? 'unsure' : current.experienceId
     }));
   }
 
   function updateFixedExcursion(id) {
     const fixed = fixedExcursions.find((item) => item.id === id);
+    setStepError('');
     setFormState((current) => ({
       ...current,
+      requestTypeChoice: 'fixed',
       requestType: 'fixed',
       fixedExcursionId: id,
       privateExperience: false,
       experienceId: fixed?.experience_id || current.experienceId,
       requestedDate: fixed?.date || current.requestedDate,
-      message: fixed ? buildFixedExcursionMessage({ fixedExcursion: fixed, people: totalPeople || '' }, lang) : current.message
+      message: !messageManuallyEdited && fixed ? buildFixedExcursionMessage({ fixedExcursion: fixed, people: totalPeople || '' }, lang) : current.message
     }));
   }
 
@@ -2674,17 +3056,15 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     });
   }
 
-  function openRequestDetails() {
-    if (requestType === 'fixed') {
-      setDetailsMonthDate(startOfMonth(new Date()));
-      setFixedOptionsOpen(true);
-      trackEvent('fixed_excursion_options_open', { request_type: 'fixed', selected_month: monthKey(new Date()), language: lang, source_section: 'today_request_flow' }, { dedupe: false });
-      trackEvent('request_details_open', { request_type: 'fixed', language: lang, source_section: 'today_request_flow' }, { dedupe: false });
-      return;
-    }
+  function openFixedOptions() {
+    setDetailsMonthDate(startOfMonth(new Date()));
+    setFixedOptionsOpen(true);
+    trackEvent('fixed_excursion_options_open', { request_type: 'fixed', selected_month: monthKey(new Date()), language: lang, source_section: 'contact_questionnaire' }, { dedupe: false });
+  }
+
+  function openPrivateOptions() {
     setPrivateOptionsOpen(true);
-    trackEvent('private_excursion_options_open', { request_type: 'private', language: lang, source_section: 'today_request_flow' }, { dedupe: false });
-    trackEvent('request_details_open', { request_type: 'private', language: lang, source_section: 'today_request_flow' }, { dedupe: false });
+    trackEvent('private_excursion_options_open', { request_type: 'private', language: lang, source_section: 'contact_questionnaire' }, { dedupe: false });
   }
 
   function openRequestLeaflet(option) {
@@ -2696,9 +3076,9 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       excursion_id: option.fixedExcursion?.id || '',
       excursion_slug: option.fixedExcursion?.experience_id || '',
       language: lang,
-      source_section: 'today_request_flow'
+      source_section: 'contact_questionnaire'
     }, { dedupe: false });
-    setActiveLeaflet({ leaflet: option.leaflet, label: option.title || leafletTitle(option.leaflet, lang) });
+    setActiveLeaflet({ leaflet: option.leaflet, label: option.title || leafletTitle(option.leaflet, lang), fixedExcursion: option.fixedExcursion || null });
   }
 
   function openPrivateExperienceDetails(experience) {
@@ -2707,74 +3087,166 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       excursion_id: experience?.id || '',
       excursion_slug: experience?.id || '',
       language: lang,
-      source_section: 'today_request_flow'
+      source_section: 'contact_questionnaire'
     }, { dedupe: false });
     trackExperienceDetailOpen(experience);
     setSelectedPrivateExperience(experience);
   }
 
-  const currentTrackingMetadata = mergeTrackingContext(mergeTrackingContext(buildBookingTrackingContext({
-    experienceId: effectiveExperienceId,
-    requestType,
-    sourceSection: 'contact',
-    sourceCta: 'prepare_request',
-    ctaLocation: 'booking_modal',
-    selectedDate: selectedFixed?.date || formState.requestedDate || '',
-    hasFixedExcursion: requestType === 'fixed',
-    language: formState.language || lang
-  }), formState.trackingContext), selectedHeardAboutUsMetadata);
+  function moveQuestionnaireToDateStep() {
+    const dateStepIndex = questionnaireSteps.findIndex((step) => step.key === 'date');
+    if (dateStepIndex < 0) return;
+    setStepIndex(dateStepIndex);
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        setStepIndex(dateStepIndex);
+        modalRef.current?.scrollTo?.({ top: 0, behavior: motionScrollBehavior() });
+        modalRef.current?.querySelector?.('#questionnaireRequestedDate')?.focus?.();
+      }, 0);
+    }
+  }
 
   function usePrivateExperienceInRequest(experience) {
     setFormState((current) => ({
       ...current,
+      requestTypeChoice: 'private',
       requestType: 'private',
       privateExperience: true,
+      fixedExcursionId: '',
+      requestedDate: (current.requestTypeChoice || current.requestType) === 'fixed' ? '' : current.requestedDate,
       experienceId: experience?.id || current.experienceId,
-      message: experience ? buildExperienceMessage(experience, lang) : current.message,
+      message: !messageManuallyEdited && experience ? buildExperienceMessage(experience, lang) : current.message,
       language: current.language || lang
     }));
+    setQuestionnaireOpen(true);
+    setStepError('');
+    setActiveLeaflet(null);
+    setSelectedFixedExcursionDetails(null);
     setSelectedPrivateExperience(null);
+    setFixedOptionsOpen(false);
     setPrivateOptionsOpen(false);
+    moveQuestionnaireToDateStep();
+  }
+
+  function hasMeaningfulQuestionnaireData() {
+    const defaultMessages = [i18n.it.defaultMessage, i18n.en.defaultMessage];
+    return Boolean(
+      formState.name || formState.phone || formState.email || formState.experienceId || formState.fixedExcursionId ||
+      formState.requestedDate || formState.alternativeDate || formState.heardAboutUs || formState.heardAboutUsDetail ||
+      (formState.message && !defaultMessages.includes(formState.message))
+    );
+  }
+
+  function attemptCloseQuestionnaire() {
+    if (!hasMeaningfulQuestionnaireData() || window.confirm(text(lang, 'contactQuestionnaireCloseConfirm'))) {
+      setQuestionnaireOpen(false);
+      setStepError('');
+    }
+  }
+
+  function openQuestionnaire() {
+    const trackingContext = mergeTrackingContext(buildBookingTrackingContext({
+      experienceId: effectiveExperienceId,
+      requestType,
+      sourceSection: 'contact',
+      sourceCta: 'start_questionnaire',
+      ctaLocation: 'contact_section',
+      selectedDate: selectedFixed?.date || formState.requestedDate || '',
+      hasFixedExcursion: requestType === 'fixed',
+      language: lang
+    }), formState.trackingContext);
+    trackBookingFormOpen(effectiveExperienceId || requestType || 'private', { ...trackingContext, questionnaire_version: 'contact_request_v1' });
+    setFormState((current) => ({ ...current, trackingContext, language: current.language || lang }));
+    setQuestionnaireOpen(true);
+  }
+
+  function regenerateMessageFromAnswers() {
+    const generated = buildContactQuestionnaireMessage({ formState, selectedFixed, lang });
+    setMessageManuallyEdited(false);
+    setFormState((current) => ({ ...current, message: generated }));
+  }
+
+  function ensureFinalMessage() {
+    if (messageManuallyEdited) return;
+    const generated = buildContactQuestionnaireMessage({ formState, selectedFixed, lang });
+    setFormState((current) => ({ ...current, message: generated }));
+  }
+
+  function validationForStep(index = stepIndex) {
+    const stepKey = questionnaireSteps[index]?.key;
+    const email = String(formState.email || '').trim();
+    const phone = String(formState.phone || '').trim();
+    if (stepKey === 'request_type' && !requestChoice) return text(lang, 'answerRequired');
+    if (stepKey === 'experience') {
+      if (requestChoice === 'fixed' && !formState.fixedExcursionId) return text(lang, 'fixedExcursionRequired');
+      if (requestChoice !== 'fixed' && !formState.experienceId) return text(lang, 'chooseExperienceOptional');
+    }
+    if (stepKey === 'date') {
+      if (isPastPublicDate(formState.requestedDate) || isPastPublicDate(formState.alternativeDate)) return text(lang, 'dateTodayOrFuture');
+    }
+    if (stepKey === 'participants' && totalPeople < 1) return text(lang, 'peopleRequired');
+    if (stepKey === 'contact') {
+      if (!email && !phone) return text(lang, 'contactRequired');
+      if ((preferredContactValue === 'whatsapp' || preferredContactValue === 'phone') && !phone) return text(lang, 'contactPhoneRequired');
+      if (preferredContactValue === 'email' && !email) return text(lang, 'contactEmailRequired');
+      if (phone && !isValidPublicPhone(phone)) return text(lang, 'contactPhoneInvalid');
+      if (email && !isValidPublicEmail(email)) return text(lang, 'contactEmailInvalid');
+    }
+    if (stepKey === 'attribution') {
+      if (!selectedHeardAboutUs) return text(lang, 'heardAboutUsRequired');
+      if (selectedHeardAboutUsNeedsDetail && !selectedHeardAboutUsDetail) return text(lang, 'heardAboutUsOtherRequired');
+    }
+    if (stepKey === 'message') {
+      if (isPastPublicDate(formState.requestedDate) || isPastPublicDate(formState.alternativeDate)) return text(lang, 'dateTodayOrFuture');
+      if (!String(message || '').trim()) return text(lang, 'requestDetailsRequired');
+    }
+    return '';
+  }
+
+  function firstValidationError() {
+    for (let index = 0; index < questionnaireSteps.length; index += 1) {
+      const error = validationForStep(index);
+      if (error) return error;
+    }
+    return '';
+  }
+
+  function goNext() {
+    const error = validationForStep();
+    if (error) {
+      trackBookingSubmitValidationError(effectiveExperienceId || requestType || 'private', `questionnaire_${currentStep.key}`, currentTrackingMetadata);
+      setStepError(error);
+      return;
+    }
+    setStepError('');
+    setStepIndex((current) => {
+      const next = Math.min(current + 1, questionnaireSteps.length - 1);
+      if (questionnaireSteps[next]?.key === 'message') window.setTimeout(ensureFinalMessage, 0);
+      return next;
+    });
+  }
+
+  function goBack() {
+    setStepError('');
+    setStepIndex((current) => Math.max(0, current - 1));
   }
 
   async function submitRequest(event) {
-    event.preventDefault();
+    event?.preventDefault?.();
     setSubmitState({ loading: false, error: '', success: '' });
 
-    const email = (formState.email || '').trim();
-    const phone = (formState.phone || '').trim();
-    const selectedDate = (formState.requestedDate || '').trim();
-    const hasMessage = (message || '').trim() && message !== text(lang, 'defaultMessage');
-    const trackedExperience = effectiveExperienceId || requestType || 'unsure';
-    const trackingMetadata = currentTrackingMetadata;
+    const email = String(formState.email || '').trim();
+    const phone = String(formState.phone || '').trim();
+    const selectedDate = String(formState.requestedDate || '').trim();
+    const hasMessage = String(message || '').trim() && message !== text(lang, 'defaultMessage');
+    const trackedExperience = effectiveExperienceId || requestType || 'private';
+    const trackingMetadata = { ...currentTrackingMetadata, questionnaire_completed: true, questionnaire_step_key: 'message' };
+    const preflightError = firstValidationError();
 
-    if (!email && !phone) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_contact', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'contactRequired'), success: '' });
-      return;
-    }
-
-    if (!totalPeople) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_people', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'peopleRequired'), success: '' });
-      return;
-    }
-
-    if (requestType === 'fixed' && !formState.fixedExcursionId) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_fixed_excursion', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'fixedDateRequired'), success: '' });
-      return;
-    }
-
-    if (!selectedHeardAboutUs) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_heard_about_us', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'heardAboutUsRequired'), success: '' });
-      return;
-    }
-
-    if (selectedHeardAboutUsNeedsDetail && !selectedHeardAboutUsDetail) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_heard_about_us_detail', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'heardAboutUsOtherRequired'), success: '' });
+    if (preflightError) {
+      trackBookingSubmitValidationError(trackedExperience, 'questionnaire_incomplete', trackingMetadata);
+      setStepError(preflightError);
+      setSubmitState({ loading: false, error: preflightError, success: '' });
       return;
     }
 
@@ -2784,232 +3256,292 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       return;
     }
 
-    trackBookingSubmitAttempt(trackedExperience, adults, children, trackingMetadata);
     setSubmitState({ loading: true, error: '', success: '' });
 
     try {
-      const request = await createPublicBookingRequest({
-        customer_name: formState.name,
-        customer_email: email,
-        customer_phone: phone,
-        preferred_contact: preferredContactValue,
-        experience_id: requestType === 'fixed' ? (selectedFixed?.experience_id || 'unsure') : (experienceId || 'unsure'),
-        fixed_excursion_experience_id: selectedFixed?.experience_id || null,
-        requested_date: selectedFixed?.date || formState.requestedDate,
-        alternative_date: formState.alternativeDate,
-        language: formState.language || lang,
-        party_type: formState.partyType || (requestType === 'private' ? 'other' : 'group'),
-        request_type: requestType,
-        fixed_excursion_id: requestType === 'fixed' ? formState.fixedExcursionId : null,
+      await submitPublicBookingRequestWithTracking({
+        experience: trackedExperience,
         adults,
         children,
-        children_under_3: childrenUnder3Count > 0,
-        private_experience: requestType === 'private',
-        message: fullMessage,
-        heard_about_us: selectedHeardAboutUs,
-        heard_about_us_label: heardAboutUsLabel(selectedHeardAboutUs, lang),
-        heard_about_us_detail: selectedHeardAboutUsNeedsDetail ? selectedHeardAboutUsDetail : null,
-        source: 'website',
-        source_section: trackingMetadata.source_section,
-        source_cta: trackingMetadata.source_cta,
-        cta_location: trackingMetadata.cta_location,
-        selected_date: trackingMetadata.selected_date || selectedFixed?.date || formState.requestedDate || null,
-        has_fixed_excursion: trackingMetadata.has_fixed_excursion,
-        traffic_source: trackingMetadata.traffic_source,
-        utm_source: trackingMetadata.utm_source,
-        utm_medium: trackingMetadata.utm_medium,
-        utm_campaign: trackingMetadata.utm_campaign,
-        utm_content: trackingMetadata.utm_content
+        metadata: trackingMetadata,
+        payload: {
+          customer_name: formState.name,
+          customer_email: email,
+          customer_phone: phone,
+          preferred_contact: preferredContactValue,
+          experience_id: requestType === 'fixed' ? (selectedFixed?.experience_id || 'unsure') : (experienceId || 'unsure'),
+          fixed_excursion_experience_id: selectedFixed?.experience_id || null,
+          requested_date: selectedFixed?.date || formState.requestedDate,
+          alternative_date: formState.alternativeDate,
+          language: formState.language || lang,
+          party_type: formState.partyType || (requestType === 'private' ? 'other' : 'group'),
+          request_type: requestType,
+          fixed_excursion_id: requestType === 'fixed' ? formState.fixedExcursionId : null,
+          adults,
+          children,
+          children_under_3: childrenUnder3Count > 0,
+          private_experience: requestType === 'private',
+          message: fullMessage,
+          heard_about_us: selectedHeardAboutUs,
+          heard_about_us_label: heardAboutUsLabel(selectedHeardAboutUs, lang),
+          heard_about_us_detail: selectedHeardAboutUsNeedsDetail ? selectedHeardAboutUsDetail : null,
+          source: 'website',
+          source_section: trackingMetadata.source_section,
+          source_cta: trackingMetadata.source_cta,
+          cta_location: trackingMetadata.cta_location,
+          selected_date: trackingMetadata.selected_date || selectedFixed?.date || formState.requestedDate || null,
+          has_fixed_excursion: trackingMetadata.has_fixed_excursion,
+          traffic_source: trackingMetadata.traffic_source,
+          utm_source: trackingMetadata.utm_source,
+          utm_medium: trackingMetadata.utm_medium,
+          utm_campaign: trackingMetadata.utm_campaign,
+          utm_content: trackingMetadata.utm_content
+        }
       });
-      trackBookingSubmitSuccess(trackedExperience, adults, children, { ...trackingMetadata, request_id: request?.id || '' });
       setSubmitState({ loading: false, error: '', success: text(lang, 'requestSent') });
     } catch (error) {
-      trackBookingSubmitError(trackedExperience, 'supabase_insert_error', trackingMetadata);
       setSubmitState({ loading: false, error: text(lang, 'requestFallbackError'), success: '' });
     }
   }
 
-
-  function validateSelectedAttributionForDirectContact(trackedExperience, trackingMetadata) {
-    if (!selectedHeardAboutUs) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_heard_about_us', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'heardAboutUsRequired'), success: '' });
-      return false;
-    }
-    if (selectedHeardAboutUsNeedsDetail && !selectedHeardAboutUsDetail) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_heard_about_us_detail', trackingMetadata);
-      setSubmitState({ loading: false, error: text(lang, 'heardAboutUsOtherRequired'), success: '' });
-      return false;
-    }
-    return true;
-  }
-
   function openFormWhatsapp() {
-    const trackedExperience = effectiveExperienceId || requestType || 'unsure';
-    if (!validateSelectedAttributionForDirectContact(trackedExperience, currentTrackingMetadata)) return;
-    trackContactClick('whatsapp', 'booking_modal', { ...currentTrackingMetadata, source_cta: 'whatsapp_direct' });
+    const trackedExperience = effectiveExperienceId || requestType || 'private';
+    const error = firstValidationError();
+    if (error) {
+      trackBookingSubmitValidationError(trackedExperience, 'questionnaire_incomplete_whatsapp', currentTrackingMetadata);
+      setStepError(error);
+      setSubmitState({ loading: false, error, success: '' });
+      return;
+    }
+    trackContactClick('whatsapp', 'questionnaire_modal', { ...currentTrackingMetadata, source_cta: 'whatsapp_direct', questionnaire_completed: true });
     if (typeof window !== 'undefined') {
-      window.open(`https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(selectedHeardAboutUs, selectedHeardAboutUsDetail, lang))}`, '_blank', 'noopener,noreferrer');
+      window.open(`https://wa.me/${contact.phoneWa}?text=${encode(fullMessage)}`, '_blank', 'noopener,noreferrer');
     }
   }
+
+  function renderStepFields() {
+    switch (currentStep.key) {
+      case 'request_type':
+        return (
+          <div className="questionnaire-choice-grid" role="radiogroup" aria-label={text(lang, 'requestMode')}>
+            {[['private', text(lang, 'privateExcursion')], ['fixed', text(lang, 'fixedExcursion')], ['unsure', text(lang, 'notSure')]].map(([value, label]) => (
+              <button key={value} type="button" className={`questionnaire-choice ${requestChoice === value ? 'active' : ''}`} onClick={() => updateRequestType(value)} aria-pressed={requestChoice === value}>{label}</button>
+            ))}
+          </div>
+        );
+      case 'experience':
+        return (
+          <div className="questionnaire-field-stack">
+            {requestChoice === 'fixed' ? (
+              <>
+                <label className="field-label" htmlFor="questionnaireFixedExcursion">{text(lang, 'chooseFixedExcursion')}</label>
+                <select id="questionnaireFixedExcursion" value={formState.fixedExcursionId || ''} onChange={(event) => updateFixedExcursion(event.target.value)}>
+                  <option value="">{text(lang, 'chooseFixedExcursion')}</option>
+                  {fixedExcursions.map((item) => <option key={item.id} value={item.id}>{fixedExcursionLabel(item, lang)} · {text(lang, 'placesRemaining')} {item.places_remaining}/{item.capacity}</option>)}
+                </select>
+                {fixedExcursions.length === 0 && <p className="small-note">{text(lang, 'noFixedExcursions')}</p>}
+              </>
+            ) : (
+              <>
+                <label className="field-label" htmlFor="questionnaireExperience">{text(lang, 'selectedExperience')}</label>
+                <select id="questionnaireExperience" value={experienceId} onChange={(event) => update('experienceId', event.target.value)}>
+                  <option value="">{text(lang, 'selectExperience')}</option>
+                  {experiences.map((experience) => <option value={experience.id} key={experience.id}>{experience.title}</option>)}
+                  <option value="unsure">{text(lang, 'notSure')}</option>
+                </select>
+              </>
+            )}
+          </div>
+        );
+      case 'date':
+        return (
+          <div className="questionnaire-field-stack">
+            {selectedFixed && <p className="small-note">{text(lang, 'fixedExcursion')}: {fixedExcursionLabel(selectedFixed, lang)} · {adminExperienceLabel(selectedFixed.experience_id, lang)}</p>}
+            {requestType === 'private' && (
+              <div className="form-two-cols">
+                <div>
+                  <label className="field-label" htmlFor="questionnaireRequestedDate">{text(lang, 'requestedDate')}</label>
+                  <input id="questionnaireRequestedDate" type="date" min={todayMinDate} value={formState.requestedDate || ''} onChange={(event) => update('requestedDate', event.target.value)} />
+                </div>
+                <div>
+                  <label className="field-label" htmlFor="questionnaireAlternativeDate">{text(lang, 'alternativeDate')}</label>
+                  <input id="questionnaireAlternativeDate" type="date" min={todayMinDate} value={formState.alternativeDate || ''} onChange={(event) => update('alternativeDate', event.target.value)} />
+                </div>
+              </div>
+            )}
+            {requestType === 'private' && <p className="small-note">{text(lang, 'noDateYet')}</p>}
+          </div>
+        );
+      case 'participants':
+        return (
+          <div className="questionnaire-field-stack">
+            <label className="field-label" htmlFor="questionnairePartyType">{text(lang, 'partyType')}</label>
+            <select id="questionnairePartyType" value={formState.partyType || 'solo'} onChange={(event) => update('partyType', event.target.value)}>
+              <option value="solo">{text(lang, 'soloTraveler')}</option>
+              <option value="couple">{lang === 'it' ? 'Coppia' : 'Couple'}</option>
+              <option value="family">{lang === 'it' ? 'Famiglia' : 'Family'}</option>
+              <option value="group">{lang === 'it' ? 'Gruppo' : 'Group'}</option>
+              <option value="company">{lang === 'it' ? 'Azienda' : 'Company'}</option>
+              <option value="school">{lang === 'it' ? 'Scuola' : 'School'}</option>
+              <option value="other">{lang === 'it' ? 'Altro' : 'Other'}</option>
+            </select>
+            <div className="form-two-cols people-count-grid">
+              <div>
+                <label className="field-label" htmlFor="questionnaireAdults">{text(lang, 'adults')}</label>
+                <input id="questionnaireAdults" type="number" min="0" value={formState.adults || ''} onChange={(event) => update('adults', event.target.value)} />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="questionnaireChildren">{text(lang, 'childrenCount')}</label>
+                <input id="questionnaireChildren" type="number" min="0" value={formState.children || ''} onChange={(event) => update('children', event.target.value)} />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="questionnaireChildrenUnder3">{text(lang, 'childrenUnder3')}</label>
+                <input id="questionnaireChildrenUnder3" type="number" min="0" max={children || undefined} value={formState.childrenUnder3Count || '0'} onChange={(event) => update('childrenUnder3Count', event.target.value)} />
+              </div>
+              <div className="people-summary">
+                <strong>{text(lang, 'totalPeople')}</strong>
+                <span>{totalPeople}</span>
+              </div>
+            </div>
+            {over12 && <p className="form-status warning" role="status">{text(lang, 'contactGuideOver12')}</p>}
+          </div>
+        );
+      case 'contact':
+        return (
+          <div className="questionnaire-field-stack">
+            <label className="field-label" htmlFor="questionnaireName">{text(lang, 'name')}</label>
+            <input id="questionnaireName" type="text" value={formState.name || ''} onChange={(event) => update('name', event.target.value)} autoComplete="name" />
+            <div className="form-two-cols">
+              <div>
+                <label className="field-label" htmlFor="questionnairePhone">{text(lang, 'phone')}</label>
+                <input id="questionnairePhone" type="tel" inputMode="tel" pattern="^\+?[0-9]*$" value={formState.phone || ''} onBeforeInput={preventInvalidPhoneInput} onChange={(event) => update('phone', sanitizePublicPhoneInput(event.target.value))} autoComplete="tel" />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="questionnaireEmail">{text(lang, 'contactEmail')}</label>
+                <input id="questionnaireEmail" type="email" inputMode="email" value={formState.email || ''} onChange={(event) => update('email', event.target.value)} onBlur={(event) => update('email', String(event.target.value || '').trim())} autoComplete="email" />
+              </div>
+            </div>
+            <div className="form-two-cols">
+              <div>
+                <label className="field-label" htmlFor="questionnairePreferred">{text(lang, 'preferredContact')}</label>
+                <select id="questionnairePreferred" value={preferredContactValue} onChange={(event) => update('preferredContact', event.target.value)}>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="phone">{lang === 'it' ? 'Telefono' : 'Phone'}</option>
+                  <option value="email">Email</option>
+                </select>
+              </div>
+              <div>
+                <label className="field-label" htmlFor="questionnaireLanguage">{text(lang, 'preferredLanguage')}</label>
+                <select id="questionnaireLanguage" value={formState.language || lang} onChange={(event) => update('language', event.target.value)}>
+                  <option value="it">Italiano</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        );
+      case 'attribution':
+        return (
+          <div className="questionnaire-field-stack">
+            <label className="field-label" htmlFor="questionnaireHeardAboutUs">{text(lang, 'heardAboutUs')}</label>
+            <ContactAttributionSelect id="questionnaireHeardAboutUs" lang={lang} value={formState.heardAboutUs || ''} onChange={(value) => update('heardAboutUs', value)} />
+            {selectedHeardAboutUsNeedsDetail && (
+              <label className="field-label full" htmlFor="questionnaireHeardAboutUsDetail">
+                {text(lang, 'heardAboutUsOtherLabel')}
+                <textarea
+                  id="questionnaireHeardAboutUsDetail"
+                  value={formState.heardAboutUsDetail || ''}
+                  onChange={(event) => update('heardAboutUsDetail', event.target.value)}
+                  placeholder={text(lang, 'heardAboutUsOtherPlaceholder')}
+                  rows={3}
+                  maxLength={240}
+                  required
+                />
+              </label>
+            )}
+          </div>
+        );
+      case 'message':
+      default:
+        return (
+          <div className="questionnaire-field-stack">
+            <p className="small-note">{text(lang, 'finalMessageHelp')}</p>
+            <label className="field-label" htmlFor="questionnaireMessage">{text(lang, 'message')}</label>
+            <textarea id="questionnaireMessage" className="questionnaire-message-textarea" value={message} onChange={(event) => updateMessage(event.target.value)} rows={10} />
+            <button className="button secondary" type="button" onClick={regenerateMessageFromAnswers}>{text(lang, 'regenerateMessage')}</button>
+          </div>
+        );
+    }
+  }
+
+  const progressPercent = Math.round(((stepIndex + 1) / questionnaireSteps.length) * 100);
+  const progressText = text(lang, 'contactQuestionnaireProgress').replace('{current}', String(stepIndex + 1)).replace('{total}', String(questionnaireSteps.length));
+  const finalError = firstValidationError();
+  const finalActionsDisabled = Boolean(finalError || submitState.loading);
 
   return (
     <section className="section alt-section" id="contact">
-      <div className="container contact-section-grid">
+      <div className="container contact-section-grid contact-questionnaire-entry">
         <div>
           <EditableText as="h2" itemKey="contact.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formTitle')} />
           <EditableText as="p" itemKey="contact.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formIntro')} />
-          <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={null} siteContent={siteContent} contactDetails={contact} />
+          <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={openQuestionnaire} siteContent={siteContent} contactDetails={contact} />
           <a className="instagram-link" href={contact.instagram} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
         </div>
-        <form className="contact-form" onSubmit={submitRequest}>
-          <label className="field-label">{text(lang, 'requestMode')}</label>
-          <div className="mode-toggle form-mode-toggle" role="tablist" aria-label={text(lang, 'requestMode')}>
-            <button type="button" className={requestType === 'fixed' ? 'active' : ''} onClick={() => updateRequestType('fixed')}>{text(lang, 'fixedExcursion')}</button>
-            <button type="button" className={requestType === 'private' ? 'active' : ''} onClick={() => updateRequestType('private')}>{text(lang, 'privateExcursion')}</button>
-          </div>
-
-          <button className="request-details-button" type="button" onClick={openRequestDetails}>
-            {requestType === 'fixed' ? text(lang, 'viewFixedExcursionOptions') : text(lang, 'viewPrivateExcursionOptions')}
-          </button>
-
-          {requestType === 'fixed' && (
-            <>
-              <label className="field-label" htmlFor="contactFixedExcursion">{text(lang, 'chooseFixedExcursion')}</label>
-              <select id="contactFixedExcursion" value={formState.fixedExcursionId || ''} onChange={(event) => updateFixedExcursion(event.target.value)}>
-                <option value="">{text(lang, 'chooseFixedExcursion')}</option>
-                {fixedExcursions.map((item) => <option key={item.id} value={item.id}>{fixedExcursionLabel(item, lang)} · {text(lang, 'placesRemaining')} {item.places_remaining}/{item.capacity}</option>)}
-              </select>
-              {fixedExcursions.length === 0 && <p className="small-note">{text(lang, 'noFixedExcursions')}</p>}
-            </>
-          )}
-
-          <label className="field-label" htmlFor="contactName">{text(lang, 'name')}</label>
-          <input id="contactName" type="text" value={formState.name || ''} onChange={(event) => update('name', event.target.value)} autoComplete="name" />
-
-          <div className="form-two-cols">
-            <div>
-              <label className="field-label" htmlFor="contactPhone">{text(lang, 'phone')}</label>
-              <input id="contactPhone" type="tel" value={formState.phone || ''} onChange={(event) => update('phone', event.target.value)} autoComplete="tel" />
-            </div>
-            <div>
-              <label className="field-label" htmlFor="contactEmail">{text(lang, 'contactEmail')}</label>
-              <input id="contactEmail" type="email" value={formState.email || ''} onChange={(event) => update('email', event.target.value)} autoComplete="email" />
-            </div>
-          </div>
-
-          <div className="form-two-cols">
-            <div>
-              <label className="field-label" htmlFor="contactPreferred">{text(lang, 'preferredContact')}</label>
-              <select id="contactPreferred" value={preferredContactValue} onChange={(event) => update('preferredContact', event.target.value)}>
-                <option value="whatsapp">WhatsApp</option>
-                <option value="phone">{lang === 'it' ? 'Telefono' : 'Phone'}</option>
-                <option value="email">Email</option>
-              </select>
-            </div>
-            <div>
-              <label className="field-label" htmlFor="contactLanguage">{text(lang, 'preferredLanguage')}</label>
-              <select id="contactLanguage" value={formState.language || lang} onChange={(event) => update('language', event.target.value)}>
-                <option value="it">Italiano</option>
-                <option value="en">English</option>
-              </select>
-            </div>
-          </div>
-
-          <label className="field-label" htmlFor="contactHeardAboutUs">{text(lang, 'heardAboutUs')}</label>
-          <ContactAttributionSelect id="contactHeardAboutUs" lang={lang} value={formState.heardAboutUs || ''} onChange={(value) => update('heardAboutUs', value)} />
-          {selectedHeardAboutUsNeedsDetail && (
-            <label className="field-label full" htmlFor="contactHeardAboutUsDetail">
-              {text(lang, 'heardAboutUsOtherLabel')}
-              <textarea
-                id="contactHeardAboutUsDetail"
-                value={formState.heardAboutUsDetail || ''}
-                onChange={(event) => update('heardAboutUsDetail', event.target.value)}
-                placeholder={text(lang, 'heardAboutUsOtherPlaceholder')}
-                rows={3}
-                maxLength={240}
-                required
-              />
-            </label>
-          )}
-
-          <div className="form-two-cols">
-            <div>
-              <label className="field-label" htmlFor="contactPartyType">{text(lang, 'partyType')}</label>
-              <select id="contactPartyType" value={formState.partyType || 'solo'} onChange={(event) => update('partyType', event.target.value)}>
-                <option value="solo">{text(lang, 'soloTraveler')}</option>
-                <option value="couple">{lang === 'it' ? 'Coppia' : 'Couple'}</option>
-                <option value="family">{lang === 'it' ? 'Famiglia' : 'Family'}</option>
-                <option value="group">{lang === 'it' ? 'Gruppo' : 'Group'}</option>
-                <option value="company">{lang === 'it' ? 'Azienda' : 'Company'}</option>
-                <option value="school">{lang === 'it' ? 'Scuola' : 'School'}</option>
-                <option value="other">{lang === 'it' ? 'Altro' : 'Other'}</option>
-              </select>
-            </div>
-            <div>
-              <label className="field-label" htmlFor="contactExperience">{text(lang, 'selectedExperience')}</label>
-              {requestType === 'fixed' && selectedFixed ? (
-                <div className="readonly-selected-experience" id="contactExperience" role="note">
-                  <strong>{adminExperienceLabel(selectedFixed.experience_id, lang)}</strong>
-                  <span>{adminCopy(lang, 'Definita dal programma scelto', 'Defined by the selected program')}</span>
-                </div>
-              ) : (
-                <select id="contactExperience" value={experienceId} onChange={(event) => update('experienceId', event.target.value)}>
-                  <option value="">{text(lang, 'selectExperience')}</option>
-                  {experiences.map((experience) => <option value={experience.id} key={experience.id}>{experience.title}</option>)}
-                </select>
-              )}
-            </div>
-          </div>
-
-          {requestType === 'private' && (
-            <div className="form-two-cols">
-              <div>
-                <label className="field-label" htmlFor="contactRequestedDate">{text(lang, 'requestedDate')}</label>
-                <input id="contactRequestedDate" type="date" value={formState.requestedDate || ''} onChange={(event) => update('requestedDate', event.target.value)} />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="contactAlternativeDate">{text(lang, 'alternativeDate')}</label>
-                <input id="contactAlternativeDate" type="date" value={formState.alternativeDate || ''} onChange={(event) => update('alternativeDate', event.target.value)} />
-              </div>
-            </div>
-          )}
-
-          <div className="form-two-cols people-count-grid">
-            <div>
-              <label className="field-label" htmlFor="contactAdults">{text(lang, 'adults')}</label>
-              <input id="contactAdults" type="number" min="0" value={formState.adults || ''} onChange={(event) => update('adults', event.target.value)} />
-            </div>
-            <div>
-              <label className="field-label" htmlFor="contactChildren">{text(lang, 'childrenCount')}</label>
-              <input id="contactChildren" type="number" min="0" value={formState.children || ''} onChange={(event) => update('children', event.target.value)} />
-            </div>
-            <div>
-              <label className="field-label" htmlFor="contactChildrenUnder3">{text(lang, 'childrenUnder3')}</label>
-              <input id="contactChildrenUnder3" type="number" min="0" max={children || undefined} value={formState.childrenUnder3Count || '0'} onChange={(event) => update('childrenUnder3Count', event.target.value)} />
-            </div>
-            <div className="people-summary">
-              <strong>{text(lang, 'totalPeople')}</strong>
-              <span>{totalPeople}</span>
-            </div>
-          </div>
-          {over12 && <p className="form-status warning" role="status">{text(lang, 'contactGuideOver12')}</p>}
-
-          <label className="field-label" htmlFor="contactMessage">{text(lang, 'message')}</label>
-          <textarea id="contactMessage" value={message} onChange={(event) => update('message', event.target.value)} />
-          {selectedFixed && <p className="small-note">{text(lang, 'fixedExcursion')}: {fixedExcursionLabel(selectedFixed, lang)} · {adminExperienceLabel(selectedFixed.experience_id, lang)}</p>}
-          {submitState.error && <p className="form-status error" role="alert">{submitState.error}</p>}
+        <article className="contact-form questionnaire-start-card">
+          <span className="kicker">{text(lang, 'formKicker')}</span>
+          <h3>{text(lang, 'prepareYourRequest')}</h3>
+          <p>{text(lang, 'contactQuestionnaireIntro')}</p>
+          <button className="request-action-button request-action-button-primary questionnaire-start-button" type="button" onClick={openQuestionnaire}>{text(lang, 'startQuestionnaire')}</button>
           {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
-          <div className="request-action-row">
-            <button className="request-action-button request-action-button-primary" type="submit" disabled={submitState.loading}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitRequest')}</button>
-            <button className="request-action-button request-action-button-secondary" type="button" onClick={openFormWhatsapp}>{text(lang, 'sendWhatsapp')}</button>
-          </div>
-        </form>
+        </article>
       </div>
 
-      {fixedOptionsOpen && (
-        <div className="date-modal-overlay request-options-overlay" role="dialog" aria-modal="true" aria-labelledby="fixed-options-title" onClick={() => setFixedOptionsOpen(false)}>
-          <article className="date-modal request-options-modal" onClick={(event) => event.stopPropagation()}>
+      {questionnaireTransition.shouldRender && (
+        <div className={`questionnaire-overlay motion-backdrop ${questionnaireTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="questionnaire-title">
+          <form className="questionnaire-modal motion-panel" ref={modalRef} onSubmit={submitRequest}>
+            <header className="questionnaire-header">
+              <div>
+                <span className="kicker">vulcanIQ</span>
+                <h2 id="questionnaire-title">{text(lang, 'contactQuestionnaireTitle')}</h2>
+                <p>{progressText}</p>
+              </div>
+              <button className="date-modal-close" type="button" onClick={attemptCloseQuestionnaire} aria-label={text(lang, 'close')}>{text(lang, 'close')}</button>
+            </header>
+            <div className="questionnaire-progress" aria-label={progressText} role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={progressPercent}>
+              <span style={{ width: `${progressPercent}%` }} />
+            </div>
+            <div className="questionnaire-option-actions">
+              <button className="button secondary" type="button" onClick={openPrivateOptions}>{text(lang, 'viewPrivateExcursionOptions')}</button>
+              <button className="button secondary" type="button" onClick={openFixedOptions}>{text(lang, 'viewFixedExcursionOptions')}</button>
+            </div>
+            <main className="questionnaire-body">
+              <section className="questionnaire-step" key={currentStep.key} aria-live="polite">
+                <h3>{currentStep.title}</h3>
+                {renderStepFields()}
+                {stepError && <p className="form-status error" role="alert">{stepError}</p>}
+                {submitState.error && currentStep.key === 'message' && <p className="form-status error" role="alert">{submitState.error}</p>}
+                {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
+              </section>
+            </main>
+            <footer className="questionnaire-footer">
+              <button className="button secondary" type="button" onClick={goBack} disabled={stepIndex === 0}>{text(lang, 'back')}</button>
+              {currentStep.key !== 'message' ? (
+                <button className="request-action-button request-action-button-primary" type="button" onClick={goNext}>{text(lang, 'next')}</button>
+              ) : (
+                <div className="questionnaire-final-actions">
+                  <button className="request-action-button request-action-button-primary" type="submit" disabled={finalActionsDisabled}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitRequest')}</button>
+                  <button className="request-action-button request-action-button-secondary" type="button" onClick={openFormWhatsapp} disabled={finalActionsDisabled}>{text(lang, 'sendWhatsapp')}</button>
+                </div>
+              )}
+            </footer>
+          </form>
+        </div>
+      )}
+
+      {fixedOptionsTransition.shouldRender && (
+        <div className={`date-modal-overlay request-options-overlay motion-backdrop ${fixedOptionsTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="fixed-options-title" onClick={() => setFixedOptionsOpen(false)}>
+          <article className="date-modal request-options-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="date-modal-header">
               <div>
                 <h2 id="fixed-options-title">{text(lang, 'fixedExcursionOptionsTitle')}</h2>
@@ -3022,6 +3554,16 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
               <strong>{monthLabel(detailsMonthDate, lang)}</strong>
               <button type="button" onClick={() => changeDetailsMonth(1)} aria-label={text(lang, 'nextMonth')}>›</button>
             </div>
+            {fixedExcursions.filter((item) => sameCalendarMonth(item.date, detailsMonthDate)).length > 0 && (
+              <div className="request-fixed-list">
+                {fixedExcursions.filter((item) => sameCalendarMonth(item.date, detailsMonthDate)).map((item) => (
+                  <button className="request-fixed-option" type="button" key={item.id} onClick={() => setSelectedFixedExcursionDetails(item)}>
+                    <strong>{fixedExcursionLabel(item, lang)}</strong>
+                    <span>{adminExperienceLabel(item.experience_id, lang)} · {text(lang, 'placesRemaining')} {item.places_remaining}/{item.capacity}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {fixedOptions.length ? (
               <div className="request-leaflet-grid">
                 {fixedOptions.map((option) => {
@@ -3048,9 +3590,9 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
         </div>
       )}
 
-      {privateOptionsOpen && (
-        <div className="date-modal-overlay request-options-overlay" role="dialog" aria-modal="true" aria-labelledby="private-options-title" onClick={() => setPrivateOptionsOpen(false)}>
-          <article className="date-modal request-options-modal" onClick={(event) => event.stopPropagation()}>
+      {privateOptionsTransition.shouldRender && (
+        <div className={`date-modal-overlay request-options-overlay motion-backdrop ${privateOptionsTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="private-options-title" onClick={() => setPrivateOptionsOpen(false)}>
+          <article className="date-modal request-options-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="date-modal-header">
               <div>
                 <h2 id="private-options-title">{text(lang, 'privateExcursionOptionsTitle')}</h2>
@@ -3077,25 +3619,56 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
         </div>
       )}
 
-      {selectedPrivateExperience && (
-        <div className="experience-modal-overlay request-private-detail-overlay" role="dialog" aria-modal="true" aria-labelledby="request-private-detail-title" onClick={() => setSelectedPrivateExperience(null)}>
-          <article className="experience-modal request-private-detail-modal" onClick={(event) => event.stopPropagation()}>
+
+      {renderedFixedExcursionDetails && (
+        <div className={`date-modal-overlay request-fixed-detail-overlay motion-backdrop ${fixedDetailTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="request-fixed-detail-title" onClick={() => setSelectedFixedExcursionDetails(null)}>
+          <article className="date-modal request-fixed-detail-modal motion-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="date-modal-header">
+              <div>
+                <span className="micro-label details-label">{text(lang, 'fixedExcursion')}</span>
+                <h2 id="request-fixed-detail-title">{fixedExcursionTitle(renderedFixedExcursionDetails, lang)}</h2>
+                <p>{fixedExcursionLabel(renderedFixedExcursionDetails, lang)}</p>
+              </div>
+              <button className="date-modal-close" type="button" onClick={() => setSelectedFixedExcursionDetails(null)}>{text(lang, 'close')}</button>
+            </div>
+            <div className="date-modal-content fixed-date-content">
+              <article className="date-modal-fixed-card request-fixed-detail-card">
+                <FormattedDescription textValue={fixedExcursionField(renderedFixedExcursionDetails, 'description', lang) || renderedFixedExcursionDetails[`note_${lang}`] || renderedFixedExcursionDetails.note_it || renderedFixedExcursionDetails.note_en || experienceById(renderedFixedExcursionDetails.experience_id).summary[lang]} />
+                <dl className="public-details-grid date-modal-details-grid">
+                  <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(renderedFixedExcursionDetails.date, lang)}</dd></div>
+                  <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(renderedFixedExcursionDetails.experience_id, lang)}</dd></div>
+                  <MeetingPointDetailCard item={renderedFixedExcursionDetails} lang={lang} />
+                  {fixedExcursionField(renderedFixedExcursionDetails, 'difficulty', lang) && <div><dt>{text(lang, 'difficulty')}</dt><dd>{fixedExcursionField(renderedFixedExcursionDetails, 'difficulty', lang)}</dd></div>}
+                  {fixedExcursionField(renderedFixedExcursionDetails, 'price_note', lang) && <div><dt>{text(lang, 'priceNote')}</dt><dd>{fixedExcursionField(renderedFixedExcursionDetails, 'price_note', lang)}</dd></div>}
+                  <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{renderedFixedExcursionDetails.places_remaining}/{renderedFixedExcursionDetails.capacity}</dd></div>
+                </dl>
+                <BlockedDatesAttachment item={renderedFixedExcursionDetails} lang={lang} onOpenFile={(file, label) => setActiveLeaflet({ leaflet: file, label: label || text(lang, 'openExcursionProgram'), fixedExcursion: renderedFixedExcursionDetails })} />
+                <div className="request-action-row date-modal-actions">
+                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => { updateFixedExcursion(renderedFixedExcursionDetails.id); setSelectedFixedExcursionDetails(null); setFixedOptionsOpen(false); }}>{text(lang, 'useThisOptionInRequest')}</button>
+                </div>
+              </article>
+            </div>
+          </article>
+        </div>
+      )}
+      {renderedPrivateExperience && (
+        <div className={`experience-modal-overlay request-private-detail-overlay motion-backdrop ${privateDetailTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="request-private-detail-title" onClick={() => setSelectedPrivateExperience(null)}>
+          <article className="experience-modal request-private-detail-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="experience-modal-header">
-              <h2 id="request-private-detail-title">{selectedPrivateExperience.title}</h2>
+              <h2 id="request-private-detail-title">{renderedPrivateExperience.title}</h2>
               <button className="experience-modal-close" type="button" onClick={() => setSelectedPrivateExperience(null)}>{text(lang, 'close')}</button>
             </div>
             <div className="experience-detail-content">
-              <EditableImage mediaKey={experienceMediaKey(selectedPrivateExperience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={selectedPrivateExperience.image} fallbackAlt={`${selectedPrivateExperience.title} vulcanIQ`} className="experience-modal-image" />
+              <EditableImage mediaKey={experienceMediaKey(renderedPrivateExperience.id)} lang={lang} siteMedia={siteMedia} editor={editor} fallbackSrc={renderedPrivateExperience.image} fallbackAlt={`${renderedPrivateExperience.title} vulcanIQ`} className="experience-modal-image" />
               <div className="experience-detail-copy">
-                <p>{selectedPrivateExperience.description[lang]}</p>
+                <p>{renderedPrivateExperience.description[lang]}</p>
                 <dl>
-                  <div><dt>{text(lang, 'bestFor')}</dt><dd>{selectedPrivateExperience.bestFor[lang]}</dd></div>
-                  <div><dt>{text(lang, 'practical')}</dt><dd>{selectedPrivateExperience.notes[lang]}</dd></div>
-                  <div><dt>{text(lang, 'safety')}</dt><dd>{selectedPrivateExperience.safety[lang]}</dd></div>
+                  <div><dt>{text(lang, 'bestFor')}</dt><dd>{renderedPrivateExperience.bestFor[lang]}</dd></div>
+                  <div><dt>{text(lang, 'practical')}</dt><dd>{renderedPrivateExperience.notes[lang]}</dd></div>
+                  <div><dt>{text(lang, 'safety')}</dt><dd>{renderedPrivateExperience.safety[lang]}</dd></div>
                 </dl>
                 <div className="request-action-row experience-modal-actions">
-                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => usePrivateExperienceInRequest(selectedPrivateExperience)}>{text(lang, 'useThisOptionInRequest')}</button>
-                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedPrivateExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(selectedPrivateExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: { ...buildBookingTrackingContext({ experienceId: selectedPrivateExperience?.id || '', requestType: 'private', sourceSection: 'today', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), ...selectedHeardAboutUsMetadata }, defaultSource: formState.heardAboutUs || '', defaultDetail: formState.heardAboutUsDetail || '', confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}`, afterConfirm: (selectedMetadata, source, detail) => setFormState((current) => ({ ...current, heardAboutUs: source || current.heardAboutUs, heardAboutUsDetail: detail || current.heardAboutUsDetail })) })}>{text(lang, 'sendWhatsapp')}</a>
+                  <button className="request-action-button request-action-button-primary" type="button" onClick={() => usePrivateExperienceInRequest(renderedPrivateExperience)}>{text(lang, 'useThisOptionInRequest')}</button>
                 </div>
               </div>
             </div>
@@ -3103,20 +3676,21 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
         </div>
       )}
 
-      {activeLeaflet?.leaflet && (
-        <div className="leaflet-fullscreen-overlay request-leaflet-overlay" role="dialog" aria-modal="true" aria-label={activeLeaflet.label || text(lang, 'openProgram')} onClick={() => setActiveLeaflet(null)}>
-          <article className="leaflet-fullscreen-modal" onClick={(event) => event.stopPropagation()}>
+      {renderedRequestLeaflet?.leaflet && (
+        <div className={`leaflet-fullscreen-overlay request-leaflet-overlay motion-backdrop ${requestLeafletTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-label={renderedRequestLeaflet.label || text(lang, 'openProgram')} onClick={() => setActiveLeaflet(null)}>
+          <article className="leaflet-fullscreen-modal motion-panel" onClick={(event) => event.stopPropagation()}>
             <div className="leaflet-fullscreen-header">
-              <h2>{activeLeaflet.label || text(lang, 'openProgram')}</h2>
+              <h2>{renderedRequestLeaflet.label || text(lang, 'openProgram')}</h2>
               <button className="date-modal-close" type="button" onClick={() => setActiveLeaflet(null)}>{text(lang, 'close')}</button>
             </div>
             <div className="leaflet-fullscreen-body">
-              {String(activeLeaflet.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(activeLeaflet.leaflet.file_url) ? (
-                <img className="leaflet-fullscreen-image" src={activeLeaflet.leaflet.file_url} alt={activeLeaflet.label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
+              {String(renderedRequestLeaflet.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(renderedRequestLeaflet.leaflet.file_url) ? (
+                <img className="leaflet-fullscreen-image" src={renderedRequestLeaflet.leaflet.file_url} alt={renderedRequestLeaflet.label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
               ) : (
-                <iframe className="leaflet-fullscreen-frame" src={activeLeaflet.leaflet.file_url} title={activeLeaflet.label || text(lang, 'openProgram')} />
+                <iframe className="leaflet-fullscreen-frame" src={renderedRequestLeaflet.leaflet.file_url} title={renderedRequestLeaflet.label || text(lang, 'openProgram')} />
               )}
             </div>
+            {renderedRequestLeaflet.fixedExcursion && <button className="request-action-button request-action-button-primary" type="button" onClick={() => { updateFixedExcursion(renderedRequestLeaflet.fixedExcursion.id); setActiveLeaflet(null); setFixedOptionsOpen(false); }}>{text(lang, 'useThisOptionInRequest')}</button>}
           </article>
         </div>
       )}
@@ -3352,12 +3926,6 @@ function heardAboutUsMetadata(value, lang, detail = '') {
   };
 }
 
-function heardAboutUsMessageLine(value, detail, lang) {
-  const display = heardAboutUsDisplay(value, detail, lang);
-  if (!display) return '';
-  return `${text(lang, 'heardAboutUsMessagePrefix')} ${display}.`;
-}
-
 function buildAttributionContactMessage(value, detail, lang) {
   const display = heardAboutUsDisplay(value, detail, lang);
   if (!display) return text(lang, 'defaultMessage');
@@ -3365,14 +3933,6 @@ function buildAttributionContactMessage(value, detail, lang) {
     return `Hi Leonardo,\n\nI heard about vulcanIQ from "${display}" and I would like information about a vulcanIQ experience on Mount Etna.\n\nI would like to know availability, approximate duration, price and clothing recommendations.\n\nThank you!`;
   }
   return `Ciao Leonardo,\n\nHo sentito parlare di vulcanIQ da "${display}" e vorrei informazioni su un’esperienza vulcanIQ sull’Etna.\n\nVorrei sapere disponibilità, durata indicativa, prezzo e consigli sull’abbigliamento.\n\nGrazie!`;
-}
-
-function appendHeardAboutUsToMessage(message, value, detail, lang) {
-  const base = String(message || text(lang, 'defaultMessage')).trimEnd();
-  const line = heardAboutUsMessageLine(value, detail, lang);
-  if (!line) return base;
-  if (base.includes(line)) return base;
-  return `${base}\n\n${line}`;
 }
 
 function ContactAttributionSelect({ lang, value, onChange, includeAdmin = false, id = 'heardAboutUs' }) {
@@ -3712,6 +4272,9 @@ function ProtectedAdminArea({ pathname, navigate, lang, setLang }) {
 function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
   const currentAdminPath = adminPathFromLocation(pathname);
+  const visibleSections = visibleAdminNavSections(profile);
+  const currentNavValue = visibleSections.some((section) => section.path === currentAdminPath) ? currentAdminPath : '/admin/today';
+  const isOwner = profile?.role === 'owner' && profile?.active !== false;
 
   const [adminContentRows, setAdminContentRows] = useState([]);
 
@@ -3754,11 +4317,11 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   return (
     <div className="admin-shell">
       <header className="admin-header">
-        <select className="admin-mobile-nav" value={currentAdminPath} onChange={(event) => navigate(event.target.value)} aria-label="Admin navigation">
-          {ADMIN_NAV_SECTIONS.map((section) => <option key={section.key} value={section.path}>{adminNavLabel(section, lang)}</option>)}
+        <select className="admin-mobile-nav" value={currentNavValue} onChange={(event) => navigate(event.target.value)} aria-label="Admin navigation">
+          {visibleSections.map((section) => <option key={section.key} value={section.path}>{adminNavLabel(section, lang)}</option>)}
         </select>
         <nav className="admin-nav" aria-label="Admin navigation">
-          {ADMIN_NAV_SECTIONS.map((section) => section.external ? (
+          {visibleSections.map((section) => section.external ? (
             <a key={section.key} href={section.path} target="_blank" rel="noopener noreferrer">{adminNavLabel(section, lang)}</a>
           ) : (
             <button key={section.key} type="button" className={isAdminNavSectionActive(normalizedPath, section) ? 'active' : ''} onClick={() => navigate(section.path)}>{adminNavLabel(section, lang)}</button>
@@ -3779,6 +4342,8 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           <FinanceAdminPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/analytics') || normalizedPath.includes('/data') ? (
           <AdminAnalyticsPage lang={lang} session={session} adminContent={adminContent} />
+        ) : normalizedPath.includes('/system') || normalizedPath.includes('/backup') ? (
+          isOwner ? <AdminBackupPage lang={lang} session={session} profile={profile} adminContent={adminContent} /> : <OwnerOnlyAdminPage lang={lang} />
         ) : normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media') ? (
           <AdminEditPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/partnerships') ? (
@@ -5868,6 +6433,33 @@ function eventMeta(event, key) {
   return event?.metadata && Object.prototype.hasOwnProperty.call(event.metadata, key) ? event.metadata[key] : '';
 }
 
+function eventBookingRequestId(event) {
+  return String(eventMeta(event, 'booking_request_id') || eventMeta(event, 'request_id') || '').trim();
+}
+
+function requestCreatedAtTime(request) {
+  const time = new Date(request?.created_at || 0).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function eventOccurredAtTime(event) {
+  const time = new Date(event?.occurred_at || 0).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function trackingIncompleteLabel(lang) {
+  return adminCopy(lang, 'Tracciamento incompleto', 'Incomplete tracking');
+}
+
+function isAdminManualRequest(request = {}) {
+  return Boolean(request.created_by_admin) || ['manual', 'admin_manual'].includes(String(request.source || '').trim());
+}
+
+function normalizedPublicRequestSource(request = {}) {
+  const source = String(request.source || '').trim();
+  return source || 'website';
+}
+
 function normalizedExperienceKey(value, lang) {
   const clean = String(value || '').trim();
   if (!clean || clean === 'unknown' || clean === 'unsure') return adminCopy(lang, 'Non specificata', 'Unspecified');
@@ -5970,14 +6562,11 @@ function buildSessionPaths(events, lang) {
 }
 
 function bookingRequestsInPeriod(requests, range) {
-  return (requests || []).filter((request) => {
-    const source = request.source || 'unknown';
-    return periodContains(request, range) && (source === 'website' || source === 'unknown' || !source);
-  }).length;
+  return (requests || []).filter((request) => periodContains(request, range) && !isAdminManualRequest(request) && ['website', 'public_website', 'unknown'].includes(normalizedPublicRequestSource(request))).length;
 }
 
 function confirmedBookingRequestsInPeriod(requests, range) {
-  return (requests || []).filter((request) => periodContains(request, range) && ['accepted', 'confirmed', 'completed'].includes(request.status)).length;
+  return (requests || []).filter((request) => periodContains(request, range) && !isAdminManualRequest(request) && ['accepted', 'confirmed', 'completed'].includes(request.status)).length;
 }
 
 
@@ -6026,6 +6615,87 @@ function buildDeclaredAttributionRows({ events = [], bookingRequests = [], range
     .sort((a, b) => (b.booking_requests + b.contact_events + b.form_events) - (a.booking_requests + a.contact_events + a.form_events));
 }
 
+function buildBookingRequestTrackingIntegrity({ requests = [], events = [], range, lang, isSubmitAttemptEvent, isSubmitSuccessEvent }) {
+  const eventsByRequestId = new Map();
+  events.forEach((event) => {
+    const id = eventBookingRequestId(event);
+    if (!id) return;
+    const list = eventsByRequestId.get(id) || [];
+    list.push(event);
+    eventsByRequestId.set(id, list);
+  });
+
+  const legacySuccessEvents = events.filter((event) => isSubmitSuccessEvent(event) && !eventBookingRequestId(event));
+  const legacyAttemptEvents = events.filter((event) => isSubmitAttemptEvent(event) && !eventBookingRequestId(event));
+  const formOpenEvents = events.filter((event) => event.event_name === 'booking_form_open');
+
+  function legacyMatches(request, candidates) {
+    const requestTime = requestCreatedAtTime(request);
+    const requestKey = requestExperienceKeyFromRequest(request, lang);
+    return candidates.filter((event) => {
+      const eventTime = eventOccurredAtTime(event);
+      if (!requestTime || !eventTime || Math.abs(requestTime - eventTime) > 2 * 60 * 60 * 1000) return false;
+      return eventExperienceKey(event, lang) === requestKey;
+    });
+  }
+
+  return (requests || [])
+    .filter((request) => periodContains(request, range))
+    .map((request) => {
+      const id = String(request.id || '').trim();
+      const matchedEvents = id ? (eventsByRequestId.get(id) || []) : [];
+      const matchedAttemptById = matchedEvents.find(isSubmitAttemptEvent);
+      const matchedSuccessById = matchedEvents.find(isSubmitSuccessEvent);
+      const matchedCreatedById = matchedEvents.find((event) => event.event_name === 'booking_request_created');
+      const legacyAttempts = matchedAttemptById ? [] : legacyMatches(request, legacyAttemptEvents);
+      const legacySuccesses = matchedSuccessById ? [] : legacyMatches(request, legacySuccessEvents);
+      const legacyFormOpens = legacyMatches(request, formOpenEvents);
+      const hasAttempt = Boolean(matchedAttemptById || legacyAttempts.length);
+      const hasSuccess = Boolean(matchedSuccessById || legacySuccesses.length);
+      const hasCreated = Boolean(matchedCreatedById || matchedEvents.some((event) => event.event_name === 'booking_request_created'));
+      const adminManual = isAdminManualRequest(request);
+      const matchMethod = matchedSuccessById || matchedCreatedById
+        ? 'matched_by_booking_request_id'
+        : legacySuccesses.length || legacyAttempts.length || legacyFormOpens.length
+          ? 'matched_by_legacy_heuristic'
+          : adminManual
+            ? 'admin_manual'
+            : 'missing_submit_tracking';
+      const createdDate = String(request.created_at || '').slice(0, 10);
+      const legacyCutoff = '2026-06-16';
+      const status = adminManual
+        ? 'admin_manual'
+        : hasSuccess || hasCreated
+          ? 'matched_by_booking_request_id'
+          : matchMethod === 'matched_by_legacy_heuristic'
+            ? 'matched_by_legacy_heuristic'
+            : createdDate && createdDate < legacyCutoff
+              ? 'legacy_missing_tracking'
+              : 'missing_submit_tracking';
+
+      return {
+        booking_request_id: id || null,
+        created_at: request.created_at,
+        request_type: request.request_type,
+        experience_id: request.experience_id,
+        source: request.source || 'website',
+        created_by_admin: Boolean(request.created_by_admin),
+        matched_submit_attempt: hasAttempt,
+        matched_submit_success: hasSuccess,
+        matched_booking_request_created_event: hasCreated,
+        submit_attempt_at: (matchedAttemptById || legacyAttempts[0])?.occurred_at || null,
+        submit_success_at: (matchedSuccessById || legacySuccesses[0])?.occurred_at || null,
+        booking_request_created_event_at: matchedCreatedById?.occurred_at || null,
+        tracking_match_method: matchMethod,
+        tracking_integrity_status: status,
+        heard_about_us: normalizeHeardAboutUs(request.heard_about_us, { allowAdmin: true }) || null,
+        heard_about_us_label: heardAboutUsLabel(request.heard_about_us, lang, { fallback: '' }) || null,
+        heard_about_us_detail: cleanHeardAboutUsDetail(request.heard_about_us_detail) || null,
+        heard_about_us_display: heardAboutUsDisplay(request.heard_about_us, request.heard_about_us_detail, lang, { fallback: '' }) || null
+      };
+    });
+}
+
 function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions = [], bookingRequests = [], range, lang }) {
   const rawEvents = inputEvents || [];
   const rawSessions = inputSessions || [];
@@ -6046,10 +6716,9 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   const submitSuccesses = eventCountAny(events, SUBMIT_SUCCESS_EVENTS);
   const submitErrors = eventCountAny(events, SUBMIT_ERROR_EVENTS);
   const bookingRequestCreatedEvents = eventCount(events, 'booking_request_created');
-  const websiteRequestRows = (bookingRequests || []).filter((request) => {
-    const source = request.source || 'unknown';
-    return periodContains(request, range) && (source === 'website' || source === 'unknown' || !source);
-  });
+  const websiteRequestRows = (bookingRequests || []).filter((request) => periodContains(request, range) && !isAdminManualRequest(request) && ['website', 'public_website', 'unknown'].includes(normalizedPublicRequestSource(request)));
+  const websiteRequestIds = new Set(websiteRequestRows.map((request) => String(request.id || '').trim()).filter(Boolean));
+  const adminManualRequestRows = (bookingRequests || []).filter((request) => periodContains(request, range) && isAdminManualRequest(request));
   const websiteRequests = websiteRequestRows.length;
   const bookingRequestCount = Math.max(websiteRequests, bookingRequestCreatedEvents, submitSuccesses);
   const confirmedRequests = confirmedBookingRequestsInPeriod(bookingRequests, range);
@@ -6157,7 +6826,10 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     if (isSubmitAttemptEvent(event)) row.submit_attempts += 1;
     if (isSubmitSuccessEvent(event)) row.submit_successes += 1;
     if (isSubmitErrorEvent(event)) row.submit_errors += 1;
-    if (event.event_name === 'booking_request_created') row.booking_requests += 1;
+    if (event.event_name === 'booking_request_created') {
+      const eventRequestId = eventBookingRequestId(event);
+      if (!eventRequestId || !websiteRequestIds.has(eventRequestId)) row.booking_requests += 1;
+    }
     if (event.event_name === 'whatsapp_click') row.whatsapp_clicks += 1;
     if (event.event_name === 'email_click') row.email_clicks += 1;
     if (event.event_name === 'phone_click') row.phone_clicks += 1;
@@ -6171,7 +6843,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     .map((row) => ({
       ...row,
       view_to_request: percent(row.booking_requests, row.experience_views || row.detail_opens),
-      form_to_request: percent(row.booking_requests, row.form_opens)
+      form_to_request: row.booking_requests && (!row.form_opens || row.booking_requests > row.form_opens) ? trackingIncompleteLabel(lang) : percent(row.booking_requests, row.form_opens)
     }))
     .filter((row) => row.experience_views || row.detail_opens || row.form_opens || row.submit_attempts || row.submit_successes || row.booking_requests || row.whatsapp_clicks || row.email_clicks || row.phone_clicks)
     .sort((a, b) => (b.booking_requests + b.form_opens + b.whatsapp_clicks + b.email_clicks + b.phone_clicks) - (a.booking_requests + a.form_opens + a.whatsapp_clicks + a.email_clicks + a.phone_clicks))
@@ -6230,7 +6902,10 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     if (isValidationErrorEvent(event)) row.validation_errors += 1;
     if (isSubmitSuccessEvent(event)) row.submit_successes += 1;
     if (isSubmitErrorEvent(event)) row.submit_errors += 1;
-    if (event.event_name === 'booking_request_created') row.booking_requests += 1;
+    if (event.event_name === 'booking_request_created') {
+      const eventRequestId = eventBookingRequestId(event);
+      if (!eventRequestId || !websiteRequestIds.has(eventRequestId)) row.booking_requests += 1;
+    }
     if (event.event_name === 'whatsapp_click') row.whatsapp_clicks += 1;
     if (event.event_name === 'email_click') row.email_clicks += 1;
     if (event.event_name === 'phone_click') row.phone_clicks += 1;
@@ -6280,7 +6955,17 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
           : adminCopy(lang, 'Da UTM o referrer riconosciuto', 'From recognized UTM or referrer')
   }));
 
+  const requestTrackingIntegrity = buildBookingRequestTrackingIntegrity({ requests: bookingRequests, events, range, lang, isSubmitAttemptEvent, isSubmitSuccessEvent });
+  const publicRequestTrackingIntegrity = requestTrackingIntegrity.filter((row) => row.tracking_integrity_status !== 'admin_manual');
+  const requestsWithTrackedSubmit = publicRequestTrackingIntegrity.filter((row) => row.matched_submit_success || row.matched_booking_request_created_event).length;
+  const requestsWithoutTrackedSubmit = publicRequestTrackingIntegrity.filter((row) => ['missing_submit_tracking', 'legacy_missing_tracking'].includes(row.tracking_integrity_status)).length;
+  const legacyIncompleteRequests = publicRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'legacy_missing_tracking').length;
+
   const dataQualityRows = [
+    { check: adminCopy(lang, 'Richieste con invio tracciato', 'Requests with tracked submit'), count: requestsWithTrackedSubmit, detail: adminCopy(lang, 'Preferenza: match tramite booking_request_id negli eventi analytics.', 'Preferred match: analytics metadata.booking_request_id.') },
+    { check: adminCopy(lang, 'Richieste senza invio tracciato', 'Requests without tracked submit'), count: requestsWithoutTrackedSubmit, detail: requestsWithoutTrackedSubmit ? trackingIncompleteLabel(lang) : '—' },
+    { check: adminCopy(lang, 'Richieste admin/manuali escluse', 'Admin/manual requests excluded'), count: adminManualRequestRows.length, detail: adminCopy(lang, 'Escluse dal funnel pubblico sito.', 'Excluded from the public website funnel.') },
+    { check: adminCopy(lang, 'Tracciamento legacy incompleto', 'Incomplete legacy tracking'), count: legacyIncompleteRequests, detail: legacyIncompleteRequests ? adminCopy(lang, 'Dati precedenti alla correzione: non vengono ricostruiti artificialmente.', 'Pre-fix data: not backfilled artificially.') : '—' },
     { check: adminCopy(lang, 'Richieste senza apertura modulo tracciata', 'Requests without tracked form open'), count: requestsWithoutTrackedFormOpen.reduce((sum, row) => sum + row.booking_requests, 0), detail: requestsWithoutTrackedFormOpen.map((row) => `${row.experience}: ${row.booking_requests}`).join(', ') || '—' },
     { check: adminCopy(lang, 'Aperture modulo senza posizione CTA', 'Form opens without CTA location'), count: formOpenMissingCtaCount, detail: formOpenMissingCtaCount ? adminCopy(lang, 'Aggiornare i CTA che non inviano cta_location.', 'Update CTAs that do not send cta_location.') : '—' },
     { check: adminCopy(lang, 'Traffico interno escluso', 'Internal traffic excluded'), count: internalEventsExcluded + internalSessionsExcluded, detail: adminCopy(lang, 'Admin, API, CMS/editor, finanze e dashboard analytics esclusi dalle metriche pubbliche.', 'Admin, API, CMS/editor, finance, and analytics dashboard rows excluded from public metrics.') },
@@ -6345,6 +7030,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     trafficAttributionQuality,
     declaredAttributionRows,
     dataQualityRows,
+    requestTrackingIntegrity,
     warnings,
     lowSampleNote: visitors < 50,
     internalEventsExcluded,
@@ -6437,10 +7123,12 @@ function safeBookingRequestRows(requests = [], range, lang) {
   return (requests || [])
     .filter((request) => periodContains(request, range))
     .map((request) => ({
+      booking_request_id: request.id || null,
       created_at: request.created_at,
       status: request.status,
       request_type: request.request_type,
       source: request.source,
+      created_by_admin: Boolean(request.created_by_admin),
       traffic_source: request.traffic_source,
       source_section: request.source_section,
       source_cta: request.source_cta,
@@ -6528,7 +7216,9 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
       average_engagement_time: model.averageEngagement,
       internal_events_excluded: model.internalEventsExcluded,
       internal_sessions_excluded: model.internalSessionsExcluded,
-      website_booking_requests_in_period: bookingRequestsInPeriod(bookingRequests, range)
+      website_booking_requests_in_period: bookingRequestsInPeriod(bookingRequests, range),
+      requests_with_tracked_submit: model.requestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'matched_by_booking_request_id' || row.tracking_integrity_status === 'matched_by_legacy_heuristic').length,
+      requests_without_tracked_submit: model.requestTrackingIntegrity.filter((row) => ['missing_submit_tracking', 'legacy_missing_tracking'].includes(row.tracking_integrity_status)).length
     },
     tables: {
       countries: model.countryRows,
@@ -6543,7 +7233,8 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
       website_flow: model.flowRows,
       booking_funnel: model.funnelRows,
       data_quality: model.dataQualityRows,
-      customer_declared_sources: model.declaredAttributionRows
+      customer_declared_sources: model.declaredAttributionRows,
+      request_tracking_integrity: model.requestTrackingIntegrity
     },
     drilldowns: {
       funnel_diagnostics: model.funnelDiagnostics,
@@ -6555,7 +7246,8 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
       geography_hypotheses: model.geographyHypotheses,
       traffic_attribution_quality: model.trafficAttributionQuality,
       customer_declared_sources: model.declaredAttributionRows,
-      requests_without_tracked_form_open: model.requestsWithoutTrackedFormOpen
+      requests_without_tracked_form_open: model.requestsWithoutTrackedFormOpen,
+      request_tracking_integrity: model.requestTrackingIntegrity
     },
     anonymized_samples: {
       events: safeAnalyticsRows(events, 'event'),
@@ -6576,15 +7268,695 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
   URL.revokeObjectURL(url);
 }
 
+
+function OwnerOnlyAdminPage({ lang }) {
+  return (
+    <section className="admin-subpage backup-admin-page">
+      <div className="admin-page-header">
+        <div>
+          <span className="kicker">vulcanIQ</span>
+          <h1>{adminCopy(lang, 'Accesso owner richiesto', 'Owner access required')}</h1>
+          <p>{adminCopy(lang, 'Questa sezione è disponibile solo agli owner attivi.', 'This section is available only to active owners.')}</p>
+        </div>
+      </div>
+      <div className="admin-alert warning" role="status">
+        {adminCopy(lang, 'I manager e gli utenti non autenticati non possono accedere ai controlli di backup.', 'Managers and unauthenticated users cannot access backup controls.')}
+      </div>
+    </section>
+  );
+}
+
+
+const DEFAULT_BACKUP_SCHEDULE = {
+  enabled: true,
+  frequency: 'daily',
+  utc_hour: 2,
+  utc_minute: 0,
+  weekly_day: 0,
+  monthly_day: 1
+};
+
+function normalizeBackupSchedule(schedule = {}) {
+  const frequency = ['daily', 'weekly', 'monthly'].includes(schedule.frequency) ? schedule.frequency : 'daily';
+  return {
+    ...DEFAULT_BACKUP_SCHEDULE,
+    ...schedule,
+    enabled: schedule.enabled !== false,
+    frequency,
+    utc_hour: clampNumber(schedule.utc_hour, 0, 23, 2),
+    utc_minute: clampNumber(schedule.utc_minute, 0, 59, 0),
+    weekly_day: schedule.weekly_day === null || schedule.weekly_day === undefined ? 0 : clampNumber(schedule.weekly_day, 0, 6, 0),
+    monthly_day: schedule.monthly_day === null || schedule.monthly_day === undefined ? 1 : clampNumber(schedule.monthly_day, 1, 28, 1)
+  };
+}
+
+function clampNumber(value, min, max, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function twoDigit(value) {
+  return String(clampNumber(value, 0, 99, 0)).padStart(2, '0');
+}
+
+function backupTimeValue(schedule) {
+  return `${twoDigit(schedule.utc_hour)}:${twoDigit(schedule.utc_minute)}`;
+}
+
+function parseBackupTime(value, current) {
+  const [hour, minute] = String(value || '').split(':');
+  return {
+    ...current,
+    utc_hour: clampNumber(hour, 0, 23, current.utc_hour),
+    utc_minute: clampNumber(minute, 0, 59, current.utc_minute)
+  };
+}
+
+function formatBackupDate(value, lang) {
+  if (!value) return adminCopy(lang, 'Non disponibile', 'Not available');
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return adminCopy(lang, 'Non disponibile', 'Not available');
+  return new Intl.DateTimeFormat(lang === 'it' ? 'it-IT' : 'en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+    timeZoneName: 'short'
+  }).format(date);
+}
+
+function formatBackupSize(bytes, lang) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value <= 0) return adminCopy(lang, 'Dimensione non disponibile', 'Size unavailable');
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+
+function envVarName(parts) {
+  return Array.isArray(parts) ? parts.join('_') : '';
+}
+
+function storageIncludedLabel(storage, lang) {
+  if (!storage || storage.detailsAvailable === false || storage.included === null || storage.included === undefined) {
+    return adminCopy(lang, 'Non disponibile', 'Not available');
+  }
+  return storage.included ? adminCopy(lang, 'sì', 'yes') : adminCopy(lang, 'no', 'no');
+}
+
+function backupStorageHelper(latestBackup, lang) {
+  const storage = latestBackup?.storage;
+  if (!storage || storage.detailsAvailable === false) {
+    return adminCopy(lang, 'Dettagli Storage non disponibili per questo backup.', 'Storage details are not available for this backup.');
+  }
+  const fileCount = Number.isFinite(Number(storage.fileCount)) ? Number(storage.fileCount) : null;
+  const size = Number.isFinite(Number(storage.sizeInBytes)) ? formatBackupSize(storage.sizeInBytes, lang) : adminCopy(lang, 'Dimensione non disponibile', 'Size unavailable');
+  const failureCount = Number.isFinite(Number(storage.failureCount)) ? Number(storage.failureCount) : 0;
+  const fileText = fileCount === null ? adminCopy(lang, 'non disponibile', 'unavailable') : String(fileCount);
+  const base = `${adminCopy(lang, 'File Storage', 'Storage files')}: ${fileText} - ${adminCopy(lang, 'Dimensione Storage', 'Storage size')}: ${size}`;
+  if (failureCount > 0) {
+    return `${base} - ${adminCopy(lang, 'Errori export', 'Export failures')}: ${failureCount}`;
+  }
+  return base;
+}
+
+function backupWeekdayOptions(lang) {
+  return [
+    { value: 0, label: adminCopy(lang, 'Domenica', 'Sunday') },
+    { value: 1, label: adminCopy(lang, 'Lunedì', 'Monday') },
+    { value: 2, label: adminCopy(lang, 'Martedì', 'Tuesday') },
+    { value: 3, label: adminCopy(lang, 'Mercoledì', 'Wednesday') },
+    { value: 4, label: adminCopy(lang, 'Giovedì', 'Thursday') },
+    { value: 5, label: adminCopy(lang, 'Venerdì', 'Friday') },
+    { value: 6, label: adminCopy(lang, 'Sabato', 'Saturday') }
+  ];
+}
+
+function backupFrequencyLabel(frequency, lang) {
+  if (frequency === 'weekly') return adminCopy(lang, 'Settimanale', 'Weekly');
+  if (frequency === 'monthly') return adminCopy(lang, 'Mensile', 'Monthly');
+  return adminCopy(lang, 'Giornaliero', 'Daily');
+}
+
+function backupScheduleSummary(schedule, lang) {
+  const normalized = normalizeBackupSchedule(schedule);
+  if (!normalized.enabled) return adminCopy(lang, 'Disattivato', 'Disabled');
+  const time = `${backupTimeValue(normalized)} UTC`;
+  if (normalized.frequency === 'weekly') {
+    const day = backupWeekdayOptions(lang).find((item) => item.value === normalized.weekly_day)?.label || backupWeekdayOptions(lang)[0].label;
+    return `${backupFrequencyLabel('weekly', lang)} - ${day} - ${time}`;
+  }
+  if (normalized.frequency === 'monthly') {
+    return `${backupFrequencyLabel('monthly', lang)} - ${adminCopy(lang, 'giorno', 'day')} ${normalized.monthly_day} - ${time}`;
+  }
+  return `${backupFrequencyLabel('daily', lang)} - ${time}`;
+}
+
+
+function dateIsAfter(value, reference, slackMs = 60000) {
+  if (!value || !reference) return false;
+  const date = new Date(value).getTime();
+  const ref = new Date(reference).getTime();
+  if (!Number.isFinite(date) || !Number.isFinite(ref)) return false;
+  return date >= (ref - slackMs);
+}
+
+function workflowStatusText(run, lang) {
+  if (!run) return adminCopy(lang, 'Nessuna esecuzione trovata', 'No workflow run found');
+  if (run.status === 'queued') return adminCopy(lang, 'In coda', 'Queued');
+  if (run.status === 'in_progress') return adminCopy(lang, 'In esecuzione', 'Running');
+  if (run.status === 'completed' && run.conclusion === 'success') return adminCopy(lang, 'Completato', 'Completed');
+  if (run.status === 'completed' && run.conclusion) return adminCopy(lang, `Terminato: ${run.conclusion}`, `Finished: ${run.conclusion}`);
+  return run.status || adminCopy(lang, 'Non disponibile', 'Not available');
+}
+
+function backupProgressFromStatus(result, requestedAt, lang) {
+  const run = result?.workflowRun;
+  const latestBackup = result?.latestBackup;
+  if (!run || !dateIsAfter(run.createdAt || run.runStartedAt, requestedAt, 90000)) {
+    return {
+      active: true,
+      value: 25,
+      title: adminCopy(lang, 'Richiesta inviata', 'Request sent'),
+      detail: adminCopy(lang, 'In attesa che GitHub Actions registri la nuova esecuzione.', 'Waiting for GitHub Actions to register the new run.'),
+      done: false,
+      failed: false
+    };
+  }
+
+  if (run.status === 'queued') {
+    return {
+      active: true,
+      value: 35,
+      title: adminCopy(lang, 'Backup in coda', 'Backup queued'),
+      detail: adminCopy(lang, 'La richiesta è stata accettata ed è in attesa di esecuzione.', 'The request was accepted and is waiting to run.'),
+      done: false,
+      failed: false
+    };
+  }
+
+  if (run.status === 'in_progress') {
+    return {
+      active: true,
+      value: 70,
+      title: adminCopy(lang, 'Backup in esecuzione', 'Backup running'),
+      detail: adminCopy(lang, 'GitHub Actions sta creando il dump e preparando lo ZIP.', 'GitHub Actions is creating the dump and preparing the ZIP.'),
+      done: false,
+      failed: false
+    };
+  }
+
+  if (run.status === 'completed' && run.conclusion === 'success') {
+    const artifactReady = latestBackup?.createdAt && dateIsAfter(latestBackup.createdAt, requestedAt, 120000);
+    return {
+      active: true,
+      value: artifactReady ? 100 : 92,
+      title: artifactReady ? adminCopy(lang, 'Backup completato', 'Backup completed') : adminCopy(lang, 'Workflow completato', 'Workflow completed'),
+      detail: artifactReady
+        ? adminCopy(lang, 'Il nuovo backup è pronto e può essere scaricato da questa pagina.', 'The new backup is ready and can be downloaded from this page.')
+        : adminCopy(lang, 'Il workflow è terminato. Attendo la pubblicazione dell\'artifact.', 'The workflow finished. Waiting for the artifact to become available.'),
+      done: artifactReady,
+      failed: false
+    };
+  }
+
+  if (run.status === 'completed') {
+    return {
+      active: true,
+      value: 100,
+      title: adminCopy(lang, 'Backup non completato', 'Backup not completed'),
+      detail: adminCopy(lang, 'L\'ultima esecuzione del workflow non è terminata correttamente. Controlla i dettagli mostrati sotto.', 'The latest workflow run did not finish successfully. Check the details shown below.'),
+      done: true,
+      failed: true
+    };
+  }
+
+  return {
+    active: true,
+    value: 50,
+    title: workflowStatusText(run, lang),
+    detail: adminCopy(lang, 'Stato workflow aggiornato dal server.', 'Workflow status updated by the server.'),
+    done: false,
+    failed: false
+  };
+}
+
+function AdminBackupPage({ lang }) {
+  const [actionState, setActionState] = useState({ createLoading: false, downloadLoading: false, message: '', error: '' });
+  const [statusState, setStatusState] = useState({ loading: true, error: '', latestBackup: null, workflowRun: null, configured: false, message: '' });
+  const [scheduleDraft, setScheduleDraft] = useState(DEFAULT_BACKUP_SCHEDULE);
+  const [scheduleState, setScheduleState] = useState({ loading: true, saving: false, message: '', error: '' });
+  const [showWorkflowDetails, setShowWorkflowDetails] = useState(false);
+  const [backupProgress, setBackupProgress] = useState({ active: false, value: 0, title: '', detail: '', failed: false });
+  const backupPollRef = useRef(null);
+
+  async function refreshBackupStatus() {
+    setStatusState((current) => ({ ...current, loading: true, error: '' }));
+    try {
+      const result = await getBackupStatus({ lang });
+      setStatusState({
+        loading: false,
+        error: '',
+        latestBackup: result?.latestBackup || null,
+        workflowRun: result?.workflowRun || null,
+        configured: result?.configured !== false,
+        message: result?.message || ''
+      });
+    } catch (error) {
+      setStatusState({
+        loading: false,
+        error: error?.message || adminCopy(lang, 'Stato backup non disponibile.', 'Backup status is not available.'),
+        latestBackup: null,
+        workflowRun: null,
+        configured: false,
+        message: ''
+      });
+    }
+  }
+
+  async function refreshBackupSchedule() {
+    setScheduleState((current) => ({ ...current, loading: true, error: '' }));
+    try {
+      const schedule = await getBackupSchedule({ lang });
+      setScheduleDraft(normalizeBackupSchedule(schedule));
+      setScheduleState({ loading: false, saving: false, message: '', error: '' });
+    } catch (error) {
+      setScheduleDraft(DEFAULT_BACKUP_SCHEDULE);
+      setScheduleState({
+        loading: false,
+        saving: false,
+        message: '',
+        error: error?.message || adminCopy(lang, 'Programmazione backup non disponibile.', 'Backup schedule is not available.')
+      });
+    }
+  }
+
+  useEffect(() => {
+    let alive = true;
+    async function loadBackupData() {
+      const [statusResult, scheduleResult] = await Promise.allSettled([
+        getBackupStatus({ lang }),
+        getBackupSchedule({ lang })
+      ]);
+      if (!alive) return;
+
+      if (statusResult.status === 'fulfilled') {
+        setStatusState({
+          loading: false,
+          error: '',
+          latestBackup: statusResult.value?.latestBackup || null,
+          workflowRun: statusResult.value?.workflowRun || null,
+          configured: statusResult.value?.configured !== false,
+          message: statusResult.value?.message || ''
+        });
+      } else {
+        setStatusState({
+          loading: false,
+          error: statusResult.reason?.message || adminCopy(lang, 'Stato backup non disponibile.', 'Backup status is not available.'),
+          latestBackup: null,
+          workflowRun: null,
+          configured: false,
+          message: ''
+        });
+      }
+
+      if (scheduleResult.status === 'fulfilled') {
+        setScheduleDraft(normalizeBackupSchedule(scheduleResult.value));
+        setScheduleState({ loading: false, saving: false, message: '', error: '' });
+      } else {
+        setScheduleDraft(DEFAULT_BACKUP_SCHEDULE);
+        setScheduleState({
+          loading: false,
+          saving: false,
+          message: '',
+          error: scheduleResult.reason?.message || adminCopy(lang, 'Programmazione backup non disponibile.', 'Backup schedule is not available.')
+        });
+      }
+    }
+    loadBackupData();
+    return () => { alive = false; };
+  }, [lang]);
+
+  useEffect(() => () => {
+    if (backupPollRef.current) window.clearInterval(backupPollRef.current);
+  }, []);
+
+  async function pollBackupProgress(requestedAt, immediate = false) {
+    try {
+      const result = await getBackupStatus({ lang, includeMetadata: false });
+      setStatusState({
+        loading: false,
+        error: '',
+        latestBackup: result?.latestBackup || null,
+        workflowRun: result?.workflowRun || null,
+        configured: result?.configured !== false,
+        message: result?.message || ''
+      });
+      const nextProgress = backupProgressFromStatus(result, requestedAt, lang);
+      setBackupProgress(nextProgress);
+      if (nextProgress.done) {
+        if (backupPollRef.current) window.clearInterval(backupPollRef.current);
+        backupPollRef.current = null;
+        if (!nextProgress.failed) {
+          setActionState({ createLoading: false, downloadLoading: false, message: adminCopy(lang, 'Backup completato. Puoi scaricarlo da questa pagina.', 'Backup completed. You can download it from this page.'), error: '' });
+          refreshBackupStatus();
+        }
+      }
+    } catch (error) {
+      if (immediate) {
+        setBackupProgress({
+          active: true,
+          value: 25,
+          title: adminCopy(lang, 'Backup avviato', 'Backup started'),
+          detail: adminCopy(lang, 'Stato workflow non ancora disponibile.', 'Workflow status is not available yet.'),
+          failed: false
+        });
+      }
+    }
+  }
+
+  function startBackupProgressPolling(requestedAt) {
+    if (backupPollRef.current) window.clearInterval(backupPollRef.current);
+    pollBackupProgress(requestedAt, true);
+    let attempts = 0;
+    backupPollRef.current = window.setInterval(() => {
+      attempts += 1;
+      if (attempts > 48) {
+        window.clearInterval(backupPollRef.current);
+        backupPollRef.current = null;
+        return;
+      }
+      pollBackupProgress(requestedAt);
+    }, 5000);
+  }
+
+  async function handleCreateBackup() {
+    const requestedAt = new Date().toISOString();
+    setBackupProgress({
+      active: true,
+      value: 10,
+      title: adminCopy(lang, 'Invio richiesta backup', 'Sending backup request'),
+      detail: adminCopy(lang, 'Sto chiedendo al server di avviare il workflow di backup.', 'Asking the server to start the backup workflow.'),
+      failed: false
+    });
+    setActionState({ createLoading: true, downloadLoading: false, message: '', error: '' });
+    try {
+      const result = await createDatabaseBackup({ lang });
+      const serverRequestedAt = result?.requestedAt || requestedAt;
+      setActionState({ createLoading: false, downloadLoading: false, message: result?.message || adminCopy(lang, 'Backup avviato', 'Backup started'), error: '' });
+      setBackupProgress({
+        active: true,
+        value: 25,
+        title: adminCopy(lang, 'Backup avviato', 'Backup started'),
+        detail: adminCopy(lang, 'La pagina controllerà lo stato reale del workflow senza aprire GitHub.', 'This page will check the real workflow status without opening GitHub.'),
+        failed: false
+      });
+      startBackupProgressPolling(serverRequestedAt);
+    } catch (error) {
+      setBackupProgress({ active: false, value: 0, title: '', detail: '', failed: false });
+      setActionState({ createLoading: false, downloadLoading: false, message: '', error: error?.message || adminCopy(lang, 'Impossibile avviare il backup.', 'Could not start backup.') });
+    }
+  }
+
+  async function handleDownloadBackup() {
+    setActionState({ createLoading: false, downloadLoading: true, message: adminCopy(lang, 'Download del backup in corso...', 'Downloading backup...'), error: '' });
+    try {
+      await downloadLatestDatabaseBackup({ lang });
+      setActionState({ createLoading: false, downloadLoading: false, message: adminCopy(lang, 'Backup scaricato.', 'Backup downloaded.'), error: '' });
+      refreshBackupStatus();
+    } catch (error) {
+      setActionState({ createLoading: false, downloadLoading: false, message: '', error: error?.message || adminCopy(lang, 'Errore durante il download del backup.', 'Backup download failed.') });
+    }
+  }
+
+  async function handleSaveSchedule() {
+    const normalized = normalizeBackupSchedule(scheduleDraft);
+    setScheduleState({ loading: false, saving: true, message: '', error: '' });
+    try {
+      const result = await saveBackupSchedule(normalized, { lang });
+      setScheduleDraft(normalizeBackupSchedule(result?.schedule || normalized));
+      setScheduleState({ loading: false, saving: false, message: result?.message || adminCopy(lang, 'Programmazione salvata', 'Schedule saved'), error: '' });
+    } catch (error) {
+      setScheduleState({ loading: false, saving: false, message: '', error: error?.message || adminCopy(lang, 'Programmazione backup non salvata.', 'Backup schedule was not saved.') });
+    }
+  }
+
+  const latestBackup = statusState.latestBackup;
+  const latestBackupLabel = statusState.loading
+    ? adminCopy(lang, 'Caricamento...', 'Loading...')
+    : latestBackup?.createdAt
+      ? formatBackupDate(latestBackup.createdAt, lang)
+      : adminCopy(lang, 'Nessun backup', 'No backup');
+  const latestBackupHelper = latestBackup
+    ? `${adminCopy(lang, 'Dimensione', 'Size')}: ${formatBackupSize(latestBackup.sizeInBytes, lang)} - ${adminCopy(lang, 'Scadenza artifact', 'Artifact expiry')}: ${formatBackupDate(latestBackup.expiresAt, lang)}`
+    : (statusState.message || adminCopy(lang, 'Nessun backup scaricabile trovato.', 'No downloadable backup found.'));
+  const lastStatusLabel = statusState.configured ? adminCopy(lang, 'Pronto', 'Ready') : adminCopy(lang, 'Da configurare', 'Needs configuration');
+  const workflowRun = statusState.workflowRun;
+  const workflowHelper = workflowRun
+    ? `${workflowStatusText(workflowRun, lang)} - ${formatBackupDate(workflowRun.updatedAt || workflowRun.createdAt, lang)}`
+    : adminCopy(lang, 'Nessuna esecuzione workflow disponibile.', 'No workflow run available.');
+
+  return (
+    <section className="admin-subpage backup-admin-page">
+      <div className="admin-page-header backup-page-header">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'SISTEMA', 'SYSTEM')}</span>
+          <h1>{adminCopy(lang, 'Backup del database', 'Database backup')}</h1>
+          <p>{adminCopy(lang, 'Backup owner-only tramite endpoint server-side e GitHub Actions. Nessun dump viene generato nel browser.', 'Owner-only backup through a server-side endpoint and GitHub Actions. No dump is generated in the browser.')}</p>
+        </div>
+        <div className="backup-header-actions">
+          <button className="button primary" type="button" disabled={actionState.downloadLoading || actionState.createLoading} onClick={handleDownloadBackup}>
+            {actionState.downloadLoading ? adminCopy(lang, 'Download del backup in corso...', 'Downloading backup...') : adminCopy(lang, 'Scarica ultimo backup', 'Download latest backup')}
+          </button>
+          <button className="button secondary" type="button" disabled={actionState.createLoading || actionState.downloadLoading} onClick={handleCreateBackup}>
+            {actionState.createLoading ? adminCopy(lang, 'Avvio backup...', 'Starting backup...') : adminCopy(lang, 'Crea backup', 'Create backup')}
+          </button>
+          <button className="button secondary" type="button" onClick={() => { setShowWorkflowDetails((value) => !value); refreshBackupStatus(); }}>{adminCopy(lang, 'Vedi stato workflow', 'View workflow status')}</button>
+        </div>
+      </div>
+
+      {actionState.message && <div className="admin-alert success" role="status">{actionState.message}{actionState.createLoading || actionState.downloadLoading ? null : <><br />{adminCopy(lang, 'Il backup sarà scaricabile direttamente da questa pagina appena pronto.', 'The backup will be downloadable directly from this page as soon as it is ready.')}</>}</div>}
+      {actionState.error && <div className="admin-alert error" role="alert">{actionState.error}</div>}
+      {statusState.error && <div className="admin-alert warning" role="status">{statusState.error}</div>}
+      {backupProgress.active && (
+        <div className={`backup-progress-panel ${backupProgress.failed ? 'failed' : ''}`} role="status" aria-live="polite">
+          <div className="backup-progress-head">
+            <strong>{backupProgress.title}</strong>
+            <span>{Math.round(backupProgress.value)}%</span>
+          </div>
+          <div className="backup-progress-track" aria-label={adminCopy(lang, 'Avanzamento backup', 'Backup progress')}>
+            <span style={{ width: `${Math.max(0, Math.min(100, backupProgress.value))}%` }} />
+          </div>
+          {backupProgress.detail && <p>{backupProgress.detail}</p>}
+        </div>
+      )}
+
+      <div className="admin-summary-grid backup-summary-grid">
+        <SummaryCard label={adminCopy(lang, 'Ultimo backup', 'Last backup')} value={latestBackupLabel} helper={latestBackupHelper} />
+        <SummaryCard label={adminCopy(lang, 'Ultimo stato', 'Last status')} value={lastStatusLabel} helper={latestBackup?.artifactName || workflowHelper} />
+        <SummaryCard label={adminCopy(lang, 'Programmazione backup', 'Backup schedule')} value={backupFrequencyLabel(scheduleDraft.frequency, lang)} helper={backupScheduleSummary(scheduleDraft, lang)} />
+        <SummaryCard label={adminCopy(lang, 'Storage incluso', 'Storage included')} value={storageIncludedLabel(latestBackup?.storage, lang)} helper={backupStorageHelper(latestBackup, lang)} />
+      </div>
+
+      {showWorkflowDetails && (
+        <section className="admin-panel backup-panel backup-workflow-panel">
+          <div className="admin-panel-header">
+            <h2>{adminCopy(lang, 'Stato workflow backup', 'Backup workflow status')}</h2>
+            <button className="button secondary small-button" type="button" onClick={refreshBackupStatus}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+          </div>
+          <p>{adminCopy(lang, 'Questi dettagli vengono letti server-side da GitHub Actions e mostrati qui: l\'admin non deve avere accesso a GitHub.', 'These details are read server-side from GitHub Actions and shown here: the admin does not need GitHub access.')}</p>
+          {workflowRun ? (
+            <dl className="backup-workflow-grid">
+              <div><dt>{adminCopy(lang, 'Esecuzione', 'Run')}</dt><dd>{workflowRun.runNumber ? `#${workflowRun.runNumber}` : '-'}</dd></div>
+              <div><dt>{adminCopy(lang, 'Stato', 'Status')}</dt><dd>{workflowStatusText(workflowRun, lang)}</dd></div>
+              <div><dt>{adminCopy(lang, 'Tipo', 'Type')}</dt><dd>{workflowRun.event || '-'}</dd></div>
+              <div><dt>{adminCopy(lang, 'Creata', 'Created')}</dt><dd>{formatBackupDate(workflowRun.createdAt, lang)}</dd></div>
+              <div><dt>{adminCopy(lang, 'Aggiornata', 'Updated')}</dt><dd>{formatBackupDate(workflowRun.updatedAt, lang)}</dd></div>
+              <div><dt>{adminCopy(lang, 'Risultato', 'Conclusion')}</dt><dd>{workflowRun.conclusion || adminCopy(lang, 'In corso', 'In progress')}</dd></div>
+            </dl>
+          ) : (
+            <div className="admin-alert warning">{adminCopy(lang, 'Nessuna esecuzione workflow disponibile.', 'No workflow run available.')}</div>
+          )}
+        </section>
+      )}
+
+      <section className="admin-panel backup-panel">
+        <div className="admin-panel-header">
+          <h2>{adminCopy(lang, 'Programmazione backup', 'Backup schedule')}</h2>
+        </div>
+        <p>{adminCopy(lang, 'Backup automatico gestito dal server. Il workflow controlla la programmazione salvata e crea il backup solo quando è dovuto.', 'Automatic backup managed by the server. The workflow checks the saved schedule and creates a backup only when it is due.')}</p>
+
+        <div className="backup-schedule-form">
+          <label className="backup-toggle-row">
+            <input
+              type="checkbox"
+              checked={scheduleDraft.enabled}
+              onChange={(event) => setScheduleDraft((current) => ({ ...current, enabled: event.target.checked }))}
+            />
+            <span>{adminCopy(lang, 'Backup automatico', 'Automatic backup')}</span>
+          </label>
+
+          <div className="backup-schedule-grid">
+            <label>
+              <span>{adminCopy(lang, 'Frequenza', 'Frequency')}</span>
+              <select value={scheduleDraft.frequency} onChange={(event) => setScheduleDraft((current) => normalizeBackupSchedule({ ...current, frequency: event.target.value }))}>
+                <option value="daily">{adminCopy(lang, 'Giornaliero', 'Daily')}</option>
+                <option value="weekly">{adminCopy(lang, 'Settimanale', 'Weekly')}</option>
+                <option value="monthly">{adminCopy(lang, 'Mensile', 'Monthly')}</option>
+              </select>
+            </label>
+            <label>
+              <span>{adminCopy(lang, 'Ora UTC', 'UTC time')}</span>
+              <input type="time" value={backupTimeValue(scheduleDraft)} onChange={(event) => setScheduleDraft((current) => parseBackupTime(event.target.value, current))} />
+            </label>
+            {scheduleDraft.frequency === 'weekly' && (
+              <label>
+                <span>{adminCopy(lang, 'Giorno della settimana', 'Day of week')}</span>
+                <select value={scheduleDraft.weekly_day} onChange={(event) => setScheduleDraft((current) => ({ ...current, weekly_day: clampNumber(event.target.value, 0, 6, 0) }))}>
+                  {backupWeekdayOptions(lang).map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}
+                </select>
+              </label>
+            )}
+            {scheduleDraft.frequency === 'monthly' && (
+              <label>
+                <span>{adminCopy(lang, 'Giorno del mese', 'Day of month')}</span>
+                <input type="number" min="1" max="28" value={scheduleDraft.monthly_day} onChange={(event) => setScheduleDraft((current) => ({ ...current, monthly_day: clampNumber(event.target.value, 1, 28, 1) }))} />
+              </label>
+            )}
+          </div>
+
+          <div className="backup-schedule-actions">
+            <button className="button primary" type="button" disabled={scheduleState.saving || scheduleState.loading} onClick={handleSaveSchedule}>
+              {scheduleState.saving ? adminCopy(lang, 'Salvataggio...', 'Saving...') : adminCopy(lang, 'Salva programmazione', 'Save schedule')}
+            </button>
+            <button className="button secondary" type="button" disabled={scheduleState.saving || scheduleState.loading} onClick={refreshBackupSchedule}>{adminCopy(lang, 'Ricarica', 'Reload')}</button>
+          </div>
+        </div>
+        {scheduleState.message && <div className="admin-alert success" role="status">{scheduleState.message}</div>}
+        {scheduleState.error && <div className="admin-alert warning" role="status">{scheduleState.error}</div>}
+        <p className="small-note">{adminCopy(lang, 'Il controllo automatico viene eseguito ogni ora e usa questa programmazione salvata per decidere se creare un nuovo backup.', 'The automatic check runs hourly and uses this saved schedule to decide whether to create a new backup.')}</p>
+      </section>
+
+      <details className="admin-panel backup-panel backup-restore-details">
+        <summary>
+          <span>
+            <strong>{adminCopy(lang, 'Come ripristinare', 'How to restore')}</strong>
+            <small>{adminCopy(lang, 'Apri la guida completa per ripristinare database, Storage e configurazione Cloudflare.', 'Open the complete guide to restore database, Storage, and Cloudflare configuration.')}</small>
+          </span>
+        </summary>
+        <div className="backup-restore-content">
+          <p>{adminCopy(lang, 'Usa questa procedura solo in caso di ripristino reale o migrazione controllata. Il backup contiene dati riservati: trattalo come materiale confidenziale.', 'Use this procedure only for a real restore or controlled migration. The backup contains confidential data: treat it as confidential material.')}</p>
+
+          <h3>{adminCopy(lang, '1. Verifica lo ZIP estratto', '1. Verify the extracted ZIP')}</h3>
+          <p>{adminCopy(lang, 'Scarica il backup da questa pagina, estrailo in una cartella locale e verifica che i file principali siano al livello superiore dello ZIP.', 'Download the backup from this page, extract it into a local folder, and verify the main files are at the top level of the ZIP.')}</p>
+          <ul className="backup-restore-list">
+            <li><code>00_project_info.json</code></li>
+            <li><code>01_roles.sql</code></li>
+            <li><code>02_schema.sql</code></li>
+            <li><code>03_data.sql</code></li>
+            <li><code>README_RESTORE.md</code></li>
+            <li><code>restore-supabase.ps1</code> / <code>restore-supabase.sh</code></li>
+            <li><code>restore-storage.js</code></li>
+            <li><code>cloudflare-env-template.txt</code></li>
+            <li><code>storage-assets/manifest.json</code></li>
+          </ul>
+          <p className="small-note">{adminCopy(lang, 'Se restore-storage.js o storage-assets/manifest.json mancano, il backup è database-only: scaricalo comunque per il database e controlla Storage manualmente.', 'If restore-storage.js or storage-assets/manifest.json is missing, the backup is database-only: still use it for the database and check Storage manually.')}</p>
+
+          <h3>{adminCopy(lang, '2. Prepara il progetto Supabase di destinazione', '2. Prepare the target Supabase project')}</h3>
+          <ol className="backup-restore-list">
+            <li>{adminCopy(lang, 'Crea o prepara il progetto Supabase di destinazione.', 'Create or prepare the target Supabase project.')}</li>
+            <li>{adminCopy(lang, 'Apri Project Settings > Database e copia la connection string PostgreSQL diretta.', 'Open Project Settings > Database and copy the direct PostgreSQL connection string.')}</li>
+            <li>{adminCopy(lang, 'Sostituisci la password nella connection string.', 'Replace the password in the connection string.')}</li>
+            <li>{adminCopy(lang, 'In API Settings abilita la Data API, esponi public e usa public, extensions come extra search path.', 'In API Settings enable Data API, expose public, and use public, extensions as extra search path.')}</li>
+          </ol>
+
+          <h3>{adminCopy(lang, '3. Ripristina ruoli, schema e dati', '3. Restore roles, schema, and data')}</h3>
+          <p>{adminCopy(lang, 'Apri un terminale nella cartella estratta e lancia uno dei comandi sotto. Serve psql installato sul computer.', 'Open a terminal in the extracted folder and run one of the commands below. psql must be installed on the computer.')}</p>
+          <div className="backup-code-grid">
+            <div>
+              <strong>PowerShell</strong>
+              <code>{`.\\restore-supabase.ps1 -NewDbUrl "postgresql://postgres:[PASSWORD]@db.YOUR-REF.supabase.co:5432/postgres"`}</code>
+            </div>
+            <div>
+              <strong>Bash/macOS/Linux</strong>
+              <code>{`./restore-supabase.sh 'postgresql://postgres:[PASSWORD]@db.YOUR-REF.supabase.co:5432/postgres'`}</code>
+            </div>
+          </div>
+          <p>{adminCopy(lang, 'Ordine di ripristino: 01_roles.sql se applicabile, poi 02_schema.sql, poi 03_data.sql. Non invertire schema e dati.', 'Restore order: 01_roles.sql if applicable, then 02_schema.sql, then 03_data.sql. Do not invert schema and data.')}</p>
+
+          <h3>{adminCopy(lang, '4. Ricrea Auth, admin e owner', '4. Recreate Auth, admins, and owners')}</h3>
+          <ol className="backup-restore-list">
+            <li>{adminCopy(lang, 'Supabase Auth non viene clonato completamente dal dump SQL: crea o verifica gli utenti in Authentication > Users.', 'Supabase Auth is not fully cloned by the SQL dump: create or verify users in Authentication > Users.')}</li>
+            <li>{adminCopy(lang, 'Verifica le righe in public.admin_profiles, soprattutto gli owner attivi che possono accedere ai backup.', 'Verify rows in public.admin_profiles, especially active owners who can access backups.')}</li>
+            <li>{adminCopy(lang, 'Esegui la migrazione system_backup_settings se la tabella della programmazione non esiste.', 'Run the system_backup_settings migration if the schedule table does not exist.')}</li>
+          </ol>
+
+          <h3>{adminCopy(lang, '5. Verifica e ripristino Supabase Storage', '5. Check and restore Supabase Storage')}</h3>
+          <p>{adminCopy(lang, "Il dump del database non include i file binari di Supabase Storage, salvo che questo backup sia stato generato con l'esportazione Storage attiva. Dopo il ripristino, controlla bucket, immagini, PDF, volantini e altri asset caricati, quindi ricarica manualmente eventuali file mancanti.", 'The database dump does not include Supabase Storage binary files unless this backup was generated with Storage export enabled. After restore, check buckets, images, PDFs, leaflets, and other uploaded assets, then re-upload missing files.')}</p>
+          <p>{adminCopy(lang, 'Questo backup include i file Supabase Storage nella cartella storage-assets/. Dopo il ripristino, verifica tutti i bucket, le immagini, i PDF, i volantini e gli asset caricati. Se un file manca o il caricamento fallisce, ricaricalo manualmente.', 'This backup includes Supabase Storage files under storage-assets/. After restore, verify all buckets, images, PDFs, leaflets, and uploaded assets. If any file is missing or failed to upload, re-upload it manually.')}</p>
+          <div className="backup-code-grid">
+            <div>
+              <strong>PowerShell</strong>
+              <code>{`$env:SUPABASE_URL="https://target-project.supabase.co"`}</code>
+              <code>{`$env:${envVarName(['SUPABASE', 'SERVICE', 'ROLE', 'KEY'])}="..."`}</code>
+              <code>{`node restore-storage.js`}</code>
+            </div>
+            <div>
+              <strong>Bash/macOS/Linux</strong>
+              <code>{`SUPABASE_URL="https://target-project.supabase.co" ${envVarName(['SUPABASE', 'SERVICE', 'ROLE', 'KEY'])}="..." node restore-storage.js`}</code>
+            </div>
+          </div>
+
+          <h3>{adminCopy(lang, '6. Aggiorna Cloudflare Pages', '6. Update Cloudflare Pages')}</h3>
+          <p>{adminCopy(lang, 'Aggiorna le variabili Cloudflare con i valori del nuovo progetto Supabase e dei segreti GitHub server-side. Non creare variabili VITE per token GitHub o service role.', 'Update Cloudflare variables with the new Supabase project values and server-side GitHub secrets. Do not create VITE variables for GitHub tokens or service-role keys.')}</p>
+          <ul className="backup-restore-list">
+            <li><code>VITE_SUPABASE_URL</code> / <code>VITE_SUPABASE_ANON_KEY</code></li>
+            <li><code>{envVarName(['SUPABASE', 'URL'])}</code> / <code>{envVarName(['SUPABASE', 'SERVICE', 'ROLE', 'KEY'])}</code></li>
+            <li><code>GITHUB_OWNER</code>, <code>GITHUB_REPO</code>, <code>{envVarName(['GITHUB', 'BACKUP', 'WORKFLOW', 'ID'])}</code>, <code>{envVarName(['GITHUB', 'BACKUP', 'REF'])}</code>, <code>{envVarName(['GITHUB', 'BACKUP', 'TOKEN'])}</code></li>
+          </ul>
+
+          <h3>{adminCopy(lang, '7. Ridistribuisci e verifica', '7. Redeploy and verify')}</h3>
+          <ol className="backup-restore-list">
+            <li>{adminCopy(lang, 'Ridistribuisci Cloudflare Pages.', 'Redeploy Cloudflare Pages.')}</li>
+            <li>{adminCopy(lang, 'Verifica il sito pubblico.', 'Verify the public website.')}</li>
+            <li>{adminCopy(lang, 'Accedi a /admin con un owner attivo.', 'Log in to /admin with an active owner.')}</li>
+            <li>{adminCopy(lang, 'Verifica pagina backup, calendario, richieste, analytics, recensioni, finanze e CMS.', 'Verify backup page, calendar, requests, analytics, reviews, finance, and CMS.')}</li>
+            <li>{adminCopy(lang, 'Verifica immagini, PDF, volantini e asset caricati.', 'Verify images, PDFs, leaflets, and uploaded assets.')}</li>
+            <li>{adminCopy(lang, 'Esegui un booking/questionnaire flow di test.', 'Run a test booking/questionnaire flow.')}</li>
+            <li>{adminCopy(lang, 'Crea un nuovo backup e scaricalo da questa pagina.', 'Create a new backup and download it from this page.')}</li>
+          </ol>
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function analyticsAdminErrorMessage(lang, error) {
+  const raw = `${error?.message || error || ''}`.toLowerCase();
+  if (raw.includes('analytics_events') || raw.includes('analytics_sessions') || raw.includes('schema cache') || raw.includes('pgrst')) {
+    return adminCopy(lang, 'La tabella degli eventi analytics non è disponibile o non è ancora sincronizzata.', 'The analytics events table is not available or has not synced yet.');
+  }
+  return adminCopy(lang, 'Analytics non disponibili al momento.', 'Analytics are not available right now.');
+}
+
+function analyticsTechnicalError(error) {
+  return error?.message || error?.details || error?.hint || error?.code || '';
+}
+
 function AdminAnalyticsPage({ lang, adminContent = {} }) {
   const [period, setPeriod] = useState('30d');
-  const [state, setState] = useState({ loading: true, error: '', events: [], sessions: [], bookingRequests: [] });
+  const [state, setState] = useState({ loading: true, error: '', technicalError: '', events: [], sessions: [], bookingRequests: [] });
   const range = useMemo(() => analyticsDateRange(period), [period]);
 
   useEffect(() => {
     let alive = true;
     async function loadAnalytics() {
-      setState((current) => ({ ...current, loading: true, error: '' }));
+      setState((current) => ({ ...current, loading: true, error: '', technicalError: '' }));
       try {
         const [events, sessions, requests] = await Promise.all([
           listAnalyticsEvents({ ...range, limit: 10000 }),
@@ -6592,20 +7964,20 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           listBookingRequests({ limit: 1000 }).catch(() => [])
         ]);
         if (!alive) return;
-        setState({ loading: false, error: '', events, sessions, bookingRequests: requests || [] });
+        setState({ loading: false, error: '', technicalError: '', events, sessions, bookingRequests: requests || [] });
       } catch (error) {
         if (!alive) return;
-        setState({ loading: false, error: error?.message || adminCopy(lang, 'Analytics non disponibili.', 'Analytics are not available.'), events: [], sessions: [], bookingRequests: [] });
+        setState({ loading: false, error: analyticsAdminErrorMessage(lang, error), technicalError: analyticsTechnicalError(error), events: [], sessions: [], bookingRequests: [] });
       }
     }
     loadAnalytics();
     return () => { alive = false; };
-  }, [period]);
+  }, [period, lang]);
 
   const model = useMemo(() => buildAnalyticsModel({ events: state.events, sessions: state.sessions, bookingRequests: state.bookingRequests, range, lang }), [state.events, state.sessions, state.bookingRequests, range, lang]);
   const hasData = state.events.length > 0 || state.sessions.length > 0;
   const emptyText = adminCopy(lang, 'Nessun dato disponibile per il periodo selezionato.', 'No analytics data available for the selected period.');
-  const setupText = adminCopy(lang, 'I dati inizieranno a comparire dopo le prime visite pubbliche al sito.', 'Data will start appearing after public visitors browse the website.');
+  const setupText = adminCopy(lang, 'I dati inizieranno a comparire dopo le prime visite pubbliche al sito.', 'Data will start appearing after the first public visits to the website.');
 
   return (
     <section className="admin-subpage analytics-admin-page">
@@ -6626,7 +7998,18 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
         </div>
       </div>
 
-      {state.error && <div className="admin-alert warning" role="status">{state.error}<br />{setupText}</div>}
+      {state.error && (
+        <div className="admin-alert warning" role="status">
+          <p>{state.error}</p>
+          <p>{setupText}</p>
+          {state.technicalError && (
+            <details className="admin-technical-details">
+              <summary>{adminCopy(lang, 'Dettagli tecnici', 'Technical details')}</summary>
+              <code>{state.technicalError}</code>
+            </details>
+          )}
+        </div>
+      )}
       {state.loading ? <p>{adminCopy(lang, 'Caricamento dati...', 'Loading analytics...')}</p> : (
         <>
           {!hasData && <div className="admin-alert warning" role="status">{emptyText}<br />{setupText}</div>}
@@ -6635,15 +8018,15 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           <AnalyticsStaticPanel title={<AdminEditableText itemKey="admin.analytics.overview.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Panoramica', 'Overview')} />}>
             <AnalyticsWarningList warnings={model.warnings} />
             <div className="admin-summary-grid analytics-summary-grid">
-              <SummaryCard label={adminCopy(lang, 'Visitatori', 'Visitors')} value={model.visitors || '—'} helper={adminCopy(lang, 'ID visitatore anonimi', 'Anonymous visitor IDs')} />
-              <SummaryCard label={adminCopy(lang, 'Visualizzazioni pagina', 'Page views')} value={model.pageViews} helper="page_view" />
-              <SummaryCard label={adminCopy(lang, 'Aperture modulo', 'Form opens')} value={model.formOpens} helper="booking_form_open" />
-              <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} helper="booking_form_submit_attempt" />
-              <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model.websiteRequests} helper={adminCopy(lang, 'booking_requests source=website', 'booking_requests source=website')} />
-              <SummaryCard label={adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks')} value={model.whatsappClicks} helper="whatsapp_click" />
-              <SummaryCard label={adminCopy(lang, 'Click email', 'Email clicks')} value={model.emailClicks} helper="email_click" />
-              <SummaryCard label={adminCopy(lang, 'Conversione richieste sito', 'Website request conversion')} value={model.conversionMetrics.websiteRequestConversion} helper={adminCopy(lang, 'Richieste sito / visitatori', 'Website requests / visitors')} />
-              <SummaryCard label={adminCopy(lang, 'Tempo medio di coinvolgimento', 'Average engagement time')} value={model.averageEngagement} helper={adminCopy(lang, 'Stimato dalle sessioni anonime.', 'Estimated from anonymous sessions.')} />
+              <SummaryCard label={adminCopy(lang, 'Visitatori', 'Visitors')} value={model.visitors || '—'} />
+              <SummaryCard label={adminCopy(lang, 'Visualizzazioni pagina', 'Page views')} value={model.pageViews} />
+              <SummaryCard label={adminCopy(lang, 'Aperture modulo', 'Form opens')} value={model.formOpens} />
+              <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} />
+              <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model.websiteRequests} />
+              <SummaryCard label={adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks')} value={model.whatsappClicks} />
+              <SummaryCard label={adminCopy(lang, 'Click email', 'Email clicks')} value={model.emailClicks} />
+              <SummaryCard label={adminCopy(lang, 'Conversione richieste sito', 'Website request conversion')} value={model.conversionMetrics.websiteRequestConversion} />
+              <SummaryCard label={adminCopy(lang, 'Tempo medio di coinvolgimento', 'Average engagement time')} value={model.averageEngagement} />
             </div>
           </AnalyticsStaticPanel>
 
@@ -6674,6 +8057,23 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
                 empty={emptyText}
               />
             </AnalyticsSubsection>
+            <AnalyticsSubsection title={adminCopy(lang, 'Integrità richieste', 'Request tracking integrity')}>
+              <AnalyticsTable
+                columns={[
+                  { key: 'created_at', label: adminCopy(lang, 'Creata il', 'Created at') },
+                  { key: 'request_type', label: adminCopy(lang, 'Tipo', 'Type') },
+                  { key: 'experience_id', label: adminCopy(lang, 'Esperienza', 'Experience') },
+                  { key: 'matched_submit_attempt', label: adminCopy(lang, 'Tentativo', 'Attempt') },
+                  { key: 'matched_submit_success', label: adminCopy(lang, 'Invio riuscito', 'Submit success') },
+                  { key: 'matched_booking_request_created_event', label: adminCopy(lang, 'Evento richiesta', 'Request event') },
+                  { key: 'tracking_match_method', label: adminCopy(lang, 'Match', 'Match') },
+                  { key: 'tracking_integrity_status', label: adminCopy(lang, 'Stato', 'Status') },
+                  { key: 'heard_about_us_display', label: adminCopy(lang, 'Fonte dichiarata', 'Declared source') }
+                ]}
+                rows={model.requestTrackingIntegrity.slice(0, 25)}
+                empty={emptyText}
+              />
+            </AnalyticsSubsection>
             <div className="analytics-two-column-grid">
               <AnalyticsSubsection title={adminCopy(lang, 'Modulo per esperienza', 'Booking form by experience')}>
                 <AnalyticsTable
@@ -6698,10 +8098,10 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
               </AnalyticsSubsection>
               <AnalyticsSubsection title={adminCopy(lang, 'Conversioni principali', 'Core conversions')}>
                 <div className="admin-summary-grid analytics-mini-summary-grid">
-                  <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} helper="booking_form_submit_attempt" />
-                  <SummaryCard label={adminCopy(lang, 'Invii riusciti tracciati', 'Tracked successful submissions')} value={model.submitSuccesses} helper="booking_form_submit_success" />
-                  <SummaryCard label={adminCopy(lang, 'Errori invio', 'Submit errors')} value={model.submitErrors} helper="booking_form_submit_error" />
-                  <SummaryCard label={adminCopy(lang, 'Conversione invii', 'Tracked conversion')} value={model.conversionMetrics.trackedSubmissionConversion} helper={adminCopy(lang, 'Invii analytics / visitatori', 'Analytics successes / visitors')} />
+                  <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} />
+                  <SummaryCard label={adminCopy(lang, 'Invii riusciti tracciati', 'Tracked successful submissions')} value={model.submitSuccesses} />
+                  <SummaryCard label={adminCopy(lang, 'Errori invio', 'Submit errors')} value={model.submitErrors} />
+                  <SummaryCard label={adminCopy(lang, 'Conversione invii', 'Tracked conversion')} value={model.conversionMetrics.trackedSubmissionConversion} />
                 </div>
               </AnalyticsSubsection>
             </div>
@@ -6710,10 +8110,10 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           <AnalyticsPanel title={<AdminEditableText itemKey="admin.analytics.contactIntent.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Intento di contatto', 'Contact intent')} />}>
             <AnalyticsHelperNote>{adminCopy(lang, 'Raggruppa le azioni con cui un visitatore prova a contattare vulcanIQ senza necessariamente completare il modulo.', 'Groups the actions where a visitor tries to contact vulcanIQ without necessarily completing the form.')}</AnalyticsHelperNote>
             <div className="admin-summary-grid analytics-mini-summary-grid">
-              <SummaryCard label={adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks')} value={model.whatsappClicks} helper="whatsapp_click" />
-              <SummaryCard label={adminCopy(lang, 'Click email', 'Email clicks')} value={model.emailClicks} helper="email_click" />
-              <SummaryCard label={adminCopy(lang, 'Click telefono', 'Phone clicks')} value={model.phoneClicks} helper="phone_click" />
-              <SummaryCard label={adminCopy(lang, 'Click Google Maps', 'Google Maps clicks')} value={model.mapsClicks} helper="google_maps_click" />
+              <SummaryCard label={adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks')} value={model.whatsappClicks} />
+              <SummaryCard label={adminCopy(lang, 'Click email', 'Email clicks')} value={model.emailClicks} />
+              <SummaryCard label={adminCopy(lang, 'Click telefono', 'Phone clicks')} value={model.phoneClicks} />
+              <SummaryCard label={adminCopy(lang, 'Click Google Maps', 'Google Maps clicks')} value={model.mapsClicks} />
             </div>
             <AnalyticsSubsection title={adminCopy(lang, 'Percorsi di contatto', 'Contact paths')}>
               <AnalyticsTable

@@ -145,15 +145,27 @@ export async function createPublicBookingRequest(input) {
   const payload = normalizeRequestInput(input, { source: 'website', status: 'pending', language: input.language || 'it' });
   payload.source = 'website';
   payload.status = 'pending';
+  payload.created_by_admin = null;
   delete payload.admin_note;
-  delete payload.created_by_admin;
+
+  const { data: rpcData, error: rpcError } = await supabase.rpc('create_public_booking_request', {
+    request_payload: payload
+  });
+
+  if (!rpcError) {
+    const created = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+    if (created?.id) return created;
+  }
+
+  const functionMissing = rpcError && ['PGRST202', 'PGRST204', '42883'].includes(String(rpcError.code || ''));
+  if (rpcError && !functionMissing) throw rpcError;
 
   const { error } = await supabase
     .from('booking_requests')
     .insert(payload);
 
   if (error) throw error;
-  return { status: 'pending' };
+  return { id: null, status: 'pending', legacy_insert_without_returned_id: true };
 }
 
 export async function createManualBookingRequest(input, userId) {
