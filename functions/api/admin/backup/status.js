@@ -9,22 +9,37 @@ function wantsMetadata(request) {
   }
 }
 
+function validIsoString(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function attachMetadata(latestBackup, metadata) {
   if (!latestBackup) return latestBackup;
-  if (!metadata?.storage) {
-    return {
-      ...latestBackup,
-      storage: {
-        detailsAvailable: false,
-        included: null,
-        fileCount: null,
-        sizeInBytes: null,
-        bucketCount: null,
-        failureCount: null
-      }
-    };
-  }
-  return { ...latestBackup, storage: metadata.storage };
+  const metadataBackupCreatedAt = validIsoString(metadata?.backupCreatedAtUtc || metadata?.projectInfo?.backup_created_at_utc || metadata?.projectInfo?.backupCreatedAtUtc);
+  const fallbackCreatedAt = validIsoString(latestBackup.backupCreatedAt || latestBackup.parsedBackupCreatedAt || latestBackup.artifactCreatedAt || latestBackup.createdAt);
+  const backupCreatedAt = metadataBackupCreatedAt || fallbackCreatedAt;
+  const storage = metadata?.storage || {
+    detailsAvailable: false,
+    included: null,
+    fileCount: null,
+    sizeInBytes: null,
+    bucketCount: null,
+    failureCount: null
+  };
+
+  return {
+    ...latestBackup,
+    createdAt: backupCreatedAt,
+    backupCreatedAt,
+    backupCreatedAtSource: metadataBackupCreatedAt
+      ? '00_project_info.json'
+      : latestBackup.backupCreatedAtSource || (latestBackup.parsedBackupCreatedAt ? 'artifact_name' : 'github_artifact_created_at'),
+    artifactCreatedAt: latestBackup.artifactCreatedAt || latestBackup.uploadedAt || latestBackup.createdAt,
+    storage,
+    metadataAvailable: Boolean(metadata?.projectInfo || metadata?.storageManifest)
+  };
 }
 
 export async function onRequestOptions() {

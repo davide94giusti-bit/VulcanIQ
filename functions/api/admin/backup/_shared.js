@@ -141,13 +141,34 @@ export async function githubFetch(config, path, init = {}) {
   });
 }
 
+function validIsoString(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+export function parseBackupCreatedAtFromArtifactName(name) {
+  const match = String(name || '').match(/vulcaniq-supabase-backup-(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-UTC/i);
+  if (!match) return null;
+  return validIsoString(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:00Z`);
+}
+
 function artifactToSafeMetadata(artifact) {
   if (!artifact) return null;
+  const artifactCreatedAt = validIsoString(artifact.created_at);
+  const parsedBackupCreatedAt = parseBackupCreatedAtFromArtifactName(artifact.name);
+  const backupCreatedAt = parsedBackupCreatedAt || artifactCreatedAt;
   return {
     id: artifact.id,
     artifactName: artifact.name || '',
-    createdAt: artifact.created_at || null,
-    expiresAt: artifact.expires_at || null,
+    createdAt: backupCreatedAt,
+    backupCreatedAt,
+    backupCreatedAtSource: parsedBackupCreatedAt ? 'artifact_name' : 'github_artifact_created_at',
+    parsedBackupCreatedAt,
+    artifactCreatedAt,
+    artifactUpdatedAt: validIsoString(artifact.updated_at),
+    uploadedAt: artifactCreatedAt,
+    expiresAt: validIsoString(artifact.expires_at),
     sizeInBytes: Number.isFinite(Number(artifact.size_in_bytes)) ? Number(artifact.size_in_bytes) : null,
     expired: Boolean(artifact.expired)
   };
@@ -208,9 +229,10 @@ function workflowRunToSafeMetadata(run) {
     event: run.event || '',
     status: run.status || '',
     conclusion: run.conclusion || null,
-    createdAt: run.created_at || null,
-    updatedAt: run.updated_at || null,
-    runStartedAt: run.run_started_at || null
+    createdAt: validIsoString(run.created_at),
+    updatedAt: validIsoString(run.updated_at),
+    runStartedAt: validIsoString(run.run_started_at),
+    htmlUrl: run.html_url || null
   };
 }
 
@@ -446,6 +468,7 @@ export async function readBackupArtifactMetadata(config, artifact) {
     return {
       projectInfo,
       storageManifest,
+      backupCreatedAtUtc: validIsoString(projectInfo?.backup_created_at_utc || projectInfo?.backupCreatedAtUtc || projectInfo?.backup_created_at),
       storage: backupMetadataToStorageSummary(projectInfo, storageManifest)
     };
   } catch (error) {

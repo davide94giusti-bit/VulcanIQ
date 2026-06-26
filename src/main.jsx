@@ -32,14 +32,22 @@ const ADMIN_NAV_SECTIONS = [
   { key: 'today', path: '/admin/today', labelIt: 'Oggi', labelEn: 'Today', editable: true },
   { key: 'calendar', path: '/admin/calendar', labelIt: 'Calendario', labelEn: 'Calendar', editable: true },
   { key: 'upcoming', path: '/admin/upcoming', labelIt: 'Prossime', labelEn: 'Upcoming', editable: true },
-  { key: 'requests', path: '/admin/requests', labelIt: 'Richieste', labelEn: 'Requests', editable: true },
+  { key: 'requests', path: '/admin/requests', labelIt: 'Richieste prenotazione', labelEn: 'Booking requests', editable: true },
   { key: 'availability', path: '/admin/availability', labelIt: 'Disponibilità', labelEn: 'Availability', editable: true },
   { key: 'partnerships', path: '/admin/partnerships', labelIt: 'Collaborazioni', labelEn: 'Collaborations', editable: true },
-  { key: 'edit', path: '/admin/edit', labelIt: 'Modifica', labelEn: 'Edit', editable: true },
+  { key: 'edit', path: '/admin/edit', labelIt: 'Modifica sito e recensioni', labelEn: 'Edit website & reviews', editable: true },
   { key: 'finance', path: '/admin/finance', labelIt: 'Finanze', labelEn: 'Finance', editable: true },
-  { key: 'analytics', path: '/admin/analytics', labelIt: 'Dati', labelEn: 'Analytics', editable: true },
-  { key: 'backup', path: '/admin/system/backup', labelIt: 'Sistema', labelEn: 'System', editable: false, ownerOnly: true },
-  { key: 'publicSite', path: '/', labelIt: 'Sito pubblico', labelEn: 'Public site', editable: true, external: true }
+  { key: 'analytics', path: '/admin/analytics', labelIt: 'Analytics', labelEn: 'Analytics', editable: true },
+  { key: 'backup', path: '/admin/system/backup', labelIt: 'Sistema e backup', labelEn: 'System & backup', editable: false, ownerOnly: true },
+  { key: 'publicSite', path: '/', labelIt: 'Visualizza sito pubblico', labelEn: 'View public site', editable: true, external: true }
+];
+
+const ADMIN_NAV_GROUPS = [
+  { key: 'operations', labelIt: 'Operazioni', labelEn: 'Operations', items: ['today', 'upcoming', 'calendar'] },
+  { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'availability'] },
+  { key: 'website', labelIt: 'Gestione sito', labelEn: 'Website management', items: ['edit', 'publicSite'] },
+  { key: 'business', labelIt: 'Business', labelEn: 'Business', items: ['partnerships', 'finance', 'analytics'] },
+  { key: 'system', labelIt: 'Sistema', labelEn: 'System', items: ['backup'] }
 ];
 
 function adminNavLabel(section, lang) {
@@ -1164,6 +1172,37 @@ function formatDateForMessage(date, lang) {
   if (!date) return '';
   const [year, month, day] = date.split('-');
   return lang === 'it' ? `${day}/${month}/${year}` : `${day}/${month}/${year}`;
+}
+
+function validDateFromValue(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatLocalDateTime(value, lang, fallback = '') {
+  const date = validDateFromValue(value);
+  if (!date) return fallback;
+  return new Intl.DateTimeFormat(lang === 'it' ? 'it-IT' : 'en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date);
+}
+
+function formatUtcDateTime(value, lang, fallback = '') {
+  const date = validDateFromValue(value);
+  if (!date) return fallback;
+  return `${new Intl.DateTimeFormat(lang === 'it' ? 'it-IT' : 'en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC'
+  }).format(date)} UTC`;
 }
 
 function buildExperienceMessage(experience, lang) {
@@ -4269,6 +4308,100 @@ function ProtectedAdminArea({ pathname, navigate, lang, setLang }) {
   return <AdminLayout pathname={pathname} navigate={navigate} lang={lang} setLang={setLang} session={state.session} profile={state.profile} />;
 }
 
+
+function AdminMenuDropdown({ lang, visibleSections, normalizedPath, currentNavValue, navigate }) {
+  const [open, setOpen] = useState(false);
+  const shellRef = useRef(null);
+  const sectionByKey = useMemo(() => visibleSections.reduce((acc, section) => ({ ...acc, [section.key]: section }), {}), [visibleSections]);
+  const currentSection = visibleSections.find((section) => !section.external && section.path === currentNavValue)
+    || visibleSections.find((section) => !section.external && isAdminNavSectionActive(normalizedPath, section))
+    || visibleSections.find((section) => section.key === 'today');
+  const currentLabel = currentSection ? adminNavLabel(currentSection, lang) : adminCopy(lang, 'Oggi', 'Today');
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    function handlePointerDown(event) {
+      if (!shellRef.current?.contains(event.target)) setOpen(false);
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown, { passive: true });
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
+  function openSection(section) {
+    setOpen(false);
+    if (!section?.external) navigate(section.path);
+  }
+
+  return (
+    <div className="admin-menu-shell" ref={shellRef}>
+      <button
+        className="admin-menu-trigger"
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {adminCopy(lang, 'Menu', 'Menu')} <span aria-hidden="true">▾</span>
+      </button>
+      <span className="admin-menu-current"><span>{adminCopy(lang, 'Sezione', 'Current')}</span>{currentLabel}</span>
+      {open && (
+        <div className="admin-menu-dropdown" role="menu" aria-label={adminCopy(lang, 'Navigazione admin', 'Admin navigation')}>
+          {ADMIN_NAV_GROUPS.map((group) => {
+            const groupItems = group.items.map((key) => sectionByKey[key]).filter(Boolean);
+            if (!groupItems.length) return null;
+            return (
+              <section className="admin-menu-group" key={group.key}>
+                <h2 className="admin-menu-group-title">{lang === 'it' ? group.labelIt : group.labelEn}</h2>
+                <div className="admin-menu-group-items">
+                  {groupItems.map((section) => {
+                    const active = !section.external && isAdminNavSectionActive(normalizedPath, section);
+                    return section.external ? (
+                      <a
+                        key={section.key}
+                        className="admin-menu-item"
+                        href={section.path}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        role="menuitem"
+                        onClick={() => setOpen(false)}
+                      >
+                        {adminNavLabel(section, lang)}
+                      </a>
+                    ) : (
+                      <button
+                        key={section.key}
+                        className={`admin-menu-item ${active ? 'admin-menu-item-active' : ''}`}
+                        type="button"
+                        role="menuitem"
+                        aria-current={active ? 'page' : undefined}
+                        onClick={() => openSection(section)}
+                      >
+                        {adminNavLabel(section, lang)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
   const currentAdminPath = adminPathFromLocation(pathname);
@@ -4317,16 +4450,13 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   return (
     <div className="admin-shell">
       <header className="admin-header">
-        <select className="admin-mobile-nav" value={currentNavValue} onChange={(event) => navigate(event.target.value)} aria-label="Admin navigation">
-          {visibleSections.map((section) => <option key={section.key} value={section.path}>{adminNavLabel(section, lang)}</option>)}
-        </select>
-        <nav className="admin-nav" aria-label="Admin navigation">
-          {visibleSections.map((section) => section.external ? (
-            <a key={section.key} href={section.path} target="_blank" rel="noopener noreferrer">{adminNavLabel(section, lang)}</a>
-          ) : (
-            <button key={section.key} type="button" className={isAdminNavSectionActive(normalizedPath, section) ? 'active' : ''} onClick={() => navigate(section.path)}>{adminNavLabel(section, lang)}</button>
-          ))}
-        </nav>
+        <AdminMenuDropdown
+          lang={lang}
+          visibleSections={visibleSections}
+          normalizedPath={normalizedPath}
+          currentNavValue={currentNavValue}
+          navigate={navigate}
+        />
         <div className="admin-userbox">
           <span className="admin-userbox-name">{ownerDisplayName(profile, lang)}</span>
           <span className="admin-userbox-actions">
@@ -7333,19 +7463,53 @@ function parseBackupTime(value, current) {
   };
 }
 
+function backupDateFallback(lang) {
+  return adminCopy(lang, 'Non disponibile', 'Not available');
+}
+
 function formatBackupDate(value, lang) {
-  if (!value) return adminCopy(lang, 'Non disponibile', 'Not available');
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return adminCopy(lang, 'Non disponibile', 'Not available');
-  return new Intl.DateTimeFormat(lang === 'it' ? 'it-IT' : 'en-GB', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'UTC',
-    timeZoneName: 'short'
-  }).format(date);
+  return formatLocalDateTime(value, lang, backupDateFallback(lang));
+}
+
+function formatBackupUtcDate(value, lang) {
+  return formatUtcDateTime(value, lang, backupDateFallback(lang));
+}
+
+function BackupTimeValue({ value, lang, compact = false }) {
+  if (!validDateFromValue(value)) return <span>{backupDateFallback(lang)}</span>;
+  return (
+    <span className={`backup-time-value ${compact ? 'compact' : ''}`}>
+      <span className="backup-time-primary">{formatBackupDate(value, lang)}</span>
+      {!compact && <span className="backup-time-label">{adminCopy(lang, 'Ora locale', 'Local time')}</span>}
+      <span className="backup-time-secondary">UTC: {formatBackupUtcDate(value, lang)}</span>
+    </span>
+  );
+}
+
+function BackupInlineTime({ label, value, lang }) {
+  if (!validDateFromValue(value)) return null;
+  return (
+    <span className="backup-inline-time">
+      <span className="backup-inline-time-label">{label}:</span>{' '}
+      <span>{formatBackupDate(value, lang)}</span>{' '}
+      <span className="backup-time-secondary">UTC: {formatBackupUtcDate(value, lang)}</span>
+    </span>
+  );
+}
+
+function BackupSummaryHelper({ latestBackup, lang }) {
+  if (!latestBackup) return null;
+  const rows = [
+    `${adminCopy(lang, 'Dimensione', 'Size')}: ${formatBackupSize(latestBackup.sizeInBytes, lang)}`,
+    latestBackup.artifactName || '',
+  ].filter(Boolean);
+  return (
+    <span className="backup-summary-helper">
+      {rows.map((row) => <span key={row}>{row}</span>)}
+      <BackupInlineTime label={adminCopy(lang, 'Artifact caricato', 'Artifact uploaded')} value={latestBackup.artifactCreatedAt || latestBackup.uploadedAt} lang={lang} />
+      <BackupInlineTime label={adminCopy(lang, 'Scadenza artifact', 'Artifact expiry')} value={latestBackup.expiresAt} lang={lang} />
+    </span>
+  );
 }
 
 function formatBackupSize(bytes, lang) {
@@ -7464,7 +7628,7 @@ function backupProgressFromStatus(result, requestedAt, lang) {
     return {
       active: true,
       value: 70,
-      title: adminCopy(lang, 'Backup in esecuzione', 'Backup running'),
+      title: adminCopy(lang, 'Backup in esecuzione', 'Backup in progress'),
       detail: adminCopy(lang, 'GitHub Actions sta creando il dump e preparando lo ZIP.', 'GitHub Actions is creating the dump and preparing the ZIP.'),
       done: false,
       failed: false
@@ -7490,7 +7654,7 @@ function backupProgressFromStatus(result, requestedAt, lang) {
       active: true,
       value: 100,
       title: adminCopy(lang, 'Backup non completato', 'Backup not completed'),
-      detail: adminCopy(lang, 'L\'ultima esecuzione del workflow non è terminata correttamente. Controlla i dettagli mostrati sotto.', 'The latest workflow run did not finish successfully. Check the details shown below.'),
+      detail: adminCopy(lang, 'L\'ultima esecuzione del workflow non è terminata correttamente. Controlla i dettagli mostrati sotto.', 'The latest workflow run did not finish correctly. Check the details shown below.'),
       done: true,
       failed: true
     };
@@ -7625,6 +7789,7 @@ function AdminBackupPage({ lang }) {
         if (!nextProgress.failed) {
           setActionState({ createLoading: false, downloadLoading: false, message: adminCopy(lang, 'Backup completato. Puoi scaricarlo da questa pagina.', 'Backup completed. You can download it from this page.'), error: '' });
           refreshBackupStatus();
+          window.setTimeout(refreshBackupStatus, 2500);
         }
       }
     } catch (error) {
@@ -7710,16 +7875,18 @@ function AdminBackupPage({ lang }) {
   const latestBackupLabel = statusState.loading
     ? adminCopy(lang, 'Caricamento...', 'Loading...')
     : latestBackup?.createdAt
-      ? formatBackupDate(latestBackup.createdAt, lang)
+      ? <BackupTimeValue value={latestBackup.createdAt} lang={lang} />
       : adminCopy(lang, 'Nessun backup', 'No backup');
   const latestBackupHelper = latestBackup
-    ? `${adminCopy(lang, 'Dimensione', 'Size')}: ${formatBackupSize(latestBackup.sizeInBytes, lang)} - ${adminCopy(lang, 'Scadenza artifact', 'Artifact expiry')}: ${formatBackupDate(latestBackup.expiresAt, lang)}`
+    ? <BackupSummaryHelper latestBackup={latestBackup} lang={lang} />
     : (statusState.message || adminCopy(lang, 'Nessun backup scaricabile trovato.', 'No downloadable backup found.'));
   const lastStatusLabel = statusState.configured ? adminCopy(lang, 'Pronto', 'Ready') : adminCopy(lang, 'Da configurare', 'Needs configuration');
   const workflowRun = statusState.workflowRun;
+  const workflowIsActive = workflowRun && ['queued', 'in_progress'].includes(workflowRun.status);
   const workflowHelper = workflowRun
-    ? `${workflowStatusText(workflowRun, lang)} - ${formatBackupDate(workflowRun.updatedAt || workflowRun.createdAt, lang)}`
+    ? <BackupInlineTime label={workflowStatusText(workflowRun, lang)} value={workflowRun.updatedAt || workflowRun.createdAt} lang={lang} />
     : adminCopy(lang, 'Nessuna esecuzione workflow disponibile.', 'No workflow run available.');
+  const progressValue = Math.max(0, Math.min(100, Number(backupProgress.value) || 0));
 
   return (
     <section className="admin-subpage backup-admin-page">
@@ -7747,17 +7914,38 @@ function AdminBackupPage({ lang }) {
         <div className={`backup-progress-panel ${backupProgress.failed ? 'failed' : ''}`} role="status" aria-live="polite">
           <div className="backup-progress-head">
             <strong>{backupProgress.title}</strong>
-            <span>{Math.round(backupProgress.value)}%</span>
+            <span>{Math.round(progressValue)}%</span>
           </div>
-          <div className="backup-progress-track" aria-label={adminCopy(lang, 'Avanzamento backup', 'Backup progress')}>
-            <span style={{ width: `${Math.max(0, Math.min(100, backupProgress.value))}%` }} />
+          <div
+            className="backup-progress-track"
+            role="progressbar"
+            aria-label={adminCopy(lang, 'Avanzamento backup', 'Backup progress')}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progressValue}
+          >
+            <span style={{ width: `${progressValue}%` }} />
           </div>
           {backupProgress.detail && <p>{backupProgress.detail}</p>}
         </div>
       )}
 
+      {workflowIsActive && (
+        <section className="admin-panel backup-panel backup-workflow-panel current-backup-panel">
+          <div className="admin-panel-header">
+            <h2>{adminCopy(lang, 'Backup in esecuzione', 'Backup in progress')}</h2>
+            <span className="status-pill pending">{workflowStatusText(workflowRun, lang)}</span>
+          </div>
+          <dl className="backup-workflow-grid compact-workflow-grid">
+            <div><dt>{adminCopy(lang, 'Backup corrente avviato', 'Current backup started')}</dt><dd><BackupTimeValue value={workflowRun.createdAt || workflowRun.runStartedAt} lang={lang} compact /></dd></div>
+            <div><dt>{adminCopy(lang, 'Backup corrente aggiornato', 'Current backup updated')}</dt><dd><BackupTimeValue value={workflowRun.updatedAt} lang={lang} compact /></dd></div>
+            <div><dt>{adminCopy(lang, 'Ultimo backup completato', 'Last completed backup')}</dt><dd>{latestBackup?.createdAt ? <BackupTimeValue value={latestBackup.createdAt} lang={lang} compact /> : adminCopy(lang, 'Nessun backup', 'No backup')}</dd></div>
+          </dl>
+        </section>
+      )}
+
       <div className="admin-summary-grid backup-summary-grid">
-        <SummaryCard label={adminCopy(lang, 'Ultimo backup', 'Last backup')} value={latestBackupLabel} helper={latestBackupHelper} />
+        <SummaryCard label={adminCopy(lang, 'Ultimo backup completato', 'Last completed backup')} value={latestBackupLabel} helper={latestBackupHelper} />
         <SummaryCard label={adminCopy(lang, 'Ultimo stato', 'Last status')} value={lastStatusLabel} helper={latestBackup?.artifactName || workflowHelper} />
         <SummaryCard label={adminCopy(lang, 'Programmazione backup', 'Backup schedule')} value={backupFrequencyLabel(scheduleDraft.frequency, lang)} helper={backupScheduleSummary(scheduleDraft, lang)} />
         <SummaryCard label={adminCopy(lang, 'Storage incluso', 'Storage included')} value={storageIncludedLabel(latestBackup?.storage, lang)} helper={backupStorageHelper(latestBackup, lang)} />
@@ -7775,8 +7963,8 @@ function AdminBackupPage({ lang }) {
               <div><dt>{adminCopy(lang, 'Esecuzione', 'Run')}</dt><dd>{workflowRun.runNumber ? `#${workflowRun.runNumber}` : '-'}</dd></div>
               <div><dt>{adminCopy(lang, 'Stato', 'Status')}</dt><dd>{workflowStatusText(workflowRun, lang)}</dd></div>
               <div><dt>{adminCopy(lang, 'Tipo', 'Type')}</dt><dd>{workflowRun.event || '-'}</dd></div>
-              <div><dt>{adminCopy(lang, 'Creata', 'Created')}</dt><dd>{formatBackupDate(workflowRun.createdAt, lang)}</dd></div>
-              <div><dt>{adminCopy(lang, 'Aggiornata', 'Updated')}</dt><dd>{formatBackupDate(workflowRun.updatedAt, lang)}</dd></div>
+              <div><dt>{adminCopy(lang, 'Backup corrente avviato', 'Current backup started')}</dt><dd><BackupTimeValue value={workflowRun.createdAt || workflowRun.runStartedAt} lang={lang} compact /></dd></div>
+              <div><dt>{adminCopy(lang, 'Backup corrente aggiornato', 'Current backup updated')}</dt><dd><BackupTimeValue value={workflowRun.updatedAt} lang={lang} compact /></dd></div>
               <div><dt>{adminCopy(lang, 'Risultato', 'Conclusion')}</dt><dd>{workflowRun.conclusion || adminCopy(lang, 'In corso', 'In progress')}</dd></div>
             </dl>
           ) : (
@@ -9050,6 +9238,7 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
         <div><dt>{adminCopy(lang, 'Contatto', 'Contact')}</dt><dd>{request.preferred_contact || '-'}</dd></div>
         <div><dt>{adminCopy(lang, 'Esperienza', 'Experience')}</dt><dd>{adminExperienceLabel(request.experience_id, lang)}</dd></div>
         <div><dt>{adminCopy(lang, 'Data richiesta', 'Requested date')}</dt><dd>{formatDateForMessage(request.requested_date, lang) || '-'}</dd></div>
+        <div className="request-submitted-meta"><dt>{adminCopy(lang, 'Inviata il', 'Submitted')}</dt><dd>{formatLocalDateTime(request.created_at || request.submitted_at || request.inserted_at || request.createdAt, lang, adminCopy(lang, 'Non disponibile', 'Not available'))}</dd></div>
         <div><dt>{adminCopy(lang, 'Alternativa', 'Alternative')}</dt><dd>{formatDateForMessage(request.alternative_date, lang) || '-'}</dd></div>
         <div><dt>{adminCopy(lang, 'Lingua', 'Language')}</dt><dd>{request.language || 'it'}</dd></div>
         <div><dt>{adminCopy(lang, 'Gruppo', 'Party')}</dt><dd>{[request.adults ? `${request.adults} adulti/adults` : '', request.children ? `${request.children} bambini/children` : ''].filter(Boolean).join(' · ') || request.party_type || '-'}</dd></div>
@@ -9064,13 +9253,14 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
       {request.status !== 'pending' && (
         <p className="small-note decision-note"><strong>{adminCopy(lang, 'Decisione', 'Decision')}:</strong> {request.decision_note || '-'} · {request.decided_at ? formatDateForMessage(String(request.decided_at).slice(0, 10), lang) : '-'}{request.decided_by ? ` · ${request.decided_by}` : ''}</p>
       )}
-      <ReplyTools request={request} lang={lang} />
-      {request.status === 'pending' && (
-        <div className="request-actions">
-          <button className="button primary" type="button" onClick={onApprove}>{adminCopy(lang, 'Approva', 'Approve')}</button>
-          <button className="button secondary" type="button" onClick={onDecline}>{adminCopy(lang, 'Rifiuta', 'Decline')}</button>
-        </div>
-      )}
+      <ReplyTools request={request} lang={lang}>
+        {request.status === 'pending' && (
+          <>
+            <button className="button primary request-action-primary" type="button" onClick={onApprove}>{adminCopy(lang, 'Approva', 'Approve')}</button>
+            <button className="button secondary request-action-secondary" type="button" onClick={onDecline}>{adminCopy(lang, 'Rifiuta', 'Decline')}</button>
+          </>
+        )}
+      </ReplyTools>
       {request.status === 'accepted' && onRemove && (
         <div className="request-actions">
           <button className="button secondary danger" type="button" onClick={onRemove}>{adminCopy(lang, 'Rimuovi / annulla', 'Remove / cancel')}</button>
@@ -9080,7 +9270,7 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
   );
 }
 
-function ReplyTools({ request, lang }) {
+function ReplyTools({ request, lang, children = null }) {
   const [copied, setCopied] = useState('');
   const [emailOpen, setEmailOpen] = useState(false);
   const replyLang = requestLang(request, lang);
@@ -9101,10 +9291,11 @@ function ReplyTools({ request, lang }) {
 
   return (
     <div className="reply-tools">
-      <div className="reply-tool-buttons">
+      <div className="reply-tool-buttons request-actions-row">
         {phone ? <a href={`https://wa.me/${phone}?text=${encode(prepared)}`} target="_blank" rel="noopener noreferrer">WhatsApp</a> : <button type="button" onClick={() => copy('reply', prepared)}>{adminCopy(lang, 'Copia risposta', 'Copy reply')}</button>}
         <button type="button" onClick={() => setEmailOpen((open) => !open)}>{adminCopy(lang, 'Email', 'Email')}</button>
         <button type="button" onClick={() => copy('reply', prepared)}>{adminCopy(lang, 'Copia messaggio', 'Copy message')} {copied === 'reply' ? '· ✓' : ''}</button>
+        {children}
       </div>
       {phoneNeedsCountry && <p className="small-note">{adminCopy(lang, 'Il numero potrebbe richiedere il prefisso internazionale prima di aprire WhatsApp.', 'Phone number may need country code before opening WhatsApp.')}</p>}
       {emailOpen && (

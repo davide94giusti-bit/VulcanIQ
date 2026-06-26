@@ -8356,3 +8356,256 @@ body.modal-scroll-lock {
     grid-template-columns: 1fr;
   }
 }
+
+/* Targeted admin navigation menu patch */
+.admin-menu-shell {
+  position: relative;
+  z-index: 220;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: start;
+  min-width: 0;
+}
+
+.admin-menu-trigger,
+.admin-menu-item {
+  min-height: 42px;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 999px;
+  font-weight: 850;
+}
+
+.admin-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.9);
+  padding: 0 16px;
+}
+
+.admin-menu-trigger:hover,
+.admin-menu-trigger:focus-visible {
+  color: #fff;
+  background: rgba(240, 107, 79, 0.32);
+  border-color: rgba(240, 107, 79, 0.44);
+  outline: none;
+}
+
+.admin-menu-current {
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 0;
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 900;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.admin-menu-current span {
+  color: rgba(255,255,255,0.58);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-menu-dropdown {
+  position: absolute;
+  inset-block-start: calc(100% + 12px);
+  inset-inline-start: 0;
+  z-index: 9999;
+  width: min(380px, calc(100vw - 28px));
+  max-height: calc(100svh - 104px);
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 22px;
+  background: rgba(13, 22, 38, 0.98);
+  box-shadow: 0 24px 80px rgba(0,0,0,0.38);
+  backdrop-filter: blur(18px);
+}
+
+.admin-menu-group {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-menu-group-title {
+  margin: 0;
+  padding: 0 6px;
+  color: rgba(255,255,255,0.58);
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.admin-menu-group-items {
+  display: grid;
+  gap: 5px;
+}
+
+.admin-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.86);
+  padding: 0 13px;
+  text-align: left;
+}
+
+.admin-menu-item:hover,
+.admin-menu-item:focus-visible,
+.admin-menu-item-active {
+  color: #fff;
+  background: rgba(240, 107, 79, 0.28);
+  border-color: rgba(240, 107, 79, 0.5);
+  outline: none;
+}
+
+@media (max-width: 680px) {
+  .admin-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .admin-menu-shell {
+    width: 100%;
+    grid-column: 1;
+  }
+
+  .admin-menu-current {
+    max-width: min(52vw, 12rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .admin-menu-dropdown {
+    width: calc(100vw - 28px);
+    max-height: calc(100svh - 92px);
+  }
+
+  .admin-userbox {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 420px) {
+  .admin-menu-shell {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .admin-menu-current {
+    max-width: min(80vw, 18rem);
+  }
+}
+
+/* Targeted booking request actions patch */
+.request-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.request-actions-row > * {
+  flex: 0 0 auto;
+}
+
+.request-actions-row .request-action-primary {
+  margin-left: 0.1rem;
+}
+
+.request-submitted-meta {
+  border-color: rgba(240, 107, 79, 0.18);
+}
+
+@media (min-width: 900px) {
+  .request-card:not(.compact) .request-actions-row {
+    flex-wrap: nowrap;
+  }
+}
+
+@media (max-width: 560px) {
+  .request-actions-row > *,
+  .request-actions-row .button {
+    min-height: 44px;
+  }
+}
+
+/* Targeted backup time/progress display patch */
+.backup-time-value,
+.backup-summary-helper,
+.backup-inline-time {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.backup-time-value.compact {
+  gap: 0.15rem;
+}
+
+.backup-time-primary {
+  color: var(--night);
+  font-weight: 950;
+}
+
+.backup-time-label,
+.backup-time-secondary,
+.backup-inline-time-label {
+  color: var(--ash);
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: normal;
+}
+
+.summary-card .backup-time-value {
+  font-size: 1rem;
+  letter-spacing: normal;
+  line-height: 1.2;
+}
+
+.summary-card .backup-time-primary {
+  font-size: clamp(1.2rem, 2vw, 1.75rem);
+  line-height: 1.05;
+}
+
+.summary-card .backup-summary-helper {
+  margin-top: 8px;
+}
+
+.backup-summary-helper > span,
+.backup-inline-time {
+  margin-top: 0;
+}
+
+.backup-progress-track span {
+  min-width: 0;
+  will-change: width;
+}
+
+.compact-workflow-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.current-backup-panel {
+  border-color: rgba(240,107,79,0.24);
+}
+
+@media (max-width: 760px) {
+  .compact-workflow-grid {
+    grid-template-columns: 1fr;
+  }
+}

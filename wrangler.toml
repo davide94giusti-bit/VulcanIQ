@@ -1,7 +1,3 @@
 name = "vulcaniq"
 pages_build_output_dir = "dist"
 compatibility_date = "2026-06-08"
-
-[vars]
-VITE_SUPABASE_URL = "https://qlfnvfxkjvlzllwrszgz.supabase.co"
-VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFsZm52ZnhranZsemxsd3Jzemd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NTY1NjksImV4cCI6MjA5ODAzMjU2OX0.-6jG0oEO5BEuArnKOml-OCrelF04GYghcScUCEiwW7Q"
