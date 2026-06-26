@@ -1,7 +1,7 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 
 const PUBLIC_ASSET_BUCKET = 'vulcaniq-public-assets';
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'application/pdf'];
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'application/pdf'];
 const PUBLIC_SITE_MEDIA_FULL_COLUMNS = 'id, media_key, label_it, label_en, file_url, file_path, file_name, file_type, media_kind, alt_it, alt_en, image_position, image_size, active';
 const PUBLIC_SITE_MEDIA_MIN_COLUMNS = 'id, media_key, label_it, label_en, file_url, file_type, media_kind, alt_it, alt_en, active';
 const SITE_MEDIA_ADMIN_COLUMNS = 'id, created_at, updated_at, media_key, label_it, label_en, file_url, file_path, file_name, file_type, media_kind, alt_it, alt_en, image_position, image_size, active, updated_by';
@@ -89,7 +89,7 @@ export async function upsertSiteMedia(input) {
 
 export async function uploadSiteMediaFile(file, key, userId) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-  if (!file || !ALLOWED_TYPES.includes(file.type)) throw new Error('Only JPEG, PNG, WEBP, MP4, or PDF files are allowed.');
+  if (!file || !ALLOWED_TYPES.includes(file.type)) throw new Error('Only JPEG, PNG, WEBP, MP4, WEBM, or PDF files are allowed.');
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const path = `site-media/${key || 'media'}/${userId || 'admin'}/${unique}-${safeFileName(file)}`;
   const { error } = await supabase.storage

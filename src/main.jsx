@@ -32,14 +32,22 @@ const ADMIN_NAV_SECTIONS = [
   { key: 'today', path: '/admin/today', labelIt: 'Oggi', labelEn: 'Today', editable: true },
   { key: 'calendar', path: '/admin/calendar', labelIt: 'Calendario', labelEn: 'Calendar', editable: true },
   { key: 'upcoming', path: '/admin/upcoming', labelIt: 'Prossime', labelEn: 'Upcoming', editable: true },
-  { key: 'requests', path: '/admin/requests', labelIt: 'Richieste', labelEn: 'Requests', editable: true },
+  { key: 'requests', path: '/admin/requests', labelIt: 'Richieste prenotazione', labelEn: 'Booking requests', editable: true },
   { key: 'availability', path: '/admin/availability', labelIt: 'Disponibilità', labelEn: 'Availability', editable: true },
   { key: 'partnerships', path: '/admin/partnerships', labelIt: 'Collaborazioni', labelEn: 'Collaborations', editable: true },
-  { key: 'edit', path: '/admin/edit', labelIt: 'Modifica', labelEn: 'Edit', editable: true },
+  { key: 'edit', path: '/admin/edit', labelIt: 'Modifica sito e recensioni', labelEn: 'Edit website & reviews', editable: true },
   { key: 'finance', path: '/admin/finance', labelIt: 'Finanze', labelEn: 'Finance', editable: true },
-  { key: 'analytics', path: '/admin/analytics', labelIt: 'Dati', labelEn: 'Analytics', editable: true },
-  { key: 'backup', path: '/admin/system/backup', labelIt: 'Sistema', labelEn: 'System', editable: false, ownerOnly: true },
-  { key: 'publicSite', path: '/', labelIt: 'Sito pubblico', labelEn: 'Public site', editable: true, external: true }
+  { key: 'analytics', path: '/admin/analytics', labelIt: 'Analytics', labelEn: 'Analytics', editable: true },
+  { key: 'backup', path: '/admin/system/backup', labelIt: 'Sistema e backup', labelEn: 'System & backup', editable: false, ownerOnly: true },
+  { key: 'publicSite', path: '/', labelIt: 'Visualizza sito pubblico', labelEn: 'View public site', editable: true, external: true }
+];
+
+const ADMIN_NAV_GROUPS = [
+  { key: 'operations', labelIt: 'Operazioni', labelEn: 'Operations', items: ['today', 'upcoming', 'calendar'] },
+  { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'availability'] },
+  { key: 'website', labelIt: 'Gestione sito', labelEn: 'Website management', items: ['edit', 'publicSite'] },
+  { key: 'business', labelIt: 'Business', labelEn: 'Business', items: ['partnerships', 'finance', 'analytics'] },
+  { key: 'system', labelIt: 'Sistema', labelEn: 'System', items: ['backup'] }
 ];
 
 function adminNavLabel(section, lang) {
@@ -965,6 +973,149 @@ function resolvePublicContactDetails(siteContent) {
   };
 }
 
+
+const SOCIAL_LINKS_CONTENT_KEY = 'site.social_links';
+const SOCIAL_PLATFORM_OPTIONS = [
+  { value: 'instagram', it: 'Instagram', en: 'Instagram', icon: 'insta' },
+  { value: 'facebook', it: 'Facebook', en: 'Facebook', icon: 'facebook' },
+  { value: 'tiktok', it: 'TikTok', en: 'TikTok', icon: 'tiktok' },
+  { value: 'youtube', it: 'YouTube', en: 'YouTube', icon: 'youtube' },
+  { value: 'linkedin', it: 'LinkedIn', en: 'LinkedIn', icon: 'linkedin' },
+  { value: 'tripadvisor', it: 'Tripadvisor', en: 'Tripadvisor', icon: 'tripadvisor' },
+  { value: 'google_reviews', it: 'Google Reviews', en: 'Google Reviews', icon: 'google' },
+  { value: 'whatsapp', it: 'WhatsApp', en: 'WhatsApp', icon: 'chat' },
+  { value: 'other', it: 'Altro', en: 'Other', icon: 'link' }
+];
+
+const LATEST_NEWS_DEFAULTS = {
+  title_it: 'Ultime notizie',
+  title_en: 'Latest news',
+  description_it: 'Scopri gli aggiornamenti più recenti su Etna, escursioni e attività vulcaniche.',
+  description_en: 'Discover the latest updates about Mount Etna, excursions, and volcanic activity.',
+  cta_it: 'Leggi le ultime notizie',
+  cta_en: 'Read the latest news'
+};
+
+function socialPlatformOption(value) {
+  return SOCIAL_PLATFORM_OPTIONS.find((item) => item.value === value) || SOCIAL_PLATFORM_OPTIONS[SOCIAL_PLATFORM_OPTIONS.length - 1];
+}
+
+function socialPlatformLabel(value, lang) {
+  const option = socialPlatformOption(value);
+  return lang === 'it' ? option.it : option.en;
+}
+
+function safeExternalUrl(value, { allowHttp = false } = {}) {
+  const clean = String(value || '').trim();
+  if (!clean) return '';
+  try {
+    const url = new URL(clean);
+    if (url.protocol === 'https:') return url.href;
+    if (allowHttp && url.protocol === 'http:') return url.href;
+  } catch (error) {
+    return '';
+  }
+  return '';
+}
+
+function parseBooleanSetting(value, fallback = true) {
+  const clean = String(value ?? '').trim().toLowerCase();
+  if (!clean) return fallback;
+  if (['false', '0', 'no', 'off', 'disabled', 'disattivo'].includes(clean)) return false;
+  if (['true', '1', 'yes', 'on', 'enabled', 'attivo'].includes(clean)) return true;
+  return fallback;
+}
+
+function socialLinksJsonFromContent(siteContent) {
+  const item = siteContent?.[SOCIAL_LINKS_CONTENT_KEY];
+  if (!item) return null;
+  return item.value_it || item.value_en || item.default_it || item.default_en || '[]';
+}
+
+function normalizeSocialLink(link = {}, index = 0) {
+  const platform = SOCIAL_PLATFORM_OPTIONS.some((item) => item.value === link.platform) ? link.platform : 'other';
+  const label = cleanEditableTextValue(link.label || link.display_label || link.custom_label || '');
+  const url = cleanEditableTextValue(link.url || '');
+  const order = Number.isFinite(Number(link.order ?? link.display_order)) ? Number(link.order ?? link.display_order) : index + 1;
+  return {
+    id: cleanEditableTextValue(link.id) || `${platform}-${index + 1}`,
+    platform,
+    label,
+    url,
+    enabled: link.enabled !== false && link.active !== false,
+    order,
+    icon_key: cleanEditableTextValue(link.icon_key || link.icon || socialPlatformOption(platform).icon || '')
+  };
+}
+
+function parseSocialLinksJson(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(String(raw));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(normalizeSocialLink).filter((link) => link.platform || link.label || link.url);
+  } catch (error) {
+    return [];
+  }
+}
+
+function defaultSocialLinks(siteContent) {
+  const contact = resolvePublicContactDetails(siteContent);
+  return contact.instagram ? [
+    normalizeSocialLink({
+      id: 'default-instagram',
+      platform: 'instagram',
+      label: 'Instagram',
+      url: contact.instagram,
+      enabled: true,
+      order: 1,
+      icon_key: 'insta'
+    })
+  ] : [];
+}
+
+function resolveSocialLinks(siteContent, { includeDisabled = false } = {}) {
+  const raw = socialLinksJsonFromContent(siteContent);
+  const configured = raw === null ? defaultSocialLinks(siteContent) : parseSocialLinksJson(raw);
+  return configured
+    .map(normalizeSocialLink)
+    .map((link) => ({ ...link, url: safeExternalUrl(link.url) }))
+    .filter((link) => link.url && (includeDisabled || link.enabled))
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+}
+
+function socialLinkLabel(link, lang) {
+  return cleanEditableTextValue(link.label) || socialPlatformLabel(link.platform, lang);
+}
+
+function socialLinksToJson(links = []) {
+  return JSON.stringify((links || []).map((link, index) => normalizeSocialLink({ ...link, order: link.order || index + 1 }, index)), null, 2);
+}
+
+function latestNewsContentKey(field) {
+  return `latest_news.${field}`;
+}
+
+function resolveLatestNewsSettings(siteContent, lang) {
+  const enabled = parseBooleanSetting(contentSettingValue(siteContent, latestNewsContentKey('enabled'), 'true'), true);
+  const title = contentText(siteContent, latestNewsContentKey('title'), lang, lang === 'it' ? LATEST_NEWS_DEFAULTS.title_it : LATEST_NEWS_DEFAULTS.title_en);
+  const description = contentText(siteContent, latestNewsContentKey('description'), lang, lang === 'it' ? LATEST_NEWS_DEFAULTS.description_it : LATEST_NEWS_DEFAULTS.description_en);
+  const ctaLabel = contentText(siteContent, latestNewsContentKey('cta_label'), lang, lang === 'it' ? LATEST_NEWS_DEFAULTS.cta_it : LATEST_NEWS_DEFAULTS.cta_en);
+  const urlIt = safeExternalUrl(contentSettingValue(siteContent, latestNewsContentKey('url_it'), ''));
+  const urlEn = safeExternalUrl(contentSettingValue(siteContent, latestNewsContentKey('url_en'), ''));
+  const selectedUrl = lang === 'it' ? (urlIt || urlEn) : (urlEn || urlIt);
+  return {
+    enabled,
+    title,
+    description,
+    ctaLabel,
+    urlIt,
+    urlEn,
+    selectedUrl,
+    shouldRender: enabled && Boolean(selectedUrl)
+  };
+}
+
 function buildSiteContentMap(items = []) {
   return (items || []).reduce((acc, item) => {
     if (item?.content_key) acc[item.content_key] = item;
@@ -1164,6 +1315,24 @@ function formatDateForMessage(date, lang) {
   if (!date) return '';
   const [year, month, day] = date.split('-');
   return lang === 'it' ? `${day}/${month}/${year}` : `${day}/${month}/${year}`;
+}
+
+function validDateFromValue(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatLocalDateTime(value, lang, fallback = '') {
+  const date = validDateFromValue(value);
+  if (!date) return fallback;
+  return new Intl.DateTimeFormat(lang === 'it' ? 'it-IT' : 'en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date);
 }
 
 function buildExperienceMessage(experience, lang) {
@@ -1601,11 +1770,19 @@ function Icon({ name }) {
     chat: 'M4 5.5C4 3.6 5.6 2 7.5 2h9C18.4 2 20 3.6 20 5.5v6c0 1.9-1.6 3.5-3.5 3.5H10l-4.4 4.1c-.6.5-1.6.1-1.6-.7V5.5z',
     user: 'M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-3.3 0-6 1.7-6 3.8V20h12v-2.2c0-2.1-2.7-3.8-6-3.8z',
     mail: 'M3 5h18v14H3V5zm2 2v.4l7 4.4 7-4.4V7H5zm14 10V9.8l-7 4.4-7-4.4V17h14z',
-    insta: 'M7 2h10c2.8 0 5 2.2 5 5v10c0 2.8-2.2 5-5 5H7c-2.8 0-5-2.2-5-5V7c0-2.8 2.2-5 5-5zm5 5.2A4.8 4.8 0 1 0 12 16.8 4.8 4.8 0 0 0 12 7.2zm0 2A2.8 2.8 0 1 1 12 14.8 2.8 2.8 0 0 1 12 9.2zM17.6 6a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2z'
+    insta: 'M7 2h10c2.8 0 5 2.2 5 5v10c0 2.8-2.2 5-5 5H7c-2.8 0-5-2.2-5-5V7c0-2.8 2.2-5 5-5zm5 5.2A4.8 4.8 0 1 0 12 16.8 4.8 4.8 0 0 0 12 7.2zm0 2A2.8 2.8 0 1 1 12 14.8 2.8 2.8 0 0 1 12 9.2zM17.6 6a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2z',
+    link: 'M10.6 13.4a1 1 0 0 1 0-1.4l2.8-2.8a3 3 0 0 1 4.2 4.2l-2.1 2.1a3 3 0 0 1-4.1.1 1 1 0 1 1 1.3-1.5 1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0-1.4-1.4L12 13.4a1 1 0 0 1-1.4 0zm2.8-2.8a1 1 0 0 1 0 1.4l-2.8 2.8a3 3 0 1 1-4.2-4.2l2.1-2.1a3 3 0 0 1 4.1-.1 1 1 0 1 1-1.3 1.5 1 1 0 0 0-1.4 0L7.8 12a1 1 0 1 0 1.4 1.4l2.8-2.8a1 1 0 0 1 1.4 0z',
+    facebook: 'M14 8h2V5h-2c-2.2 0-4 1.8-4 4v2H8v3h2v8h3v-8h2.4l.6-3h-3V9c0-.6.4-1 1-1z',
+    youtube: 'M21.6 7.2s-.2-1.5-.8-2.1c-.8-.8-1.7-.8-2.1-.9C15.8 4 12 4 12 4s-3.8 0-6.7.2c-.4 0-1.3.1-2.1.9-.6.6-.8 2.1-.8 2.1S2 9 2 10.8v1.7c0 1.8.4 3.6.4 3.6s.2 1.5.8 2.1c.8.8 1.8.8 2.3.9 1.7.2 6.5.2 6.5.2s3.8 0 6.7-.2c.4 0 1.3-.1 2.1-.9.6-.6.8-2.1.8-2.1s.4-1.8.4-3.6v-1.7c0-1.8-.4-3.6-.4-3.6zM10 14.5v-6l5.2 3-5.2 3z',
+    linkedin: 'M4 3.5a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM2.5 9h3v12h-3V9zm5.5 0h2.9v1.6h.1c.4-.8 1.5-1.9 3.3-1.9 3.5 0 4.2 2.3 4.2 5.3v7h-3v-6.2c0-1.5 0-3.4-2.1-3.4s-2.4 1.6-2.4 3.3V21H8V9z',
+    google: 'M21.6 12.2c0-.7-.1-1.3-.2-1.9H12v3.6h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.2zM12 22c2.7 0 5-0.9 6.6-2.5l-3.2-2.5c-.9.6-2 .9-3.4.9-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6C4.8 19.7 8.2 22 12 22zM6.4 13.8a6 6 0 0 1 0-3.6V7.6H3.1a10 10 0 0 0 0 8.8l3.3-2.6zM12 6.1c1.5 0 2.8.5 3.8 1.5l2.8-2.8C16.9 3 14.7 2 12 2 8.2 2 4.8 4.3 3.1 7.6l3.3 2.6C7.2 7.9 9.4 6.1 12 6.1z',
+    tiktok: 'M15 3c.4 2.2 1.8 3.8 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.3A5.8 5.8 0 1 1 9.2 9.4c.4 0 .8 0 1.2.1v3.2a2.6 2.6 0 1 0 1.8 2.5V3H15z',
+    tripadvisor: 'M3 9.5 2 6h4.5A9 9 0 0 1 12 4.5 9 9 0 0 1 17.5 6H22l-1 3.5a5.2 5.2 0 1 1-8 6.5l-1 1.5-1-1.5a5.2 5.2 0 1 1-8-6.5zm4.2 6.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4zm9.6 0a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4z'
   };
+  const path = paths[name] || paths.link;
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false" className="icon">
-      <path d={paths[name]} />
+      <path d={path} />
     </svg>
   );
 }
@@ -1778,11 +1955,27 @@ function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor })
 }
 
 function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, editor }) {
-  const heroBackground = mediaUrl(siteMedia, 'home_hero_background', '');
+  const mediaSource = editor?.mediaMap || siteMedia || {};
+  const backgroundItem = editorMediaItem(mediaSource, 'home_hero_background', '', lang === 'it' ? 'Sfondo hero homepage' : 'Home hero background');
+  const heroBackground = backgroundItem.file_url || '';
   const heroStyle = heroBackground ? { backgroundImage: `linear-gradient(90deg, rgba(5,10,20,0.72), rgba(5,10,20,0.50) 50%, rgba(5,10,20,0.34)), url("${heroBackground}")` } : undefined;
+  const backgroundSelected = editor?.selected?.type === 'image' && editor.selected.key === 'home_hero_background';
   return (
-    <section className="hero" id="top" style={heroStyle}>
+    <section className={`hero ${editor?.isEditing ? 'editor-hero-editable' : ''} ${backgroundSelected ? 'selected' : ''}`} id="top" style={heroStyle}>
       <div className="hero-overlay" />
+      {editor?.isEditing && (
+        <button
+          className={`editor-hero-media-button editor-selectable ${backgroundSelected ? 'selected' : ''}`}
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            editor.select({ type: 'image', key: 'home_hero_background', label: lang === 'it' ? 'Sfondo hero' : 'Hero background', section: 'Media', fallbackSrc: '', fallbackAlt: lang === 'it' ? 'Sfondo hero homepage' : 'Home hero background' });
+          }}
+        >
+          {lang === 'it' ? 'Modifica sfondo hero' : 'Edit hero background'}
+        </button>
+      )}
       <div className="container hero-grid">
         <div className="hero-copy">
           <EditableText as="h1" className="hero-title" itemKey="home.hero.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroTitle')} />
@@ -1808,9 +2001,15 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, edito
           </div>
         </div>
         <div className="hero-media" aria-hidden="false">
+          {editor?.isEditing && (
+            <div className="hero-media-edit-actions">
+              <button className="editor-badge editor-selectable" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); editor.select({ type: 'image', key: 'home_hero_video', label: lang === 'it' ? 'Video hero' : 'Hero video', section: 'Media', fallbackSrc: MEDIA.introVideo, fallbackAlt: lang === 'it' ? 'Video introduttivo vulcanIQ' : 'vulcanIQ introductory video' }); }}>{lang === 'it' ? 'Modifica video' : 'Edit video'}</button>
+              <button className="editor-badge editor-selectable" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); editor.select({ type: 'image', key: 'home_hero_feature_image', label: lang === 'it' ? 'Immagine hero' : 'Hero image', section: 'Media', fallbackSrc: MEDIA.premium, fallbackAlt: lang === 'it' ? 'Immagine hero homepage' : 'Home hero image' }); }}>{lang === 'it' ? 'Modifica immagine' : 'Edit image'}</button>
+            </div>
+          )}
           <VideoSlot
-            src={mediaUrl(siteMedia, 'home_hero_video', MEDIA.introVideo)}
-            poster={mediaUrl(siteMedia, 'home_hero_feature_image', MEDIA.premium)}
+            src={mediaUrl(mediaSource, 'home_hero_video', MEDIA.introVideo)}
+            poster={mediaUrl(mediaSource, 'home_hero_feature_image', MEDIA.premium)}
             label={lang === 'it' ? 'Video introduttivo vulcanIQ' : 'vulcanIQ introductory video'}
             lang={lang}
           />
@@ -2570,10 +2769,19 @@ function PartnershipsPage({ lang, siteContent, editor }) {
   );
 }
 
+function isLeonardoPlaceholderReview(review) {
+  const reviewer = String(review?.reviewer_name || review?.customer_name || review?.booked_by || '').trim().toLowerCase();
+  const date = String(review?.experience_date || review?.excursion_date || review?.submitted_at || review?.created_at || '').slice(0, 10);
+  const guide = String(review?.guide_name || review?.guide || review?.owner_name || '').trim().toLowerCase();
+  const body = String(review?.review_text || '').toLowerCase();
+  const hasPlaceholderBody = body.includes('bellissima esperienza grazie alla nostra guida leonardo')
+    || body.includes('beautiful experience thanks to our guide leonardo')
+    || body.includes('percorso moderato, pause ben gestite')
+    || body.includes('the route was moderate, breaks were well managed');
+  return hasPlaceholderBody || (reviewer === 'leonardo' && date === '2025-01-01' && guide.includes('leonardo chiavetta'));
+}
+
 function ReviewsPage({ lang, siteContent, editor }) {
-  const fallbackReview = lang === 'it'
-    ? 'Bellissima esperienza grazie alla nostra guida Leonardo, che ha una vera passione per i vulcani. Percorso moderato, pause ben gestite e consigli pratici molto chiari.'
-    : 'Beautiful experience thanks to our guide Leonardo, who has a real passion for volcanoes. The route was moderate, breaks were well managed, and the practical advice was very clear.';
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -2623,9 +2831,8 @@ function ReviewsPage({ lang, siteContent, editor }) {
     }
   }
 
-  const visibleReviews = loading ? [] : reviews;
-  const cards = visibleReviews.length ? visibleReviews : [{ id: 'fallback', created_at: '2025-01-01', review_text: fallbackReview, reviewer_name: 'Leonardo', rating: 5, language: 'en' }];
-  const sortedCards = [...cards].sort((a, b) => {
+  const visibleReviews = loading ? [] : reviews.filter((review) => !isLeonardoPlaceholderReview(review));
+  const sortedCards = [...visibleReviews].sort((a, b) => {
     if (sortMode === 'highest') return Number(b.rating || -1) - Number(a.rating || -1) || String(b.created_at || '').localeCompare(String(a.created_at || ''));
     if (sortMode === 'lowest') return Number(a.rating || 999) - Number(b.rating || 999) || String(b.created_at || '').localeCompare(String(a.created_at || ''));
     return String(b.created_at || '').localeCompare(String(a.created_at || ''));
@@ -2670,6 +2877,11 @@ function ReviewsPage({ lang, siteContent, editor }) {
           </div>
         </div>
         <div className="reviews-grid-public balanced-reviews-grid">
+          {!loading && sortedCards.length === 0 && (
+            <article className="empty-state-card review-empty-card">
+              <p>{adminCopy(lang, 'Nessuna recensione pubblicata al momento.', 'No published reviews yet.')}</p>
+            </article>
+          )}
           {sortedCards.map((review) => (
             <article className="review-card featured-review-card" key={review.id}>
               <header className="review-card-info-header">
@@ -2726,8 +2938,8 @@ function WearReviewsSafety({ lang }) {
     ? ['Meteo e visibilità', 'Ordinanze e accessibilità', 'Attività vulcanica reale', 'Età, mobilità e abbigliamento del gruppo']
     : ['Weather and visibility', 'Regulations and access', 'Actual volcanic activity', 'Group age, mobility, and clothing'];
   const review = lang === 'it'
-    ? 'Bellissima esperienza grazie alla nostra guida Leonardo, che ha una vera passione per i vulcani. Ero preoccupato di non essere vestito abbastanza pesante perché la temperatura indicata in cima era sotto lo zero — era fine aprile — ma una felpa e una giacca leggera sono state sufficienti. L’escursione è moderatamente impegnativa, ma dura solo circa un’ora. Abbiamo avuto il tempo per fare un paio di belle pause durante la salita e, dopo l’escursione, per mangiare qualcosa.'
-    : 'Had a great time thanks to our guide Leonardo, who has a real passion for volcanoes. I had been worried about being underdressed because the reported temperature at the top was below freezing — this was in late April — but a sweatshirt and light jacket were fine. The hike is moderately strenuous but only one hour. We had time for a couple of nice breaks on the way up and after our hike to have some food.';
+    ? 'Esperienza intensa e ben organizzata sull’Etna. Le indicazioni sull’abbigliamento sono state chiare e il ritmo dell’escursione è rimasto adatto al gruppo, con pause gestite bene e spiegazioni utili sul territorio.'
+    : 'A well-organized Etna experience with clear clothing guidance, a suitable pace for the group, well-managed breaks, and useful explanations about the territory.';
 
   return (
     <>
@@ -2795,7 +3007,7 @@ function Team({ lang, siteMedia, siteContent, editor }) {
               <h3>Leonardo Chiavetta</h3>
               <EditableText as="p" className="role" itemKey="about.leonardo.role" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'leonardoRole')} />
               <EditableText as="p" itemKey="about.leonardo.bio" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'leonardoBio')} />
-              <a className="inline-link" href={contact.instagram} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
+              <SocialLinks lang={lang} siteContent={siteContent} className="footer-social-links" compact />
             </div>
           </article>
           <article className="team-card">
@@ -3486,7 +3698,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
           <EditableText as="h2" itemKey="contact.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formTitle')} />
           <EditableText as="p" itemKey="contact.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formIntro')} />
           <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={openQuestionnaire} siteContent={siteContent} contactDetails={contact} />
-          <a className="instagram-link" href={contact.instagram} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
+          <SocialLinks lang={lang} siteContent={siteContent} className="contact-social-links" />
         </div>
         <article className="contact-form questionnaire-start-card">
           <span className="kicker">{text(lang, 'formKicker')}</span>
@@ -3699,6 +3911,51 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   );
 }
 
+
+function SocialLinks({ lang, siteContent, className = '', compact = false }) {
+  const links = resolveSocialLinks(siteContent);
+  if (!links.length) return null;
+  return (
+    <div className={`social-links ${compact ? 'compact' : ''} ${className}`.trim()} aria-label={adminCopy(lang, 'Pagine social', 'Social pages')}>
+      {links.map((link) => (
+        <a key={link.id || `${link.platform}-${link.url}`} href={link.url} target="_blank" rel="noopener noreferrer">
+          <Icon name={link.icon_key || socialPlatformOption(link.platform).icon || 'link'} />
+          <span>{socialLinkLabel(link, lang)}</span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function LatestNewsCard({ lang, siteContent, editor }) {
+  const settings = resolveLatestNewsSettings(editor?.contentMap || siteContent || {}, lang);
+  if (!settings.shouldRender && !editor?.isEditing) return null;
+  const disabled = !settings.selectedUrl;
+  const content = (
+    <>
+      <div>
+        <span className="kicker">{adminCopy(lang, 'Ultime notizie', 'Latest news')}</span>
+        <EditableText as="h2" itemKey={latestNewsContentKey('title')} lang={lang} siteContent={siteContent} editor={editor} fallback={lang === 'it' ? LATEST_NEWS_DEFAULTS.title_it : LATEST_NEWS_DEFAULTS.title_en} />
+        <EditableText as="p" itemKey={latestNewsContentKey('description')} lang={lang} siteContent={siteContent} editor={editor} fallback={lang === 'it' ? LATEST_NEWS_DEFAULTS.description_it : LATEST_NEWS_DEFAULTS.description_en} />
+      </div>
+      {disabled ? (
+        <button className="button secondary" type="button" disabled>{adminCopy(lang, 'URL non configurato', 'URL not configured')}</button>
+      ) : (
+        <a className="button primary" href={settings.selectedUrl} target="_blank" rel="noopener noreferrer">
+          <EditableText itemKey={latestNewsContentKey('cta_label')} lang={lang} siteContent={siteContent} editor={editor} fallback={lang === 'it' ? LATEST_NEWS_DEFAULTS.cta_it : LATEST_NEWS_DEFAULTS.cta_en} />
+        </a>
+      )}
+    </>
+  );
+  return (
+    <section className={`section latest-news-section ${!settings.shouldRender ? 'editor-only-hidden-public' : ''}`.trim()}>
+      <div className="container latest-news-card">
+        {content}
+      </div>
+    </section>
+  );
+}
+
 function FinalCTA({ lang, siteContent }) {
   return (
     <section className="section final-cta">
@@ -3790,7 +4047,7 @@ function Footer({ lang, siteContent, editor }) {
               })}
             >{contact.email}</a>
           </p>
-          <a className="inline-link" href={contact.instagram} target="_blank" rel="noopener noreferrer"><Icon name="insta" />{text(lang, 'instagram')}</a>
+          <SocialLinks lang={lang} siteContent={siteContent} className="footer-social-links" compact />
         </div>
       </div>
       {contactAttributionModal}
@@ -4269,6 +4526,100 @@ function ProtectedAdminArea({ pathname, navigate, lang, setLang }) {
   return <AdminLayout pathname={pathname} navigate={navigate} lang={lang} setLang={setLang} session={state.session} profile={state.profile} />;
 }
 
+
+function AdminMenuDropdown({ lang, visibleSections, normalizedPath, currentNavValue, navigate }) {
+  const [open, setOpen] = useState(false);
+  const shellRef = useRef(null);
+  const sectionByKey = useMemo(() => visibleSections.reduce((acc, section) => ({ ...acc, [section.key]: section }), {}), [visibleSections]);
+  const currentSection = visibleSections.find((section) => !section.external && section.path === currentNavValue)
+    || visibleSections.find((section) => !section.external && isAdminNavSectionActive(normalizedPath, section))
+    || visibleSections.find((section) => section.key === 'today');
+  const currentLabel = currentSection ? adminNavLabel(currentSection, lang) : adminCopy(lang, 'Oggi', 'Today');
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    function handlePointerDown(event) {
+      if (!shellRef.current?.contains(event.target)) setOpen(false);
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown, { passive: true });
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
+  function openSection(section) {
+    setOpen(false);
+    if (!section?.external) navigate(section.path);
+  }
+
+  return (
+    <div className="admin-menu-shell" ref={shellRef}>
+      <button
+        className="admin-menu-trigger"
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {adminCopy(lang, 'Menu', 'Menu')} <span aria-hidden="true">▾</span>
+      </button>
+      <span className="admin-menu-current"><span>{adminCopy(lang, 'Sezione', 'Current')}</span>{currentLabel}</span>
+      {open && (
+        <div className="admin-menu-dropdown" role="menu" aria-label={adminCopy(lang, 'Navigazione admin', 'Admin navigation')}>
+          {ADMIN_NAV_GROUPS.map((group) => {
+            const groupItems = group.items.map((key) => sectionByKey[key]).filter(Boolean);
+            if (!groupItems.length) return null;
+            return (
+              <section className="admin-menu-group" key={group.key}>
+                <h2 className="admin-menu-group-title">{lang === 'it' ? group.labelIt : group.labelEn}</h2>
+                <div className="admin-menu-group-items">
+                  {groupItems.map((section) => {
+                    const active = !section.external && isAdminNavSectionActive(normalizedPath, section);
+                    return section.external ? (
+                      <a
+                        key={section.key}
+                        className="admin-menu-item"
+                        href={section.path}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        role="menuitem"
+                        onClick={() => setOpen(false)}
+                      >
+                        {adminNavLabel(section, lang)}
+                      </a>
+                    ) : (
+                      <button
+                        key={section.key}
+                        className={`admin-menu-item ${active ? 'admin-menu-item-active' : ''}`}
+                        type="button"
+                        role="menuitem"
+                        aria-current={active ? 'page' : undefined}
+                        onClick={() => openSection(section)}
+                      >
+                        {adminNavLabel(section, lang)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
   const currentAdminPath = adminPathFromLocation(pathname);
@@ -4277,6 +4628,94 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   const isOwner = profile?.role === 'owner' && profile?.active !== false;
 
   const [adminContentRows, setAdminContentRows] = useState([]);
+  const [globalBackupProgress, setGlobalBackupProgress] = useState(inactiveBackupProgress);
+  const backupMonitorRef = useRef({ interval: null, timeout: null, requestedAt: '' });
+
+  function clearBackupMonitorTimers() {
+    if (backupMonitorRef.current.interval) window.clearInterval(backupMonitorRef.current.interval);
+    if (backupMonitorRef.current.timeout) window.clearTimeout(backupMonitorRef.current.timeout);
+    backupMonitorRef.current.interval = null;
+    backupMonitorRef.current.timeout = null;
+  }
+
+  function stopBackupMonitor(delay = 0) {
+    clearBackupMonitorTimers();
+    storeBackupRequestedAt('');
+    if (delay > 0) {
+      backupMonitorRef.current.timeout = window.setTimeout(() => setGlobalBackupProgress(inactiveBackupProgress()), delay);
+    } else {
+      setGlobalBackupProgress(inactiveBackupProgress());
+    }
+  }
+
+  async function pollGlobalBackupStatus(requestedAt, immediate = false) {
+    try {
+      const result = await getBackupStatus({ lang, includeMetadata: false });
+      const nextProgress = backupProgressFromStatus(result, requestedAt, lang);
+      setGlobalBackupProgress(nextProgress);
+      if (nextProgress.done) {
+        window.dispatchEvent(new CustomEvent('vulcaniq-backup-status-updated', { detail: result }));
+        stopBackupMonitor(nextProgress.failed ? 0 : 4500);
+      }
+    } catch (error) {
+      if (immediate) {
+        setGlobalBackupProgress({
+          active: true,
+          value: 25,
+          title: adminCopy(lang, 'Backup avviato', 'Backup started'),
+          detail: adminCopy(lang, 'Stato workflow non ancora disponibile.', 'Workflow status is not available yet.'),
+          failed: false,
+          done: false
+        });
+      }
+    }
+  }
+
+  function startGlobalBackupMonitor(requestedAt, initialProgress) {
+    const safeRequestedAt = requestedAt || new Date().toISOString();
+    clearBackupMonitorTimers();
+    backupMonitorRef.current.requestedAt = safeRequestedAt;
+    storeBackupRequestedAt(safeRequestedAt);
+    setGlobalBackupProgress(initialProgress || {
+      active: true,
+      value: 10,
+      title: adminCopy(lang, 'Backup in esecuzione', 'Backup in progress'),
+      detail: adminCopy(lang, 'GitHub Actions sta creando il dump e preparando lo ZIP.', 'GitHub Actions is creating the dump and preparing the ZIP.'),
+      failed: false,
+      done: false
+    });
+    pollGlobalBackupStatus(safeRequestedAt, true);
+    backupMonitorRef.current.interval = window.setInterval(() => pollGlobalBackupStatus(safeRequestedAt), 5000);
+  }
+
+  useEffect(() => {
+    function handleBackupMonitorStart(event) {
+      startGlobalBackupMonitor(event.detail?.requestedAt, event.detail?.progress);
+    }
+    window.addEventListener('vulcaniq-backup-monitor-start', handleBackupMonitorStart);
+    const storedRequestedAt = readStoredBackupRequestedAt();
+    if (storedRequestedAt) {
+      startGlobalBackupMonitor(storedRequestedAt, {
+        active: true,
+        value: 35,
+        title: adminCopy(lang, 'Backup in esecuzione', 'Backup in progress'),
+        detail: adminCopy(lang, 'GitHub Actions sta creando il dump e preparando lo ZIP.', 'GitHub Actions is creating the dump and preparing the ZIP.'),
+        failed: false,
+        done: false
+      });
+    } else if (isOwner && isSupabaseConfigured) {
+      getBackupStatus({ lang, includeMetadata: false }).then((result) => {
+        const run = result?.workflowRun;
+        if (!isBackupWorkflowActive(run)) return;
+        startGlobalBackupMonitor(run.createdAt || run.runStartedAt || new Date().toISOString(), backupProgressFromStatus(result, run.createdAt || run.runStartedAt || new Date().toISOString(), lang));
+      }).catch(() => {});
+    }
+    return () => {
+      window.removeEventListener('vulcaniq-backup-monitor-start', handleBackupMonitorStart);
+      clearBackupMonitorTimers();
+    };
+  }, [lang, isOwner]);
+
 
   useEffect(() => {
     if (pathname === '/admin') navigate('/admin/today');
@@ -4317,16 +4756,13 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   return (
     <div className="admin-shell">
       <header className="admin-header">
-        <select className="admin-mobile-nav" value={currentNavValue} onChange={(event) => navigate(event.target.value)} aria-label="Admin navigation">
-          {visibleSections.map((section) => <option key={section.key} value={section.path}>{adminNavLabel(section, lang)}</option>)}
-        </select>
-        <nav className="admin-nav" aria-label="Admin navigation">
-          {visibleSections.map((section) => section.external ? (
-            <a key={section.key} href={section.path} target="_blank" rel="noopener noreferrer">{adminNavLabel(section, lang)}</a>
-          ) : (
-            <button key={section.key} type="button" className={isAdminNavSectionActive(normalizedPath, section) ? 'active' : ''} onClick={() => navigate(section.path)}>{adminNavLabel(section, lang)}</button>
-          ))}
-        </nav>
+        <AdminMenuDropdown
+          lang={lang}
+          visibleSections={visibleSections}
+          normalizedPath={normalizedPath}
+          currentNavValue={currentNavValue}
+          navigate={navigate}
+        />
         <div className="admin-userbox">
           <span className="admin-userbox-name">{ownerDisplayName(profile, lang)}</span>
           <span className="admin-userbox-actions">
@@ -4335,6 +4771,13 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           </span>
         </div>
       </header>
+      {isOwner && (
+        <GlobalBackupProgressBanner
+          lang={lang}
+          progress={globalBackupProgress}
+          onOpenBackup={() => navigate('/admin/system/backup')}
+        />
+      )}
       <main className="admin-main">
         {normalizedPath.includes('/calendar') ? (
           <AdminCalendarPage lang={lang} session={session} navigate={navigate} adminContent={adminContent} />
@@ -4343,7 +4786,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
         ) : normalizedPath.includes('/analytics') || normalizedPath.includes('/data') ? (
           <AdminAnalyticsPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/system') || normalizedPath.includes('/backup') ? (
-          isOwner ? <AdminBackupPage lang={lang} session={session} profile={profile} adminContent={adminContent} /> : <OwnerOnlyAdminPage lang={lang} />
+          isOwner ? <AdminBackupPage lang={lang} session={session} profile={profile} adminContent={adminContent} globalBackupProgress={globalBackupProgress} startGlobalBackupMonitor={startGlobalBackupMonitor} stopGlobalBackupMonitor={stopBackupMonitor} /> : <OwnerOnlyAdminPage lang={lang} />
         ) : normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media') ? (
           <AdminEditPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/partnerships') ? (
@@ -4635,9 +5078,9 @@ function CalendarFixedModal({ lang, item, onClose, onSave }) {
 
 const MEDIA_ADMIN_ITEMS = [
   { key: 'brand_logo_main', it: 'Logo principale vulcanIQ', en: 'Main vulcanIQ logo', fallback: BRAND.logo, alt_it: 'Logo vulcanIQ — esperienze premium sull’Etna', alt_en: 'vulcanIQ logo — premium Etna experiences' },
-  { key: 'home_hero_background', it: 'Sfondo hero homepage', en: 'Home hero background' },
-  { key: 'home_hero_feature_image', it: 'Immagine hero homepage', en: 'Home hero image' },
-  { key: 'home_hero_video', it: 'Video homepage', en: 'Home video' },
+  { key: 'home_hero_background', it: 'Sfondo hero homepage', en: 'Home hero background', media_kind: 'image', alt_it: 'Sfondo hero homepage', alt_en: 'Home hero background' },
+  { key: 'home_hero_feature_image', it: 'Immagine hero homepage', en: 'Home hero image', fallback: MEDIA.premium, media_kind: 'image', alt_it: 'Immagine hero homepage', alt_en: 'Home hero image' },
+  { key: 'home_hero_video', it: 'Video homepage', en: 'Home video', fallback: MEDIA.introVideo, media_kind: 'video', alt_it: 'Video introduttivo vulcanIQ', alt_en: 'vulcanIQ introductory video' },
   { key: 'mission_main_image', it: 'Immagine missione', en: 'Mission image' },
   { key: 'about_leonardo_image', it: 'Foto Leonardo', en: 'Leonardo photo' },
   { key: 'about_deborah_image', it: 'Foto Deborah', en: 'Deborah photo' },
@@ -4738,6 +5181,206 @@ function ContactChannelsEditor({ lang, contentMap, onSave, disabled }) {
   );
 }
 
+
+function SiteSettingsItem(contentMap, key) {
+  const definition = getContentDefinition(key);
+  return contentMap?.[key] || editorContentItem({}, key, definition.default_it || definition.default_en || '');
+}
+
+function LatestNewsEditor({ lang, contentMap, updateContentDraft }) {
+  const enabledItem = SiteSettingsItem(contentMap, latestNewsContentKey('enabled'));
+  const titleItem = SiteSettingsItem(contentMap, latestNewsContentKey('title'));
+  const descriptionItem = SiteSettingsItem(contentMap, latestNewsContentKey('description'));
+  const ctaItem = SiteSettingsItem(contentMap, latestNewsContentKey('cta_label'));
+  const urlItItem = SiteSettingsItem(contentMap, latestNewsContentKey('url_it'));
+  const urlEnItem = SiteSettingsItem(contentMap, latestNewsContentKey('url_en'));
+  const enabled = parseBooleanSetting(enabledItem.value_it || enabledItem.value_en || enabledItem.default_it || 'true', true);
+  const urlIt = contentSettingValue({ [latestNewsContentKey('url_it')]: urlItItem }, latestNewsContentKey('url_it'), '');
+  const urlEn = contentSettingValue({ [latestNewsContentKey('url_en')]: urlEnItem }, latestNewsContentKey('url_en'), '');
+  const hasInvalidIt = Boolean(urlIt) && !safeExternalUrl(urlIt);
+  const hasInvalidEn = Boolean(urlEn) && !safeExternalUrl(urlEn);
+
+  function updateTextItem(key, patch) {
+    const item = SiteSettingsItem(contentMap, key);
+    updateContentDraft(key, {
+      ...item,
+      ...patch,
+      active: true,
+      visible: true,
+      content_type: item.content_type || (item.type === 'textarea' ? 'textarea' : 'text')
+    });
+  }
+
+  function updateSingleValue(key, value) {
+    updateTextItem(key, { value_it: value, value_en: value });
+  }
+
+  return (
+    <details className="admin-archive-details edit-workspace-section latest-news-editor" open>
+      <summary>
+        <span>{adminCopy(lang, 'Ultime notizie', 'Latest news')}</span>
+        <strong>{adminCopy(lang, 'Link ultime notizie', 'Latest news link')}</strong>
+      </summary>
+      <div className="admin-form-grid latest-news-grid">
+        <label className="check-field full">
+          <input type="checkbox" checked={enabled} onChange={(event) => updateSingleValue(latestNewsContentKey('enabled'), event.target.checked ? 'true' : 'false')} />
+          {enabled ? adminCopy(lang, 'Mostra ultime notizie', 'Show latest news') : adminCopy(lang, 'Nascondi ultime notizie', 'Hide latest news')}
+        </label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Titolo italiano', 'Italian title')}</span><input value={titleItem.value_it ?? titleItem.default_it ?? ''} onChange={(event) => updateTextItem(latestNewsContentKey('title'), { value_it: event.target.value })} /></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Titolo inglese', 'English title')}</span><input value={titleItem.value_en ?? titleItem.default_en ?? ''} onChange={(event) => updateTextItem(latestNewsContentKey('title'), { value_en: event.target.value })} /></label>
+        <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione italiana', 'Italian description')}</span><textarea rows={3} value={descriptionItem.value_it ?? descriptionItem.default_it ?? ''} onChange={(event) => updateTextItem(latestNewsContentKey('description'), { value_it: event.target.value })} /></label>
+        <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione inglese', 'English description')}</span><textarea rows={3} value={descriptionItem.value_en ?? descriptionItem.default_en ?? ''} onChange={(event) => updateTextItem(latestNewsContentKey('description'), { value_en: event.target.value })} /></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Testo pulsante italiano', 'Italian button text')}</span><input value={ctaItem.value_it ?? ctaItem.default_it ?? ''} onChange={(event) => updateTextItem(latestNewsContentKey('cta_label'), { value_it: event.target.value })} /></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Testo pulsante inglese', 'English button text')}</span><input value={ctaItem.value_en ?? ctaItem.default_en ?? ''} onChange={(event) => updateTextItem(latestNewsContentKey('cta_label'), { value_en: event.target.value })} /></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'URL italiano', 'Italian URL')}</span><input value={urlIt} placeholder="https://..." onChange={(event) => updateSingleValue(latestNewsContentKey('url_it'), event.target.value)} /></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'URL inglese', 'English URL')}</span><input value={urlEn} placeholder="https://..." onChange={(event) => updateSingleValue(latestNewsContentKey('url_en'), event.target.value)} /></label>
+        {(hasInvalidIt || hasInvalidEn) && <div className="admin-alert warning full">{adminCopy(lang, 'Usa URL https:// validi. I link non validi non verranno mostrati sul sito pubblico.', 'Use valid https:// URLs. Invalid links will not be shown on the public website.')}</div>}
+      </div>
+    </details>
+  );
+}
+
+function SocialLinksEditor({ lang, contentMap, updateContentDraft }) {
+  const item = SiteSettingsItem(contentMap, SOCIAL_LINKS_CONTENT_KEY);
+  const raw = item.value_it || item.value_en || item.default_it || item.default_en || '';
+  const rows = raw ? parseSocialLinksJson(raw) : defaultSocialLinks(contentMap);
+  const sortedRows = [...rows].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+
+  function commit(nextRows) {
+    const json = socialLinksToJson(nextRows);
+    updateContentDraft(SOCIAL_LINKS_CONTENT_KEY, {
+      ...item,
+      value_it: json,
+      value_en: json,
+      active: true,
+      visible: true,
+      content_type: 'textarea'
+    });
+  }
+
+  function addRow() {
+    const nextOrder = sortedRows.reduce((max, row) => Math.max(max, Number(row.order || 0)), 0) + 1;
+    commit([...sortedRows, {
+      id: `social-${Date.now()}`,
+      platform: 'instagram',
+      label: 'Instagram',
+      url: '',
+      enabled: true,
+      order: nextOrder,
+      icon_key: 'insta'
+    }]);
+  }
+
+  function updateRow(index, patch) {
+    const next = sortedRows.map((row, rowIndex) => rowIndex === index ? normalizeSocialLink({ ...row, ...patch }, rowIndex) : row);
+    commit(next);
+  }
+
+  function removeRow(index) {
+    commit(sortedRows.filter((_row, rowIndex) => rowIndex !== index));
+  }
+
+  function moveRow(index, direction) {
+    const target = index + direction;
+    if (target < 0 || target >= sortedRows.length) return;
+    const next = [...sortedRows];
+    const currentOrder = next[index].order;
+    next[index] = { ...next[index], order: next[target].order };
+    next[target] = { ...next[target], order: currentOrder };
+    commit(next);
+  }
+
+  return (
+    <details className="admin-archive-details edit-workspace-section social-links-editor" open>
+      <summary>
+        <span>{adminCopy(lang, 'Social', 'Social')}</span>
+        <strong>{adminCopy(lang, 'Pagine social', 'Social pages')}</strong>
+      </summary>
+      <div className="social-admin-list">
+        {sortedRows.length === 0 && <p className="small-note">{adminCopy(lang, 'Nessun social configurato', 'No social links configured')}</p>}
+        {sortedRows.map((row, index) => {
+          const invalidUrl = Boolean(row.url) && !safeExternalUrl(row.url);
+          return (
+            <article className="social-admin-row" key={row.id || index}>
+              <div className="social-admin-row-head">
+                <h3>{socialLinkLabel(row, lang)}</h3>
+                <label className="check-field"><input type="checkbox" checked={row.enabled !== false} onChange={(event) => updateRow(index, { enabled: event.target.checked })} /> {adminCopy(lang, 'Attivo', 'Enabled')}</label>
+              </div>
+              <div className="admin-form-grid social-admin-grid">
+                <label className="admin-field"><span>{adminCopy(lang, 'Piattaforma', 'Platform')}</span><select value={row.platform} onChange={(event) => updateRow(index, { platform: event.target.value, icon_key: socialPlatformOption(event.target.value).icon, label: row.label || socialPlatformLabel(event.target.value, lang) })}>{SOCIAL_PLATFORM_OPTIONS.map((option) => <option key={option.value} value={option.value}>{lang === 'it' ? option.it : option.en}</option>)}</select></label>
+                <label className="admin-field"><span>{adminCopy(lang, 'Etichetta', 'Label')}</span><input value={row.label || ''} onChange={(event) => updateRow(index, { label: event.target.value })} placeholder={socialPlatformLabel(row.platform, lang)} /></label>
+                <label className="admin-field full"><span>{adminCopy(lang, 'URL', 'URL')}</span><input value={row.url || ''} onChange={(event) => updateRow(index, { url: event.target.value })} placeholder="https://..." /></label>
+                <label className="admin-field"><span>{adminCopy(lang, 'Ordine', 'Order')}</span><input type="number" value={row.order || index + 1} onChange={(event) => updateRow(index, { order: event.target.value })} /></label>
+                <label className="admin-field"><span>Icon key</span><input value={row.icon_key || ''} onChange={(event) => updateRow(index, { icon_key: event.target.value })} placeholder={socialPlatformOption(row.platform).icon} /></label>
+              </div>
+              {invalidUrl && <div className="admin-alert warning">{adminCopy(lang, 'URL non valido. Usa un link https://.', 'Invalid URL. Use an https:// link.')}</div>}
+              <div className="request-actions">
+                <button className="button secondary" type="button" onClick={() => moveRow(index, -1)} disabled={index === 0}>↑</button>
+                <button className="button secondary" type="button" onClick={() => moveRow(index, 1)} disabled={index === sortedRows.length - 1}>↓</button>
+                <button className="button secondary danger" type="button" onClick={() => removeRow(index)}>{adminCopy(lang, 'Rimuovi social', 'Remove social')}</button>
+              </div>
+            </article>
+          );
+        })}
+        <button className="button primary" type="button" onClick={addRow}>{adminCopy(lang, 'Aggiungi social', 'Add social')}</button>
+      </div>
+    </details>
+  );
+}
+
+function isSupportedMediaUrl(value) {
+  const clean = String(value || '').trim();
+  if (!clean) return true;
+  return clean.startsWith('/') || clean.startsWith('http://') || clean.startsWith('https://');
+}
+
+function mediaUrlKindFromValue(value, fallback = 'image') {
+  const clean = String(value || '').split('?')[0].toLowerCase();
+  if (/\.(mp4|webm|mov)$/.test(clean)) return 'video';
+  if (/\.(pdf)$/.test(clean)) return 'document';
+  return fallback || 'image';
+}
+
+function MediaQuickEditorPanel({ lang, mediaMap, updateMediaDraft, page }) {
+  const keys = page === 'home'
+    ? ['home_hero_background', 'home_hero_feature_image', 'home_hero_video']
+    : MEDIA_ADMIN_ITEMS.map((item) => item.key).filter((key) => !['brand_logo_main'].includes(key));
+  const visibleKeys = page === 'home' ? keys : keys.slice(0, 8);
+  return (
+    <details className="admin-archive-details edit-workspace-section media-quick-editor" open={page === 'home'}>
+      <summary>
+        <span>{adminCopy(lang, 'Media', 'Media')}</span>
+        <strong>{page === 'home' ? adminCopy(lang, 'Sfondo hero, immagine e video', 'Hero background, image, and video') : adminCopy(lang, 'Immagini e video principali', 'Key images and videos')}</strong>
+      </summary>
+      <div className="media-quick-grid">
+        {visibleKeys.map((key) => {
+          const item = mediaMap[key] || editorMediaItem({}, key);
+          const label = lang === 'it' ? item.label_it : item.label_en;
+          const kind = item.media_kind || mediaUrlKindFromValue(item.file_url, 'image');
+          return (
+            <article className="media-quick-card" key={key}>
+              <div className="media-quick-card-head"><span className="micro-label">{key}</span><h3>{label}</h3></div>
+              <div className="media-quick-preview">
+                {item.file_url ? (kind === 'video' ? <video src={item.file_url} controls /> : <img src={item.file_url} alt={lang === 'it' ? item.alt_it : item.alt_en} onError={(event) => { event.currentTarget.style.display = 'none'; }} />) : <span>{adminCopy(lang, 'Anteprima non disponibile', 'No preview available')}</span>}
+              </div>
+              <label className="admin-field"><span>{adminCopy(lang, 'Tipo', 'Type')}</span><select value={kind} onChange={(event) => updateMediaDraft(key, { media_kind: event.target.value, active: true })}><option value="image">{adminCopy(lang, 'Immagine', 'Image')}</option><option value="video">{adminCopy(lang, 'Video', 'Video')}</option><option value="document">Document</option></select></label>
+              <label className="admin-field full"><span>{adminCopy(lang, 'URL media', 'Media URL')}</span><input value={item.file_url || ''} placeholder="/images/... oppure https://..." onChange={(event) => updateMediaDraft(key, { file: null, file_url: event.target.value, file_path: null, media_kind: mediaUrlKindFromValue(event.target.value, kind), active: true })} /></label>
+              <label className="admin-field full"><span>{adminCopy(lang, 'Testo alternativo', 'Alt text')} IT</span><input value={item.alt_it || ''} onChange={(event) => updateMediaDraft(key, { alt_it: event.target.value })} /></label>
+              <label className="admin-field full"><span>{adminCopy(lang, 'Testo alternativo', 'Alt text')} EN</span><input value={item.alt_en || ''} onChange={(event) => updateMediaDraft(key, { alt_en: event.target.value })} /></label>
+              <label className="button secondary media-upload-button"><input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,.jpg,.jpeg,.png,.webp,.mp4,.webm" onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                updateMediaDraft(key, { file, file_url: URL.createObjectURL(file), file_name: file.name, file_type: file.type, media_kind: file.type.startsWith('video/') ? 'video' : 'image', active: true });
+              }} />{adminCopy(lang, 'Carica media', 'Upload media')}</label>
+              <button className="button secondary danger" type="button" onClick={() => updateMediaDraft(key, { file: null, file_url: '', file_path: null, file_name: '', file_type: '', active: false })}>{adminCopy(lang, 'Rimuovi media', 'Remove media')}</button>
+            </article>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
+
 function WebsiteAdminPage({ lang, session }) {
   const [page, setPage] = useState('home');
   const [editorLang, setEditorLang] = useState(lang || 'it');
@@ -4821,20 +5464,23 @@ function WebsiteAdminPage({ lang, session }) {
   async function saveMediaItem(item) {
     if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non è configurato.', 'Supabase is not configured.'));
     const key = item.media_key || item.key;
+    const cleanFileUrl = String(item.file_url || '').trim();
+    if (!isSupportedMediaUrl(cleanFileUrl)) throw new Error(adminCopy(lang, 'URL media non valido. Usa un URL https:// oppure un percorso che inizia con /.', 'Invalid media URL. Use an https:// URL or a path starting with /.'));
     const existing = mediaRows.find((row) => row.media_key === key);
     const uploaded = item.file ? await uploadSiteMediaFile(item.file, key, session.user.id) : {};
     if (item.file && existing?.file_path) await removeSiteMediaFile(existing.file_path);
+    const keepsExistingStorageFile = !item.file && cleanFileUrl && cleanFileUrl === existing?.file_url;
     await upsertSiteMedia({
       media_key: key,
       label_it: item.label_it || item.it || key,
       label_en: item.label_en || item.en || key,
       alt_it: item.alt_it || item.label_it || key,
       alt_en: item.alt_en || item.label_en || key,
-      file_url: uploaded.file_url || item.file_url || null,
-      file_path: uploaded.file_path || item.file_path || null,
-      file_name: uploaded.file_name || item.file_name || null,
-      file_type: uploaded.file_type || item.file_type || null,
-      media_kind: uploaded.media_kind || item.media_kind || 'image',
+      file_url: uploaded.file_url || cleanFileUrl || null,
+      file_path: uploaded.file_path || (keepsExistingStorageFile ? existing?.file_path : null),
+      file_name: uploaded.file_name || (keepsExistingStorageFile ? (item.file_name || existing?.file_name) : (item.file_name || null)),
+      file_type: uploaded.file_type || (keepsExistingStorageFile ? (item.file_type || existing?.file_type) : (item.file_type || null)),
+      media_kind: uploaded.media_kind || item.media_kind || mediaUrlKindFromValue(cleanFileUrl, 'image'),
       active: item.active !== false,
       updated_by: session.user.id
     });
@@ -5021,6 +5667,9 @@ function WebsiteAdminPage({ lang, session }) {
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       {notice && <div className="admin-alert warning" role="status">{notice}</div>}
       {!loading && page === 'contact' && <ContactChannelsEditor lang={lang} contentMap={contentMap} onSave={saveContactChannels} disabled={!isSupabaseConfigured || saving} />}
+      {!loading && <LatestNewsEditor lang={lang} contentMap={contentMap} updateContentDraft={updateContentDraft} />}
+      {!loading && <SocialLinksEditor lang={lang} contentMap={contentMap} updateContentDraft={updateContentDraft} />}
+      {!loading && <MediaQuickEditorPanel lang={lang} mediaMap={mediaMap} updateMediaDraft={updateMediaDraft} page={page} />}
       {loading ? <p>{adminCopy(lang, 'Caricamento editor...', 'Loading editor...')}</p> : (
         <>
           <div className="visual-editor-shell">
@@ -5150,7 +5799,10 @@ function VisualEditorPreview({ page, setPage, lang, setLang, device, siteMedia, 
         return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
       case 'home':
       default:
-        return <Hero lang={lang} setActivePage={setPage} scrollToForm={disabledActionNotice} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
+        return <>
+          <Hero lang={lang} setActivePage={setPage} scrollToForm={disabledActionNotice} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />
+          <LatestNewsCard lang={lang} siteContent={siteContent} editor={editor} />
+        </>;
     }
   }
 
@@ -5201,21 +5853,24 @@ function EditorInspector({ lang, editorLang, selected, contentMap, mediaMap, upd
 
   if (selected.type === 'image') {
     const item = mediaMap[selected.key] || editorMediaItem({}, selected.key, selected.fallbackSrc, selected.fallbackAlt);
+    const mediaKind = item.media_kind || mediaUrlKindFromValue(item.file_url, 'image');
     return (
-      <aside className="editor-inspector">
-        <div className="inspector-heading"><span className="kicker">{adminCopy(lang, 'Immagine', 'Image')}</span><h2>{selected.label}</h2><p>{selected.key}</p></div>
-        {item.file_url && (item.media_kind === 'video' ? <video className="inspector-media-preview" src={item.file_url} controls /> : <img className="inspector-media-preview" src={item.file_url} alt={editorLang === 'it' ? item.alt_it : item.alt_en} />)}
-        <label className="admin-field full"><span>{adminCopy(lang, 'Sostituisci immagine', 'Replace image')}</span><input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,.jpg,.jpeg,.png,.webp,.mp4" onChange={(event) => {
+      <aside className="editor-inspector media-editor-inspector">
+        <div className="inspector-heading"><span className="kicker">{adminCopy(lang, 'Media', 'Media')}</span><h2>{selected.label}</h2><p>{selected.key}</p></div>
+        {item.file_url && (mediaKind === 'video' ? <video className="inspector-media-preview" src={item.file_url} controls /> : <img className="inspector-media-preview" src={item.file_url} alt={editorLang === 'it' ? item.alt_it : item.alt_en} onError={(event) => { event.currentTarget.style.display = 'none'; }} />)}
+        <label className="admin-field"><span>{adminCopy(lang, 'Tipo', 'Type')}</span><select value={mediaKind} onChange={(event) => updateMediaDraft(selected.key, { media_kind: event.target.value })}><option value="image">{adminCopy(lang, 'Immagine', 'Image')}</option><option value="video">{adminCopy(lang, 'Video', 'Video')}</option><option value="document">Document</option></select></label>
+        <label className="admin-field full"><span>{adminCopy(lang, 'URL media', 'Media URL')}</span><input value={item.file_url || ''} placeholder="/images/... oppure https://..." onChange={(event) => updateMediaDraft(selected.key, { file: null, file_url: event.target.value, file_path: null, media_kind: mediaUrlKindFromValue(event.target.value, mediaKind), active: true })} /></label>
+        <label className="admin-field full"><span>{adminCopy(lang, 'Carica media', 'Upload media')}</span><input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,.jpg,.jpeg,.png,.webp,.mp4,.webm" onChange={(event) => {
           const file = event.target.files?.[0];
           if (!file) return;
           updateMediaDraft(selected.key, { file, file_url: URL.createObjectURL(file), file_name: file.name, file_type: file.type, media_kind: file.type.startsWith('video/') ? 'video' : 'image', active: true });
         }} /></label>
-        <label className="admin-field full"><span>Alt text IT</span><input value={item.alt_it || ''} onChange={(event) => updateMediaDraft(selected.key, { alt_it: event.target.value })} /></label>
-        <label className="admin-field full"><span>Alt text EN</span><input value={item.alt_en || ''} onChange={(event) => updateMediaDraft(selected.key, { alt_en: event.target.value })} /></label>
+        <label className="admin-field full"><span>{adminCopy(lang, 'Testo alternativo', 'Alt text')} IT</span><input value={item.alt_it || ''} onChange={(event) => updateMediaDraft(selected.key, { alt_it: event.target.value })} /></label>
+        <label className="admin-field full"><span>{adminCopy(lang, 'Testo alternativo', 'Alt text')} EN</span><input value={item.alt_en || ''} onChange={(event) => updateMediaDraft(selected.key, { alt_en: event.target.value })} /></label>
         <label className="admin-field"><span>{adminCopy(lang, 'Posizione immagine', 'Image position')}</span><select value={item.image_position || 'center'} onChange={(event) => updateMediaDraft(selected.key, { image_position: event.target.value })}><option value="center">Center</option><option value="top">Top</option><option value="bottom">Bottom</option></select></label>
         <label className="admin-field"><span>{adminCopy(lang, 'Dimensione immagine', 'Image size')}</span><select value={item.image_size || 'normal'} onChange={(event) => updateMediaDraft(selected.key, { image_size: event.target.value })}><option value="compact">Compact</option><option value="normal">Normal</option><option value="large">Large</option></select></label>
         <label className="check-field"><input type="checkbox" checked={item.active !== false} onChange={(event) => updateMediaDraft(selected.key, { active: event.target.checked })} /> {adminCopy(lang, 'Visibile', 'Visible')}</label>
-        <div className="inspector-actions"><button className="button primary" type="button" onClick={onSave} disabled={!canSave}>{adminCopy(lang, 'Salva selezione', 'Save selected')}</button><button className="button secondary" type="button" onClick={onReset}>{adminCopy(lang, 'Ripristina default', 'Reset to default')}</button></div>
+        <div className="inspector-actions"><button className="button primary" type="button" onClick={onSave} disabled={!canSave}>{adminCopy(lang, 'Salva selezione', 'Save selected')}</button><button className="button secondary" type="button" onClick={onReset}>{adminCopy(lang, 'Ripristina default', 'Reset to default')}</button><button className="button secondary danger" type="button" onClick={() => updateMediaDraft(selected.key, { file: null, file_url: '', file_path: null, file_name: '', file_type: '', active: false })}>{adminCopy(lang, 'Rimuovi media', 'Remove media')}</button></div>
       </aside>
     );
   }
@@ -5309,7 +5964,7 @@ function MediaAdminPage({ lang, session, compactHeader = false }) {
                   item.media_kind === 'video' ? <video src={item.file_url} controls /> : <img src={item.file_url} alt={lang === 'it' ? item.alt_it : item.alt_en} />
                 ) : <div className="media-empty-preview">{adminCopy(lang, 'Fallback statico', 'Static fallback')}</div>}
                 <p className="small-note">{item?.file_name || adminCopy(lang, 'Nessun file caricato', 'No uploaded file')}</p>
-                <label className="button secondary"><input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,application/pdf,.jpg,.jpeg,.png,.webp,.mp4,.pdf" onChange={(event) => saveMedia(definition.key, event.target.files?.[0])} />{adminCopy(lang, 'Carica / sostituisci', 'Upload / replace')}</label>
+                <label className="button secondary"><input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,application/pdf,.jpg,.jpeg,.png,.webp,.mp4,.webm,.pdf" onChange={(event) => saveMedia(definition.key, event.target.files?.[0])} />{adminCopy(lang, 'Carica / sostituisci', 'Upload / replace')}</label>
                 {item?.file_url && <button className="button secondary danger" type="button" onClick={() => removeMedia(item)}>{adminCopy(lang, 'Rimuovi', 'Remove')}</button>}
               </article>
             );
@@ -5363,6 +6018,13 @@ const SITE_CONTENT_DEFINITIONS = [
   { key: 'contact.channels.phone', section: 'Contatti', label_it: 'Telefono pubblico / WhatsApp', label_en: 'Public phone / WhatsApp', type: 'text', default_it: PHONE_DISPLAY, default_en: PHONE_DISPLAY },
   { key: 'contact.channels.email', section: 'Contatti', label_it: 'Email pubblica', label_en: 'Public email', type: 'text', default_it: EMAIL, default_en: EMAIL },
   { key: 'contact.channels.instagram_url', section: 'Contatti', label_it: 'Link Instagram pubblico', label_en: 'Public Instagram link', type: 'text', default_it: INSTAGRAM, default_en: INSTAGRAM },
+  { key: latestNewsContentKey('enabled'), section: 'Ultime notizie', label_it: 'Mostra ultime notizie', label_en: 'Show latest news', type: 'text', default_it: 'true', default_en: 'true' },
+  { key: latestNewsContentKey('title'), section: 'Ultime notizie', label_it: 'Titolo ultime notizie', label_en: 'Latest news title', type: 'text', default_it: LATEST_NEWS_DEFAULTS.title_it, default_en: LATEST_NEWS_DEFAULTS.title_en, text_size: 'large', style_variant: 'heading' },
+  { key: latestNewsContentKey('description'), section: 'Ultime notizie', label_it: 'Descrizione ultime notizie', label_en: 'Latest news description', type: 'textarea', default_it: LATEST_NEWS_DEFAULTS.description_it, default_en: LATEST_NEWS_DEFAULTS.description_en },
+  { key: latestNewsContentKey('cta_label'), section: 'Ultime notizie', label_it: 'Testo pulsante ultime notizie', label_en: 'Latest news button text', type: 'text', default_it: LATEST_NEWS_DEFAULTS.cta_it, default_en: LATEST_NEWS_DEFAULTS.cta_en, style_variant: 'label' },
+  { key: latestNewsContentKey('url_it'), section: 'Ultime notizie', label_it: 'URL italiano ultime notizie', label_en: 'Italian latest-news URL', type: 'text', default_it: '', default_en: '' },
+  { key: latestNewsContentKey('url_en'), section: 'Ultime notizie', label_it: 'URL inglese ultime notizie', label_en: 'English latest-news URL', type: 'text', default_it: '', default_en: '' },
+  { key: SOCIAL_LINKS_CONTENT_KEY, section: 'Social', label_it: 'Pagine social', label_en: 'Social pages', type: 'textarea', default_it: '', default_en: '' },
   { key: 'footer.contact.name', section: 'Footer', label_it: 'Nome footer', label_en: 'Footer name', type: 'text', default_it: 'Leonardo Chiavetta', default_en: 'Leonardo Chiavetta', style_variant: 'heading' }
 ];
 
@@ -7333,19 +7995,46 @@ function parseBackupTime(value, current) {
   };
 }
 
+function backupDateFallback(lang) {
+  return adminCopy(lang, 'Non disponibile', 'Not available');
+}
+
 function formatBackupDate(value, lang) {
-  if (!value) return adminCopy(lang, 'Non disponibile', 'Not available');
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return adminCopy(lang, 'Non disponibile', 'Not available');
-  return new Intl.DateTimeFormat(lang === 'it' ? 'it-IT' : 'en-GB', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'UTC',
-    timeZoneName: 'short'
-  }).format(date);
+  return formatLocalDateTime(value, lang, backupDateFallback(lang));
+}
+
+function BackupTimeValue({ value, lang, compact = false }) {
+  if (!validDateFromValue(value)) return <span>{backupDateFallback(lang)}</span>;
+  return (
+    <span className={`backup-time-value ${compact ? 'compact' : ''}`}>
+      <span className="backup-time-primary">{formatBackupDate(value, lang)}</span>
+    </span>
+  );
+}
+
+function BackupInlineTime({ label, value, lang }) {
+  if (!validDateFromValue(value)) return null;
+  return (
+    <span className="backup-inline-time">
+      <span className="backup-inline-time-label">{label}:</span>{' '}
+      <span>{formatBackupDate(value, lang)}</span>
+    </span>
+  );
+}
+
+function BackupSummaryHelper({ latestBackup, lang }) {
+  if (!latestBackup) return null;
+  const rows = [
+    `${adminCopy(lang, 'Dimensione', 'Size')}: ${formatBackupSize(latestBackup.sizeInBytes, lang)}`,
+    latestBackup.artifactName || '',
+  ].filter(Boolean);
+  return (
+    <span className="backup-summary-helper">
+      {rows.map((row) => <span key={row}>{row}</span>)}
+      <BackupInlineTime label={adminCopy(lang, 'Artifact caricato', 'Artifact uploaded')} value={latestBackup.artifactCreatedAt || latestBackup.uploadedAt} lang={lang} />
+      <BackupInlineTime label={adminCopy(lang, 'Scadenza artifact', 'Artifact expiry')} value={latestBackup.expiresAt} lang={lang} />
+    </span>
+  );
 }
 
 function formatBackupSize(bytes, lang) {
@@ -7406,7 +8095,7 @@ function backupFrequencyLabel(frequency, lang) {
 function backupScheduleSummary(schedule, lang) {
   const normalized = normalizeBackupSchedule(schedule);
   if (!normalized.enabled) return adminCopy(lang, 'Disattivato', 'Disabled');
-  const time = `${backupTimeValue(normalized)} UTC`;
+  const time = backupTimeValue(normalized);
   if (normalized.frequency === 'weekly') {
     const day = backupWeekdayOptions(lang).find((item) => item.value === normalized.weekly_day)?.label || backupWeekdayOptions(lang)[0].label;
     return `${backupFrequencyLabel('weekly', lang)} - ${day} - ${time}`;
@@ -7433,6 +8122,58 @@ function workflowStatusText(run, lang) {
   if (run.status === 'completed' && run.conclusion === 'success') return adminCopy(lang, 'Completato', 'Completed');
   if (run.status === 'completed' && run.conclusion) return adminCopy(lang, `Terminato: ${run.conclusion}`, `Finished: ${run.conclusion}`);
   return run.status || adminCopy(lang, 'Non disponibile', 'Not available');
+}
+
+
+function inactiveBackupProgress() {
+  return { active: false, value: 0, title: '', detail: '', failed: false, done: false };
+}
+
+function clampBackupProgress(value) {
+  const parsed = Number(value);
+  return Math.max(0, Math.min(100, Number.isFinite(parsed) ? parsed : 0));
+}
+
+function isBackupWorkflowActive(run) {
+  return Boolean(run && ['queued', 'in_progress', 'running'].includes(run.status));
+}
+
+function backupMonitorStorageKey() {
+  return 'vulcaniq-backup-monitor-requested-at';
+}
+
+function readStoredBackupRequestedAt() {
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(backupMonitorStorageKey()) || '';
+  } catch {
+    return '';
+  }
+}
+
+function storeBackupRequestedAt(value) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (value) window.localStorage.setItem(backupMonitorStorageKey(), value);
+    else window.localStorage.removeItem(backupMonitorStorageKey());
+  } catch {}
+}
+
+function GlobalBackupProgressBanner({ lang, progress, onOpenBackup }) {
+  if (!progress?.active) return null;
+  const progressValue = clampBackupProgress(progress.value);
+  return (
+    <button className={`global-backup-progress-banner ${progress.failed ? 'failed' : ''}`} type="button" onClick={onOpenBackup} aria-label={adminCopy(lang, 'Apri Sistema e backup', 'Open System & backup')}>
+      <div className="global-backup-progress-header">
+        <strong>{progress.title || adminCopy(lang, 'Backup in esecuzione', 'Backup in progress')}</strong>
+        <span>{Math.round(progressValue)}%</span>
+      </div>
+      <div className="backup-progress-track" role="progressbar" aria-label={adminCopy(lang, 'Avanzamento backup', 'Backup progress')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressValue}>
+        <span className="backup-progress-fill" style={{ width: `${progressValue}%` }} />
+      </div>
+      <p>{progress.detail || adminCopy(lang, 'GitHub Actions sta creando il dump e preparando lo ZIP.', 'GitHub Actions is creating the dump and preparing the ZIP.')}</p>
+    </button>
+  );
 }
 
 function backupProgressFromStatus(result, requestedAt, lang) {
@@ -7464,7 +8205,7 @@ function backupProgressFromStatus(result, requestedAt, lang) {
     return {
       active: true,
       value: 70,
-      title: adminCopy(lang, 'Backup in esecuzione', 'Backup running'),
+      title: adminCopy(lang, 'Backup in esecuzione', 'Backup in progress'),
       detail: adminCopy(lang, 'GitHub Actions sta creando il dump e preparando lo ZIP.', 'GitHub Actions is creating the dump and preparing the ZIP.'),
       done: false,
       failed: false
@@ -7490,7 +8231,7 @@ function backupProgressFromStatus(result, requestedAt, lang) {
       active: true,
       value: 100,
       title: adminCopy(lang, 'Backup non completato', 'Backup not completed'),
-      detail: adminCopy(lang, 'L\'ultima esecuzione del workflow non è terminata correttamente. Controlla i dettagli mostrati sotto.', 'The latest workflow run did not finish successfully. Check the details shown below.'),
+      detail: adminCopy(lang, 'L\'ultima esecuzione del workflow non è terminata correttamente. Controlla i dettagli mostrati sotto.', 'The latest workflow run did not finish correctly. Check the details shown below.'),
       done: true,
       failed: true
     };
@@ -7506,14 +8247,12 @@ function backupProgressFromStatus(result, requestedAt, lang) {
   };
 }
 
-function AdminBackupPage({ lang }) {
+function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress(), startGlobalBackupMonitor, stopGlobalBackupMonitor }) {
   const [actionState, setActionState] = useState({ createLoading: false, downloadLoading: false, message: '', error: '' });
   const [statusState, setStatusState] = useState({ loading: true, error: '', latestBackup: null, workflowRun: null, configured: false, message: '' });
   const [scheduleDraft, setScheduleDraft] = useState(DEFAULT_BACKUP_SCHEDULE);
   const [scheduleState, setScheduleState] = useState({ loading: true, saving: false, message: '', error: '' });
   const [showWorkflowDetails, setShowWorkflowDetails] = useState(false);
-  const [backupProgress, setBackupProgress] = useState({ active: false, value: 0, title: '', detail: '', failed: false });
-  const backupPollRef = useRef(null);
 
   async function refreshBackupStatus() {
     setStatusState((current) => ({ ...current, loading: true, error: '' }));
@@ -7602,13 +8341,9 @@ function AdminBackupPage({ lang }) {
     return () => { alive = false; };
   }, [lang]);
 
-  useEffect(() => () => {
-    if (backupPollRef.current) window.clearInterval(backupPollRef.current);
-  }, []);
-
-  async function pollBackupProgress(requestedAt, immediate = false) {
-    try {
-      const result = await getBackupStatus({ lang, includeMetadata: false });
+  useEffect(() => {
+    function handleGlobalBackupStatusUpdated(event) {
+      const result = event.detail || {};
       setStatusState({
         loading: false,
         error: '',
@@ -7617,68 +8352,39 @@ function AdminBackupPage({ lang }) {
         configured: result?.configured !== false,
         message: result?.message || ''
       });
-      const nextProgress = backupProgressFromStatus(result, requestedAt, lang);
-      setBackupProgress(nextProgress);
-      if (nextProgress.done) {
-        if (backupPollRef.current) window.clearInterval(backupPollRef.current);
-        backupPollRef.current = null;
-        if (!nextProgress.failed) {
-          setActionState({ createLoading: false, downloadLoading: false, message: adminCopy(lang, 'Backup completato. Puoi scaricarlo da questa pagina.', 'Backup completed. You can download it from this page.'), error: '' });
-          refreshBackupStatus();
-        }
-      }
-    } catch (error) {
-      if (immediate) {
-        setBackupProgress({
-          active: true,
-          value: 25,
-          title: adminCopy(lang, 'Backup avviato', 'Backup started'),
-          detail: adminCopy(lang, 'Stato workflow non ancora disponibile.', 'Workflow status is not available yet.'),
-          failed: false
-        });
-      }
+      setActionState({ createLoading: false, downloadLoading: false, message: adminCopy(lang, 'Backup completato. Puoi scaricarlo da questa pagina.', 'Backup completed. You can download it from this page.'), error: '' });
+      window.setTimeout(refreshBackupStatus, 2500);
     }
-  }
-
-  function startBackupProgressPolling(requestedAt) {
-    if (backupPollRef.current) window.clearInterval(backupPollRef.current);
-    pollBackupProgress(requestedAt, true);
-    let attempts = 0;
-    backupPollRef.current = window.setInterval(() => {
-      attempts += 1;
-      if (attempts > 48) {
-        window.clearInterval(backupPollRef.current);
-        backupPollRef.current = null;
-        return;
-      }
-      pollBackupProgress(requestedAt);
-    }, 5000);
-  }
+    window.addEventListener('vulcaniq-backup-status-updated', handleGlobalBackupStatusUpdated);
+    return () => window.removeEventListener('vulcaniq-backup-status-updated', handleGlobalBackupStatusUpdated);
+  }, [lang]);
 
   async function handleCreateBackup() {
     const requestedAt = new Date().toISOString();
-    setBackupProgress({
+    const initialProgress = {
       active: true,
       value: 10,
-      title: adminCopy(lang, 'Invio richiesta backup', 'Sending backup request'),
-      detail: adminCopy(lang, 'Sto chiedendo al server di avviare il workflow di backup.', 'Asking the server to start the backup workflow.'),
-      failed: false
-    });
+      title: adminCopy(lang, 'Backup in esecuzione', 'Backup in progress'),
+      detail: adminCopy(lang, 'GitHub Actions sta creando il dump e preparando lo ZIP.', 'GitHub Actions is creating the dump and preparing the ZIP.'),
+      failed: false,
+      done: false
+    };
+    startGlobalBackupMonitor?.(requestedAt, initialProgress);
     setActionState({ createLoading: true, downloadLoading: false, message: '', error: '' });
     try {
       const result = await createDatabaseBackup({ lang });
       const serverRequestedAt = result?.requestedAt || requestedAt;
       setActionState({ createLoading: false, downloadLoading: false, message: result?.message || adminCopy(lang, 'Backup avviato', 'Backup started'), error: '' });
-      setBackupProgress({
+      startGlobalBackupMonitor?.(serverRequestedAt, {
         active: true,
         value: 25,
-        title: adminCopy(lang, 'Backup avviato', 'Backup started'),
-        detail: adminCopy(lang, 'La pagina controllerà lo stato reale del workflow senza aprire GitHub.', 'This page will check the real workflow status without opening GitHub.'),
-        failed: false
+        title: adminCopy(lang, 'Backup in esecuzione', 'Backup in progress'),
+        detail: adminCopy(lang, 'GitHub Actions sta creando il dump e preparando lo ZIP.', 'GitHub Actions is creating the dump and preparing the ZIP.'),
+        failed: false,
+        done: false
       });
-      startBackupProgressPolling(serverRequestedAt);
     } catch (error) {
-      setBackupProgress({ active: false, value: 0, title: '', detail: '', failed: false });
+      stopGlobalBackupMonitor?.();
       setActionState({ createLoading: false, downloadLoading: false, message: '', error: error?.message || adminCopy(lang, 'Impossibile avviare il backup.', 'Could not start backup.') });
     }
   }
@@ -7710,24 +8416,25 @@ function AdminBackupPage({ lang }) {
   const latestBackupLabel = statusState.loading
     ? adminCopy(lang, 'Caricamento...', 'Loading...')
     : latestBackup?.createdAt
-      ? formatBackupDate(latestBackup.createdAt, lang)
+      ? <BackupTimeValue value={latestBackup.createdAt} lang={lang} />
       : adminCopy(lang, 'Nessun backup', 'No backup');
   const latestBackupHelper = latestBackup
-    ? `${adminCopy(lang, 'Dimensione', 'Size')}: ${formatBackupSize(latestBackup.sizeInBytes, lang)} - ${adminCopy(lang, 'Scadenza artifact', 'Artifact expiry')}: ${formatBackupDate(latestBackup.expiresAt, lang)}`
+    ? <BackupSummaryHelper latestBackup={latestBackup} lang={lang} />
     : (statusState.message || adminCopy(lang, 'Nessun backup scaricabile trovato.', 'No downloadable backup found.'));
   const lastStatusLabel = statusState.configured ? adminCopy(lang, 'Pronto', 'Ready') : adminCopy(lang, 'Da configurare', 'Needs configuration');
   const workflowRun = statusState.workflowRun;
+  const workflowIsActive = workflowRun && ['queued', 'in_progress'].includes(workflowRun.status);
   const workflowHelper = workflowRun
-    ? `${workflowStatusText(workflowRun, lang)} - ${formatBackupDate(workflowRun.updatedAt || workflowRun.createdAt, lang)}`
+    ? <BackupInlineTime label={workflowStatusText(workflowRun, lang)} value={workflowRun.updatedAt || workflowRun.createdAt} lang={lang} />
     : adminCopy(lang, 'Nessuna esecuzione workflow disponibile.', 'No workflow run available.');
+  const backupProgress = globalBackupProgress || inactiveBackupProgress();
+  const progressValue = clampBackupProgress(backupProgress.value);
 
   return (
     <section className="admin-subpage backup-admin-page">
       <div className="admin-page-header backup-page-header">
         <div>
-          <span className="kicker">{adminCopy(lang, 'SISTEMA', 'SYSTEM')}</span>
           <h1>{adminCopy(lang, 'Backup del database', 'Database backup')}</h1>
-          <p>{adminCopy(lang, 'Backup owner-only tramite endpoint server-side e GitHub Actions. Nessun dump viene generato nel browser.', 'Owner-only backup through a server-side endpoint and GitHub Actions. No dump is generated in the browser.')}</p>
         </div>
         <div className="backup-header-actions">
           <button className="button primary" type="button" disabled={actionState.downloadLoading || actionState.createLoading} onClick={handleDownloadBackup}>
@@ -7747,17 +8454,38 @@ function AdminBackupPage({ lang }) {
         <div className={`backup-progress-panel ${backupProgress.failed ? 'failed' : ''}`} role="status" aria-live="polite">
           <div className="backup-progress-head">
             <strong>{backupProgress.title}</strong>
-            <span>{Math.round(backupProgress.value)}%</span>
+            <span>{Math.round(progressValue)}%</span>
           </div>
-          <div className="backup-progress-track" aria-label={adminCopy(lang, 'Avanzamento backup', 'Backup progress')}>
-            <span style={{ width: `${Math.max(0, Math.min(100, backupProgress.value))}%` }} />
+          <div
+            className="backup-progress-track"
+            role="progressbar"
+            aria-label={adminCopy(lang, 'Avanzamento backup', 'Backup progress')}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progressValue}
+          >
+            <span className="backup-progress-fill" style={{ width: `${progressValue}%` }} />
           </div>
           {backupProgress.detail && <p>{backupProgress.detail}</p>}
         </div>
       )}
 
+      {workflowIsActive && (
+        <section className="admin-panel backup-panel backup-workflow-panel current-backup-panel">
+          <div className="admin-panel-header">
+            <h2>{adminCopy(lang, 'Backup in esecuzione', 'Backup in progress')}</h2>
+            <span className="status-pill pending">{workflowStatusText(workflowRun, lang)}</span>
+          </div>
+          <dl className="backup-workflow-grid compact-workflow-grid">
+            <div><dt>{adminCopy(lang, 'Backup corrente avviato', 'Current backup started')}</dt><dd><BackupTimeValue value={workflowRun.createdAt || workflowRun.runStartedAt} lang={lang} compact /></dd></div>
+            <div><dt>{adminCopy(lang, 'Backup corrente aggiornato', 'Current backup updated')}</dt><dd><BackupTimeValue value={workflowRun.updatedAt} lang={lang} compact /></dd></div>
+            <div><dt>{adminCopy(lang, 'Ultimo backup completato', 'Last completed backup')}</dt><dd>{latestBackup?.createdAt ? <BackupTimeValue value={latestBackup.createdAt} lang={lang} compact /> : adminCopy(lang, 'Nessun backup', 'No backup')}</dd></div>
+          </dl>
+        </section>
+      )}
+
       <div className="admin-summary-grid backup-summary-grid">
-        <SummaryCard label={adminCopy(lang, 'Ultimo backup', 'Last backup')} value={latestBackupLabel} helper={latestBackupHelper} />
+        <SummaryCard label={adminCopy(lang, 'Ultimo backup completato', 'Last completed backup')} value={latestBackupLabel} helper={latestBackupHelper} />
         <SummaryCard label={adminCopy(lang, 'Ultimo stato', 'Last status')} value={lastStatusLabel} helper={latestBackup?.artifactName || workflowHelper} />
         <SummaryCard label={adminCopy(lang, 'Programmazione backup', 'Backup schedule')} value={backupFrequencyLabel(scheduleDraft.frequency, lang)} helper={backupScheduleSummary(scheduleDraft, lang)} />
         <SummaryCard label={adminCopy(lang, 'Storage incluso', 'Storage included')} value={storageIncludedLabel(latestBackup?.storage, lang)} helper={backupStorageHelper(latestBackup, lang)} />
@@ -7775,8 +8503,8 @@ function AdminBackupPage({ lang }) {
               <div><dt>{adminCopy(lang, 'Esecuzione', 'Run')}</dt><dd>{workflowRun.runNumber ? `#${workflowRun.runNumber}` : '-'}</dd></div>
               <div><dt>{adminCopy(lang, 'Stato', 'Status')}</dt><dd>{workflowStatusText(workflowRun, lang)}</dd></div>
               <div><dt>{adminCopy(lang, 'Tipo', 'Type')}</dt><dd>{workflowRun.event || '-'}</dd></div>
-              <div><dt>{adminCopy(lang, 'Creata', 'Created')}</dt><dd>{formatBackupDate(workflowRun.createdAt, lang)}</dd></div>
-              <div><dt>{adminCopy(lang, 'Aggiornata', 'Updated')}</dt><dd>{formatBackupDate(workflowRun.updatedAt, lang)}</dd></div>
+              <div><dt>{adminCopy(lang, 'Backup corrente avviato', 'Current backup started')}</dt><dd><BackupTimeValue value={workflowRun.createdAt || workflowRun.runStartedAt} lang={lang} compact /></dd></div>
+              <div><dt>{adminCopy(lang, 'Backup corrente aggiornato', 'Current backup updated')}</dt><dd><BackupTimeValue value={workflowRun.updatedAt} lang={lang} compact /></dd></div>
               <div><dt>{adminCopy(lang, 'Risultato', 'Conclusion')}</dt><dd>{workflowRun.conclusion || adminCopy(lang, 'In corso', 'In progress')}</dd></div>
             </dl>
           ) : (
@@ -7811,7 +8539,7 @@ function AdminBackupPage({ lang }) {
               </select>
             </label>
             <label>
-              <span>{adminCopy(lang, 'Ora UTC', 'UTC time')}</span>
+              <span>{adminCopy(lang, 'Ora', 'Time')}</span>
               <input type="time" value={backupTimeValue(scheduleDraft)} onChange={(event) => setScheduleDraft((current) => parseBackupTime(event.target.value, current))} />
             </label>
             {scheduleDraft.frequency === 'weekly' && (
@@ -9050,6 +9778,7 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
         <div><dt>{adminCopy(lang, 'Contatto', 'Contact')}</dt><dd>{request.preferred_contact || '-'}</dd></div>
         <div><dt>{adminCopy(lang, 'Esperienza', 'Experience')}</dt><dd>{adminExperienceLabel(request.experience_id, lang)}</dd></div>
         <div><dt>{adminCopy(lang, 'Data richiesta', 'Requested date')}</dt><dd>{formatDateForMessage(request.requested_date, lang) || '-'}</dd></div>
+        <div className="request-submitted-meta"><dt>{adminCopy(lang, 'Inviata il', 'Submitted')}</dt><dd>{formatLocalDateTime(request.created_at || request.submitted_at || request.inserted_at || request.createdAt, lang, adminCopy(lang, 'Non disponibile', 'Not available'))}</dd></div>
         <div><dt>{adminCopy(lang, 'Alternativa', 'Alternative')}</dt><dd>{formatDateForMessage(request.alternative_date, lang) || '-'}</dd></div>
         <div><dt>{adminCopy(lang, 'Lingua', 'Language')}</dt><dd>{request.language || 'it'}</dd></div>
         <div><dt>{adminCopy(lang, 'Gruppo', 'Party')}</dt><dd>{[request.adults ? `${request.adults} adulti/adults` : '', request.children ? `${request.children} bambini/children` : ''].filter(Boolean).join(' · ') || request.party_type || '-'}</dd></div>
@@ -9064,13 +9793,14 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
       {request.status !== 'pending' && (
         <p className="small-note decision-note"><strong>{adminCopy(lang, 'Decisione', 'Decision')}:</strong> {request.decision_note || '-'} · {request.decided_at ? formatDateForMessage(String(request.decided_at).slice(0, 10), lang) : '-'}{request.decided_by ? ` · ${request.decided_by}` : ''}</p>
       )}
-      <ReplyTools request={request} lang={lang} />
-      {request.status === 'pending' && (
-        <div className="request-actions">
-          <button className="button primary" type="button" onClick={onApprove}>{adminCopy(lang, 'Approva', 'Approve')}</button>
-          <button className="button secondary" type="button" onClick={onDecline}>{adminCopy(lang, 'Rifiuta', 'Decline')}</button>
-        </div>
-      )}
+      <ReplyTools request={request} lang={lang}>
+        {request.status === 'pending' && (
+          <>
+            <button className="button primary request-action-primary" type="button" onClick={onApprove}>{adminCopy(lang, 'Approva', 'Approve')}</button>
+            <button className="button secondary request-action-secondary" type="button" onClick={onDecline}>{adminCopy(lang, 'Rifiuta', 'Decline')}</button>
+          </>
+        )}
+      </ReplyTools>
       {request.status === 'accepted' && onRemove && (
         <div className="request-actions">
           <button className="button secondary danger" type="button" onClick={onRemove}>{adminCopy(lang, 'Rimuovi / annulla', 'Remove / cancel')}</button>
@@ -9080,7 +9810,7 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
   );
 }
 
-function ReplyTools({ request, lang }) {
+function ReplyTools({ request, lang, children = null }) {
   const [copied, setCopied] = useState('');
   const [emailOpen, setEmailOpen] = useState(false);
   const replyLang = requestLang(request, lang);
@@ -9101,10 +9831,11 @@ function ReplyTools({ request, lang }) {
 
   return (
     <div className="reply-tools">
-      <div className="reply-tool-buttons">
+      <div className="reply-tool-buttons request-actions-row">
         {phone ? <a href={`https://wa.me/${phone}?text=${encode(prepared)}`} target="_blank" rel="noopener noreferrer">WhatsApp</a> : <button type="button" onClick={() => copy('reply', prepared)}>{adminCopy(lang, 'Copia risposta', 'Copy reply')}</button>}
         <button type="button" onClick={() => setEmailOpen((open) => !open)}>{adminCopy(lang, 'Email', 'Email')}</button>
         <button type="button" onClick={() => copy('reply', prepared)}>{adminCopy(lang, 'Copia messaggio', 'Copy message')} {copied === 'reply' ? '· ✓' : ''}</button>
+        {children}
       </div>
       {phoneNeedsCountry && <p className="small-note">{adminCopy(lang, 'Il numero potrebbe richiedere il prefisso internazionale prima di aprire WhatsApp.', 'Phone number may need country code before opening WhatsApp.')}</p>}
       {emailOpen && (
@@ -10282,7 +11013,10 @@ function App() {
         return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'home':
       default:
-        return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} siteMedia={siteMedia} siteContent={siteContent} />;
+        return <>
+          <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} siteMedia={siteMedia} siteContent={siteContent} />
+          <LatestNewsCard lang={lang} siteContent={siteContent} />
+        </>;
     }
   }
 
