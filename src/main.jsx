@@ -7357,6 +7357,34 @@ function formatBackupSize(bytes, lang) {
   return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+
+function envVarName(parts) {
+  return Array.isArray(parts) ? parts.join('_') : '';
+}
+
+function storageIncludedLabel(storage, lang) {
+  if (!storage || storage.detailsAvailable === false || storage.included === null || storage.included === undefined) {
+    return adminCopy(lang, 'Non disponibile', 'Not available');
+  }
+  return storage.included ? adminCopy(lang, 'sì', 'yes') : adminCopy(lang, 'no', 'no');
+}
+
+function backupStorageHelper(latestBackup, lang) {
+  const storage = latestBackup?.storage;
+  if (!storage || storage.detailsAvailable === false) {
+    return adminCopy(lang, 'Dettagli Storage non disponibili per questo backup.', 'Storage details are not available for this backup.');
+  }
+  const fileCount = Number.isFinite(Number(storage.fileCount)) ? Number(storage.fileCount) : null;
+  const size = Number.isFinite(Number(storage.sizeInBytes)) ? formatBackupSize(storage.sizeInBytes, lang) : adminCopy(lang, 'Dimensione non disponibile', 'Size unavailable');
+  const failureCount = Number.isFinite(Number(storage.failureCount)) ? Number(storage.failureCount) : 0;
+  const fileText = fileCount === null ? adminCopy(lang, 'non disponibile', 'unavailable') : String(fileCount);
+  const base = `${adminCopy(lang, 'File Storage', 'Storage files')}: ${fileText} - ${adminCopy(lang, 'Dimensione Storage', 'Storage size')}: ${size}`;
+  if (failureCount > 0) {
+    return `${base} - ${adminCopy(lang, 'Errori export', 'Export failures')}: ${failureCount}`;
+  }
+  return base;
+}
+
 function backupWeekdayOptions(lang) {
   return [
     { value: 0, label: adminCopy(lang, 'Domenica', 'Sunday') },
@@ -7580,7 +7608,7 @@ function AdminBackupPage({ lang }) {
 
   async function pollBackupProgress(requestedAt, immediate = false) {
     try {
-      const result = await getBackupStatus({ lang });
+      const result = await getBackupStatus({ lang, includeMetadata: false });
       setStatusState({
         loading: false,
         error: '',
@@ -7596,6 +7624,7 @@ function AdminBackupPage({ lang }) {
         backupPollRef.current = null;
         if (!nextProgress.failed) {
           setActionState({ createLoading: false, downloadLoading: false, message: adminCopy(lang, 'Backup completato. Puoi scaricarlo da questa pagina.', 'Backup completed. You can download it from this page.'), error: '' });
+          refreshBackupStatus();
         }
       }
     } catch (error) {
@@ -7731,6 +7760,7 @@ function AdminBackupPage({ lang }) {
         <SummaryCard label={adminCopy(lang, 'Ultimo backup', 'Last backup')} value={latestBackupLabel} helper={latestBackupHelper} />
         <SummaryCard label={adminCopy(lang, 'Ultimo stato', 'Last status')} value={lastStatusLabel} helper={latestBackup?.artifactName || workflowHelper} />
         <SummaryCard label={adminCopy(lang, 'Programmazione backup', 'Backup schedule')} value={backupFrequencyLabel(scheduleDraft.frequency, lang)} helper={backupScheduleSummary(scheduleDraft, lang)} />
+        <SummaryCard label={adminCopy(lang, 'Storage incluso', 'Storage included')} value={storageIncludedLabel(latestBackup?.storage, lang)} helper={backupStorageHelper(latestBackup, lang)} />
       </div>
 
       {showWorkflowDetails && (
@@ -7816,14 +7846,14 @@ function AdminBackupPage({ lang }) {
         <summary>
           <span>
             <strong>{adminCopy(lang, 'Come ripristinare', 'How to restore')}</strong>
-            <small>{adminCopy(lang, 'Apri la guida completa per sostituire il database con il backup estratto.', 'Open the complete guide to replace the database with the extracted backup.')}</small>
+            <small>{adminCopy(lang, 'Apri la guida completa per ripristinare database, Storage e configurazione Cloudflare.', 'Open the complete guide to restore database, Storage, and Cloudflare configuration.')}</small>
           </span>
         </summary>
         <div className="backup-restore-content">
-          <p>{adminCopy(lang, 'Usa questa procedura solo in caso di ripristino reale o migrazione controllata. Il backup contiene i dati del database: trattalo come materiale riservato.', 'Use this procedure only for a real restore or controlled migration. The backup contains database data: treat it as confidential material.')}</p>
+          <p>{adminCopy(lang, 'Usa questa procedura solo in caso di ripristino reale o migrazione controllata. Il backup contiene dati riservati: trattalo come materiale confidenziale.', 'Use this procedure only for a real restore or controlled migration. The backup contains confidential data: treat it as confidential material.')}</p>
 
-          <h3>{adminCopy(lang, '1. Estrai lo ZIP', '1. Extract the ZIP')}</h3>
-          <p>{adminCopy(lang, 'Scarica il backup da questa pagina ed estrailo in una cartella locale. La cartella deve contenere questi file:', 'Download the backup from this page and extract it into a local folder. The folder must contain these files:')}</p>
+          <h3>{adminCopy(lang, '1. Verifica lo ZIP estratto', '1. Verify the extracted ZIP')}</h3>
+          <p>{adminCopy(lang, 'Scarica il backup da questa pagina, estrailo in una cartella locale e verifica che i file principali siano al livello superiore dello ZIP.', 'Download the backup from this page, extract it into a local folder, and verify the main files are at the top level of the ZIP.')}</p>
           <ul className="backup-restore-list">
             <li><code>00_project_info.json</code></li>
             <li><code>01_roles.sql</code></li>
@@ -7831,16 +7861,18 @@ function AdminBackupPage({ lang }) {
             <li><code>03_data.sql</code></li>
             <li><code>README_RESTORE.md</code></li>
             <li><code>restore-supabase.ps1</code> / <code>restore-supabase.sh</code></li>
+            <li><code>restore-storage.js</code></li>
             <li><code>cloudflare-env-template.txt</code></li>
-            <li><code>storage-assets/README_STORAGE.md</code></li>
+            <li><code>storage-assets/manifest.json</code></li>
           </ul>
+          <p className="small-note">{adminCopy(lang, 'Se restore-storage.js o storage-assets/manifest.json mancano, il backup è database-only: scaricalo comunque per il database e controlla Storage manualmente.', 'If restore-storage.js or storage-assets/manifest.json is missing, the backup is database-only: still use it for the database and check Storage manually.')}</p>
 
           <h3>{adminCopy(lang, '2. Prepara il progetto Supabase di destinazione', '2. Prepare the target Supabase project')}</h3>
           <ol className="backup-restore-list">
-            <li>{adminCopy(lang, 'Crea un nuovo progetto Supabase oppure scegli il progetto vuoto da sostituire.', 'Create a new Supabase project or choose the empty project to replace.')}</li>
+            <li>{adminCopy(lang, 'Crea o prepara il progetto Supabase di destinazione.', 'Create or prepare the target Supabase project.')}</li>
             <li>{adminCopy(lang, 'Apri Project Settings > Database e copia la connection string PostgreSQL diretta.', 'Open Project Settings > Database and copy the direct PostgreSQL connection string.')}</li>
             <li>{adminCopy(lang, 'Sostituisci la password nella connection string.', 'Replace the password in the connection string.')}</li>
-            <li>{adminCopy(lang, 'In API Settings abilita la Data API, esponi lo schema public e usa public, extensions come extra search path.', 'In API Settings enable Data API, expose the public schema, and use public, extensions as extra search path.')}</li>
+            <li>{adminCopy(lang, 'In API Settings abilita la Data API, esponi public e usa public, extensions come extra search path.', 'In API Settings enable Data API, expose public, and use public, extensions as extra search path.')}</li>
           </ol>
 
           <h3>{adminCopy(lang, '3. Ripristina ruoli, schema e dati', '3. Restore roles, schema, and data')}</h3>
@@ -7855,34 +7887,49 @@ function AdminBackupPage({ lang }) {
               <code>{`./restore-supabase.sh 'postgresql://postgres:[PASSWORD]@db.YOUR-REF.supabase.co:5432/postgres'`}</code>
             </div>
           </div>
-          <p>{adminCopy(lang, 'Ordine di ripristino: prima 01_roles.sql, poi 02_schema.sql, poi 03_data.sql. Non invertire l\'ordine.', 'Restore order: first 01_roles.sql, then 02_schema.sql, then 03_data.sql. Do not change the order.')}</p>
+          <p>{adminCopy(lang, 'Ordine di ripristino: 01_roles.sql se applicabile, poi 02_schema.sql, poi 03_data.sql. Non invertire schema e dati.', 'Restore order: 01_roles.sql if applicable, then 02_schema.sql, then 03_data.sql. Do not invert schema and data.')}</p>
 
-          <h3>{adminCopy(lang, '4. Ricrea accessi e owner', '4. Recreate logins and owners')}</h3>
+          <h3>{adminCopy(lang, '4. Ricrea Auth, admin e owner', '4. Recreate Auth, admins, and owners')}</h3>
           <ol className="backup-restore-list">
             <li>{adminCopy(lang, 'Supabase Auth non viene clonato completamente dal dump SQL: crea o verifica gli utenti in Authentication > Users.', 'Supabase Auth is not fully cloned by the SQL dump: create or verify users in Authentication > Users.')}</li>
-            <li>{adminCopy(lang, 'Per ogni owner che deve accedere ai backup, verifica una riga attiva in public.admin_profiles con role = owner.', 'For every owner who must access backups, verify an active row in public.admin_profiles with role = owner.')}</li>
+            <li>{adminCopy(lang, 'Verifica le righe in public.admin_profiles, soprattutto gli owner attivi che possono accedere ai backup.', 'Verify rows in public.admin_profiles, especially active owners who can access backups.')}</li>
             <li>{adminCopy(lang, 'Esegui la migrazione system_backup_settings se la tabella della programmazione non esiste.', 'Run the system_backup_settings migration if the schedule table does not exist.')}</li>
           </ol>
 
-          <h3>{adminCopy(lang, '5. Aggiorna Cloudflare Pages', '5. Update Cloudflare Pages')}</h3>
-          <p>{adminCopy(lang, 'Nel progetto Cloudflare Pages aggiorna le variabili con i valori del nuovo progetto Supabase e dei segreti GitHub server-side. Non creare variabili VITE per token GitHub o service role.', 'In the Cloudflare Pages project, update variables with the new Supabase project values and server-side GitHub secrets. Do not create VITE variables for GitHub tokens or service-role keys.')}</p>
+          <h3>{adminCopy(lang, '5. Verifica e ripristino Supabase Storage', '5. Check and restore Supabase Storage')}</h3>
+          <p>{adminCopy(lang, "Il dump del database non include i file binari di Supabase Storage, salvo che questo backup sia stato generato con l'esportazione Storage attiva. Dopo il ripristino, controlla bucket, immagini, PDF, volantini e altri asset caricati, quindi ricarica manualmente eventuali file mancanti.", 'The database dump does not include Supabase Storage binary files unless this backup was generated with Storage export enabled. After restore, check buckets, images, PDFs, leaflets, and other uploaded assets, then re-upload missing files.')}</p>
+          <p>{adminCopy(lang, 'Questo backup include i file Supabase Storage nella cartella storage-assets/. Dopo il ripristino, verifica tutti i bucket, le immagini, i PDF, i volantini e gli asset caricati. Se un file manca o il caricamento fallisce, ricaricalo manualmente.', 'This backup includes Supabase Storage files under storage-assets/. After restore, verify all buckets, images, PDFs, leaflets, and uploaded assets. If any file is missing or failed to upload, re-upload it manually.')}</p>
+          <div className="backup-code-grid">
+            <div>
+              <strong>PowerShell</strong>
+              <code>{`$env:SUPABASE_URL="https://target-project.supabase.co"`}</code>
+              <code>{`$env:${envVarName(['SUPABASE', 'SERVICE', 'ROLE', 'KEY'])}="..."`}</code>
+              <code>{`node restore-storage.js`}</code>
+            </div>
+            <div>
+              <strong>Bash/macOS/Linux</strong>
+              <code>{`SUPABASE_URL="https://target-project.supabase.co" ${envVarName(['SUPABASE', 'SERVICE', 'ROLE', 'KEY'])}="..." node restore-storage.js`}</code>
+            </div>
+          </div>
+
+          <h3>{adminCopy(lang, '6. Aggiorna Cloudflare Pages', '6. Update Cloudflare Pages')}</h3>
+          <p>{adminCopy(lang, 'Aggiorna le variabili Cloudflare con i valori del nuovo progetto Supabase e dei segreti GitHub server-side. Non creare variabili VITE per token GitHub o service role.', 'Update Cloudflare variables with the new Supabase project values and server-side GitHub secrets. Do not create VITE variables for GitHub tokens or service-role keys.')}</p>
           <ul className="backup-restore-list">
             <li><code>VITE_SUPABASE_URL</code> / <code>VITE_SUPABASE_ANON_KEY</code></li>
-            <li><code>{'SUPABASE_' + 'URL'}</code> / <code>{'SUPABASE_' + 'SERVICE_' + 'ROLE_' + 'KEY'}</code></li>
-            <li><code>GITHUB_OWNER</code>, <code>GITHUB_REPO</code>, <code>{'GITHUB_' + 'BACKUP_' + 'WORKFLOW_' + 'ID'}</code>, <code>{'GITHUB_' + 'BACKUP_' + 'REF'}</code>, <code>{'GITHUB_' + 'BACKUP_' + 'TOKEN'}</code></li>
+            <li><code>{envVarName(['SUPABASE', 'URL'])}</code> / <code>{envVarName(['SUPABASE', 'SERVICE', 'ROLE', 'KEY'])}</code></li>
+            <li><code>GITHUB_OWNER</code>, <code>GITHUB_REPO</code>, <code>{envVarName(['GITHUB', 'BACKUP', 'WORKFLOW', 'ID'])}</code>, <code>{envVarName(['GITHUB', 'BACKUP', 'REF'])}</code>, <code>{envVarName(['GITHUB', 'BACKUP', 'TOKEN'])}</code></li>
           </ul>
 
-          <h3>{adminCopy(lang, '6. Ridistribuisci e verifica', '6. Redeploy and verify')}</h3>
+          <h3>{adminCopy(lang, '7. Ridistribuisci e verifica', '7. Redeploy and verify')}</h3>
           <ol className="backup-restore-list">
             <li>{adminCopy(lang, 'Ridistribuisci Cloudflare Pages.', 'Redeploy Cloudflare Pages.')}</li>
+            <li>{adminCopy(lang, 'Verifica il sito pubblico.', 'Verify the public website.')}</li>
             <li>{adminCopy(lang, 'Accedi a /admin con un owner attivo.', 'Log in to /admin with an active owner.')}</li>
-            <li>{adminCopy(lang, 'Verifica calendario, richieste, analytics, recensioni e finanze.', 'Verify calendar, requests, analytics, reviews, and finance.')}</li>
-            <li>{adminCopy(lang, 'Crea una richiesta booking di test e controlla che appaia in admin.', 'Create a test booking request and check that it appears in admin.')}</li>
+            <li>{adminCopy(lang, 'Verifica pagina backup, calendario, richieste, analytics, recensioni, finanze e CMS.', 'Verify backup page, calendar, requests, analytics, reviews, finance, and CMS.')}</li>
+            <li>{adminCopy(lang, 'Verifica immagini, PDF, volantini e asset caricati.', 'Verify images, PDFs, leaflets, and uploaded assets.')}</li>
+            <li>{adminCopy(lang, 'Esegui un booking/questionnaire flow di test.', 'Run a test booking/questionnaire flow.')}</li>
             <li>{adminCopy(lang, 'Crea un nuovo backup e scaricalo da questa pagina.', 'Create a new backup and download it from this page.')}</li>
           </ol>
-
-          <h3>{adminCopy(lang, 'Nota Storage', 'Storage note')}</h3>
-          <p>{adminCopy(lang, 'Il dump database non include i file binari di Supabase Storage. Dopo il ripristino controlla bucket, immagini, PDF, leaflet e altri asset caricati, poi ricarica i file mancanti.', 'The database dump does not include Supabase Storage binary files. After restore, check buckets, images, PDFs, leaflets, and other uploaded assets, then re-upload missing files.')}</p>
         </div>
       </details>
     </section>

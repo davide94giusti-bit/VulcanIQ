@@ -299,3 +299,158 @@ export async function restUpsert(config, table, row) {
   const rows = await response.json().catch(() => []);
   return { ok: true, response, rows: Array.isArray(rows) ? rows : [] };
 }
+function safeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function normalizeZipEntryName(name) {
+  return String(name || '').replace(/\\/g, '/').replace(/^\/+/, '');
+}
+
+function zipReadUint16(view, offset) {
+  return view.getUint16(offset, true);
+}
+
+function zipReadUint32(view, offset) {
+  return view.getUint32(offset, true);
+}
+
+async function inflateZipEntry(bytes) {
+  if (typeof DecompressionStream !== 'function') {
+    throw new Error('DecompressionStream is not available');
+  }
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function extractZipTextEntries(arrayBuffer, wantedNames = []) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const view = new DataView(arrayBuffer);
+  const decoder = new TextDecoder('utf-8');
+  const wanted = new Set(wantedNames.map(normalizeZipEntryName));
+  const found = {};
+  const maxSearch = Math.max(0, bytes.length - 66000);
+  let eocdOffset = -1;
+
+  for (let offset = bytes.length - 22; offset >= maxSearch; offset -= 1) {
+    if (zipReadUint32(view, offset) === 0x06054b50) {
+      eocdOffset = offset;
+      break;
+    }
+  }
+  if (eocdOffset < 0) throw new Error('ZIP end of central directory not found');
+
+  const totalEntries = zipReadUint16(view, eocdOffset + 10);
+  let centralOffset = zipReadUint32(view, eocdOffset + 16);
+
+  for (let index = 0; index < totalEntries && centralOffset < bytes.length; index += 1) {
+    if (zipReadUint32(view, centralOffset) !== 0x02014b50) break;
+
+    const method = zipReadUint16(view, centralOffset + 10);
+    const compressedSize = zipReadUint32(view, centralOffset + 20);
+    const fileNameLength = zipReadUint16(view, centralOffset + 28);
+    const extraLength = zipReadUint16(view, centralOffset + 30);
+    const commentLength = zipReadUint16(view, centralOffset + 32);
+    const localOffset = zipReadUint32(view, centralOffset + 42);
+    const nameBytes = bytes.slice(centralOffset + 46, centralOffset + 46 + fileNameLength);
+    const entryName = normalizeZipEntryName(decoder.decode(nameBytes));
+    const matchingName = [...wanted].find((wantedName) => entryName === wantedName || entryName.endsWith(`/${wantedName}`));
+
+    if (matchingName && zipReadUint32(view, localOffset) === 0x04034b50) {
+      const localNameLength = zipReadUint16(view, localOffset + 26);
+      const localExtraLength = zipReadUint16(view, localOffset + 28);
+      const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+      const compressedBytes = bytes.slice(dataStart, dataStart + compressedSize);
+      let uncompressedBytes = null;
+      if (method === 0) {
+        uncompressedBytes = compressedBytes;
+      } else if (method === 8) {
+        uncompressedBytes = await inflateZipEntry(compressedBytes);
+      } else {
+        throw new Error(`Unsupported ZIP compression method ${method}`);
+      }
+      found[matchingName] = decoder.decode(uncompressedBytes);
+    }
+
+    centralOffset += 46 + fileNameLength + extraLength + commentLength;
+    if (Object.keys(found).length === wanted.size) break;
+  }
+
+  return found;
+}
+
+function parseJsonText(text) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function backupMetadataToStorageSummary(projectInfo, storageManifest) {
+  if (!projectInfo && !storageManifest) {
+    return {
+      detailsAvailable: false,
+      included: null,
+      fileCount: null,
+      sizeInBytes: null,
+      bucketCount: null,
+      failureCount: null
+    };
+  }
+
+  const metadataIncluded = projectInfo?.includes_storage_metadata === true || Boolean(storageManifest);
+  const filesIncluded = projectInfo?.includes_storage_files === true
+    ? true
+    : projectInfo?.includes_storage_files === false
+      ? false
+      : null;
+
+  return {
+    detailsAvailable: metadataIncluded,
+    included: filesIncluded,
+    fileCount: safeNumber(projectInfo?.storage_object_count) ?? safeNumber(storageManifest?.objectCount),
+    sizeInBytes: safeNumber(projectInfo?.storage_total_bytes) ?? safeNumber(storageManifest?.totalBytes),
+    bucketCount: safeNumber(projectInfo?.storage_bucket_count) ?? safeNumber(storageManifest?.bucketCount),
+    failureCount: safeNumber(projectInfo?.storage_failure_count) ?? safeNumber(storageManifest?.failureCount)
+  };
+}
+
+export async function readBackupArtifactMetadata(config, artifact) {
+  if (!config || !artifact?.id) return null;
+
+  let response = await githubFetch(
+    config,
+    `/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}/actions/artifacts/${encodeURIComponent(artifact.id)}/zip`,
+    { redirect: 'manual' }
+  );
+
+  if (response.status >= 300 && response.status < 400 && response.headers.get('Location')) {
+    response = await fetch(response.headers.get('Location'), {
+      method: 'GET',
+      headers: { Accept: 'application/zip' }
+    });
+  }
+
+  if (!response.ok) return null;
+
+  const zip = await response.arrayBuffer();
+  if (!zip || zip.byteLength === 0) return null;
+
+  try {
+    const entries = await extractZipTextEntries(zip, ['00_project_info.json', 'storage-assets/manifest.json']);
+    const projectInfo = parseJsonText(entries['00_project_info.json']);
+    const storageManifest = parseJsonText(entries['storage-assets/manifest.json']);
+    return {
+      projectInfo,
+      storageManifest,
+      storage: backupMetadataToStorageSummary(projectInfo, storageManifest)
+    };
+  } catch (error) {
+    console.warn('vulcanIQ backup metadata could not be read', { message: error.message });
+    return null;
+  }
+}
+

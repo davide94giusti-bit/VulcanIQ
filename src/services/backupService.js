@@ -91,9 +91,10 @@ export async function downloadLatestDatabaseBackup({ lang = 'en' } = {}) {
   return { ok: true, filename };
 }
 
-export async function getBackupStatus({ lang = 'en' } = {}) {
+export async function getBackupStatus({ lang = 'en', includeMetadata = true } = {}) {
   const token = await accessToken(lang);
-  const response = await fetch('/api/admin/backup/status', {
+  const metadataQuery = includeMetadata ? '?metadata=1' : '';
+  const response = await fetch(`/api/admin/backup/status${metadataQuery}`, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
