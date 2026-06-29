@@ -3,13 +3,16 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 
 const FIXED_EXCURSION_FILE_BUCKET = 'vulcaniq-public-assets';
 
-const PUBLIC_FIXED_EXCURSION_COLUMNS = 'id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, program_it, program_en, meeting_point_it, meeting_point_en, meeting_point_maps_url, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, accepted_count, places_remaining';
+const FIXED_LEAFLET_FILE_COLUMNS = 'leaflet_file_url_it, leaflet_file_path_it, leaflet_file_name_it, leaflet_file_type_it, leaflet_file_url_en, leaflet_file_path_en, leaflet_file_name_en, leaflet_file_type_en';
+const MONTHLY_LEAFLET_FILE_COLUMNS = 'leaflet_file_url_it, leaflet_file_path_it, leaflet_file_name_it, leaflet_file_type_it, leaflet_file_url_en, leaflet_file_path_en, leaflet_file_name_en, leaflet_file_type_en';
+
+const PUBLIC_FIXED_EXCURSION_COLUMNS = `id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, program_it, program_en, meeting_point_it, meeting_point_en, meeting_point_maps_url, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, ${FIXED_LEAFLET_FILE_COLUMNS}, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, accepted_count, places_remaining`;
 const PUBLIC_FIXED_EXCURSION_FALLBACK_COLUMNS = 'id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, accepted_count, places_remaining';
-const ADMIN_FIXED_EXCURSION_COLUMNS = 'id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, program_it, program_en, meeting_point_it, meeting_point_en, meeting_point_maps_url, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, created_by, updated_by';
+const ADMIN_FIXED_EXCURSION_COLUMNS = `id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, program_it, program_en, meeting_point_it, meeting_point_en, meeting_point_maps_url, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, ${FIXED_LEAFLET_FILE_COLUMNS}, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, created_by, updated_by`;
 const ADMIN_FIXED_EXCURSION_FALLBACK_COLUMNS = 'id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, created_by, updated_by';
-const PUBLIC_MONTHLY_LEAFLET_COLUMNS = 'id, month, year, title_it, title_en, description_it, description_en, notes_it, notes_en, file_url, file_type, active';
+const PUBLIC_MONTHLY_LEAFLET_COLUMNS = `id, month, year, title_it, title_en, description_it, description_en, notes_it, notes_en, file_url, file_type, ${MONTHLY_LEAFLET_FILE_COLUMNS}, active`;
 const PUBLIC_MONTHLY_LEAFLET_FALLBACK_COLUMNS = 'id, month, year, title_it, title_en, file_url, file_type, active';
-const ADMIN_MONTHLY_LEAFLET_COLUMNS = 'id, created_at, updated_at, month, year, title_it, title_en, description_it, description_en, notes_it, notes_en, file_url, file_path, file_name, file_type, active, created_by, updated_by';
+const ADMIN_MONTHLY_LEAFLET_COLUMNS = `id, created_at, updated_at, month, year, title_it, title_en, description_it, description_en, notes_it, notes_en, file_url, file_path, file_name, file_type, ${MONTHLY_LEAFLET_FILE_COLUMNS}, active, created_by, updated_by`;
 const ADMIN_MONTHLY_LEAFLET_FALLBACK_COLUMNS = 'id, created_at, updated_at, month, year, title_it, title_en, file_url, file_path, file_name, file_type, active, created_by, updated_by';
 
 function normalizeAvailabilityRow(row) {
@@ -58,6 +61,14 @@ function normalizeFixedExcursion(row) {
     blocked_dates_file_name: row.blocked_dates_file_name || '',
     blocked_dates_file_type: row.blocked_dates_file_type || '',
     blocked_dates_file_path: row.blocked_dates_file_path || '',
+    leaflet_file_url_it: row.leaflet_file_url_it || '',
+    leaflet_file_path_it: row.leaflet_file_path_it || '',
+    leaflet_file_name_it: row.leaflet_file_name_it || '',
+    leaflet_file_type_it: row.leaflet_file_type_it || '',
+    leaflet_file_url_en: row.leaflet_file_url_en || '',
+    leaflet_file_path_en: row.leaflet_file_path_en || '',
+    leaflet_file_name_en: row.leaflet_file_name_en || '',
+    leaflet_file_type_en: row.leaflet_file_type_en || '',
     leaflet_id: row.leaflet_id || null,
     status: row.status || 'available',
     public_visibility: row.public_visibility !== false,
@@ -273,6 +284,14 @@ export async function createFixedExcursion(input) {
     blocked_dates_file_name: input.blocked_dates_file_name || null,
     blocked_dates_file_type: input.blocked_dates_file_type || null,
     blocked_dates_file_path: input.blocked_dates_file_path || null,
+    leaflet_file_url_it: input.leaflet_file_url_it || input.blocked_dates_file_url || null,
+    leaflet_file_path_it: input.leaflet_file_path_it || input.blocked_dates_file_path || null,
+    leaflet_file_name_it: input.leaflet_file_name_it || input.blocked_dates_file_name || null,
+    leaflet_file_type_it: input.leaflet_file_type_it || input.blocked_dates_file_type || null,
+    leaflet_file_url_en: input.leaflet_file_url_en || null,
+    leaflet_file_path_en: input.leaflet_file_path_en || null,
+    leaflet_file_name_en: input.leaflet_file_name_en || null,
+    leaflet_file_type_en: input.leaflet_file_type_en || null,
     leaflet_id: input.leaflet_id || null,
     status: input.status || 'available',
     public_visibility: input.public_visibility !== false,
@@ -327,20 +346,24 @@ export function isAllowedBlockedDatesFile(file) {
   return allowed.includes(file.type);
 }
 
-export async function uploadBlockedDatesFile(file, userId) {
+function safeUploadName(file, fallback = 'leaflet-file') {
+  return String(file?.name || fallback)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 90) || fallback;
+}
+
+async function uploadPublicAssetFile(file, pathPrefix, fallbackName) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
   if (!isAllowedBlockedDatesFile(file)) {
     throw new Error('Only PDF, JPEG, PNG, or WEBP files are allowed.');
   }
 
-  const safeName = String(file.name || 'blocked-dates-file')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 90) || 'blocked-dates-file';
+  const safeName = safeUploadName(file, fallbackName);
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const path = `blocked-dates/${userId || 'admin'}/${unique}-${safeName}`;
+  const path = `${pathPrefix}/${unique}-${safeName}`;
 
   const { error } = await supabase.storage
     .from(FIXED_EXCURSION_FILE_BUCKET)
@@ -350,11 +373,51 @@ export async function uploadBlockedDatesFile(file, userId) {
 
   const { data } = supabase.storage.from(FIXED_EXCURSION_FILE_BUCKET).getPublicUrl(path);
   return {
-    blocked_dates_file_url: data?.publicUrl || '',
-    blocked_dates_file_name: file.name || safeName,
-    blocked_dates_file_type: file.type,
-    blocked_dates_file_path: path
+    url: data?.publicUrl || '',
+    name: file.name || safeName,
+    type: file.type,
+    path
   };
+}
+
+function languageFilePayload(uploaded, lang, prefix = 'leaflet_file') {
+  const normalizedLang = lang === 'en' ? 'en' : 'it';
+  return {
+    [`${prefix}_url_${normalizedLang}`]: uploaded.url,
+    [`${prefix}_path_${normalizedLang}`]: uploaded.path,
+    [`${prefix}_name_${normalizedLang}`]: uploaded.name,
+    [`${prefix}_type_${normalizedLang}`]: uploaded.type
+  };
+}
+
+function nullLanguageFilePayload(lang, prefix = 'leaflet_file') {
+  const normalizedLang = lang === 'en' ? 'en' : 'it';
+  return {
+    [`${prefix}_url_${normalizedLang}`]: null,
+    [`${prefix}_path_${normalizedLang}`]: null,
+    [`${prefix}_name_${normalizedLang}`]: null,
+    [`${prefix}_type_${normalizedLang}`]: null
+  };
+}
+
+export async function uploadBlockedDatesFile(file, userId) {
+  const uploaded = await uploadPublicAssetFile(file, `blocked-dates/${userId || 'admin'}`, 'blocked-dates-file');
+  return {
+    blocked_dates_file_url: uploaded.url,
+    blocked_dates_file_name: uploaded.name,
+    blocked_dates_file_type: uploaded.type,
+    blocked_dates_file_path: uploaded.path
+  };
+}
+
+export async function uploadFixedExcursionLeafletFile(file, userId, lang) {
+  const normalizedLang = lang === 'en' ? 'en' : 'it';
+  const uploaded = await uploadPublicAssetFile(file, `fixed-excursions/${userId || 'admin'}/${normalizedLang}`, 'fixed-excursion-leaflet');
+  return languageFilePayload(uploaded, normalizedLang, 'leaflet_file');
+}
+
+export function emptyFixedExcursionLeafletPayload(lang) {
+  return nullLanguageFilePayload(lang, 'leaflet_file');
 }
 
 export async function removeBlockedDatesFile(path) {
@@ -380,6 +443,14 @@ function normalizeMonthlyLeaflet(row) {
     file_path: row.file_path || '',
     file_name: row.file_name || '',
     file_type: row.file_type || '',
+    leaflet_file_url_it: row.leaflet_file_url_it || row.file_url || '',
+    leaflet_file_path_it: row.leaflet_file_path_it || row.file_path || '',
+    leaflet_file_name_it: row.leaflet_file_name_it || row.file_name || '',
+    leaflet_file_type_it: row.leaflet_file_type_it || row.file_type || '',
+    leaflet_file_url_en: row.leaflet_file_url_en || '',
+    leaflet_file_path_en: row.leaflet_file_path_en || '',
+    leaflet_file_name_en: row.leaflet_file_name_en || '',
+    leaflet_file_type_en: row.leaflet_file_type_en || '',
     active: row.active !== false,
     created_by: row.created_by || null,
     updated_by: row.updated_by || null
@@ -443,10 +514,18 @@ export async function createMonthlyLeaflet(input) {
     description_en: input.description_en || null,
     notes_it: input.notes_it || null,
     notes_en: input.notes_en || null,
-    file_url: input.file_url || null,
-    file_path: input.file_path || null,
-    file_name: input.file_name || null,
-    file_type: input.file_type || null,
+    file_url: input.file_url || input.leaflet_file_url_it || null,
+    file_path: input.file_path || input.leaflet_file_path_it || null,
+    file_name: input.file_name || input.leaflet_file_name_it || null,
+    file_type: input.file_type || input.leaflet_file_type_it || null,
+    leaflet_file_url_it: input.leaflet_file_url_it || input.file_url || null,
+    leaflet_file_path_it: input.leaflet_file_path_it || input.file_path || null,
+    leaflet_file_name_it: input.leaflet_file_name_it || input.file_name || null,
+    leaflet_file_type_it: input.leaflet_file_type_it || input.file_type || null,
+    leaflet_file_url_en: input.leaflet_file_url_en || null,
+    leaflet_file_path_en: input.leaflet_file_path_en || null,
+    leaflet_file_name_en: input.leaflet_file_name_en || null,
+    leaflet_file_type_en: input.leaflet_file_type_en || null,
     active: input.active !== false,
     created_by: input.created_by || null,
     updated_by: input.updated_by || null
@@ -471,14 +550,24 @@ export async function deactivateMonthlyLeaflet(id, userId) {
   return updateMonthlyLeaflet(id, { active: false, updated_by: userId || null });
 }
 
-export async function uploadMonthlyLeafletFile(file, userId) {
-  const uploaded = await uploadBlockedDatesFile(file, userId);
-  return {
-    file_url: uploaded.blocked_dates_file_url,
-    file_path: uploaded.blocked_dates_file_path,
-    file_name: uploaded.blocked_dates_file_name,
-    file_type: uploaded.blocked_dates_file_type
-  };
+export async function uploadMonthlyLeafletFile(file, userId, lang, periodKey = '') {
+  if (!lang) {
+    const uploaded = await uploadPublicAssetFile(file, `monthly-programmes/${userId || 'admin'}`, 'monthly-leaflet');
+    return {
+      file_url: uploaded.url,
+      file_path: uploaded.path,
+      file_name: uploaded.name,
+      file_type: uploaded.type
+    };
+  }
+  const normalizedLang = lang === 'en' ? 'en' : 'it';
+  const period = String(periodKey || '').replace(/[^0-9-]/g, '') || (userId || 'admin');
+  const uploaded = await uploadPublicAssetFile(file, `monthly-programmes/${period}/${normalizedLang}`, 'monthly-leaflet');
+  return languageFilePayload(uploaded, normalizedLang, 'leaflet_file');
+}
+
+export function emptyMonthlyLeafletPayload(lang) {
+  return nullLanguageFilePayload(lang, 'leaflet_file');
 }
 
 export async function removeMonthlyLeafletFile(path) {

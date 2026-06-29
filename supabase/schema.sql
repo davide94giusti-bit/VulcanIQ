@@ -665,6 +665,14 @@ create table if not exists public.monthly_availability_leaflets (
   file_path text,
   file_name text,
   file_type text,
+  leaflet_file_url_it text,
+  leaflet_file_path_it text,
+  leaflet_file_name_it text,
+  leaflet_file_type_it text,
+  leaflet_file_url_en text,
+  leaflet_file_path_en text,
+  leaflet_file_name_en text,
+  leaflet_file_type_en text,
   active boolean not null default true,
   created_by uuid references auth.users(id),
   updated_by uuid references auth.users(id),
@@ -677,6 +685,23 @@ alter table public.monthly_availability_leaflets add column if not exists descri
 alter table public.monthly_availability_leaflets add column if not exists description_en text;
 alter table public.monthly_availability_leaflets add column if not exists notes_it text;
 alter table public.monthly_availability_leaflets add column if not exists notes_en text;
+alter table public.monthly_availability_leaflets add column if not exists leaflet_file_url_it text;
+alter table public.monthly_availability_leaflets add column if not exists leaflet_file_path_it text;
+alter table public.monthly_availability_leaflets add column if not exists leaflet_file_name_it text;
+alter table public.monthly_availability_leaflets add column if not exists leaflet_file_type_it text;
+alter table public.monthly_availability_leaflets add column if not exists leaflet_file_url_en text;
+alter table public.monthly_availability_leaflets add column if not exists leaflet_file_path_en text;
+alter table public.monthly_availability_leaflets add column if not exists leaflet_file_name_en text;
+alter table public.monthly_availability_leaflets add column if not exists leaflet_file_type_en text;
+
+update public.monthly_availability_leaflets
+set
+  leaflet_file_url_it = coalesce(leaflet_file_url_it, file_url),
+  leaflet_file_path_it = coalesce(leaflet_file_path_it, file_path),
+  leaflet_file_name_it = coalesce(leaflet_file_name_it, file_name),
+  leaflet_file_type_it = coalesce(leaflet_file_type_it, file_type)
+where file_url is not null
+  and leaflet_file_url_it is null;
 
 create index if not exists monthly_availability_leaflets_month_year_idx on public.monthly_availability_leaflets(year, month);
 create index if not exists monthly_availability_leaflets_active_idx on public.monthly_availability_leaflets(active);
@@ -714,6 +739,14 @@ create table if not exists public.fixed_excursions (
   blocked_dates_file_name text,
   blocked_dates_file_type text,
   blocked_dates_file_path text,
+  leaflet_file_url_it text,
+  leaflet_file_path_it text,
+  leaflet_file_name_it text,
+  leaflet_file_type_it text,
+  leaflet_file_url_en text,
+  leaflet_file_path_en text,
+  leaflet_file_name_en text,
+  leaflet_file_type_en text,
   capacity integer not null default 12,
   note_it text,
   note_en text,
@@ -742,6 +775,23 @@ alter table public.fixed_excursions add column if not exists blocked_dates_file_
 alter table public.fixed_excursions add column if not exists blocked_dates_file_name text;
 alter table public.fixed_excursions add column if not exists blocked_dates_file_type text;
 alter table public.fixed_excursions add column if not exists blocked_dates_file_path text;
+alter table public.fixed_excursions add column if not exists leaflet_file_url_it text;
+alter table public.fixed_excursions add column if not exists leaflet_file_path_it text;
+alter table public.fixed_excursions add column if not exists leaflet_file_name_it text;
+alter table public.fixed_excursions add column if not exists leaflet_file_type_it text;
+alter table public.fixed_excursions add column if not exists leaflet_file_url_en text;
+alter table public.fixed_excursions add column if not exists leaflet_file_path_en text;
+alter table public.fixed_excursions add column if not exists leaflet_file_name_en text;
+alter table public.fixed_excursions add column if not exists leaflet_file_type_en text;
+
+update public.fixed_excursions
+set
+  leaflet_file_url_it = coalesce(leaflet_file_url_it, blocked_dates_file_url),
+  leaflet_file_path_it = coalesce(leaflet_file_path_it, blocked_dates_file_path),
+  leaflet_file_name_it = coalesce(leaflet_file_name_it, blocked_dates_file_name),
+  leaflet_file_type_it = coalesce(leaflet_file_type_it, blocked_dates_file_type)
+where blocked_dates_file_url is not null
+  and leaflet_file_url_it is null;
 alter table public.fixed_excursions add column if not exists note_it text;
 alter table public.fixed_excursions add column if not exists note_en text;
 
@@ -1145,6 +1195,14 @@ select
   fe.blocked_dates_file_name,
   fe.blocked_dates_file_type,
   fe.blocked_dates_file_path,
+  fe.leaflet_file_url_it,
+  fe.leaflet_file_path_it,
+  fe.leaflet_file_name_it,
+  fe.leaflet_file_type_it,
+  fe.leaflet_file_url_en,
+  fe.leaflet_file_path_en,
+  fe.leaflet_file_name_en,
+  fe.leaflet_file_type_en,
   fe.leaflet_id,
   fe.status,
   fe.public_visibility,
@@ -1179,7 +1237,17 @@ select
   notes_it,
   notes_en,
   file_url,
+  file_path,
+  file_name,
   file_type,
+  leaflet_file_url_it,
+  leaflet_file_path_it,
+  leaflet_file_name_it,
+  leaflet_file_type_it,
+  leaflet_file_url_en,
+  leaflet_file_path_en,
+  leaflet_file_name_en,
+  leaflet_file_type_en,
   active
 from public.monthly_availability_leaflets
 where active = true;

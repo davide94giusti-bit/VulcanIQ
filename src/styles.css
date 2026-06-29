@@ -8998,3 +8998,15 @@ body.modal-scroll-lock {
   display: grid;
   gap: 8px;
 }
+
+/* Bilingual leaflet admin controls */
+.bilingual-leaflet-admin-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.bilingual-leaflet-admin-list .button {
+  width: auto;
+}

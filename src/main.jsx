@@ -4,7 +4,7 @@ import { blockedDates, defaultExperienceAvailability } from './data/availability
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
 import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
-import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
+import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadFixedExcursionLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
 import { loadPublicReviews, submitPublicReview, listReviews, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply, deleteReview } from './services/reviewsService.js';
 import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFile } from './services/siteMediaService.js';
@@ -1599,13 +1599,62 @@ function leafletTitle(leaflet, lang) {
   return monthlyLeafletField(leaflet, 'title', lang) || text(lang, 'openProgram');
 }
 
-function hasLeafletFile(leaflet) {
-  return Boolean(String(leaflet?.file_url || '').trim());
+function monthlyLeafletFile(leaflet, lang) {
+  if (!leaflet) return null;
+  const selectedLang = lang === 'en' ? 'en' : 'it';
+  const directUrl = String(leaflet[`leaflet_file_url_${selectedLang}`] || '').trim();
+  if (directUrl) {
+    return {
+      file_url: directUrl,
+      file_path: leaflet[`leaflet_file_path_${selectedLang}`] || '',
+      file_name: leaflet[`leaflet_file_name_${selectedLang}`] || leaflet.file_name || '',
+      file_type: leaflet[`leaflet_file_type_${selectedLang}`] || leaflet.file_type || ''
+    };
+  }
+  const legacyUrl = String(leaflet.file_url || '').trim();
+  if (legacyUrl) {
+    return {
+      file_url: legacyUrl,
+      file_path: leaflet.file_path || '',
+      file_name: leaflet.file_name || '',
+      file_type: leaflet.file_type || ''
+    };
+  }
+  return null;
+}
+
+function fixedExcursionLeafletFile(item, lang) {
+  if (!item) return null;
+  const selectedLang = lang === 'en' ? 'en' : 'it';
+  const directUrl = String(item[`leaflet_file_url_${selectedLang}`] || '').trim();
+  if (directUrl) {
+    return {
+      file_url: directUrl,
+      file_path: item[`leaflet_file_path_${selectedLang}`] || '',
+      file_name: item[`leaflet_file_name_${selectedLang}`] || item.blocked_dates_file_name || '',
+      file_type: item[`leaflet_file_type_${selectedLang}`] || item.blocked_dates_file_type || ''
+    };
+  }
+  const legacyUrl = String(item.blocked_dates_file_url || '').trim();
+  if (legacyUrl) {
+    return {
+      file_url: legacyUrl,
+      file_path: item.blocked_dates_file_path || '',
+      file_name: item.blocked_dates_file_name || '',
+      file_type: item.blocked_dates_file_type || ''
+    };
+  }
+  return null;
+}
+
+function hasLeafletFile(leaflet, lang = 'it') {
+  return Boolean(monthlyLeafletFile(leaflet, lang)?.file_url);
 }
 
 function hasMonthlyLeafletContent(leaflet) {
   return Boolean(leaflet && (
-    hasLeafletFile(leaflet) ||
+    hasLeafletFile(leaflet, 'it') ||
+    hasLeafletFile(leaflet, 'en') ||
     monthlyLeafletField(leaflet, 'title', 'it') ||
     monthlyLeafletField(leaflet, 'title', 'en') ||
     monthlyLeafletField(leaflet, 'description', 'it') ||
@@ -1615,15 +1664,16 @@ function hasMonthlyLeafletContent(leaflet) {
   ));
 }
 
-function isLeafletImage(leaflet) {
-  const url = String(leaflet?.file_url || '');
-  return String(leaflet?.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(url);
+function isLeafletImage(fileOrLeaflet) {
+  const fileUrl = String(fileOrLeaflet?.file_url || '').trim();
+  return String(fileOrLeaflet?.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(fileUrl);
 }
 
 function MonthlyProgramContent({ leaflet, lang, label }) {
   const description = monthlyLeafletField(leaflet, 'description', lang);
   const notes = monthlyLeafletField(leaflet, 'notes', lang);
-  const fileUrl = String(leaflet?.file_url || '').trim();
+  const file = monthlyLeafletFile(leaflet, lang);
+  const fileUrl = String(file?.file_url || '').trim();
   return (
     <div className="leaflet-fullscreen-body">
       {(description || notes) && (
@@ -1633,7 +1683,7 @@ function MonthlyProgramContent({ leaflet, lang, label }) {
         </div>
       )}
       {fileUrl ? (
-        isLeafletImage(leaflet) ? (
+        isLeafletImage(file) ? (
           <img className="leaflet-fullscreen-image" src={fileUrl} alt={label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
         ) : (
           <iframe className="leaflet-fullscreen-frame" src={fileUrl} title={label || text(lang, 'openProgram')} />
@@ -1698,14 +1748,13 @@ function monthlyOptionsLeaflets({ leaflets = [], fixedExcursions = [], monthDate
     }));
 
   fixedInMonth.forEach((item) => {
-    if (!item.blocked_dates_file_url) return;
+    const fixedFile = fixedExcursionLeafletFile(item, lang);
+    if (!fixedFile?.file_url) return;
     const leaflet = {
       id: `fixed-file-${item.id}`,
-      file_url: item.blocked_dates_file_url,
-      file_type: item.blocked_dates_file_type || '',
-      file_name: item.blocked_dates_file_name || fixedExcursionTitle(item, lang),
-      title_it: item.blocked_dates_file_name || fixedExcursionTitle(item, 'it'),
-      title_en: item.blocked_dates_file_name || fixedExcursionTitle(item, 'en')
+      ...fixedFile,
+      title_it: fixedFile.file_name || fixedExcursionTitle(item, 'it'),
+      title_en: fixedFile.file_name || fixedExcursionTitle(item, 'en')
     };
     addOption({
       id: `fixed-file-${item.id}`,
@@ -2547,13 +2596,14 @@ function MissionPage({ lang, siteMedia, siteContent, editor }) {
 
 
 function BlockedDatesAttachment({ item, lang, publicView = true, onOpenFile }) {
-  const url = item?.blocked_dates_file_url;
+  const file = fixedExcursionLeafletFile(item, lang);
+  const url = file?.file_url;
   if (!url) return null;
 
-  const type = item.blocked_dates_file_type || '';
-  const name = item.blocked_dates_file_name || text(lang, 'blockedDatesCalendar');
+  const type = file.file_type || '';
+  const name = file.file_name || fixedExcursionTitle(item, lang) || text(lang, 'openExcursionProgram');
   const isImage = type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(url);
-  const label = publicView ? text(lang, 'openExcursionProgram') : text(lang, 'openCalendarFile');
+  const label = publicView ? text(lang, 'openExcursionProgram') : adminCopy(lang, 'Apri volantino', 'Open leaflet');
   const filePayload = { file_url: url, file_type: type, file_name: name, title_it: name, title_en: name };
 
   const openFile = () => {
@@ -2565,16 +2615,16 @@ function BlockedDatesAttachment({ item, lang, publicView = true, onOpenFile }) {
   };
 
   return (
-    <div className="blocked-dates-attachment">
+    <div className="blocked-dates-attachment fixed-excursion-leaflet-attachment">
       {!publicView && (
         <div className="blocked-dates-admin-meta">
-          <strong>{text(lang, 'unavailableDates')}</strong>
+          <strong>{adminCopy(lang, 'Volantino escursione', 'Excursion leaflet')}</strong>
           <span>{name}</span>
         </div>
       )}
       {isImage ? (
         <button className="blocked-dates-preview-button" type="button" onClick={openFile} aria-label={label}>
-          <img src={url} alt={text(lang, 'blockedDatesCalendar')} loading="lazy" decoding="async" />
+          <img src={url} alt={name} loading="lazy" decoding="async" />
         </button>
       ) : (
         <button className="button secondary" type="button" onClick={openFile}>{label}</button>
@@ -3856,11 +3906,12 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
             {fixedOptions.length ? (
               <div className="request-leaflet-grid">
                 {fixedOptions.map((option) => {
-                  const isImage = String(option.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(option.leaflet.file_url || '');
+                  const file = monthlyLeafletFile(option.leaflet, lang) || option.leaflet;
+                  const isImage = isLeafletImage(file);
                   return (
                     <button className="request-leaflet-tile" type="button" key={option.id} onClick={() => openRequestLeaflet(option)}>
-                      {isImage ? (
-                        <img src={option.leaflet.file_url} alt={option.title} loading="lazy" decoding="async" />
+                      {isImage && file?.file_url ? (
+                        <img src={file.file_url} alt={option.title} loading="lazy" decoding="async" />
                       ) : (
                         <span className="request-leaflet-file">{text(lang, 'openProgram')}</span>
                       )}
@@ -10582,8 +10633,10 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [form, setForm] = useState({ date: '', experience_id: '', status: 'closed', reason_it: '', reason_en: '', internal_note: '' });
-  const [fixedForm, setFixedForm] = useState({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', leaflet_id: '', title_it: '', title_en: '', description_it: '', description_en: '', program_it: '', program_en: '', meeting_point_it: '', meeting_point_en: '', meeting_point_maps_url: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
-  const [leafletForm, setLeafletForm] = useState({ month: String(new Date().getMonth() + 1), year: String(new Date().getFullYear()), title_it: '', title_en: '', description_it: '', description_en: '', notes_it: '', notes_en: '', file: null, active: true });
+  const emptyFixedForm = { date: '', start_time: '', end_time: '', experience_id: 'etna-live', leaflet_id: '', title_it: '', title_en: '', description_it: '', description_en: '', program_it: '', program_en: '', meeting_point_it: '', meeting_point_en: '', meeting_point_maps_url: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', leafletFileIt: null, leafletFileEn: null, capacity: '12', active: true };
+  const emptyLeafletForm = { month: String(new Date().getMonth() + 1), year: String(new Date().getFullYear()), title_it: '', title_en: '', description_it: '', description_en: '', notes_it: '', notes_en: '', file_it: null, file_en: null, active: true };
+  const [fixedForm, setFixedForm] = useState(emptyFixedForm);
+  const [leafletForm, setLeafletForm] = useState(emptyLeafletForm);
 
   async function refresh() {
     setLoading(true);
@@ -10652,10 +10705,22 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
       setError(adminCopy(lang, 'Inserisci almeno un titolo in italiano o inglese.', 'Enter at least one Italian or English title.'));
       return;
     }
+    if (!fixedForm.leafletFileIt || !fixedForm.leafletFileEn) {
+      setError(adminCopy(lang, 'Carica il volantino italiano e il volantino inglese per questa escursione fissa.', 'Upload both the Italian and English leaflet for this fixed excursion.'));
+      return;
+    }
     try {
-      const filePayload = fixedForm.blockedDatesFile ? await uploadBlockedDatesFile(fixedForm.blockedDatesFile, session.user.id) : {};
-      await createFixedExcursion({ ...fixedForm, ...filePayload, created_by: session.user.id, updated_by: session.user.id });
-      setFixedForm({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', leaflet_id: '', title_it: '', title_en: '', description_it: '', description_en: '', program_it: '', program_en: '', meeting_point_it: '', meeting_point_en: '', meeting_point_maps_url: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
+      const filePayloadIt = await uploadFixedExcursionLeafletFile(fixedForm.leafletFileIt, session.user.id, 'it');
+      const filePayloadEn = await uploadFixedExcursionLeafletFile(fixedForm.leafletFileEn, session.user.id, 'en');
+      const legacyItalianPayload = {
+        blocked_dates_file_url: filePayloadIt.leaflet_file_url_it,
+        blocked_dates_file_path: filePayloadIt.leaflet_file_path_it,
+        blocked_dates_file_name: filePayloadIt.leaflet_file_name_it,
+        blocked_dates_file_type: filePayloadIt.leaflet_file_type_it
+      };
+      const { leafletFileIt, leafletFileEn, ...fixedPayload } = fixedForm;
+      await createFixedExcursion({ ...fixedPayload, ...legacyItalianPayload, ...filePayloadIt, ...filePayloadEn, created_by: session.user.id, updated_by: session.user.id });
+      setFixedForm({ ...emptyFixedForm });
       setFeedback(adminCopy(lang, 'Escursione fissa creata.', 'Fixed excursion created.'));
       refresh();
     } catch (err) {
@@ -10672,15 +10737,23 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
       setError(adminCopy(lang, 'Mese e anno sono obbligatori.', 'Month and year are required.'));
       return;
     }
-    const hasProgrammeContent = Boolean(leafletForm.file || leafletForm.title_it.trim() || leafletForm.title_en.trim() || leafletForm.description_it.trim() || leafletForm.description_en.trim() || leafletForm.notes_it.trim() || leafletForm.notes_en.trim());
-    if (!hasProgrammeContent) {
-      setError(adminCopy(lang, 'Inserisci almeno un file, un titolo, una descrizione o una nota.', 'Enter at least a file, title, description, or note.'));
+    if (!leafletForm.file_it || !leafletForm.file_en) {
+      setError(adminCopy(lang, 'Carica il volantino italiano e il volantino inglese.', 'Upload both the Italian leaflet and the English leaflet.'));
       return;
     }
     try {
-      const filePayload = leafletForm.file ? await uploadMonthlyLeafletFile(leafletForm.file, session.user.id) : {};
-      await createMonthlyLeaflet({ ...leafletForm, ...filePayload, created_by: session.user.id, updated_by: session.user.id });
-      setLeafletForm({ month: String(new Date().getMonth() + 1), year: String(new Date().getFullYear()), title_it: '', title_en: '', description_it: '', description_en: '', notes_it: '', notes_en: '', file: null, active: true });
+      const monthlyStorageKey = `${leafletForm.year}-${String(leafletForm.month).padStart(2, '0')}`;
+      const filePayloadIt = await uploadMonthlyLeafletFile(leafletForm.file_it, session.user.id, 'it', monthlyStorageKey);
+      const filePayloadEn = await uploadMonthlyLeafletFile(leafletForm.file_en, session.user.id, 'en', monthlyStorageKey);
+      const legacyItalianPayload = {
+        file_url: filePayloadIt.leaflet_file_url_it,
+        file_path: filePayloadIt.leaflet_file_path_it,
+        file_name: filePayloadIt.leaflet_file_name_it,
+        file_type: filePayloadIt.leaflet_file_type_it
+      };
+      const { file_it, file_en, ...leafletPayload } = leafletForm;
+      await createMonthlyLeaflet({ ...leafletPayload, ...legacyItalianPayload, ...filePayloadIt, ...filePayloadEn, created_by: session.user.id, updated_by: session.user.id });
+      setLeafletForm({ ...emptyLeafletForm, month: String(new Date().getMonth() + 1), year: String(new Date().getFullYear()) });
       setFeedback(adminCopy(lang, 'Calendario mensile caricato.', 'Monthly leaflet uploaded.'));
       refresh();
     } catch (err) {
@@ -10746,8 +10819,10 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
               <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione programma EN', 'Programme description EN')}</span><textarea value={leafletForm.description_en} onChange={(event) => updateLeaflet('description_en', event.target.value)} rows={4} /></label>
               <label className="admin-field full"><span>{adminCopy(lang, 'Note programma IT', 'Programme notes IT')}</span><textarea value={leafletForm.notes_it} onChange={(event) => updateLeaflet('notes_it', event.target.value)} rows={2} /></label>
               <label className="admin-field full"><span>{adminCopy(lang, 'Note programma EN', 'Programme notes EN')}</span><textarea value={leafletForm.notes_en} onChange={(event) => updateLeaflet('notes_en', event.target.value)} rows={2} /></label>
-              <label className="admin-field full"><span>{adminCopy(lang, 'File calendario / leaflet opzionale', 'Optional calendar / leaflet file')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => updateLeaflet('file', event.target.files?.[0] || null)} /></label>
-              {leafletForm.file && <p className="small-note full">{adminCopy(lang, 'File selezionato', 'Selected file')}: {leafletForm.file.name}</p>}
+              <label className="admin-field full"><span>{adminCopy(lang, 'Volantino italiano obbligatorio', 'Required Italian leaflet')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => updateLeaflet('file_it', event.target.files?.[0] || null)} required /></label>
+              {leafletForm.file_it && <p className="small-note full">{adminCopy(lang, 'File italiano selezionato', 'Selected Italian file')}: {leafletForm.file_it.name}</p>}
+              <label className="admin-field full"><span>{adminCopy(lang, 'Volantino inglese obbligatorio', 'Required English leaflet')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => updateLeaflet('file_en', event.target.files?.[0] || null)} required /></label>
+              {leafletForm.file_en && <p className="small-note full">{adminCopy(lang, 'File inglese selezionato', 'Selected English file')}: {leafletForm.file_en.name}</p>}
               <label className="check-field"><input type="checkbox" checked={leafletForm.active} onChange={(event) => updateLeaflet('active', event.target.checked)} /> {adminCopy(lang, 'Attivo', 'Active')}</label>
               <div className="modal-actions full"><button className="button primary" type="submit">{adminCopy(lang, 'Salva calendario mensile', 'Save monthly leaflet')}</button></div>
             </form>
@@ -10790,8 +10865,10 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
               <AdminInput label="Difficulty EN" value={fixedForm.difficulty_en} onChange={(value) => updateFixed('difficulty_en', value)} />
               <AdminInput label="Price note IT" value={fixedForm.price_note_it} onChange={(value) => updateFixed('price_note_it', value)} />
               <AdminInput label="Price note EN" value={fixedForm.price_note_en} onChange={(value) => updateFixed('price_note_en', value)} />
-              <label className="admin-field full"><span>{adminCopy(lang, 'File calendario date occupate', 'Blocked dates calendar file')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => updateFixed('blockedDatesFile', event.target.files?.[0] || null)} /></label>
-              {fixedForm.blockedDatesFile && <p className="small-note full">{adminCopy(lang, 'File selezionato', 'Selected file')}: {fixedForm.blockedDatesFile.name}</p>}
+              <label className="admin-field full"><span>{adminCopy(lang, 'Volantino italiano obbligatorio', 'Required Italian leaflet')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => updateFixed('leafletFileIt', event.target.files?.[0] || null)} required /></label>
+              {fixedForm.leafletFileIt && <p className="small-note full">{adminCopy(lang, 'File italiano selezionato', 'Selected Italian file')}: {fixedForm.leafletFileIt.name}</p>}
+              <label className="admin-field full"><span>{adminCopy(lang, 'Volantino inglese obbligatorio', 'Required English leaflet')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => updateFixed('leafletFileEn', event.target.files?.[0] || null)} required /></label>
+              {fixedForm.leafletFileEn && <p className="small-note full">{adminCopy(lang, 'File inglese selezionato', 'Selected English file')}: {fixedForm.leafletFileEn.name}</p>}
               <label className="check-field"><input type="checkbox" checked={fixedForm.active} onChange={(event) => updateFixed('active', event.target.checked)} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
               <div className="modal-actions full"><button className="button primary" type="submit">{adminCopy(lang, 'Salva escursione fissa', 'Save fixed excursion')}</button></div>
             </form>
@@ -10833,16 +10910,22 @@ function MonthlyLeafletCard({ item, lang, userId, onChanged }) {
     description_en: item.description_en || '',
     notes_it: item.notes_it || '',
     notes_en: item.notes_en || '',
-    file: null,
-    file_url: item.file_url || '',
-    file_path: item.file_path || '',
-    file_name: item.file_name || '',
-    file_type: item.file_type || '',
-    removeFile: false,
+    file_it: null,
+    file_en: null,
+    leaflet_file_url_it: item.leaflet_file_url_it || item.file_url || '',
+    leaflet_file_path_it: item.leaflet_file_path_it || item.file_path || '',
+    leaflet_file_name_it: item.leaflet_file_name_it || item.file_name || '',
+    leaflet_file_type_it: item.leaflet_file_type_it || item.file_type || '',
+    leaflet_file_url_en: item.leaflet_file_url_en || '',
+    leaflet_file_path_en: item.leaflet_file_path_en || '',
+    leaflet_file_name_en: item.leaflet_file_name_en || '',
+    leaflet_file_type_en: item.leaflet_file_type_en || '',
     active: item.active !== false
   });
   const [error, setError] = useState('');
-  const isImage = item.file_type?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(item.file_url || '');
+  const italianFile = monthlyLeafletFile(item, 'it');
+  const englishFile = monthlyLeafletFile(item, 'en');
+  const activeFile = monthlyLeafletFile(item, lang);
   const description = monthlyLeafletField(item, 'description', lang);
   const notes = monthlyLeafletField(item, 'notes', lang);
 
@@ -10852,22 +10935,38 @@ function MonthlyLeafletCard({ item, lang, userId, onChanged }) {
       setError(adminCopy(lang, 'Mese e anno sono obbligatori.', 'Month and year are required.'));
       return;
     }
-    const hasProgrammeContent = Boolean(form.file || (!form.removeFile && form.file_url) || form.title_it.trim() || form.title_en.trim() || form.description_it.trim() || form.description_en.trim() || form.notes_it.trim() || form.notes_en.trim());
-    if (!hasProgrammeContent) {
-      setError(adminCopy(lang, 'Inserisci almeno un file, un titolo, una descrizione o una nota.', 'Enter at least a file, title, description, or note.'));
+    const hasItalian = Boolean(form.file_it || form.leaflet_file_url_it);
+    const hasEnglish = Boolean(form.file_en || form.leaflet_file_url_en);
+    if (!hasItalian || !hasEnglish) {
+      setError(adminCopy(lang, 'Carica il volantino italiano e il volantino inglese.', 'Upload both the Italian leaflet and the English leaflet.'));
       return;
     }
     try {
-      let filePayload = {};
-      if (form.file) {
-        filePayload = await uploadMonthlyLeafletFile(form.file, userId);
-        if (item.file_path) await removeMonthlyLeafletFile(item.file_path);
-      } else if (form.removeFile) {
-        if (item.file_path) await removeMonthlyLeafletFile(item.file_path);
-        filePayload = { file_url: null, file_path: null, file_name: null, file_type: null };
+      let filePayloadIt = {};
+      let filePayloadEn = {};
+      if (form.file_it) {
+        filePayloadIt = await uploadMonthlyLeafletFile(form.file_it, userId, 'it', `${form.year}-${String(form.month).padStart(2, '0')}`);
+        if (item.leaflet_file_path_it || item.file_path) await removeMonthlyLeafletFile(item.leaflet_file_path_it || item.file_path);
       }
-      const { file, removeFile, ...payload } = form;
-      await updateMonthlyLeaflet(item.id, { ...payload, ...filePayload, updated_by: userId });
+      if (form.file_en) {
+        filePayloadEn = await uploadMonthlyLeafletFile(form.file_en, userId, 'en', `${form.year}-${String(form.month).padStart(2, '0')}`);
+        if (item.leaflet_file_path_en) await removeMonthlyLeafletFile(item.leaflet_file_path_en);
+      }
+      const { file_it, file_en, ...payload } = form;
+      const nextItUrl = filePayloadIt.leaflet_file_url_it || payload.leaflet_file_url_it;
+      const nextItPath = filePayloadIt.leaflet_file_path_it || payload.leaflet_file_path_it;
+      const nextItName = filePayloadIt.leaflet_file_name_it || payload.leaflet_file_name_it;
+      const nextItType = filePayloadIt.leaflet_file_type_it || payload.leaflet_file_type_it;
+      await updateMonthlyLeaflet(item.id, {
+        ...payload,
+        ...filePayloadIt,
+        ...filePayloadEn,
+        file_url: nextItUrl,
+        file_path: nextItPath,
+        file_name: nextItName,
+        file_type: nextItType,
+        updated_by: userId
+      });
       setEditing(false);
       onChanged(adminCopy(lang, 'Programma mensile aggiornato.', 'Monthly programme updated.'));
     } catch (err) {
@@ -10888,7 +10987,7 @@ function MonthlyLeafletCard({ item, lang, userId, onChanged }) {
   return (
     <article className={`availability-block-card ${item.active ? '' : 'inactive'}`}>
       <div className="request-card-head">
-        <div><h3>{leafletLabel(item, lang)}</h3><p>{item.file_name || adminCopy(lang, 'Programma testuale', 'Text programme')}</p></div>
+        <div><h3>{leafletLabel(item, lang)}</h3><p>{activeFile?.file_name || adminCopy(lang, 'Programma mensile bilingue', 'Bilingual monthly programme')}</p></div>
         <span className={`status-pill ${item.active ? 'accepted' : 'cancelled'}`}>{item.active ? adminCopy(lang, 'Attivo', 'Active') : adminCopy(lang, 'Inattivo', 'Inactive')}</span>
       </div>
       {editing ? (
@@ -10901,10 +11000,12 @@ function MonthlyLeafletCard({ item, lang, userId, onChanged }) {
           <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione programma EN', 'Programme description EN')}</span><textarea value={form.description_en} onChange={(event) => setForm((current) => ({ ...current, description_en: event.target.value }))} rows={4} /></label>
           <label className="admin-field full"><span>{adminCopy(lang, 'Note programma IT', 'Programme notes IT')}</span><textarea value={form.notes_it} onChange={(event) => setForm((current) => ({ ...current, notes_it: event.target.value }))} rows={2} /></label>
           <label className="admin-field full"><span>{adminCopy(lang, 'Note programma EN', 'Programme notes EN')}</span><textarea value={form.notes_en} onChange={(event) => setForm((current) => ({ ...current, notes_en: event.target.value }))} rows={2} /></label>
-          <label className="admin-field full"><span>{adminCopy(lang, 'Sostituisci file calendario / leaflet', 'Replace calendar / leaflet file')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => setForm((current) => ({ ...current, file: event.target.files?.[0] || null, removeFile: false }))} /></label>
-          {form.file_url && !form.removeFile && <p className="small-note full"><a href={form.file_url} target="_blank" rel="noopener noreferrer">{form.file_name || adminCopy(lang, 'File esistente', 'Existing file')}</a> <button type="button" className="inline-danger-button" onClick={() => setForm((current) => ({ ...current, removeFile: true, file: null }))}>{adminCopy(lang, 'Rimuovi file', 'Remove file')}</button></p>}
-          {form.file && <p className="small-note full">{adminCopy(lang, 'Nuovo file', 'New file')}: {form.file.name}</p>}
-          {form.removeFile && <p className="small-note full">{adminCopy(lang, 'Il file verrà rimosso al salvataggio.', 'The file will be removed on save.')}</p>}
+          <label className="admin-field full"><span>{adminCopy(lang, 'Sostituisci volantino italiano', 'Replace Italian leaflet')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => setForm((current) => ({ ...current, file_it: event.target.files?.[0] || null }))} /></label>
+          {form.leaflet_file_url_it && <p className="small-note full"><a href={form.leaflet_file_url_it} target="_blank" rel="noopener noreferrer">{form.leaflet_file_name_it || adminCopy(lang, 'Volantino italiano esistente', 'Existing Italian leaflet')}</a></p>}
+          {form.file_it && <p className="small-note full">{adminCopy(lang, 'Nuovo file italiano', 'New Italian file')}: {form.file_it.name}</p>}
+          <label className="admin-field full"><span>{adminCopy(lang, 'Sostituisci volantino inglese', 'Replace English leaflet')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => setForm((current) => ({ ...current, file_en: event.target.files?.[0] || null }))} /></label>
+          {form.leaflet_file_url_en && <p className="small-note full"><a href={form.leaflet_file_url_en} target="_blank" rel="noopener noreferrer">{form.leaflet_file_name_en || adminCopy(lang, 'Volantino inglese esistente', 'Existing English leaflet')}</a></p>}
+          {form.file_en && <p className="small-note full">{adminCopy(lang, 'Nuovo file inglese', 'New English file')}: {form.file_en.name}</p>}
           <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> {adminCopy(lang, 'Attivo', 'Active')}</label>
           {error && <div className="admin-alert error full">{error}</div>}
           <div className="modal-actions full"><button className="button primary" type="button" onClick={save}>{adminCopy(lang, 'Salva programma mensile', 'Save monthly programme')}</button><button className="button secondary" type="button" onClick={() => setEditing(false)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
@@ -10912,12 +11013,14 @@ function MonthlyLeafletCard({ item, lang, userId, onChanged }) {
       ) : (
         <>
           {(description || notes) && <div className="monthly-program-admin-preview">{description && <p>{description}</p>}{notes && <p className="small-note">{notes}</p>}</div>}
-          {item.file_url && (isImage ? <img className="admin-card-preview-image" src={item.file_url} alt={leafletLabel(item, lang)} loading="lazy" /> : <a className="button secondary" href={item.file_url} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri PDF / file', 'Open PDF / file')}</a>)}
+          <div className="bilingual-leaflet-admin-list">
+            {italianFile?.file_url && <a className="button secondary" href={italianFile.file_url} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri volantino IT', 'Open IT leaflet')}</a>}
+            {englishFile?.file_url && <a className="button secondary" href={englishFile.file_url} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri volantino EN', 'Open EN leaflet')}</a>}
+          </div>
           <p className="small-note">{adminCopy(lang, 'Collega le singole date usando il campo calendario mensile nel form escursione fissa.', 'Link individual dates through the monthly leaflet field in the fixed excursion form.')}</p>
           {error && <div className="admin-alert error">{error}</div>}
           <div className="request-actions">
             <button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
-            {item.file_url && <a className="button secondary" href={item.file_url} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri file', 'Open file')}</a>}
             {item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}
           </div>
         </>
@@ -10947,16 +11050,22 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
     difficulty_en: item.difficulty_en || '',
     price_note_it: item.price_note_it || '',
     price_note_en: item.price_note_en || '',
-    blockedDatesFile: null,
-    blocked_dates_file_url: item.blocked_dates_file_url || '',
-    blocked_dates_file_name: item.blocked_dates_file_name || '',
-    blocked_dates_file_type: item.blocked_dates_file_type || '',
-    blocked_dates_file_path: item.blocked_dates_file_path || '',
-    removeBlockedDatesFile: false,
+    leafletFileIt: null,
+    leafletFileEn: null,
+    leaflet_file_url_it: item.leaflet_file_url_it || item.blocked_dates_file_url || '',
+    leaflet_file_path_it: item.leaflet_file_path_it || item.blocked_dates_file_path || '',
+    leaflet_file_name_it: item.leaflet_file_name_it || item.blocked_dates_file_name || '',
+    leaflet_file_type_it: item.leaflet_file_type_it || item.blocked_dates_file_type || '',
+    leaflet_file_url_en: item.leaflet_file_url_en || '',
+    leaflet_file_path_en: item.leaflet_file_path_en || '',
+    leaflet_file_name_en: item.leaflet_file_name_en || '',
+    leaflet_file_type_en: item.leaflet_file_type_en || '',
     capacity: String(item.capacity || 12),
     active: item.active !== false
   });
   const [error, setError] = useState('');
+  const italianFile = fixedExcursionLeafletFile(item, 'it');
+  const englishFile = fixedExcursionLeafletFile(item, 'en');
 
   async function save() {
     setError('');
@@ -10968,17 +11077,38 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
       setError(adminCopy(lang, 'Inserisci almeno un titolo in italiano o inglese.', 'Enter at least one Italian or English title.'));
       return;
     }
+    const hasItalian = Boolean(form.leafletFileIt || form.leaflet_file_url_it);
+    const hasEnglish = Boolean(form.leafletFileEn || form.leaflet_file_url_en);
+    if (!hasItalian || !hasEnglish) {
+      setError(adminCopy(lang, 'Carica il volantino italiano e il volantino inglese per questa escursione fissa.', 'Upload both the Italian and English leaflet for this fixed excursion.'));
+      return;
+    }
     try {
-      let filePayload = {};
-      if (form.blockedDatesFile) {
-        filePayload = await uploadBlockedDatesFile(form.blockedDatesFile, userId);
-        if (item.blocked_dates_file_path) await removeBlockedDatesFile(item.blocked_dates_file_path);
-      } else if (form.removeBlockedDatesFile) {
-        if (item.blocked_dates_file_path) await removeBlockedDatesFile(item.blocked_dates_file_path);
-        filePayload = { blocked_dates_file_url: null, blocked_dates_file_name: null, blocked_dates_file_type: null, blocked_dates_file_path: null };
+      let filePayloadIt = {};
+      let filePayloadEn = {};
+      if (form.leafletFileIt) {
+        filePayloadIt = await uploadFixedExcursionLeafletFile(form.leafletFileIt, userId, 'it');
+        if (item.leaflet_file_path_it || item.blocked_dates_file_path) await removeBlockedDatesFile(item.leaflet_file_path_it || item.blocked_dates_file_path);
       }
-      const { blockedDatesFile, removeBlockedDatesFile: removeFileFlag, ...fixedPayload } = form;
-      await updateFixedExcursion(item.id, { ...fixedPayload, ...filePayload, updated_by: userId });
+      if (form.leafletFileEn) {
+        filePayloadEn = await uploadFixedExcursionLeafletFile(form.leafletFileEn, userId, 'en');
+        if (item.leaflet_file_path_en) await removeBlockedDatesFile(item.leaflet_file_path_en);
+      }
+      const { leafletFileIt, leafletFileEn, ...fixedPayload } = form;
+      const nextItUrl = filePayloadIt.leaflet_file_url_it || fixedPayload.leaflet_file_url_it;
+      const nextItPath = filePayloadIt.leaflet_file_path_it || fixedPayload.leaflet_file_path_it;
+      const nextItName = filePayloadIt.leaflet_file_name_it || fixedPayload.leaflet_file_name_it;
+      const nextItType = filePayloadIt.leaflet_file_type_it || fixedPayload.leaflet_file_type_it;
+      await updateFixedExcursion(item.id, {
+        ...fixedPayload,
+        ...filePayloadIt,
+        ...filePayloadEn,
+        blocked_dates_file_url: nextItUrl,
+        blocked_dates_file_path: nextItPath,
+        blocked_dates_file_name: nextItName,
+        blocked_dates_file_type: nextItType,
+        updated_by: userId
+      });
       setEditing(false);
       onChanged(adminCopy(lang, 'Escursione fissa aggiornata.', 'Fixed excursion updated.'));
     } catch (err) {
@@ -11022,10 +11152,12 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
           <AdminInput label="Difficulty EN" value={form.difficulty_en} onChange={(value) => setForm((current) => ({ ...current, difficulty_en: value }))} />
           <AdminInput label="Price note IT" value={form.price_note_it} onChange={(value) => setForm((current) => ({ ...current, price_note_it: value }))} />
           <AdminInput label="Price note EN" value={form.price_note_en} onChange={(value) => setForm((current) => ({ ...current, price_note_en: value }))} />
-          <label className="admin-field full"><span>{adminCopy(lang, 'File calendario date occupate', 'Blocked dates calendar file')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => setForm((current) => ({ ...current, blockedDatesFile: event.target.files?.[0] || null, removeBlockedDatesFile: false }))} /></label>
-          {form.blocked_dates_file_url && !form.removeBlockedDatesFile && <p className="small-note full"><a href={form.blocked_dates_file_url} target="_blank" rel="noopener noreferrer">{form.blocked_dates_file_name || adminCopy(lang, 'File esistente', 'Existing file')}</a> <button type="button" className="inline-danger-button" onClick={() => setForm((current) => ({ ...current, removeBlockedDatesFile: true, blockedDatesFile: null }))}>{adminCopy(lang, 'Rimuovi file', 'Remove file')}</button></p>}
-          {form.blockedDatesFile && <p className="small-note full">{adminCopy(lang, 'Nuovo file', 'New file')}: {form.blockedDatesFile.name}</p>}
-          {form.removeBlockedDatesFile && <p className="small-note full">{adminCopy(lang, 'Il file verrà rimosso al salvataggio.', 'The file will be removed on save.')}</p>}
+          <label className="admin-field full"><span>{adminCopy(lang, 'Sostituisci volantino italiano', 'Replace Italian leaflet')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => setForm((current) => ({ ...current, leafletFileIt: event.target.files?.[0] || null }))} /></label>
+          {form.leaflet_file_url_it && <p className="small-note full"><a href={form.leaflet_file_url_it} target="_blank" rel="noopener noreferrer">{form.leaflet_file_name_it || adminCopy(lang, 'Volantino italiano esistente', 'Existing Italian leaflet')}</a></p>}
+          {form.leafletFileIt && <p className="small-note full">{adminCopy(lang, 'Nuovo file italiano', 'New Italian file')}: {form.leafletFileIt.name}</p>}
+          <label className="admin-field full"><span>{adminCopy(lang, 'Sostituisci volantino inglese', 'Replace English leaflet')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => setForm((current) => ({ ...current, leafletFileEn: event.target.files?.[0] || null }))} /></label>
+          {form.leaflet_file_url_en && <p className="small-note full"><a href={form.leaflet_file_url_en} target="_blank" rel="noopener noreferrer">{form.leaflet_file_name_en || adminCopy(lang, 'Volantino inglese esistente', 'Existing English leaflet')}</a></p>}
+          {form.leafletFileEn && <p className="small-note full">{adminCopy(lang, 'Nuovo file inglese', 'New English file')}: {form.leafletFileEn.name}</p>}
           <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
           {error && <div className="admin-alert error full">{error}</div>}
           <div className="modal-actions full"><button className="button primary" type="button" onClick={save}>{adminCopy(lang, 'Salva', 'Save')}</button><button className="button secondary" type="button" onClick={() => setEditing(false)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
@@ -11038,7 +11170,11 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
             <div><dt>{adminCopy(lang, 'Posti residui', 'Remaining')}</dt><dd>{item.places_remaining}</dd></div>
             <div><dt>{adminCopy(lang, 'Aggiornata', 'Updated')}</dt><dd>{formatDateForMessage(String(item.updated_at || item.created_at || '').slice(0, 10), lang) || '-'}</dd></div>
           </dl>
-          {item.blocked_dates_file_url && <BlockedDatesAttachment item={item} lang={lang} publicView={false} />}
+          <div className="bilingual-leaflet-admin-list">
+            {italianFile?.file_url && <a className="button secondary" href={italianFile.file_url} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri volantino IT', 'Open IT leaflet')}</a>}
+            {englishFile?.file_url && <a className="button secondary" href={englishFile.file_url} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri volantino EN', 'Open EN leaflet')}</a>}
+          </div>
+          <BlockedDatesAttachment item={item} lang={lang} publicView={false} />
           {(item.program_it || item.program_en || item.description_it || item.description_en || item.note_it || item.note_en) && <p>{fixedExcursionProgram(item, lang) || fixedExcursionField(item, 'description', lang) || (lang === 'it' ? item.note_it || item.note_en : item.note_en || item.note_it)}</p>}
           {error && <div className="admin-alert error">{error}</div>}
           <div className="request-actions"><button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>{item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}</div>
