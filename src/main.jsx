@@ -226,7 +226,7 @@ const i18n = {
   it: {
     languageLabel: 'Italiano',
     switchLabel: 'EN',
-    nav: ['Inizio', 'Escursioni', 'Collaborazioni', 'Chi siamo', 'Recensioni', 'Contattaci'],
+    nav: ['Inizio', 'Escursioni', 'Collaborazioni', 'Chi siamo', 'Recensioni', 'Social', 'Ultime notizie', 'Contattaci'],
     contact: 'Contattaci',
     heroKicker: '',
     heroTitle: "L'Etna non è solo uno scenario.",
@@ -484,7 +484,7 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
   en: {
     languageLabel: 'English',
     switchLabel: 'IT',
-    nav: ['Home', 'Excursions', 'Partnerships', 'Who we are', 'Reviews', 'Contact us'],
+    nav: ['Home', 'Excursions', 'Partnerships', 'Who we are', 'Reviews', 'Social', 'Latest news', 'Contact us'],
     contact: 'Contact us',
     heroKicker: '',
     heroTitle: 'Mount Etna is not just a backdrop.',
@@ -1926,7 +1926,7 @@ function BrandLogo({ compact = false, siteMedia, editor }) {
   );
 }
 
-const publicPages = ['home', 'experiences', 'partnerships', 'about', 'reviews', 'contact'];
+const publicPages = ['home', 'experiences', 'partnerships', 'about', 'reviews', 'social', 'latestNews', 'contact'];
 function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor }) {
   const [open, setOpen] = useState(false);
   const switchLanguage = () => setLang(lang === 'it' ? 'en' : 'it');
@@ -3956,6 +3956,47 @@ function LatestNewsCard({ lang, siteContent, editor }) {
   );
 }
 
+function SocialPage({ lang, siteContent, editor }) {
+  const links = resolveSocialLinks(editor?.contentMap || siteContent || {});
+  return (
+    <section className="section page-section social-page-section" id="social">
+      <div className="container social-page-card">
+        <div className="section-header refined-section-header">
+          <span className="kicker">{adminCopy(lang, 'Social', 'Social')}</span>
+          <h2>{adminCopy(lang, 'Pagine social vulcanIQ', 'vulcanIQ social pages')}</h2>
+          <p>{adminCopy(lang, 'Segui vulcanIQ sui canali ufficiali.', 'Follow vulcanIQ on the official channels.')}</p>
+        </div>
+        {links.length ? (
+          <SocialLinks lang={lang} siteContent={editor?.contentMap || siteContent} className="social-page-links" />
+        ) : (
+          <article className="empty-state-card">
+            <p>{adminCopy(lang, 'Nessun social configurato al momento.', 'No social links are configured yet.')}</p>
+          </article>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function LatestNewsPage({ lang, siteContent, editor }) {
+  const settings = resolveLatestNewsSettings(editor?.contentMap || siteContent || {}, lang);
+  return (
+    <section className="section page-section latest-news-page-section" id="latest-news">
+      {settings.shouldRender || editor?.isEditing ? (
+        <LatestNewsCard lang={lang} siteContent={siteContent} editor={editor} />
+      ) : (
+        <div className="container">
+          <article className="empty-state-card">
+            <span className="kicker">{adminCopy(lang, 'Ultime notizie', 'Latest news')}</span>
+            <h2>{adminCopy(lang, 'Nessun link configurato', 'No latest-news link configured')}</h2>
+            <p>{adminCopy(lang, 'Le ultime notizie saranno disponibili appena verrà configurato il link.', 'Latest news will be available once the link is configured.')}</p>
+          </article>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function FinalCTA({ lang, siteContent }) {
   return (
     <section className="section final-cta">
@@ -5097,6 +5138,8 @@ const EDITOR_PAGE_OPTIONS = [
   { key: 'partnerships', it: 'Collaborazioni', en: 'Partnerships' },
   { key: 'about', it: 'Chi siamo', en: 'Who we are' },
   { key: 'reviews', it: 'Recensioni', en: 'Reviews' },
+  { key: 'social', it: 'Social', en: 'Social' },
+  { key: 'latestNews', it: 'Ultime notizie', en: 'Latest news' },
   { key: 'contact', it: 'Contatti', en: 'Contact' }
 ];
 
@@ -5795,14 +5838,15 @@ function VisualEditorPreview({ page, setPage, lang, setLang, device, siteMedia, 
         return <Team lang={lang} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
       case 'reviews':
         return <ReviewsPage lang={lang} siteContent={siteContent} editor={editor} />;
+      case 'social':
+        return <SocialPage lang={lang} siteContent={siteContent} editor={editor} />;
+      case 'latestNews':
+        return <LatestNewsPage lang={lang} siteContent={siteContent} editor={editor} />;
       case 'contact':
         return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
       case 'home':
       default:
-        return <>
-          <Hero lang={lang} setActivePage={setPage} scrollToForm={disabledActionNotice} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />
-          <LatestNewsCard lang={lang} siteContent={siteContent} editor={editor} />
-        </>;
+        return <Hero lang={lang} setActivePage={setPage} scrollToForm={disabledActionNotice} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
     }
   }
 
@@ -11009,14 +11053,15 @@ function App() {
         return <Team lang={lang} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'reviews':
         return <ReviewsPage lang={lang} siteContent={siteContent} />;
+      case 'social':
+        return <SocialPage lang={lang} siteContent={siteContent} />;
+      case 'latestNews':
+        return <LatestNewsPage lang={lang} siteContent={siteContent} />;
       case 'contact':
         return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'home':
       default:
-        return <>
-          <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} siteMedia={siteMedia} siteContent={siteContent} />
-          <LatestNewsCard lang={lang} siteContent={siteContent} />
-        </>;
+        return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} siteMedia={siteMedia} siteContent={siteContent} />;
     }
   }
 
