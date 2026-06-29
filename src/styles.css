@@ -8947,3 +8947,54 @@ body.modal-scroll-lock {
     font-size: clamp(0.78rem, 0.78vw, 0.91rem);
   }
 }
+
+/* Targeted patch: scheduled excursion meeting point as explicit Maps button */
+.meeting-point-card__button {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  margin-top: 4px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+  font-weight: 900;
+  line-height: 1.25;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.meeting-point-card__button:hover,
+.meeting-point-card__button:focus-visible {
+  border-color: rgba(255, 129, 96, 0.55);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  outline: none;
+}
+
+.monthly-program-copy {
+  width: min(100%, 860px);
+  padding: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.monthly-program-copy + .leaflet-fullscreen-image,
+.monthly-program-copy + .leaflet-fullscreen-frame {
+  margin-top: 18px;
+}
+
+.monthly-program-notes,
+.monthly-program-admin-preview .small-note {
+  color: var(--ash);
+  font-weight: 800;
+}
+
+.monthly-program-admin-preview {
+  display: grid;
+  gap: 8px;
+}

@@ -3,10 +3,14 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 
 const FIXED_EXCURSION_FILE_BUCKET = 'vulcaniq-public-assets';
 
-const PUBLIC_FIXED_EXCURSION_COLUMNS = 'id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, meeting_point_maps_url, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, accepted_count, places_remaining';
+const PUBLIC_FIXED_EXCURSION_COLUMNS = 'id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, program_it, program_en, meeting_point_it, meeting_point_en, meeting_point_maps_url, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, accepted_count, places_remaining';
 const PUBLIC_FIXED_EXCURSION_FALLBACK_COLUMNS = 'id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, accepted_count, places_remaining';
-const ADMIN_FIXED_EXCURSION_COLUMNS = 'id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, meeting_point_maps_url, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, created_by, updated_by';
+const ADMIN_FIXED_EXCURSION_COLUMNS = 'id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, program_it, program_en, meeting_point_it, meeting_point_en, meeting_point_maps_url, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, created_by, updated_by';
 const ADMIN_FIXED_EXCURSION_FALLBACK_COLUMNS = 'id, created_at, updated_at, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, created_by, updated_by';
+const PUBLIC_MONTHLY_LEAFLET_COLUMNS = 'id, month, year, title_it, title_en, description_it, description_en, notes_it, notes_en, file_url, file_type, active';
+const PUBLIC_MONTHLY_LEAFLET_FALLBACK_COLUMNS = 'id, month, year, title_it, title_en, file_url, file_type, active';
+const ADMIN_MONTHLY_LEAFLET_COLUMNS = 'id, created_at, updated_at, month, year, title_it, title_en, description_it, description_en, notes_it, notes_en, file_url, file_path, file_name, file_type, active, created_by, updated_by';
+const ADMIN_MONTHLY_LEAFLET_FALLBACK_COLUMNS = 'id, created_at, updated_at, month, year, title_it, title_en, file_url, file_path, file_name, file_type, active, created_by, updated_by';
 
 function normalizeAvailabilityRow(row) {
   return {
@@ -41,6 +45,8 @@ function normalizeFixedExcursion(row) {
     title_en: row.title_en || '',
     description_it: row.description_it || '',
     description_en: row.description_en || '',
+    program_it: row.program_it || row.description_it || '',
+    program_en: row.program_en || row.description_en || '',
     meeting_point_it: row.meeting_point_it || '',
     meeting_point_en: row.meeting_point_en || '',
     meeting_point_maps_url: row.meeting_point_maps_url || '',
@@ -254,6 +260,8 @@ export async function createFixedExcursion(input) {
     title_en: input.title_en || null,
     description_it: input.description_it || input.note_it || null,
     description_en: input.description_en || input.note_en || null,
+    program_it: input.program_it || input.description_it || input.note_it || null,
+    program_en: input.program_en || input.description_en || input.note_en || null,
     meeting_point_it: input.meeting_point_it || null,
     meeting_point_en: input.meeting_point_en || null,
     meeting_point_maps_url: input.meeting_point_maps_url || null,
@@ -364,6 +372,10 @@ function normalizeMonthlyLeaflet(row) {
     year: row.year,
     title_it: row.title_it || '',
     title_en: row.title_en || '',
+    description_it: row.description_it || '',
+    description_en: row.description_en || '',
+    notes_it: row.notes_it || '',
+    notes_en: row.notes_en || '',
     file_url: row.file_url || '',
     file_path: row.file_path || '',
     file_name: row.file_name || '',
@@ -378,16 +390,22 @@ function normalizeMonthlyLeaflet(row) {
 
 export async function loadPublicMonthlyLeaflets() {
   if (!isSupabaseConfigured) return [];
-  try {
+  async function fetchRows(columns) {
     const { data, error } = await supabase
       .from('public_monthly_availability_leaflets')
-      .select('id, month, year, title_it, title_en, file_url, file_type, active')
+      .select(columns)
       .eq('active', true)
       .order('year', { ascending: false })
       .order('month', { ascending: false });
-
     if (error) throw error;
-    return Array.isArray(data) ? data.map(normalizeMonthlyLeaflet) : [];
+    return data || [];
+  }
+  try {
+    try {
+      return (await fetchRows(PUBLIC_MONTHLY_LEAFLET_COLUMNS)).map(normalizeMonthlyLeaflet);
+    } catch (fullViewError) {
+      return (await fetchRows(PUBLIC_MONTHLY_LEAFLET_FALLBACK_COLUMNS)).map(normalizeMonthlyLeaflet);
+    }
   } catch (error) {
     console.warn('Supabase public monthly leaflets unavailable.', error?.message || error);
     return [];
@@ -397,15 +415,19 @@ export async function loadPublicMonthlyLeaflets() {
 export async function listMonthlyLeaflets({ activeOnly = false } = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
-  let query = supabase
-    .from('monthly_availability_leaflets')
-    .select('id, created_at, updated_at, month, year, title_it, title_en, file_url, file_path, file_name, file_type, active, created_by, updated_by')
-    .order('year', { ascending: false })
-    .order('month', { ascending: false });
+  function buildQuery(columns) {
+    let query = supabase
+      .from('monthly_availability_leaflets')
+      .select(columns)
+      .order('year', { ascending: false })
+      .order('month', { ascending: false });
 
-  if (activeOnly) query = query.eq('active', true);
+    if (activeOnly) query = query.eq('active', true);
+    return query;
+  }
 
-  const { data, error } = await query;
+  let { data, error } = await buildQuery(ADMIN_MONTHLY_LEAFLET_COLUMNS);
+  if (error) ({ data, error } = await buildQuery(ADMIN_MONTHLY_LEAFLET_FALLBACK_COLUMNS));
   if (error) throw error;
   return Array.isArray(data) ? data.map(normalizeMonthlyLeaflet) : [];
 }
@@ -417,6 +439,10 @@ export async function createMonthlyLeaflet(input) {
     year: Number.parseInt(input.year, 10),
     title_it: input.title_it || null,
     title_en: input.title_en || null,
+    description_it: input.description_it || null,
+    description_en: input.description_en || null,
+    notes_it: input.notes_it || null,
+    notes_en: input.notes_en || null,
     file_url: input.file_url || null,
     file_path: input.file_path || null,
     file_name: input.file_name || null,

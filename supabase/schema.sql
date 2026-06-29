@@ -657,6 +657,10 @@ create table if not exists public.monthly_availability_leaflets (
   year integer not null,
   title_it text,
   title_en text,
+  description_it text,
+  description_en text,
+  notes_it text,
+  notes_en text,
   file_url text,
   file_path text,
   file_name text,
@@ -668,6 +672,11 @@ create table if not exists public.monthly_availability_leaflets (
   constraint monthly_availability_leaflets_year_check check (year between 2024 and 2100),
   constraint monthly_availability_leaflets_file_url_check check (file_url is null or file_url ~* '^https?://')
 );
+
+alter table public.monthly_availability_leaflets add column if not exists description_it text;
+alter table public.monthly_availability_leaflets add column if not exists description_en text;
+alter table public.monthly_availability_leaflets add column if not exists notes_it text;
+alter table public.monthly_availability_leaflets add column if not exists notes_en text;
 
 create index if not exists monthly_availability_leaflets_month_year_idx on public.monthly_availability_leaflets(year, month);
 create index if not exists monthly_availability_leaflets_active_idx on public.monthly_availability_leaflets(active);
@@ -692,6 +701,8 @@ create table if not exists public.fixed_excursions (
   title_en text,
   description_it text,
   description_en text,
+  program_it text,
+  program_en text,
   meeting_point_it text,
   meeting_point_en text,
   meeting_point_maps_url text,
@@ -718,6 +729,8 @@ alter table public.fixed_excursions add column if not exists title_it text;
 alter table public.fixed_excursions add column if not exists title_en text;
 alter table public.fixed_excursions add column if not exists description_it text;
 alter table public.fixed_excursions add column if not exists description_en text;
+alter table public.fixed_excursions add column if not exists program_it text;
+alter table public.fixed_excursions add column if not exists program_en text;
 alter table public.fixed_excursions add column if not exists meeting_point_it text;
 alter table public.fixed_excursions add column if not exists meeting_point_en text;
 alter table public.fixed_excursions add column if not exists meeting_point_maps_url text;
@@ -1119,6 +1132,8 @@ select
   fe.title_en,
   fe.description_it,
   fe.description_en,
+  fe.program_it,
+  fe.program_en,
   fe.meeting_point_it,
   fe.meeting_point_en,
   fe.meeting_point_maps_url,
@@ -1159,12 +1174,15 @@ select
   year,
   title_it,
   title_en,
+  description_it,
+  description_en,
+  notes_it,
+  notes_en,
   file_url,
   file_type,
   active
 from public.monthly_availability_leaflets
-where active = true
-  and file_url is not null;
+where active = true;
 
 drop view if exists public.public_partnerships;
 create view public.public_partnerships as

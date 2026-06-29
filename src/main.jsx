@@ -1551,9 +1551,30 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
   return sections.filter(Boolean).join('\n\n');
 }
 
-function fixedExcursionField(item, field, lang) {
+function localizedContentField(item, field, lang, legacyFields = []) {
   if (!item) return '';
-  return item[`${field}_${lang}`] || item[`${field}_${lang === 'it' ? 'en' : 'it'}`] || '';
+  const selected = String(item[`${field}_${lang}`] || '').trim();
+  if (hasMessageValue(selected)) return selected;
+  const fallbackLang = lang === 'it' ? 'en' : 'it';
+  const fallback = String(item[`${field}_${fallbackLang}`] || '').trim();
+  if (hasMessageValue(fallback)) return fallback;
+  const fields = [field, ...legacyFields];
+  for (const legacyField of fields) {
+    const value = String(item[legacyField] || '').trim();
+    if (hasMessageValue(value)) return value;
+  }
+  return '';
+}
+
+function fixedExcursionField(item, field, lang) {
+  const legacyFields = field === 'description'
+    ? [`note_${lang}`, `note_${lang === 'it' ? 'en' : 'it'}`, 'note']
+    : [];
+  return localizedContentField(item, field, lang, legacyFields);
+}
+
+function fixedExcursionProgram(item, lang) {
+  return fixedExcursionField(item, 'program', lang) || fixedExcursionField(item, 'description', lang);
 }
 
 function fixedExcursionTitle(item, lang) {
@@ -1569,9 +1590,59 @@ function fixedExcursionLabel(item, lang) {
   return `${date}${time} · ${fixedExcursionTitle(item, lang)}`;
 }
 
+function monthlyLeafletField(leaflet, field, lang) {
+  return localizedContentField(leaflet, field, lang, field === 'title' ? ['file_name'] : []);
+}
+
 function leafletTitle(leaflet, lang) {
   if (!leaflet) return '';
-  return (lang === 'it' ? leaflet.title_it || leaflet.title_en : leaflet.title_en || leaflet.title_it) || leaflet.file_name || text(lang, 'openProgram');
+  return monthlyLeafletField(leaflet, 'title', lang) || text(lang, 'openProgram');
+}
+
+function hasLeafletFile(leaflet) {
+  return Boolean(String(leaflet?.file_url || '').trim());
+}
+
+function hasMonthlyLeafletContent(leaflet) {
+  return Boolean(leaflet && (
+    hasLeafletFile(leaflet) ||
+    monthlyLeafletField(leaflet, 'title', 'it') ||
+    monthlyLeafletField(leaflet, 'title', 'en') ||
+    monthlyLeafletField(leaflet, 'description', 'it') ||
+    monthlyLeafletField(leaflet, 'description', 'en') ||
+    monthlyLeafletField(leaflet, 'notes', 'it') ||
+    monthlyLeafletField(leaflet, 'notes', 'en')
+  ));
+}
+
+function isLeafletImage(leaflet) {
+  const url = String(leaflet?.file_url || '');
+  return String(leaflet?.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(url);
+}
+
+function MonthlyProgramContent({ leaflet, lang, label }) {
+  const description = monthlyLeafletField(leaflet, 'description', lang);
+  const notes = monthlyLeafletField(leaflet, 'notes', lang);
+  const fileUrl = String(leaflet?.file_url || '').trim();
+  return (
+    <div className="leaflet-fullscreen-body">
+      {(description || notes) && (
+        <div className="monthly-program-copy">
+          {description && <FormattedDescription textValue={description} />}
+          {notes && <p className="monthly-program-notes">{notes}</p>}
+        </div>
+      )}
+      {fileUrl ? (
+        isLeafletImage(leaflet) ? (
+          <img className="leaflet-fullscreen-image" src={fileUrl} alt={label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
+        ) : (
+          <iframe className="leaflet-fullscreen-frame" src={fileUrl} title={label || text(lang, 'openProgram')} />
+        )
+      ) : (
+        !description && !notes ? <p className="small-note">{text(lang, 'noFixedExcursionLeaflets')}</p> : null
+      )}
+    </div>
+  );
 }
 
 function sameCalendarMonth(value, monthDate) {
@@ -1607,7 +1678,7 @@ function monthlyOptionsLeaflets({ leaflets = [], fixedExcursions = [], monthDate
   }
 
   leaflets
-    .filter((leaflet) => leaflet.file_url && Number(leaflet.month) === month && Number(leaflet.year) === year)
+    .filter((leaflet) => hasMonthlyLeafletContent(leaflet) && Number(leaflet.month) === month && Number(leaflet.year) === year)
     .forEach((leaflet) => addOption({
       id: `monthly-${leaflet.id}`,
       kind: 'monthly_leaflet',
@@ -1617,7 +1688,7 @@ function monthlyOptionsLeaflets({ leaflets = [], fixedExcursions = [], monthDate
     }));
 
   leaflets
-    .filter((leaflet) => leaflet.file_url && linkedIds.has(leaflet.id))
+    .filter((leaflet) => hasMonthlyLeafletContent(leaflet) && linkedIds.has(leaflet.id))
     .forEach((leaflet) => addOption({
       id: `linked-${leaflet.id}`,
       kind: 'linked_leaflet',
@@ -1669,17 +1740,39 @@ function MeetingPointDetailCard({ item, lang }) {
   const meeting = fixedExcursionField(item, 'meeting_point', lang);
   if (!meeting) return null;
   const mapsUrl = normalizeGoogleMapsUrl(item?.meeting_point_maps_url);
-  const label = mapsUrl ? text(lang, 'meetingPointDirections') : text(lang, 'meetingPoint');
   const ariaLabel = lang === 'it'
     ? `Apri indicazioni Google Maps per ${meeting}`
     : `Open Google Maps directions to ${meeting}`;
+  const trackingContext = buildBookingTrackingContext({
+    experienceId: item?.experience_id || '',
+    requestType: 'fixed',
+    sourceSection: 'calendar',
+    sourceCta: 'google_maps_direct',
+    ctaLocation: 'scheduled_excursion_detail',
+    selectedDate: item?.date || '',
+    hasFixedExcursion: true,
+    language: lang
+  });
+
+  function handleMapsClick() {
+    trackMapsClick('scheduled_excursion_detail', trackingContext);
+    trackEvent('meeting_point_maps_click', {
+      ...trackingContext,
+      fixed_excursion_id: item?.id || '',
+      experience_name: fixedExcursionTitle(item, lang),
+      meeting_point_url: mapsUrl
+    }, { dedupe: false, transport: 'beacon' });
+  }
 
   return (
     <div className={`meeting-point-card ${mapsUrl ? 'is-clickable' : ''}`.trim()}>
-      <dt>{label}</dt>
-      <dd>{meeting}</dd>
+      <dt>{text(lang, 'meetingPoint')}</dt>
+      <dd>
+        {mapsUrl ? (
+          <a className="meeting-point-card__button" href={mapsUrl} target="_blank" rel="noopener noreferrer" aria-label={ariaLabel} onClick={handleMapsClick}>{meeting}</a>
+        ) : meeting}
+      </dd>
       {mapsUrl && <span className="meeting-point-card__hint">{text(lang, 'meetingPointDirectionsHint')}</span>}
-      {mapsUrl && <a className="meeting-point-card__hit" href={mapsUrl} target="_blank" rel="noopener noreferrer" aria-label={ariaLabel} onClick={() => trackMapsClick('meeting_point_card', buildBookingTrackingContext({ experienceId: item?.experience_id || '', requestType: 'fixed', sourceSection: 'calendar', sourceCta: 'google_maps_direct', ctaLocation: 'calendar_modal', selectedDate: item?.date || '', hasFixedExcursion: true, language: lang }))}><span className="sr-only">{ariaLabel}</span></a>}
     </div>
   );
 }
@@ -2049,11 +2142,6 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         const rows = fixedRows || [];
         setItems(rows);
         setLeaflets(leafletRows || []);
-        const first = rows.find((item) => item.date >= todayIso());
-        if (first) {
-          setSelectedDate(first.date);
-          setMonthDate(startOfMonth(new Date(`${first.date}T12:00:00`)));
-        }
       })
       .catch(() => {
         if (!active) return;
@@ -2081,10 +2169,10 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
   const days = useMemo(() => getCalendarDays(monthDate), [monthDate]);
   const byDate = useMemo(() => getItemsByDate(items), [items]);
   const selectedItems = byDate[selectedDate] || [];
-  const visibleMonthLeaflet = useMemo(() => leaflets.find((leaflet) => Number(leaflet.month) === monthDate.getMonth() + 1 && Number(leaflet.year) === monthDate.getFullYear() && leaflet.file_url), [leaflets, monthDate]);
+  const visibleMonthLeaflet = useMemo(() => leaflets.find((leaflet) => Number(leaflet.month) === monthDate.getMonth() + 1 && Number(leaflet.year) === monthDate.getFullYear() && hasMonthlyLeafletContent(leaflet)), [leaflets, monthDate]);
   const selectedDateLeaflet = useMemo(() => {
     const linkedId = selectedItems.find((item) => item.leaflet_id)?.leaflet_id;
-    return linkedId ? leaflets.find((leaflet) => leaflet.id === linkedId && leaflet.file_url) : null;
+    return linkedId ? leaflets.find((leaflet) => leaflet.id === linkedId && hasMonthlyLeafletContent(leaflet)) : null;
   }, [leaflets, selectedItems]);
   const trackedExperienceCardsRef = useRef(new Set());
 
@@ -2196,13 +2284,13 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
   }
 
   function openLeafletModal(leaflet, label) {
-    if (!leaflet?.file_url) return;
+    if (!hasMonthlyLeafletContent(leaflet)) return;
     setActiveLeaflet({ leaflet, label });
   }
 
   function renderDateModalFixedDetails(item) {
     const title = fixedExcursionTitle(item, lang);
-    const description = fixedExcursionField(item, 'description', lang) || item[`note_${lang}`] || item.note_it || item.note_en || '';
+    const description = fixedExcursionProgram(item, lang) || item[`note_${lang}`] || item.note_it || item.note_en || '';
     const meeting = fixedExcursionField(item, 'meeting_point', lang);
     const difficulty = fixedExcursionField(item, 'difficulty', lang);
     const price = fixedExcursionField(item, 'price_note', lang);
@@ -2389,13 +2477,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
               <h2>{renderedLeaflet.label || text(lang, 'openProgram')}</h2>
               <button className="date-modal-close" type="button" onClick={() => setActiveLeaflet(null)}>{text(lang, 'close')}</button>
             </div>
-            <div className="leaflet-fullscreen-body">
-              {String(renderedLeaflet.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(renderedLeaflet.leaflet.file_url) ? (
-                <img className="leaflet-fullscreen-image" src={renderedLeaflet.leaflet.file_url} alt={renderedLeaflet.label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
-              ) : (
-                <iframe className="leaflet-fullscreen-frame" src={renderedLeaflet.leaflet.file_url} title={renderedLeaflet.label || text(lang, 'openProgram')} />
-              )}
-            </div>
+            <MonthlyProgramContent leaflet={renderedLeaflet.leaflet} lang={lang} label={renderedLeaflet.label || text(lang, 'openProgram')} />
           </article>
         </div>
       )}
@@ -2589,11 +2671,6 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
         if (!active) return;
         const rows = data || [];
         setItems(rows);
-        const first = rows.find((item) => item.date >= todayIso());
-        if (first) {
-          setSelectedDate(first.date);
-          setMonthDate(startOfMonth(new Date(`${first.date}T12:00:00`)));
-        }
       })
       .catch(() => { if (active) setItems([]); })
       .finally(() => { if (active) setLoading(false); });
@@ -2634,7 +2711,7 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
 
   function renderDetails(item) {
     const title = fixedExcursionTitle(item, lang);
-    const description = fixedExcursionField(item, 'description', lang) || item[`note_${lang}`] || item.note_it || item.note_en || '';
+    const description = fixedExcursionProgram(item, lang) || item[`note_${lang}`] || item.note_it || item.note_en || '';
     const meeting = fixedExcursionField(item, 'meeting_point', lang);
     const difficulty = fixedExcursionField(item, 'difficulty', lang);
     const price = fixedExcursionField(item, 'price_note', lang);
@@ -3280,7 +3357,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   }
 
   function openRequestLeaflet(option) {
-    if (!option?.leaflet?.file_url) return;
+    if (!hasMonthlyLeafletContent(option?.leaflet)) return;
     const selectedMonth = monthKey(detailsMonthDate);
     trackEvent('fixed_leaflet_open_from_request', {
       request_type: 'fixed',
@@ -3845,7 +3922,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
             </div>
             <div className="date-modal-content fixed-date-content">
               <article className="date-modal-fixed-card request-fixed-detail-card">
-                <FormattedDescription textValue={fixedExcursionField(renderedFixedExcursionDetails, 'description', lang) || renderedFixedExcursionDetails[`note_${lang}`] || renderedFixedExcursionDetails.note_it || renderedFixedExcursionDetails.note_en || experienceById(renderedFixedExcursionDetails.experience_id).summary[lang]} />
+                <FormattedDescription textValue={fixedExcursionProgram(renderedFixedExcursionDetails, lang) || renderedFixedExcursionDetails[`note_${lang}`] || renderedFixedExcursionDetails.note_it || renderedFixedExcursionDetails.note_en || experienceById(renderedFixedExcursionDetails.experience_id).summary[lang]} />
                 <dl className="public-details-grid date-modal-details-grid">
                   <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(renderedFixedExcursionDetails.date, lang)}</dd></div>
                   <div><dt>{text(lang, 'experienceLabel')}</dt><dd>{adminExperienceLabel(renderedFixedExcursionDetails.experience_id, lang)}</dd></div>
@@ -3895,13 +3972,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
               <h2>{renderedRequestLeaflet.label || text(lang, 'openProgram')}</h2>
               <button className="date-modal-close" type="button" onClick={() => setActiveLeaflet(null)}>{text(lang, 'close')}</button>
             </div>
-            <div className="leaflet-fullscreen-body">
-              {String(renderedRequestLeaflet.leaflet.file_type || '').startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(renderedRequestLeaflet.leaflet.file_url) ? (
-                <img className="leaflet-fullscreen-image" src={renderedRequestLeaflet.leaflet.file_url} alt={renderedRequestLeaflet.label || text(lang, 'openProgram')} loading="lazy" decoding="async" />
-              ) : (
-                <iframe className="leaflet-fullscreen-frame" src={renderedRequestLeaflet.leaflet.file_url} title={renderedRequestLeaflet.label || text(lang, 'openProgram')} />
-              )}
-            </div>
+            <MonthlyProgramContent leaflet={renderedRequestLeaflet.leaflet} lang={lang} label={renderedRequestLeaflet.label || text(lang, 'openProgram')} />
             {renderedRequestLeaflet.fixedExcursion && <button className="request-action-button request-action-button-primary" type="button" onClick={() => { updateFixedExcursion(renderedRequestLeaflet.fixedExcursion.id); setActiveLeaflet(null); setFixedOptionsOpen(false); }}>{text(lang, 'useThisOptionInRequest')}</button>}
           </article>
         </div>
@@ -4667,6 +4738,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   const visibleSections = visibleAdminNavSections(profile);
   const currentNavValue = visibleSections.some((section) => section.path === currentAdminPath) ? currentAdminPath : '/admin/today';
   const isOwner = profile?.role === 'owner' && profile?.active !== false;
+  const isBackupPage = normalizedPath.includes('/system') || normalizedPath.includes('/backup');
 
   const [adminContentRows, setAdminContentRows] = useState([]);
   const [globalBackupProgress, setGlobalBackupProgress] = useState(inactiveBackupProgress);
@@ -4812,7 +4884,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           </span>
         </div>
       </header>
-      {isOwner && (
+      {isOwner && !isBackupPage && (
         <GlobalBackupProgressBanner
           lang={lang}
           progress={globalBackupProgress}
@@ -10510,8 +10582,8 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [form, setForm] = useState({ date: '', experience_id: '', status: 'closed', reason_it: '', reason_en: '', internal_note: '' });
-  const [fixedForm, setFixedForm] = useState({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', leaflet_id: '', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', meeting_point_maps_url: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
-  const [leafletForm, setLeafletForm] = useState({ month: String(new Date().getMonth() + 1), year: String(new Date().getFullYear()), title_it: '', title_en: '', file: null, active: true });
+  const [fixedForm, setFixedForm] = useState({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', leaflet_id: '', title_it: '', title_en: '', description_it: '', description_en: '', program_it: '', program_en: '', meeting_point_it: '', meeting_point_en: '', meeting_point_maps_url: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
+  const [leafletForm, setLeafletForm] = useState({ month: String(new Date().getMonth() + 1), year: String(new Date().getFullYear()), title_it: '', title_en: '', description_it: '', description_en: '', notes_it: '', notes_en: '', file: null, active: true });
 
   async function refresh() {
     setLoading(true);
@@ -10583,7 +10655,7 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
     try {
       const filePayload = fixedForm.blockedDatesFile ? await uploadBlockedDatesFile(fixedForm.blockedDatesFile, session.user.id) : {};
       await createFixedExcursion({ ...fixedForm, ...filePayload, created_by: session.user.id, updated_by: session.user.id });
-      setFixedForm({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', leaflet_id: '', title_it: '', title_en: '', description_it: '', description_en: '', meeting_point_it: '', meeting_point_en: '', meeting_point_maps_url: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
+      setFixedForm({ date: '', start_time: '', end_time: '', experience_id: 'etna-live', leaflet_id: '', title_it: '', title_en: '', description_it: '', description_en: '', program_it: '', program_en: '', meeting_point_it: '', meeting_point_en: '', meeting_point_maps_url: '', difficulty_it: '', difficulty_en: '', price_note_it: '', price_note_en: '', blockedDatesFile: null, blocked_dates_file_url: '', blocked_dates_file_name: '', blocked_dates_file_type: '', blocked_dates_file_path: '', capacity: '12', active: true });
       setFeedback(adminCopy(lang, 'Escursione fissa creata.', 'Fixed excursion created.'));
       refresh();
     } catch (err) {
@@ -10596,14 +10668,19 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
     event.preventDefault();
     setError('');
     setFeedback('');
-    if (!leafletForm.month || !leafletForm.year || !leafletForm.file) {
-      setError(adminCopy(lang, 'Mese, anno e file sono obbligatori.', 'Month, year, and file are required.'));
+    if (!leafletForm.month || !leafletForm.year) {
+      setError(adminCopy(lang, 'Mese e anno sono obbligatori.', 'Month and year are required.'));
+      return;
+    }
+    const hasProgrammeContent = Boolean(leafletForm.file || leafletForm.title_it.trim() || leafletForm.title_en.trim() || leafletForm.description_it.trim() || leafletForm.description_en.trim() || leafletForm.notes_it.trim() || leafletForm.notes_en.trim());
+    if (!hasProgrammeContent) {
+      setError(adminCopy(lang, 'Inserisci almeno un file, un titolo, una descrizione o una nota.', 'Enter at least a file, title, description, or note.'));
       return;
     }
     try {
-      const filePayload = await uploadMonthlyLeafletFile(leafletForm.file, session.user.id);
+      const filePayload = leafletForm.file ? await uploadMonthlyLeafletFile(leafletForm.file, session.user.id) : {};
       await createMonthlyLeaflet({ ...leafletForm, ...filePayload, created_by: session.user.id, updated_by: session.user.id });
-      setLeafletForm({ month: String(new Date().getMonth() + 1), year: String(new Date().getFullYear()), title_it: '', title_en: '', file: null, active: true });
+      setLeafletForm({ month: String(new Date().getMonth() + 1), year: String(new Date().getFullYear()), title_it: '', title_en: '', description_it: '', description_en: '', notes_it: '', notes_en: '', file: null, active: true });
       setFeedback(adminCopy(lang, 'Calendario mensile caricato.', 'Monthly leaflet uploaded.'));
       refresh();
     } catch (err) {
@@ -10665,7 +10742,11 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
               <AdminInput label={adminCopy(lang, 'Anno', 'Year')} type="number" value={leafletForm.year} onChange={(value) => updateLeaflet('year', value)} />
               <AdminInput label="Title IT" value={leafletForm.title_it} onChange={(value) => updateLeaflet('title_it', value)} />
               <AdminInput label="Title EN" value={leafletForm.title_en} onChange={(value) => updateLeaflet('title_en', value)} />
-              <label className="admin-field full"><span>{adminCopy(lang, 'File calendario / leaflet', 'Calendar / leaflet file')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => updateLeaflet('file', event.target.files?.[0] || null)} /></label>
+              <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione programma IT', 'Programme description IT')}</span><textarea value={leafletForm.description_it} onChange={(event) => updateLeaflet('description_it', event.target.value)} rows={4} /></label>
+              <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione programma EN', 'Programme description EN')}</span><textarea value={leafletForm.description_en} onChange={(event) => updateLeaflet('description_en', event.target.value)} rows={4} /></label>
+              <label className="admin-field full"><span>{adminCopy(lang, 'Note programma IT', 'Programme notes IT')}</span><textarea value={leafletForm.notes_it} onChange={(event) => updateLeaflet('notes_it', event.target.value)} rows={2} /></label>
+              <label className="admin-field full"><span>{adminCopy(lang, 'Note programma EN', 'Programme notes EN')}</span><textarea value={leafletForm.notes_en} onChange={(event) => updateLeaflet('notes_en', event.target.value)} rows={2} /></label>
+              <label className="admin-field full"><span>{adminCopy(lang, 'File calendario / leaflet opzionale', 'Optional calendar / leaflet file')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => updateLeaflet('file', event.target.files?.[0] || null)} /></label>
               {leafletForm.file && <p className="small-note full">{adminCopy(lang, 'File selezionato', 'Selected file')}: {leafletForm.file.name}</p>}
               <label className="check-field"><input type="checkbox" checked={leafletForm.active} onChange={(event) => updateLeaflet('active', event.target.checked)} /> {adminCopy(lang, 'Attivo', 'Active')}</label>
               <div className="modal-actions full"><button className="button primary" type="submit">{adminCopy(lang, 'Salva calendario mensile', 'Save monthly leaflet')}</button></div>
@@ -10698,8 +10779,10 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
               <AdminInput label={adminCopy(lang, 'Capienza', 'Capacity')} type="number" value={fixedForm.capacity} onChange={(value) => updateFixed('capacity', value)} />
               <AdminInput label="Title IT" value={fixedForm.title_it} onChange={(value) => updateFixed('title_it', value)} />
               <AdminInput label="Title EN" value={fixedForm.title_en} onChange={(value) => updateFixed('title_en', value)} />
-              <label className="admin-field full"><span>Description IT</span><textarea value={fixedForm.description_it} onChange={(event) => updateFixed('description_it', event.target.value)} rows={3} /></label>
-              <label className="admin-field full"><span>Description EN</span><textarea value={fixedForm.description_en} onChange={(event) => updateFixed('description_en', event.target.value)} rows={3} /></label>
+              <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione breve IT', 'Short description IT')}</span><textarea value={fixedForm.description_it} onChange={(event) => updateFixed('description_it', event.target.value)} rows={3} /></label>
+              <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione breve EN', 'Short description EN')}</span><textarea value={fixedForm.description_en} onChange={(event) => updateFixed('description_en', event.target.value)} rows={3} /></label>
+              <label className="admin-field full"><span>{adminCopy(lang, 'Programma dettagliato IT', 'Detailed programme IT')}</span><textarea value={fixedForm.program_it} onChange={(event) => updateFixed('program_it', event.target.value)} rows={5} /></label>
+              <label className="admin-field full"><span>{adminCopy(lang, 'Programma dettagliato EN', 'Detailed programme EN')}</span><textarea value={fixedForm.program_en} onChange={(event) => updateFixed('program_en', event.target.value)} rows={5} /></label>
               <AdminInput label="Meeting point IT" value={fixedForm.meeting_point_it} onChange={(value) => updateFixed('meeting_point_it', value)} />
               <AdminInput label="Meeting point EN" value={fixedForm.meeting_point_en} onChange={(value) => updateFixed('meeting_point_en', value)} />
               <AdminInput label={adminCopy(lang, 'Link Google Maps del punto d’incontro', 'Google Maps meeting point link')} value={fixedForm.meeting_point_maps_url} placeholder="https://maps.google.com/..." onChange={(value) => updateFixed('meeting_point_maps_url', value)} />
@@ -10734,13 +10817,64 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
 
 function leafletLabel(item, lang) {
   if (!item) return '-';
-  const title = lang === 'it' ? item.title_it || item.title_en : item.title_en || item.title_it;
+  const title = monthlyLeafletField(item, 'title', lang);
   const base = `${String(item.month).padStart(2, '0')}/${item.year}`;
   return title ? `${base} · ${title}` : base;
 }
 
 function MonthlyLeafletCard({ item, lang, userId, onChanged }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    month: String(item.month || new Date().getMonth() + 1),
+    year: String(item.year || new Date().getFullYear()),
+    title_it: item.title_it || '',
+    title_en: item.title_en || '',
+    description_it: item.description_it || '',
+    description_en: item.description_en || '',
+    notes_it: item.notes_it || '',
+    notes_en: item.notes_en || '',
+    file: null,
+    file_url: item.file_url || '',
+    file_path: item.file_path || '',
+    file_name: item.file_name || '',
+    file_type: item.file_type || '',
+    removeFile: false,
+    active: item.active !== false
+  });
   const [error, setError] = useState('');
+  const isImage = item.file_type?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(item.file_url || '');
+  const description = monthlyLeafletField(item, 'description', lang);
+  const notes = monthlyLeafletField(item, 'notes', lang);
+
+  async function save() {
+    setError('');
+    if (!form.month || !form.year) {
+      setError(adminCopy(lang, 'Mese e anno sono obbligatori.', 'Month and year are required.'));
+      return;
+    }
+    const hasProgrammeContent = Boolean(form.file || (!form.removeFile && form.file_url) || form.title_it.trim() || form.title_en.trim() || form.description_it.trim() || form.description_en.trim() || form.notes_it.trim() || form.notes_en.trim());
+    if (!hasProgrammeContent) {
+      setError(adminCopy(lang, 'Inserisci almeno un file, un titolo, una descrizione o una nota.', 'Enter at least a file, title, description, or note.'));
+      return;
+    }
+    try {
+      let filePayload = {};
+      if (form.file) {
+        filePayload = await uploadMonthlyLeafletFile(form.file, userId);
+        if (item.file_path) await removeMonthlyLeafletFile(item.file_path);
+      } else if (form.removeFile) {
+        if (item.file_path) await removeMonthlyLeafletFile(item.file_path);
+        filePayload = { file_url: null, file_path: null, file_name: null, file_type: null };
+      }
+      const { file, removeFile, ...payload } = form;
+      await updateMonthlyLeaflet(item.id, { ...payload, ...filePayload, updated_by: userId });
+      setEditing(false);
+      onChanged(adminCopy(lang, 'Programma mensile aggiornato.', 'Monthly programme updated.'));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Aggiornamento non riuscito.', 'Update failed.'));
+    }
+  }
+
   async function deactivate() {
     setError('');
     try {
@@ -10750,23 +10884,48 @@ function MonthlyLeafletCard({ item, lang, userId, onChanged }) {
       setError(err?.message || adminCopy(lang, 'Disattivazione non riuscita.', 'Deactivate failed.'));
     }
   }
-  const isImage = item.file_type?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(item.file_url || '');
+
   return (
     <article className={`availability-block-card ${item.active ? '' : 'inactive'}`}>
       <div className="request-card-head">
-        <div><h3>{leafletLabel(item, lang)}</h3><p>{item.file_name || '-'}</p></div>
+        <div><h3>{leafletLabel(item, lang)}</h3><p>{item.file_name || adminCopy(lang, 'Programma testuale', 'Text programme')}</p></div>
         <span className={`status-pill ${item.active ? 'accepted' : 'cancelled'}`}>{item.active ? adminCopy(lang, 'Attivo', 'Active') : adminCopy(lang, 'Inattivo', 'Inactive')}</span>
       </div>
-      {item.file_url && (isImage ? <img className="admin-card-preview-image" src={item.file_url} alt={leafletLabel(item, lang)} loading="lazy" /> : <a className="button secondary" href={item.file_url} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri PDF / file', 'Open PDF / file')}</a>)}
-      <p className="small-note">{adminCopy(lang, 'Collega le singole date usando il campo calendario mensile nel form escursione fissa.', 'Link individual dates through the monthly leaflet field in the fixed excursion form.')}</p>
-      {error && <div className="admin-alert error">{error}</div>}
-      <div className="request-actions">
-        {item.file_url && <a className="button secondary" href={item.file_url} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri file', 'Open file')}</a>}
-        {item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}
-      </div>
+      {editing ? (
+        <div className="admin-form-grid single-card-form">
+          <AdminInput label={adminCopy(lang, 'Mese', 'Month')} type="number" value={form.month} onChange={(value) => setForm((current) => ({ ...current, month: value }))} />
+          <AdminInput label={adminCopy(lang, 'Anno', 'Year')} type="number" value={form.year} onChange={(value) => setForm((current) => ({ ...current, year: value }))} />
+          <AdminInput label="Title IT" value={form.title_it} onChange={(value) => setForm((current) => ({ ...current, title_it: value }))} />
+          <AdminInput label="Title EN" value={form.title_en} onChange={(value) => setForm((current) => ({ ...current, title_en: value }))} />
+          <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione programma IT', 'Programme description IT')}</span><textarea value={form.description_it} onChange={(event) => setForm((current) => ({ ...current, description_it: event.target.value }))} rows={4} /></label>
+          <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione programma EN', 'Programme description EN')}</span><textarea value={form.description_en} onChange={(event) => setForm((current) => ({ ...current, description_en: event.target.value }))} rows={4} /></label>
+          <label className="admin-field full"><span>{adminCopy(lang, 'Note programma IT', 'Programme notes IT')}</span><textarea value={form.notes_it} onChange={(event) => setForm((current) => ({ ...current, notes_it: event.target.value }))} rows={2} /></label>
+          <label className="admin-field full"><span>{adminCopy(lang, 'Note programma EN', 'Programme notes EN')}</span><textarea value={form.notes_en} onChange={(event) => setForm((current) => ({ ...current, notes_en: event.target.value }))} rows={2} /></label>
+          <label className="admin-field full"><span>{adminCopy(lang, 'Sostituisci file calendario / leaflet', 'Replace calendar / leaflet file')}</span><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => setForm((current) => ({ ...current, file: event.target.files?.[0] || null, removeFile: false }))} /></label>
+          {form.file_url && !form.removeFile && <p className="small-note full"><a href={form.file_url} target="_blank" rel="noopener noreferrer">{form.file_name || adminCopy(lang, 'File esistente', 'Existing file')}</a> <button type="button" className="inline-danger-button" onClick={() => setForm((current) => ({ ...current, removeFile: true, file: null }))}>{adminCopy(lang, 'Rimuovi file', 'Remove file')}</button></p>}
+          {form.file && <p className="small-note full">{adminCopy(lang, 'Nuovo file', 'New file')}: {form.file.name}</p>}
+          {form.removeFile && <p className="small-note full">{adminCopy(lang, 'Il file verrà rimosso al salvataggio.', 'The file will be removed on save.')}</p>}
+          <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> {adminCopy(lang, 'Attivo', 'Active')}</label>
+          {error && <div className="admin-alert error full">{error}</div>}
+          <div className="modal-actions full"><button className="button primary" type="button" onClick={save}>{adminCopy(lang, 'Salva programma mensile', 'Save monthly programme')}</button><button className="button secondary" type="button" onClick={() => setEditing(false)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
+        </div>
+      ) : (
+        <>
+          {(description || notes) && <div className="monthly-program-admin-preview">{description && <p>{description}</p>}{notes && <p className="small-note">{notes}</p>}</div>}
+          {item.file_url && (isImage ? <img className="admin-card-preview-image" src={item.file_url} alt={leafletLabel(item, lang)} loading="lazy" /> : <a className="button secondary" href={item.file_url} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri PDF / file', 'Open PDF / file')}</a>)}
+          <p className="small-note">{adminCopy(lang, 'Collega le singole date usando il campo calendario mensile nel form escursione fissa.', 'Link individual dates through the monthly leaflet field in the fixed excursion form.')}</p>
+          {error && <div className="admin-alert error">{error}</div>}
+          <div className="request-actions">
+            <button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
+            {item.file_url && <a className="button secondary" href={item.file_url} target="_blank" rel="noopener noreferrer">{adminCopy(lang, 'Apri file', 'Open file')}</a>}
+            {item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}
+          </div>
+        </>
+      )}
     </article>
   );
 }
+
 
 function FixedExcursionCard({ item, lang, userId, onChanged }) {
   const [editing, setEditing] = useState(false);
@@ -10779,6 +10938,8 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
     title_en: item.title_en || '',
     description_it: item.description_it || item.note_it || '',
     description_en: item.description_en || item.note_en || '',
+    program_it: item.program_it || item.description_it || item.note_it || '',
+    program_en: item.program_en || item.description_en || item.note_en || '',
     meeting_point_it: item.meeting_point_it || '',
     meeting_point_en: item.meeting_point_en || '',
     meeting_point_maps_url: item.meeting_point_maps_url || '',
@@ -10850,8 +11011,10 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
           <AdminInput label={adminCopy(lang, 'Capienza', 'Capacity')} type="number" value={form.capacity} onChange={(value) => setForm((current) => ({ ...current, capacity: value }))} />
           <AdminInput label="Title IT" value={form.title_it} onChange={(value) => setForm((current) => ({ ...current, title_it: value }))} />
           <AdminInput label="Title EN" value={form.title_en} onChange={(value) => setForm((current) => ({ ...current, title_en: value }))} />
-          <label className="admin-field full"><span>Description IT</span><textarea value={form.description_it} onChange={(event) => setForm((current) => ({ ...current, description_it: event.target.value }))} rows={3} /></label>
-          <label className="admin-field full"><span>Description EN</span><textarea value={form.description_en} onChange={(event) => setForm((current) => ({ ...current, description_en: event.target.value }))} rows={3} /></label>
+          <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione breve IT', 'Short description IT')}</span><textarea value={form.description_it} onChange={(event) => setForm((current) => ({ ...current, description_it: event.target.value }))} rows={3} /></label>
+          <label className="admin-field full"><span>{adminCopy(lang, 'Descrizione breve EN', 'Short description EN')}</span><textarea value={form.description_en} onChange={(event) => setForm((current) => ({ ...current, description_en: event.target.value }))} rows={3} /></label>
+          <label className="admin-field full"><span>{adminCopy(lang, 'Programma dettagliato IT', 'Detailed programme IT')}</span><textarea value={form.program_it} onChange={(event) => setForm((current) => ({ ...current, program_it: event.target.value }))} rows={5} /></label>
+          <label className="admin-field full"><span>{adminCopy(lang, 'Programma dettagliato EN', 'Detailed programme EN')}</span><textarea value={form.program_en} onChange={(event) => setForm((current) => ({ ...current, program_en: event.target.value }))} rows={5} /></label>
           <AdminInput label="Meeting point IT" value={form.meeting_point_it} onChange={(value) => setForm((current) => ({ ...current, meeting_point_it: value }))} />
           <AdminInput label="Meeting point EN" value={form.meeting_point_en} onChange={(value) => setForm((current) => ({ ...current, meeting_point_en: value }))} />
           <AdminInput label={adminCopy(lang, 'Link Google Maps del punto d’incontro', 'Google Maps meeting point link')} value={form.meeting_point_maps_url} placeholder="https://maps.google.com/..." onChange={(value) => setForm((current) => ({ ...current, meeting_point_maps_url: value }))} />
@@ -10876,7 +11039,7 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
             <div><dt>{adminCopy(lang, 'Aggiornata', 'Updated')}</dt><dd>{formatDateForMessage(String(item.updated_at || item.created_at || '').slice(0, 10), lang) || '-'}</dd></div>
           </dl>
           {item.blocked_dates_file_url && <BlockedDatesAttachment item={item} lang={lang} publicView={false} />}
-          {(item.description_it || item.description_en || item.note_it || item.note_en) && <p>{fixedExcursionField(item, 'description', lang) || (lang === 'it' ? item.note_it || item.note_en : item.note_en || item.note_it)}</p>}
+          {(item.program_it || item.program_en || item.description_it || item.description_en || item.note_it || item.note_en) && <p>{fixedExcursionProgram(item, lang) || fixedExcursionField(item, 'description', lang) || (lang === 'it' ? item.note_it || item.note_en : item.note_en || item.note_it)}</p>}
           {error && <div className="admin-alert error">{error}</div>}
           <div className="request-actions"><button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>{item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}</div>
         </>
