@@ -1118,8 +1118,8 @@ const SOCIAL_PLATFORM_OPTIONS = [
 const LATEST_NEWS_DEFAULTS = {
   title_it: 'Notizie live sull’Etna',
   title_en: 'Etna live news',
-  description_it: 'Segui gli aggiornamenti live sull’Etna da fonti esterne selezionate.',
-  description_en: 'Follow live Etna updates from selected external sources.',
+  description_it: '',
+  description_en: '',
   cta_it: 'Apri le notizie live',
   cta_en: 'Open live news'
 };
@@ -4524,12 +4524,9 @@ function LatestNewsCard({ lang, siteContent, editor }) {
       <div className="container latest-news-card etna-news-card">
         <div className="etna-news-copy">
           {editor?.isEditing ? <EditableText as="h2" itemKey={latestNewsContentKey('title')} lang={lang} siteContent={siteContent} editor={editor} fallback={title} /> : <h2>{title}</h2>}
-          <EditableText as="p" itemKey={latestNewsContentKey('description')} lang={lang} siteContent={siteContent} editor={editor} fallback={settings.description} />
           <p className="small-note etna-news-safety-note">{safetyCopy}</p>
         </div>
         <div className="etna-news-action-card">
-          <strong>{adminCopy(lang, 'Aggiornamenti esterni selezionati', 'Selected external updates')}</strong>
-          <p>{adminCopy(lang, 'Apri la fonte configurata per consultare le notizie live sull’Etna.', 'Open the configured source to check live Etna news.')}</p>
           {disabled ? (
             <button className="button secondary" type="button" disabled>{adminCopy(lang, 'URL non configurato', 'URL not configured')}</button>
           ) : (
