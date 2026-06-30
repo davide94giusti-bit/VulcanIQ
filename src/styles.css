@@ -9463,3 +9463,227 @@ body.modal-scroll-lock {
     right: auto;
   }
 }
+
+/* Follow-up public UX polish: collaborations modal, footer, contact and social page */
+.partnership-category-list button strong {
+  display: none !important;
+}
+
+.partnership-detail-modal {
+  background: #fffaf2;
+  color: var(--ink);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 32px;
+  box-shadow: 0 30px 90px rgba(4, 9, 18, 0.36);
+  padding: clamp(18px, 3vw, 32px);
+  opacity: 1;
+}
+
+.partnership-detail-modal h2,
+.partnership-detail-modal p,
+.partnership-detail-modal .formatted-text,
+.partnership-detail-modal .partnership-formatted-description {
+  color: var(--night);
+}
+
+.partnership-detail-modal .partnership-formatted-description p,
+.partnership-detail-modal .formatted-text p {
+  color: var(--basalt);
+  opacity: 1;
+}
+
+.partnership-modal-backdrop {
+  background: rgba(5, 10, 20, 0.76);
+  backdrop-filter: blur(10px);
+}
+
+.public-footer {
+  margin-top: 0;
+  padding-top: clamp(44px, 6vw, 70px);
+  padding-bottom: clamp(44px, 6vw, 70px);
+}
+
+.public-footer-grid {
+  grid-template-columns: minmax(180px, 1.15fr) repeat(4, minmax(150px, 0.8fr));
+  align-items: start;
+}
+
+.footer-brand-column h2 {
+  margin-bottom: 0;
+}
+
+.footer-contact-column .footer-contact-list {
+  margin: 0;
+}
+
+.footer-contact-column .footer-phone-choice {
+  margin-top: 0;
+}
+
+.public-footer .social-links,
+.public-footer .social-links.compact,
+.public-footer .footer-social-links {
+  display: grid;
+  gap: 10px;
+  margin-top: 0;
+}
+
+.public-footer .social-links a,
+.public-footer .footer-social-links a {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #fff;
+  font-weight: 950;
+  line-height: 1.35;
+}
+
+.public-footer .social-links a svg,
+.public-footer .footer-social-links a svg {
+  display: none;
+}
+
+.public-footer .social-links a:hover,
+.public-footer .social-links a:focus-visible,
+.public-footer .footer-social-links a:hover,
+.public-footer .footer-social-links a:focus-visible {
+  color: var(--lava-soft);
+  text-decoration: underline;
+  transform: none;
+}
+
+.social-page-section {
+  background:
+    radial-gradient(circle at 12% 10%, rgba(240, 107, 79, 0.08), transparent 32%),
+    linear-gradient(180deg, rgba(251, 247, 239, 0.96), rgba(255, 255, 255, 0.9));
+}
+
+.social-page-card {
+  gap: clamp(28px, 5vw, 52px);
+}
+
+.social-page-links,
+.social-links.card-layout.social-page-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+  gap: 18px;
+}
+
+.social-page-links a.social-link-card,
+.social-links.card-layout .social-link-card {
+  min-height: 132px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  border-radius: 28px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(251, 247, 239, 0.86));
+  color: var(--night);
+  box-shadow: 0 18px 48px rgba(13, 22, 38, 0.10);
+}
+
+.social-page-links a.social-link-card:hover,
+.social-page-links a.social-link-card:focus-visible,
+.social-links.card-layout .social-link-card:hover,
+.social-links.card-layout .social-link-card:focus-visible {
+  border-color: rgba(240, 107, 79, 0.34);
+  box-shadow: 0 24px 58px rgba(13, 22, 38, 0.14);
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.social-page-links .social-link-card svg,
+.social-links.card-layout .social-link-card svg {
+  width: 52px;
+  height: 52px;
+  padding: 14px;
+  border-radius: 18px;
+  background: var(--night);
+  color: #fff;
+}
+
+.social-page-links .social-link-copy,
+.social-links.card-layout .social-link-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.social-page-links .social-link-copy strong,
+.social-links.card-layout .social-link-copy strong {
+  display: block;
+  color: var(--night);
+  font-size: 1.08rem;
+  line-height: 1.1;
+}
+
+.social-page-links .social-link-copy small,
+.social-links.card-layout .social-link-copy small {
+  display: block;
+  color: var(--ash);
+  font-size: 0.92rem;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.social-page-links .social-card-cta,
+.social-links.card-layout .social-card-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--lava-soft);
+  color: #a94433;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .public-footer-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .public-footer {
+    padding-bottom: calc(220px + env(safe-area-inset-bottom));
+  }
+
+  .footer-bottom-row {
+    margin-bottom: calc(34px + env(safe-area-inset-bottom));
+  }
+
+  .social-page-links a.social-link-card,
+  .social-links.card-layout .social-link-card {
+    grid-template-columns: 48px minmax(0, 1fr);
+    min-height: 118px;
+  }
+
+  .social-page-links .social-card-cta,
+  .social-links.card-layout .social-card-cta {
+    grid-column: 2;
+    width: fit-content;
+  }
+}
+
+@media (max-width: 560px) {
+  .partnership-detail-modal {
+    width: 100vw;
+    min-height: 100svh;
+    max-height: 100svh;
+    border-radius: 0;
+    padding: calc(18px + env(safe-area-inset-top)) 18px calc(36px + env(safe-area-inset-bottom));
+  }
+
+  .partnership-modal-header {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+}

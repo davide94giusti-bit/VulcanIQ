@@ -3058,22 +3058,18 @@ function PartnershipsPage({ lang, siteContent, editor }) {
         ) : (
           <div className="partnerships-browser">
             <div className="partnership-category-list" role="tablist" aria-label={adminCopy(lang, 'Categorie collaborazioni', 'Collaboration categories')}>
-              {availableCategories.map((category) => {
-                const count = enrichedItems.filter((item) => item.categoryKey === category.key).length;
-                return (
-                  <button
-                    key={category.key}
-                    className={selectedCategory === category.key ? 'is-active' : ''}
-                    type="button"
-                    role="tab"
-                    aria-selected={selectedCategory === category.key}
-                    onClick={() => setSelectedCategory(category.key)}
-                  >
-                    <span>{partnershipCategoryLabel(category.key, lang)}</span>
-                    <strong>{count}</strong>
-                  </button>
-                );
-              })}
+              {availableCategories.map((category) => (
+                <button
+                  key={category.key}
+                  className={selectedCategory === category.key ? 'is-active' : ''}
+                  type="button"
+                  role="tab"
+                  aria-selected={selectedCategory === category.key}
+                  onClick={() => setSelectedCategory(category.key)}
+                >
+                  <span>{partnershipCategoryLabel(category.key, lang)}</span>
+                </button>
+              ))}
             </div>
             <div className="partnership-grid compact-partnership-grid">
               {selectedItems.map((item) => {
@@ -4236,7 +4232,6 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
           <EditableText as="h2" itemKey="contact.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formTitle')} />
           <EditableText as="p" itemKey="contact.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formIntro')} />
           <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={openQuestionnaire} siteContent={siteContent} contactDetails={contact} />
-          <SocialLinks lang={lang} siteContent={siteContent} className="contact-social-links" />
         </div>
         <article className="contact-form questionnaire-start-card">
           <span className="kicker">{text(lang, 'formKicker')}</span>
@@ -4674,7 +4669,9 @@ function Footer({ lang, siteContent, editor }) {
       <div className="container footer-grid public-footer-grid">
         <section className="footer-column footer-brand-column">
           <h2>vulcanIQ</h2>
-          <p>{adminCopy(lang, 'Esperienze sull’Etna curate con conoscenza, sicurezza e relazione umana.', 'Mount Etna experiences curated with knowledge, safety and human connection.')}</p>
+        </section>
+        <section className="footer-column footer-contact-column">
+          <h3>{adminCopy(lang, 'Contatti', 'Contact')}</h3>
           <p className="footer-contact-list">
             <a
               href={buildMailto(contact.email, subject, text(lang, 'defaultMessage'))}
@@ -4736,7 +4733,7 @@ function Footer({ lang, siteContent, editor }) {
         </section>
       </div>
       <div className="container footer-bottom-row">
-        <p>{adminCopy(lang, '© 2025 vulcanIQ – Tutti i diritti riservati', '© 2025 vulcanIQ – All rights reserved')}</p>
+        <p>{adminCopy(lang, '© 2026 vulcanIQ – Tutti i diritti riservati', '© 2026 vulcanIQ – All rights reserved')}</p>
       </div>
       {contactAttributionModal}
     </footer>
@@ -11752,7 +11749,6 @@ function MonthlyLeafletCard({ item, lang, userId, onChanged }) {
     </article>
   );
 }
-
 
 function FixedExcursionCard({ item, lang, userId, onChanged }) {
   const [editing, setEditing] = useState(false);
