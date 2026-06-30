@@ -3079,7 +3079,6 @@ function PartnershipsPage({ lang, siteContent, editor }) {
                   aria-expanded={partnershipFilterOpen}
                   aria-haspopup="menu"
                 >
-                  <span>{adminCopy(lang, 'Filtra', 'Filter')}</span>
                   <strong>{selectedCategoryLabel}</strong>
                   <span aria-hidden="true">⌄</span>
                 </button>
