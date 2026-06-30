@@ -2994,8 +2994,10 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
 function PartnershipsPage({ lang, siteContent, editor }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState('other');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [partnershipFilterOpen, setPartnershipFilterOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
+  const partnershipFilterRef = useRef(null);
 
   useBodyScrollLock(Boolean(selectedItem));
 
@@ -3013,9 +3015,23 @@ function PartnershipsPage({ lang, siteContent, editor }) {
   const availableCategories = useMemo(() => PARTNERSHIP_CATEGORIES.filter((category) => enrichedItems.some((item) => item.categoryKey === category.key)), [enrichedItems]);
 
   useEffect(() => {
-    if (!availableCategories.length) return;
-    if (!availableCategories.some((category) => category.key === selectedCategory)) setSelectedCategory(availableCategories[0].key);
+    if (selectedCategory !== 'all' && !availableCategories.some((category) => category.key === selectedCategory)) setSelectedCategory('all');
   }, [availableCategories, selectedCategory]);
+
+  useEffect(() => {
+    if (!partnershipFilterOpen) return undefined;
+    function closeFilter(event) {
+      if (event?.key && event.key !== 'Escape') return;
+      if (event?.target && partnershipFilterRef.current?.contains(event.target)) return;
+      setPartnershipFilterOpen(false);
+    }
+    document.addEventListener('pointerdown', closeFilter);
+    window.addEventListener('keydown', closeFilter);
+    return () => {
+      document.removeEventListener('pointerdown', closeFilter);
+      window.removeEventListener('keydown', closeFilter);
+    };
+  }, [partnershipFilterOpen]);
 
   useEffect(() => {
     if (!selectedItem) return undefined;
@@ -3026,7 +3042,9 @@ function PartnershipsPage({ lang, siteContent, editor }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedItem]);
 
-  const selectedItems = enrichedItems.filter((item) => item.categoryKey === selectedCategory);
+  const partnershipFilterOptions = useMemo(() => [{ key: 'all' }, ...availableCategories], [availableCategories]);
+  const selectedItems = selectedCategory === 'all' ? enrichedItems : enrichedItems.filter((item) => item.categoryKey === selectedCategory);
+  const selectedCategoryLabel = selectedCategory === 'all' ? adminCopy(lang, 'Tutte', 'All') : partnershipCategoryLabel(selectedCategory, lang);
 
   function externalClick(eventName, item, extra = {}) {
     trackEvent(eventName, {
@@ -3049,28 +3067,50 @@ function PartnershipsPage({ lang, siteContent, editor }) {
   return (
     <section className="section page-section partnerships-page-section" id="partnerships">
       <div className="container">
-        <div className="section-header refined-section-header">
-          <EditableText as="h2" itemKey="partnerships.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'partnershipsTitle')} />
+        <div className="section-header refined-section-header partnership-section-header">
+          <div className="partnership-title-row">
+            <EditableText as="h2" itemKey="partnerships.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'partnershipsTitle')} />
+            {!loading && enrichedItems.length > 0 && (
+              <div className="partnership-filter-control" ref={partnershipFilterRef}>
+                <button
+                  className="partnership-filter-trigger"
+                  type="button"
+                  onClick={() => setPartnershipFilterOpen((open) => !open)}
+                  aria-expanded={partnershipFilterOpen}
+                  aria-haspopup="menu"
+                >
+                  <span>{adminCopy(lang, 'Filtra', 'Filter')}</span>
+                  <strong>{selectedCategoryLabel}</strong>
+                  <span aria-hidden="true">⌄</span>
+                </button>
+                {partnershipFilterOpen && (
+                  <div className="partnership-filter-menu" role="menu">
+                    {partnershipFilterOptions.map((category) => {
+                      const label = category.key === 'all' ? adminCopy(lang, 'Tutte', 'All') : partnershipCategoryLabel(category.key, lang);
+                      return (
+                        <button
+                          key={category.key}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={selectedCategory === category.key}
+                          className={selectedCategory === category.key ? 'is-active' : ''}
+                          onClick={() => { setSelectedCategory(category.key); setPartnershipFilterOpen(false); }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <EditableText as="p" itemKey="partnerships.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'partnershipsIntro') || ''} />
         </div>
         {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : enrichedItems.length === 0 ? (
           <article className="empty-state-card"><p>{text(lang, 'partnershipsEmpty')}</p></article>
         ) : (
           <div className="partnerships-browser">
-            <div className="partnership-category-list" role="tablist" aria-label={adminCopy(lang, 'Categorie collaborazioni', 'Collaboration categories')}>
-              {availableCategories.map((category) => (
-                <button
-                  key={category.key}
-                  className={selectedCategory === category.key ? 'is-active' : ''}
-                  type="button"
-                  role="tab"
-                  aria-selected={selectedCategory === category.key}
-                  onClick={() => setSelectedCategory(category.key)}
-                >
-                  <span>{partnershipCategoryLabel(category.key, lang)}</span>
-                </button>
-              ))}
-            </div>
             <div className="partnership-grid compact-partnership-grid">
               {selectedItems.map((item) => {
                 const description = localizedPartnershipDescription(item, lang);
@@ -3078,7 +3118,6 @@ function PartnershipsPage({ lang, siteContent, editor }) {
                   <button className="partnership-card partnership-click-card" type="button" key={item.id} onClick={() => setSelectedItem(item)}>
                     {renderPartnershipImage(item)}
                     <span className="partnership-card-copy">
-                      <span className="micro-label">{partnershipCategoryLabel(item.categoryKey, lang)}</span>
                       <strong>{item.name}</strong>
                       {description && <span className="partnership-teaser">{createTextTeaser(description)}</span>}
                       <span className="partnership-card-action">{adminCopy(lang, 'Apri dettagli', 'Open details')}</span>
@@ -3097,7 +3136,6 @@ function PartnershipsPage({ lang, siteContent, editor }) {
             <div className="partnership-modal-header">
               {renderPartnershipImage(selectedItem, 'partnership-modal-image')}
               <div>
-                <span className="micro-label">{partnershipCategoryLabel(selectedItem.categoryKey || partnershipCategoryKey(selectedItem), lang)}</span>
                 <h2 id="partnershipModalTitle">{selectedItem.name}</h2>
               </div>
               <button className="modal-close-button" type="button" onClick={() => setSelectedItem(null)}>{text(lang, 'close')}</button>
@@ -4557,7 +4595,7 @@ function LatestNewsPage({ lang, siteContent, editor }) {
 }
 
 
-function LegalPage({ lang, page, siteContent }) {
+function LegalPage({ lang, page, siteContent, modal = false }) {
   const contact = resolvePublicContactDetails(siteContent);
   const updated = '30/06/2026';
   const content = {
@@ -4602,10 +4640,10 @@ function LegalPage({ lang, page, siteContent }) {
   };
   const selected = content[page] || content.privacy;
   return (
-    <section className="section page-section legal-page-section">
+    <section className={`section page-section legal-page-section ${modal ? 'is-modal-content' : ''}`.trim()}>
       <div className="container legal-page-card">
         <div className="section-header refined-section-header">
-          <h1>{selected.title}</h1>
+          <h1 id={modal ? 'legalModalTitle' : undefined}>{selected.title}</h1>
           <p>{selected.intro}</p>
           <p className="small-note">{adminCopy(lang, 'Ultimo aggiornamento', 'Last updated')}: {updated}. {adminCopy(lang, 'Testo di base da far verificare al titolare o a un consulente legale prima della pubblicazione definitiva.', 'Baseline copy to be reviewed by the business owner or a legal advisor before final publication.')}</p>
         </div>
@@ -4640,7 +4678,9 @@ function FinalCTA({ lang, siteContent }) {
 function Footer({ lang, siteContent, editor }) {
   const contact = resolvePublicContactDetails(siteContent);
   const [phoneChoicesOpen, setPhoneChoicesOpen] = useState(false);
+  const [legalModalPage, setLegalModalPage] = useState(null);
   const phoneChoiceRef = useRef(null);
+  useBodyScrollLock(Boolean(legalModalPage));
   const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
   const baseMetadata = buildBookingTrackingContext({ requestType: 'contact', sourceSection: 'footer', sourceCta: 'contact_direct', ctaLocation: 'footer', language: lang });
   const subject = text(lang, 'emailSubject');
@@ -4718,9 +4758,9 @@ function Footer({ lang, siteContent, editor }) {
         </section>
         <section className="footer-column">
           <h3>{adminCopy(lang, 'Legale', 'Legal')}</h3>
-          <a href="/privacy-policy">Privacy Policy</a>
-          <a href="/terms-and-conditions">{adminCopy(lang, 'Termini e condizioni', 'Terms and Conditions')}</a>
-          <a href="/cookie-policy">Cookie Policy</a>
+          <button className="footer-link-button" type="button" onClick={() => setLegalModalPage('privacy')}>Privacy Policy</button>
+          <button className="footer-link-button" type="button" onClick={() => setLegalModalPage('terms')}>{adminCopy(lang, 'Termini e condizioni', 'Terms and Conditions')}</button>
+          <button className="footer-link-button" type="button" onClick={() => setLegalModalPage('cookies')}>Cookie Policy</button>
         </section>
         <section className="footer-column">
           <h3>{adminCopy(lang, 'Social', 'Social')}</h3>
@@ -4735,6 +4775,17 @@ function Footer({ lang, siteContent, editor }) {
       <div className="container footer-bottom-row">
         <p>{adminCopy(lang, '© 2026 vulcanIQ – Tutti i diritti riservati', '© 2026 vulcanIQ – All rights reserved')}</p>
       </div>
+      {legalModalPage && (
+        <div className="legal-modal-backdrop motion-backdrop" role="presentation" onClick={() => setLegalModalPage(null)}>
+          <article className="legal-modal-panel motion-panel" role="dialog" aria-modal="true" aria-labelledby="legalModalTitle" onClick={(event) => event.stopPropagation()}>
+            <div className="legal-modal-header">
+              <span>{adminCopy(lang, 'Documento legale', 'Legal document')}</span>
+              <button className="modal-close-button" type="button" onClick={() => setLegalModalPage(null)}>{text(lang, 'close')}</button>
+            </div>
+            <LegalPage lang={lang} page={legalModalPage} siteContent={siteContent} modal />
+          </article>
+        </div>
+      )}
       {contactAttributionModal}
     </footer>
   );
