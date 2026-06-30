@@ -29,7 +29,11 @@ const EVENT_NAMES = new Set([
   'phone_click',
   'google_maps_click',
   'maps_click',
+  'meeting_point_maps_click',
   'review_view',
+  'social_link_click',
+  'external_link_click',
+  'google_reviews_click',
   'session_start',
   'session_heartbeat',
   'session_end'
@@ -175,7 +179,15 @@ function sanitizeMetadata(metadata = {}) {
   Object.entries(metadata || {}).forEach(([key, value]) => {
     const cleanKey = sanitizeText(key, 48);
     if (!cleanKey || UNSAFE_METADATA_KEYS.has(cleanKey.toLowerCase())) return;
-    if (Array.isArray(value)) return;
+    if (Array.isArray(value)) {
+      const cleanArray = value
+        .filter((item) => ['string', 'number', 'boolean'].includes(typeof item))
+        .map((item) => (typeof item === 'number' || typeof item === 'boolean' ? item : sanitizeText(item, 80)))
+        .filter((item) => item !== undefined)
+        .slice(0, 24);
+      if (cleanArray.length) output[cleanKey] = cleanArray;
+      return;
+    }
     if (value && typeof value === 'object') return;
     const cleanValue = typeof value === 'number' || typeof value === 'boolean' ? value : sanitizeText(value, 220);
     if (cleanValue !== undefined) output[cleanKey] = cleanValue;
@@ -202,15 +214,18 @@ function currentSessionSection() {
 }
 
 function normalizeTrafficSourceValue(source, medium = '') {
-  const value = sanitizeText(source, 80)?.toLowerCase() || '';
-  const mediumValue = sanitizeText(medium, 80)?.toLowerCase() || '';
+  const value = sanitizeText(source, 80)?.toLowerCase().replace(/[-\s]+/g, '_') || '';
+  const mediumValue = sanitizeText(medium, 80)?.toLowerCase().replace(/[-\s]+/g, '_') || '';
   if (!value) return 'direct';
-  if (value.includes('google')) return 'google';
   if (value.includes('instagram') || value === 'ig') return 'instagram';
   if (value.includes('facebook') || value === 'fb') return 'facebook';
   if (value.includes('whatsapp') || value === 'wa') return 'whatsapp';
+  if (value.includes('google_business_profile') || value.includes('google_my_business') || value.includes('gbp')) return 'google_business_profile';
+  if (value.includes('google')) return 'google';
+  if (value.includes('partner')) return 'partner';
+  if (value.includes('tiktok') || value === 'tt') return 'tiktok';
   if (value.includes('direct')) return 'direct';
-  if (mediumValue === 'social' || mediumValue === 'message' || mediumValue === 'messaging') return 'other';
+  if (['social', 'story', 'bio', 'share', 'partner', 'organic'].includes(mediumValue)) return value.slice(0, 80) || 'other';
   return 'other';
 }
 
@@ -312,6 +327,33 @@ function buildPayload(eventName, metadata = {}, options = {}) {
     entry_path: session.entryPath || '/',
     metadata: cleanMetadata,
     is_new_session: session.isNew
+  };
+}
+
+
+export function getAnalyticsIdentitySnapshot(section = '') {
+  const fallbackInfo = deviceInfo();
+  const fallbackReferrer = referrerParts();
+  const utm = safeUtmMetadata();
+  if (!canTrack()) {
+    return {
+      traffic_source: fallbackReferrer.traffic_source || 'direct',
+      referrer_domain: fallbackReferrer.referrer_domain || '',
+      ...fallbackInfo,
+      ...utm
+    };
+  }
+  const session = ensureSession(section || currentSessionSection() || 'contact');
+  const visitorId = getVisitorId();
+  return {
+    analytics_session_id: session.sessionId,
+    analytics_visitor_id: visitorId,
+    session_id: session.sessionId,
+    visitor_id: visitorId,
+    traffic_source: fallbackReferrer.traffic_source || 'direct',
+    referrer_domain: fallbackReferrer.referrer_domain || '',
+    ...fallbackInfo,
+    ...utm
   };
 }
 
@@ -450,7 +492,7 @@ function bookingContext(metadata = {}) {
     source_section: metadata.source_section || metadata.section || 'contact',
     source_cta: metadata.source_cta || 'prepare_request',
     cta_location: metadata.cta_location || metadata.location || 'contact_section',
-    booking_journey_version: metadata.booking_journey_version || '20260616-submit-integrity',
+    booking_journey_version: metadata.booking_journey_version || '20260629-funnel-integrity',
     ...metadata
   };
 }

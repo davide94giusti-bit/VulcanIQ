@@ -17,14 +17,16 @@ async function safeTrack(run, label) {
   }
 }
 
-export async function submitPublicBookingRequestWithTracking({ payload, experience, adults, children, metadata = {} }) {
+export async function submitPublicBookingRequestWithTracking({ payload, experience, adults, children, metadata = {}, attemptAlreadyTracked = false }) {
   const totalParticipants = Number(adults || 0) + Number(children || 0);
   const baseMetadata = { ...metadata, participants: totalParticipants };
 
-  await safeTrack(
-    () => trackBookingSubmitAttempt(experience, adults, children, baseMetadata),
-    'booking submit attempt'
-  );
+  if (!attemptAlreadyTracked) {
+    await safeTrack(
+      () => trackBookingSubmitAttempt(experience, adults, children, baseMetadata),
+      'booking submit attempt'
+    );
+  }
 
   try {
     const createdRequest = await createPublicBookingRequest(payload);

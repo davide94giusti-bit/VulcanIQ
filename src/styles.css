@@ -8045,6 +8045,34 @@ body.modal-scroll-lock {
     -webkit-appearance: none;
     appearance: none;
   }
+
+  .questionnaire-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 6;
+    background: var(--paper);
+    border-top: 1px solid rgba(13, 27, 50, 0.08);
+    padding-bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+
+  .questionnaire-body {
+    padding-bottom: calc(42px + env(safe-area-inset-bottom));
+    scroll-padding-bottom: calc(130px + env(safe-area-inset-bottom));
+  }
+
+  .questionnaire-step input,
+  .questionnaire-step select,
+  .questionnaire-step textarea {
+    font-size: 16px;
+  }
+
+  .questionnaire-step .form-status {
+    scroll-margin-bottom: calc(150px + env(safe-area-inset-bottom));
+  }
+
+  .questionnaire-final-actions {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
 
 /* Admin backup */
@@ -9009,4 +9037,429 @@ body.modal-scroll-lock {
 
 .bilingual-leaflet-admin-list .button {
   width: auto;
+}
+
+/* Public UX patch: formatted collaborations, review filters, social/news/legal/footer */
+.formatted-text,
+.partnership-formatted-description,
+.admin-partnership-preview-text {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.formatted-text p,
+.partnership-formatted-description p,
+.admin-partnership-preview-text p {
+  margin: 0 0 0.95rem;
+}
+
+.formatted-text p:last-child,
+.partnership-formatted-description p:last-child,
+.admin-partnership-preview-text p:last-child {
+  margin-bottom: 0;
+}
+
+.partnerships-browser {
+  display: grid;
+  gap: 22px;
+}
+
+.partnership-category-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.partnership-category-list button,
+.review-filter-trigger {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--night);
+  padding: 10px 15px;
+  font-weight: 900;
+  box-shadow: 0 10px 22px rgba(13, 22, 38, 0.05);
+  transition: transform var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) var(--motion-ease);
+}
+
+.partnership-category-list button:hover,
+.partnership-category-list button:focus-visible,
+.review-filter-trigger:hover,
+.review-filter-trigger:focus-visible {
+  border-color: rgba(240, 107, 79, 0.45);
+  box-shadow: 0 14px 30px rgba(13, 22, 38, 0.10);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.partnership-category-list button.is-active {
+  background: var(--night);
+  color: #fff;
+  border-color: var(--night);
+}
+
+.compact-partnership-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.partnership-click-card {
+  width: 100%;
+  min-height: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.88);
+  color: inherit;
+  padding: 14px;
+  text-align: left;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  box-shadow: var(--shadow-soft);
+  transition: transform var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease);
+}
+
+.partnership-click-card:hover,
+.partnership-click-card:focus-visible {
+  border-color: rgba(240, 107, 79, 0.42);
+  box-shadow: var(--shadow);
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.partnership-click-card img,
+.partnership-modal-image,
+.social-feature-card svg {
+  width: 96px;
+  height: 82px;
+  border-radius: 18px;
+  object-fit: cover;
+  background: rgba(13, 22, 38, 0.06);
+}
+
+.partnership-card-copy {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.partnership-card-copy h3,
+.social-feature-card h3,
+.etna-news-action-card strong,
+.legal-section-card h2 {
+  margin: 0;
+}
+
+.partnership-teaser,
+.social-link-copy,
+.etna-news-action-card p {
+  margin: 0;
+}
+
+.partnership-card-action,
+.review-external-link {
+  display: inline-flex;
+  width: fit-content;
+  color: #a94433;
+  font-weight: 950;
+}
+
+.partnership-detail-modal {
+  width: min(920px, calc(100vw - 24px));
+  max-height: min(86svh, 860px);
+  overflow: auto;
+  padding-bottom: max(26px, env(safe-area-inset-bottom));
+}
+
+.partnership-modal-header {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.partnership-modal-header .partnership-modal-image,
+.partnership-modal-header .partnership-image-fallback {
+  width: 128px;
+  height: 104px;
+  border-radius: 22px;
+}
+
+.partnership-modal-actions,
+.review-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.review-filter-dropdown {
+  position: relative;
+  display: inline-block;
+  z-index: 6;
+  margin: 0 0 18px;
+}
+
+.review-filter-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(300px, calc(100vw - 36px));
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 4px;
+}
+
+.review-filter-menu button {
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--night);
+  text-align: left;
+  padding: 9px 11px;
+  font-weight: 850;
+}
+
+.review-filter-menu button:hover,
+.review-filter-menu button:focus-visible,
+.review-filter-menu button.is-active {
+  background: var(--lava-soft);
+  outline: none;
+}
+
+.review-card-source-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.review-source-badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(13, 22, 38, 0.08);
+  color: var(--night);
+  font-size: 0.76rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.social-links.card-layout,
+.social-page-links,
+.public-footer .social-links {
+  display: grid;
+  gap: 12px;
+}
+
+.social-links.card-layout {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.social-link-card {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.86);
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.social-link-card a,
+.social-feature-card .button {
+  width: fit-content;
+}
+
+.social-feature-card,
+.etna-news-card,
+.latest-news-empty-card,
+.legal-page-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--shadow-soft);
+}
+
+.social-feature-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  padding: clamp(22px, 4vw, 34px);
+  margin-bottom: 18px;
+}
+
+.etna-news-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+  gap: clamp(20px, 4vw, 34px);
+  align-items: stretch;
+  padding: clamp(24px, 4vw, 42px);
+}
+
+.etna-news-copy,
+.etna-news-action-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.etna-news-action-card {
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: rgba(251, 247, 239, 0.72);
+  padding: 20px;
+}
+
+.etna-news-safety-note {
+  padding: 12px 14px;
+  border-left: 3px solid var(--gold);
+  background: rgba(241, 184, 107, 0.12);
+  border-radius: 12px;
+}
+
+.public-footer {
+  background: var(--night);
+  color: rgba(255, 255, 255, 0.82);
+  padding: 42px 0 30px;
+  margin-top: 40px;
+}
+
+.public-footer h2,
+.public-footer h3,
+.public-footer a {
+  color: #fff;
+}
+
+.public-footer p,
+.public-footer .small-note {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.public-footer-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) repeat(3, minmax(160px, 0.75fr));
+  gap: clamp(22px, 4vw, 56px);
+}
+
+.footer-column {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.footer-column h3 {
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.footer-contact-list {
+  display: grid;
+  gap: 8px;
+}
+
+.footer-bottom-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  margin-top: 34px;
+  padding-top: 22px;
+}
+
+.legal-page-section {
+  padding-top: calc(var(--header-height) + 42px);
+}
+
+.legal-page-card {
+  padding: clamp(24px, 5vw, 48px);
+}
+
+.legal-section-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.legal-section-card {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(251, 247, 239, 0.72);
+  padding: 18px;
+}
+
+.legal-section-card h2 {
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+}
+
+@media (max-width: 900px) {
+  .compact-partnership-grid,
+  .etna-news-card,
+  .public-footer-grid,
+  .legal-section-list {
+    grid-template-columns: 1fr;
+  }
+
+  .partnership-category-list {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scroll-snap-type: x proximity;
+  }
+
+  .partnership-category-list button {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+
+  .social-feature-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 560px) {
+  .partnership-click-card,
+  .partnership-modal-header {
+    grid-template-columns: 78px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .partnership-click-card img,
+  .partnership-click-card .partnership-image-fallback {
+    width: 78px;
+    height: 68px;
+  }
+
+  .partnership-modal-header .partnership-modal-image,
+  .partnership-modal-header .partnership-image-fallback {
+    width: 78px;
+    height: 68px;
+    border-radius: 16px;
+  }
+
+  .partnership-detail-modal {
+    width: 100vw;
+    max-height: 100svh;
+    border-radius: 26px 26px 0 0;
+  }
+
+  .review-filter-menu {
+    left: 0;
+    right: auto;
+  }
 }

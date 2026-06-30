@@ -6,13 +6,13 @@ import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.
 import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
 import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadFixedExcursionLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
-import { loadPublicReviews, submitPublicReview, listReviews, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply, deleteReview } from './services/reviewsService.js';
+import { loadPublicReviews, submitPublicReview, listReviews, createManualReview, updateReviewDetails, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply, deleteReview } from './services/reviewsService.js';
 import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFile } from './services/siteMediaService.js';
 import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
 import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
 import { listAnalyticsEvents, listAnalyticsSessions } from './services/analyticsService.js';
 import { createDatabaseBackup, downloadLatestDatabaseBackup, getBackupSchedule, getBackupStatus, saveBackupSchedule } from './services/backupService.js';
-import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat } from './analytics.js';
+import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormFieldStart, trackBookingSubmitAttempt, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot } from './analytics.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import { submitPublicBookingRequestWithTracking } from './services/publicBookingSubmit.js';
 import './styles.css';
@@ -226,13 +226,13 @@ const i18n = {
   it: {
     languageLabel: 'Italiano',
     switchLabel: 'EN',
-    nav: ['Inizio', 'Escursioni', 'Collaborazioni', 'Chi siamo', 'Recensioni', 'Social', 'Ultime notizie', 'Contattaci'],
+    nav: ['Inizio', 'Escursioni', 'Collaborazioni', 'Chi siamo', 'Recensioni', 'Social', 'Notizie live sull’Etna', 'Contattaci'],
     contact: 'Contattaci',
     heroKicker: '',
     heroTitle: "L'Etna non è solo uno scenario.",
     heroLead: 'Esperienze private e fisse sull’Etna per leggere il vulcano come territorio vivo: con conoscenza, sicurezza e relazione umana.',
     findExperience: "Trova l'esperienza giusta",
-    viewAvailability: 'Guarda le disponibilità',
+    viewAvailability: 'Prenota ora',
     call: 'Chiama Leonardo',
     whatsapp: 'Scrivici su WhatsApp',
     email: "Invia un'email",
@@ -484,13 +484,13 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
   en: {
     languageLabel: 'English',
     switchLabel: 'IT',
-    nav: ['Home', 'Excursions', 'Partnerships', 'Who we are', 'Reviews', 'Social', 'Latest news', 'Contact us'],
+    nav: ['Home', 'Excursions', 'Partnerships', 'Who we are', 'Reviews', 'Social', 'Etna live news', 'Contact us'],
     contact: 'Contact us',
     heroKicker: '',
     heroTitle: 'Mount Etna is not just a backdrop.',
     heroLead: 'Private and fixed Mount Etna experiences that help guests read the volcano as a living territory: with knowledge, safety, and human connection.',
     findExperience: 'Find the right experience',
-    viewAvailability: 'View availability',
+    viewAvailability: 'Book now',
     call: 'Call Leonardo',
     whatsapp: 'Message on WhatsApp',
     email: 'Send an email',
@@ -916,6 +916,134 @@ function normalizeReviewText(value) {
 }
 
 
+const PARTNERSHIP_CATEGORIES = [
+  { key: 'activities', it: 'Attività', en: 'Activities', aliases: ['attivita', 'attività', 'activity', 'activities', 'experience', 'esperienza'] },
+  { key: 'restaurants', it: 'Ristoranti', en: 'Restaurants', aliases: ['ristorante', 'ristoranti', 'restaurant', 'restaurants', 'food', 'cibo', 'bar', 'trattoria'] },
+  { key: 'accommodation', it: 'Alloggi', en: 'Accommodation', aliases: ['alloggio', 'alloggi', 'accommodation', 'accomodation', 'hotel', 'bnb', 'b&b', 'casa vacanze', 'vacanze', 'apartment', 'appartamento', 'holiday home'] },
+  { key: 'transport', it: 'Trasporti', en: 'Transport', aliases: ['trasporto', 'trasporti', 'transport', 'transfer', 'taxi', 'bus', 'ncc', 'driver'] },
+  { key: 'guides_services', it: 'Guide / Servizi', en: 'Guides / Services', aliases: ['guide', 'guida', 'servizi', 'servizio', 'services', 'service', 'tour guide'] },
+  { key: 'shops', it: 'Negozi', en: 'Shops', aliases: ['negozio', 'negozi', 'shop', 'shops', 'store', 'bottega'] },
+  { key: 'other', it: 'Altro', en: 'Other', aliases: ['altro', 'other', 'misc'] }
+];
+
+const REVIEW_FILTER_OPTIONS = [
+  { key: 'all', it: 'Tutte', en: 'All' },
+  { key: 'highest_rating', it: 'Valutazione più alta', en: 'Highest rating' },
+  { key: 'lowest_rating', it: 'Valutazione più bassa', en: 'Lowest rating' },
+  { key: 'most_recent', it: 'Più recenti', en: 'Most recent' },
+  { key: 'website_reviews', it: 'Recensioni dal sito', en: 'Website reviews' },
+  { key: 'google_reviews', it: 'Recensioni Google', en: 'Google reviews' }
+];
+
+function normalizedKeyText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function partnershipCategoryOption(key) {
+  return PARTNERSHIP_CATEGORIES.find((item) => item.key === key) || PARTNERSHIP_CATEGORIES[PARTNERSHIP_CATEGORIES.length - 1];
+}
+
+function partnershipCategoryLabel(key, lang) {
+  const option = partnershipCategoryOption(key);
+  return lang === 'it' ? option.it : option.en;
+}
+
+function partnershipCategoryKey(item = {}) {
+  const candidates = [item.category_key, item.category, item.category_it, item.category_en, item.name].map(normalizedKeyText).filter(Boolean);
+  for (const candidate of candidates) {
+    for (const option of PARTNERSHIP_CATEGORIES) {
+      if (candidate === normalizedKeyText(option.key) || candidate === normalizedKeyText(option.it) || candidate === normalizedKeyText(option.en) || option.aliases.some((alias) => candidate.includes(normalizedKeyText(alias)))) {
+        return option.key;
+      }
+    }
+  }
+  return 'other';
+}
+
+function partnershipCategoryLabelsForKey(key) {
+  const option = partnershipCategoryOption(key);
+  return { category_key: option.key, category_it: option.it, category_en: option.en };
+}
+
+function localizedPartnershipDescription(item = {}, lang) {
+  return lang === 'it' ? (item.description_it || item.description_en || '') : (item.description_en || item.description_it || '');
+}
+
+function createTextTeaser(value, maxLength = 150) {
+  const clean = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  return clean.length > maxLength ? `${clean.slice(0, maxLength).replace(/\s+\S*$/, '')}…` : clean;
+}
+
+function FormattedText({ textValue, className = 'formatted-text' }) {
+  const raw = String(textValue || '').replace(/\r\n/g, '\n').trim();
+  if (!raw) return null;
+  return (
+    <div className={className}>
+      {raw.split(/\n\s*\n/).map((paragraph) => paragraph.trim()).filter(Boolean).map((paragraph, index) => (
+        <p key={`${index}-${paragraph.slice(0, 16)}`}>{paragraph}</p>
+      ))}
+    </div>
+  );
+}
+
+function reviewFilterLabel(key, lang) {
+  const option = REVIEW_FILTER_OPTIONS.find((item) => item.key === key) || REVIEW_FILTER_OPTIONS[0];
+  return lang === 'it' ? option.it : option.en;
+}
+
+function reviewSource(review = {}) {
+  const source = normalizedKeyText(review.source || review.review_source || review.platform || '');
+  if (source.includes('google')) return 'google';
+  if (['website', 'internal', 'direct', 'site', 'web'].some((item) => source.includes(item))) return 'website';
+  return 'website';
+}
+
+function reviewSourceLabel(review = {}, lang) {
+  return reviewSource(review) === 'google' ? 'Google' : adminCopy(lang, 'Sito', 'Website');
+}
+
+function reviewSortTimestamp(review = {}) {
+  const raw = review.review_date || review.experience_date || review.excursion_date || review.submitted_at || review.created_at || '';
+  const time = Date.parse(raw);
+  return Number.isFinite(time) ? time : 0;
+}
+
+function normalizeLatestNewsTitle(value, lang) {
+  const clean = cleanEditableTextValue(value);
+  const normalized = normalizedKeyText(clean);
+  if (!clean || normalized === 'ultime notizie' || normalized === 'latest news') return lang === 'it' ? LATEST_NEWS_DEFAULTS.title_it : LATEST_NEWS_DEFAULTS.title_en;
+  return clean;
+}
+
+function publicPageFromPathname(pathname = '/') {
+  const clean = (`/${String(pathname || '/').split('?')[0]}`).replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
+  if (clean === '/' || clean === '/home') return 'home';
+  if (clean === '/experiences') return 'experiences';
+  if (clean === '/partnerships' || clean === '/collaborations') return 'partnerships';
+  if (clean === '/about') return 'about';
+  if (clean === '/reviews') return 'reviews';
+  if (clean === '/social') return 'social';
+  if (clean === '/latest-news' || clean === '/etna-live-news') return 'latestNews';
+  if (clean === '/contact') return 'contact';
+  return '';
+}
+
+function legalPageFromPathname(pathname = '') {
+  const clean = (`/${String(pathname || '').split('?')[0]}`).replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
+  if (clean === '/privacy-policy') return 'privacy';
+  if (clean === '/terms-and-conditions') return 'terms';
+  if (clean === '/cookie-policy') return 'cookies';
+  return '';
+}
+
+
 function text(lang, key) {
   return i18n[lang][key];
 }
@@ -988,12 +1116,12 @@ const SOCIAL_PLATFORM_OPTIONS = [
 ];
 
 const LATEST_NEWS_DEFAULTS = {
-  title_it: 'Ultime notizie',
-  title_en: 'Latest news',
-  description_it: 'Scopri gli aggiornamenti più recenti su Etna, escursioni e attività vulcaniche.',
-  description_en: 'Discover the latest updates about Mount Etna, excursions, and volcanic activity.',
-  cta_it: 'Leggi le ultime notizie',
-  cta_en: 'Read the latest news'
+  title_it: 'Notizie live sull’Etna',
+  title_en: 'Etna live news',
+  description_it: 'Segui gli aggiornamenti live sull’Etna da fonti esterne selezionate.',
+  description_en: 'Follow live Etna updates from selected external sources.',
+  cta_it: 'Apri le notizie live',
+  cta_en: 'Open live news'
 };
 
 function socialPlatformOption(value) {
@@ -1004,6 +1132,20 @@ function socialPlatformLabel(value, lang) {
   const option = socialPlatformOption(value);
   return lang === 'it' ? option.it : option.en;
 }
+function socialPlatformDescription(value, lang) {
+  const labels = {
+    instagram: { it: 'Aggiornamenti, foto dal territorio e dietro le quinte.', en: 'Updates, local photos and behind-the-scenes content.' },
+    facebook: { it: 'Novità, post e informazioni per la community.', en: 'News, posts and community updates.' },
+    tiktok: { it: 'Video brevi dall’Etna e dalle esperienze.', en: 'Short videos from Etna and the experiences.' },
+    youtube: { it: 'Video, racconti e contenuti più lunghi.', en: 'Videos, stories and longer-form content.' },
+    whatsapp: { it: 'Contatto diretto con il team vulcanIQ.', en: 'Direct contact with the vulcanIQ team.' },
+    google_reviews: { it: 'Recensioni e profilo Google.', en: 'Google reviews and profile.' },
+    other: { it: 'Canale ufficiale vulcanIQ.', en: 'Official vulcanIQ channel.' }
+  };
+  const copy = labels[value] || labels.other;
+  return lang === 'it' ? copy.it : copy.en;
+}
+
 
 function safeExternalUrl(value, { allowHttp = false } = {}) {
   const clean = String(value || '').trim();
@@ -1098,7 +1240,7 @@ function latestNewsContentKey(field) {
 
 function resolveLatestNewsSettings(siteContent, lang) {
   const enabled = parseBooleanSetting(contentSettingValue(siteContent, latestNewsContentKey('enabled'), 'true'), true);
-  const title = contentText(siteContent, latestNewsContentKey('title'), lang, lang === 'it' ? LATEST_NEWS_DEFAULTS.title_it : LATEST_NEWS_DEFAULTS.title_en);
+  const title = normalizeLatestNewsTitle(contentText(siteContent, latestNewsContentKey('title'), lang, lang === 'it' ? LATEST_NEWS_DEFAULTS.title_it : LATEST_NEWS_DEFAULTS.title_en), lang);
   const description = contentText(siteContent, latestNewsContentKey('description'), lang, lang === 'it' ? LATEST_NEWS_DEFAULTS.description_it : LATEST_NEWS_DEFAULTS.description_en);
   const ctaLabel = contentText(siteContent, latestNewsContentKey('cta_label'), lang, lang === 'it' ? LATEST_NEWS_DEFAULTS.cta_it : LATEST_NEWS_DEFAULTS.cta_en);
   const urlIt = safeExternalUrl(contentSettingValue(siteContent, latestNewsContentKey('url_it'), ''));
@@ -2251,14 +2393,14 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
   }
 
   function requestExperience(experience) {
-    const trackingContext = buildBookingTrackingContext({
+    const trackingContext = withBookingJourneyId(buildBookingTrackingContext({
       experienceId: experience?.id || '',
       requestType: 'private',
       sourceSection: 'experiences',
       sourceCta: 'book_experience',
       ctaLocation: 'experience_modal',
       language: lang
-    });
+    }));
     trackBookingFormOpen(experience?.id || 'unsure', trackingContext);
     setSelectedExperience(null);
     fillForm({
@@ -2271,7 +2413,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
   }
 
   function requestItem(item) {
-    const trackingContext = buildBookingTrackingContext({
+    const trackingContext = withBookingJourneyId(buildBookingTrackingContext({
       experienceId: item?.experience_id || '',
       requestType: 'fixed',
       sourceSection: 'calendar',
@@ -2280,7 +2422,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
       selectedDate: item?.date || '',
       hasFixedExcursion: true,
       language: lang
-    });
+    }));
     trackBookingFormOpen(item?.experience_id || 'fixed', trackingContext);
     const message = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
     setDateModalOpen(false);
@@ -2300,7 +2442,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
   }
 
   function requestAvailableDate() {
-    const trackingContext = buildBookingTrackingContext({
+    const trackingContext = withBookingJourneyId(buildBookingTrackingContext({
       experienceId: dateRequest.experienceId || '',
       requestType: 'private',
       sourceSection: 'calendar',
@@ -2309,7 +2451,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
       selectedDate,
       hasFixedExcursion: false,
       language: lang
-    });
+    }));
     trackBookingFormOpen(dateRequest.experienceId || 'private', trackingContext);
     const message = buildAvailableDateRequestMessage({ date: selectedDate, ...dateRequest }, lang);
     setDateModalOpen(false);
@@ -2732,7 +2874,7 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
   const selectedItems = byDate[selectedDate] || [];
 
   function requestItem(item) {
-    const trackingContext = buildBookingTrackingContext({
+    const trackingContext = withBookingJourneyId(buildBookingTrackingContext({
       experienceId: item?.experience_id || '',
       requestType: 'fixed',
       sourceSection: 'today',
@@ -2741,7 +2883,7 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
       selectedDate: item?.date || '',
       hasFixedExcursion: true,
       language: lang
-    });
+    }));
     trackBookingFormOpen(item?.experience_id || 'fixed', trackingContext);
     const message = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
     fillForm({
@@ -2832,7 +2974,7 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
               {selectedItems.length === 0 && <h3>{selectedDate ? formatDateForMessage(selectedDate, lang) : text(lang, 'dateDetails')}</h3>}
               {items.length === 0 ? (
                 <article className="empty-state-card"><p>{text(lang, 'upcomingEmpty')}</p><button className="button primary" type="button" onClick={() => {
-                  const trackingContext = buildBookingTrackingContext({ requestType: 'private', sourceSection: 'today', sourceCta: 'prepare_request', ctaLocation: 'today_section', language: lang });
+                  const trackingContext = withBookingJourneyId(buildBookingTrackingContext({ requestType: 'private', sourceSection: 'today', sourceCta: 'prepare_request', ctaLocation: 'today_section', language: lang }));
                   trackBookingFormOpen('private', trackingContext);
                   fillForm({ requestType: 'private', trackingContext, scroll: true });
                 }}>{text(lang, 'contact')}</button></article>
@@ -2852,6 +2994,10 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
 function PartnershipsPage({ lang, siteContent, editor }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState('other');
+  const [selectedItem, setSelectedItem] = useState(null);
+
+  useBodyScrollLock(Boolean(selectedItem));
 
   useEffect(() => {
     let active = true;
@@ -2863,35 +3009,118 @@ function PartnershipsPage({ lang, siteContent, editor }) {
     return () => { active = false; };
   }, []);
 
+  const enrichedItems = useMemo(() => items.map((item) => ({ ...item, categoryKey: partnershipCategoryKey(item) })), [items]);
+  const availableCategories = useMemo(() => PARTNERSHIP_CATEGORIES.filter((category) => enrichedItems.some((item) => item.categoryKey === category.key)), [enrichedItems]);
+
+  useEffect(() => {
+    if (!availableCategories.length) return;
+    if (!availableCategories.some((category) => category.key === selectedCategory)) setSelectedCategory(availableCategories[0].key);
+  }, [availableCategories, selectedCategory]);
+
+  useEffect(() => {
+    if (!selectedItem) return undefined;
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setSelectedItem(null);
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedItem]);
+
+  const selectedItems = enrichedItems.filter((item) => item.categoryKey === selectedCategory);
+
+  function externalClick(eventName, item, extra = {}) {
+    trackEvent(eventName, {
+      partnership_id: item.id,
+      partnership_name: item.name,
+      category: item.categoryKey || partnershipCategoryKey(item),
+      cta_location: 'partnership_detail_modal',
+      source_section: 'partnerships',
+      language: lang,
+      ...extra
+    }, { dedupe: false, transport: 'beacon' });
+  }
+
+  function renderPartnershipImage(item, className = '') {
+    return item.image_url
+      ? <img className={className} src={item.image_url} alt={item.name} loading="lazy" decoding="async" />
+      : <div className={`partnership-image-fallback ${className}`.trim()} aria-hidden="true">vulcanIQ</div>;
+  }
+
   return (
-    <section className="section page-section" id="partnerships">
+    <section className="section page-section partnerships-page-section" id="partnerships">
       <div className="container">
         <div className="section-header refined-section-header">
           <EditableText as="h2" itemKey="partnerships.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'partnershipsTitle')} />
           <EditableText as="p" itemKey="partnerships.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'partnershipsIntro') || ''} />
         </div>
-        {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : items.length === 0 ? (
+        {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : enrichedItems.length === 0 ? (
           <article className="empty-state-card"><p>{text(lang, 'partnershipsEmpty')}</p></article>
         ) : (
-          <div className="partnership-grid">
-            {items.map((item) => {
-              const description = item[`description_${lang}`] || item.description_it || item.description_en || '';
-              const category = item[`category_${lang}`] || item.category_it || item.category_en || '';
-              return (
-                <article className="partnership-card" key={item.id}>
-                  {item.image_url ? <img src={item.image_url} alt={item.name} loading="lazy" decoding="async" /> : <div className="partnership-image-fallback" aria-hidden="true">vulcanIQ</div>}
-                  <div>
-                    {category && <span className="micro-label">{category}</span>}
-                    <h3>{item.name}</h3>
-                    {description && <p>{description}</p>}
-                    {item.website_url && <a className="button secondary" href={item.website_url} target="_blank" rel="noopener noreferrer">{text(lang, 'visitWebsite')}</a>}
-                  </div>
-                </article>
-              );
-            })}
+          <div className="partnerships-browser">
+            <div className="partnership-category-list" role="tablist" aria-label={adminCopy(lang, 'Categorie collaborazioni', 'Collaboration categories')}>
+              {availableCategories.map((category) => {
+                const count = enrichedItems.filter((item) => item.categoryKey === category.key).length;
+                return (
+                  <button
+                    key={category.key}
+                    className={selectedCategory === category.key ? 'is-active' : ''}
+                    type="button"
+                    role="tab"
+                    aria-selected={selectedCategory === category.key}
+                    onClick={() => setSelectedCategory(category.key)}
+                  >
+                    <span>{partnershipCategoryLabel(category.key, lang)}</span>
+                    <strong>{count}</strong>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="partnership-grid compact-partnership-grid">
+              {selectedItems.map((item) => {
+                const description = localizedPartnershipDescription(item, lang);
+                return (
+                  <button className="partnership-card partnership-click-card" type="button" key={item.id} onClick={() => setSelectedItem(item)}>
+                    {renderPartnershipImage(item)}
+                    <span className="partnership-card-copy">
+                      <span className="micro-label">{partnershipCategoryLabel(item.categoryKey, lang)}</span>
+                      <strong>{item.name}</strong>
+                      {description && <span className="partnership-teaser">{createTextTeaser(description)}</span>}
+                      <span className="partnership-card-action">{adminCopy(lang, 'Apri dettagli', 'Open details')}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
+
+      {selectedItem && (
+        <div className="public-modal-backdrop partnership-modal-backdrop motion-backdrop" role="presentation" onClick={() => setSelectedItem(null)}>
+          <article className="partnership-detail-modal motion-panel" role="dialog" aria-modal="true" aria-labelledby="partnershipModalTitle" onClick={(event) => event.stopPropagation()}>
+            <div className="partnership-modal-header">
+              {renderPartnershipImage(selectedItem, 'partnership-modal-image')}
+              <div>
+                <span className="micro-label">{partnershipCategoryLabel(selectedItem.categoryKey || partnershipCategoryKey(selectedItem), lang)}</span>
+                <h2 id="partnershipModalTitle">{selectedItem.name}</h2>
+              </div>
+              <button className="modal-close-button" type="button" onClick={() => setSelectedItem(null)}>{text(lang, 'close')}</button>
+            </div>
+            <FormattedText textValue={localizedPartnershipDescription(selectedItem, lang)} className="formatted-text partnership-formatted-description" />
+            <div className="partnership-modal-actions">
+              {selectedItem.website_url && (
+                <a className="button primary" href={selectedItem.website_url} target="_blank" rel="noopener noreferrer" onClick={() => externalClick('external_link_click', selectedItem, { external_link_type: 'website' })}>{text(lang, 'visitWebsite')}</a>
+              )}
+              {selectedItem.google_maps_url && (
+                <a className="button secondary" href={selectedItem.google_maps_url} target="_blank" rel="noopener noreferrer" onClick={() => trackMapsClick('partnership_detail_modal', { partnership_id: selectedItem.id, source_section: 'partnerships', language: lang })}>{adminCopy(lang, 'Apri su Google Maps', 'Open in Google Maps')}</a>
+              )}
+              {selectedItem.social_url && (
+                <a className="button secondary" href={selectedItem.social_url} target="_blank" rel="noopener noreferrer" onClick={() => externalClick('social_link_click', selectedItem, { platform: 'partnership_social' })}>Instagram</a>
+              )}
+            </div>
+          </article>
+        </div>
+      )}
     </section>
   );
 }
@@ -2912,9 +3141,11 @@ function ReviewsPage({ lang, siteContent, editor }) {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [sortMode, setSortMode] = useState('recent');
+  const [filterMode, setFilterMode] = useState('all');
+  const [filterOpen, setFilterOpen] = useState(false);
   const [form, setForm] = useState({ booking_code: '', reviewer_name: '', review_text: '', rating: '5' });
   const [submitState, setSubmitState] = useState({ loading: false, error: '', success: '' });
+  const filterRef = useRef(null);
 
   useBodyScrollLock(modalOpen);
 
@@ -2931,6 +3162,21 @@ function ReviewsPage({ lang, siteContent, editor }) {
   }
 
   useEffect(() => { trackReviewView(); refreshReviews(); }, []);
+
+  useEffect(() => {
+    if (!filterOpen) return undefined;
+    function closeFilter(event) {
+      if (event?.key && event.key !== 'Escape') return;
+      if (event?.target && filterRef.current?.contains(event.target)) return;
+      setFilterOpen(false);
+    }
+    document.addEventListener('pointerdown', closeFilter);
+    window.addEventListener('keydown', closeFilter);
+    return () => {
+      document.removeEventListener('pointerdown', closeFilter);
+      window.removeEventListener('keydown', closeFilter);
+    };
+  }, [filterOpen]);
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -2959,14 +3205,19 @@ function ReviewsPage({ lang, siteContent, editor }) {
   }
 
   const visibleReviews = loading ? [] : reviews.filter((review) => !isLeonardoPlaceholderReview(review));
-  const sortedCards = [...visibleReviews].sort((a, b) => {
-    if (sortMode === 'highest') return Number(b.rating || -1) - Number(a.rating || -1) || String(b.created_at || '').localeCompare(String(a.created_at || ''));
-    if (sortMode === 'lowest') return Number(a.rating || 999) - Number(b.rating || 999) || String(b.created_at || '').localeCompare(String(a.created_at || ''));
-    return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+  const filteredCards = visibleReviews.filter((review) => {
+    if (filterMode === 'google_reviews') return reviewSource(review) === 'google';
+    if (filterMode === 'website_reviews') return reviewSource(review) === 'website';
+    return true;
+  });
+  const sortedCards = [...filteredCards].sort((a, b) => {
+    if (filterMode === 'highest_rating') return Number(b.rating || -1) - Number(a.rating || -1) || reviewSortTimestamp(b) - reviewSortTimestamp(a);
+    if (filterMode === 'lowest_rating') return Number(a.rating || 999) - Number(b.rating || 999) || reviewSortTimestamp(b) - reviewSortTimestamp(a);
+    return reviewSortTimestamp(b) - reviewSortTimestamp(a);
   });
 
   function reviewDate(review) {
-    const raw = review.experience_date || review.excursion_date || review.submitted_at || review.created_at;
+    const raw = review.review_date || review.experience_date || review.excursion_date || review.submitted_at || review.created_at;
     return raw ? formatDateForMessage(String(raw).slice(0, 10), lang) : '-';
   }
 
@@ -2986,6 +3237,11 @@ function ReviewsPage({ lang, siteContent, editor }) {
     );
   }
 
+  function selectFilter(key) {
+    setFilterMode(key);
+    setFilterOpen(false);
+  }
+
   return (
     <section className="section compact-section" id="reviews">
       <div className="container reviews-panel redesigned-reviews-panel">
@@ -2996,10 +3252,19 @@ function ReviewsPage({ lang, siteContent, editor }) {
           </div>
           <div className="reviews-header-actions">
             <button className="button primary" type="button" onClick={() => { setSubmitState({ loading: false, error: '', success: '' }); setModalOpen(true); }}><EditableText itemKey="reviews.publish_button" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'publishReview')} /></button>
-            <div className="review-sort-control" role="group" aria-label={lang === 'it' ? 'Ordina recensioni' : 'Sort reviews'}>
-              <button type="button" className={sortMode === 'recent' ? 'active' : ''} onClick={() => setSortMode('recent')}>{adminCopy(lang, 'Più recenti', 'Most recent')}</button>
-              <button type="button" className={sortMode === 'highest' ? 'active' : ''} onClick={() => setSortMode('highest')}>{adminCopy(lang, 'Voto più alto', 'Highest score')}</button>
-              <button type="button" className={sortMode === 'lowest' ? 'active' : ''} onClick={() => setSortMode('lowest')}>{adminCopy(lang, 'Voto più basso', 'Lowest score')}</button>
+            <div className="review-filter-dropdown" ref={filterRef}>
+              <button type="button" className="review-filter-trigger" aria-haspopup="menu" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)}>
+                {adminCopy(lang, 'Filtra', 'Filter')}: {reviewFilterLabel(filterMode, lang)} <span aria-hidden="true">▾</span>
+              </button>
+              {filterOpen && (
+                <div className="review-filter-menu" role="menu">
+                  {REVIEW_FILTER_OPTIONS.map((option) => (
+                    <button key={option.key} type="button" role="menuitemradio" aria-checked={filterMode === option.key} className={filterMode === option.key ? 'is-active' : ''} onClick={() => selectFilter(option.key)}>
+                      {reviewFilterLabel(option.key, lang)}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -3012,14 +3277,20 @@ function ReviewsPage({ lang, siteContent, editor }) {
           {sortedCards.map((review) => (
             <article className="review-card featured-review-card" key={review.id}>
               <header className="review-card-info-header">
-                <div className="stars review-rating-stars" aria-label={`${review.rating || 0}/5`}>{'★'.repeat(Number(review.rating) || 5)}</div>
+                <div className="review-card-source-row">
+                  <span className={`review-source-badge ${reviewSource(review)}`}>{reviewSourceLabel(review, lang)}</span>
+                  <div className="stars review-rating-stars" aria-label={`${review.rating || 0}/5`}>{'★'.repeat(Number(review.rating) || 5)}</div>
+                </div>
                 <div className="review-info-list">
                   <span><b>{text(lang, 'bookedBy')}:</b> {reviewBookedBy(review)}</span>
                   <span><b>{text(lang, 'reviewDateLabel')}:</b> {reviewDate(review)}</span>
-                  <span><b>{text(lang, 'guideLabel')}:</b> {reviewGuide(review)}</span>
+                  {reviewSource(review) !== 'google' && <span><b>{text(lang, 'guideLabel')}:</b> {reviewGuide(review)}</span>}
                 </div>
               </header>
               <blockquote>{renderReviewText(review.review_text)}</blockquote>
+              {review.external_review_url && reviewSource(review) === 'google' && (
+                <a className="review-external-link" href={review.external_review_url} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent('google_reviews_click', { review_id: review.id, cta_location: 'reviews_section', source_section: 'reviews', language: lang }, { dedupe: false, transport: 'beacon' })}>{adminCopy(lang, 'Apri su Google', 'Open on Google')}</a>
+              )}
               {review.admin_reply && (
                 <div className="public-admin-reply">
                   <strong>{adminCopy(lang, 'Risposta vulcanIQ', 'vulcanIQ response')}</strong>
@@ -3161,21 +3432,65 @@ function Team({ lang, siteMedia, siteContent, editor }) {
   );
 }
 
+const BOOKING_JOURNEY_VERSION = '20260629-funnel-integrity';
+
+function normalizeCampaignSource(value = '', medium = '') {
+  const source = String(value || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+  const mediumValue = String(medium || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+  if (!source) return 'direct';
+  if (source.includes('instagram') || source === 'ig') return 'instagram';
+  if (source.includes('facebook') || source === 'fb') return 'facebook';
+  if (source.includes('whatsapp') || source === 'wa') return 'whatsapp';
+  if (source.includes('google_business_profile') || source.includes('google_my_business') || source === 'gbp') return 'google_business_profile';
+  if (source.includes('google')) return 'google';
+  if (source.includes('partner')) return 'partner';
+  if (source.includes('qr')) return 'qr';
+  if (source.includes('business_card')) return 'business_card';
+  if (source.includes('tiktok') || source === 'tt') return 'tiktok';
+  if (source.includes('direct')) return 'direct';
+  if (['social', 'story', 'bio', 'share', 'partner', 'organic', 'referral', 'print', 'page', 'post', 'video'].includes(mediumValue)) return source.slice(0, 80) || 'other';
+  return 'other';
+}
+
 function currentBrowserAttribution() {
   if (typeof window === 'undefined') return {};
   const params = new URLSearchParams(window.location.search || '');
-  const utm = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].reduce((acc, key) => {
+  const utm = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].reduce((acc, key) => {
     const value = String(params.get(key) || '').trim();
     if (value) acc[key] = value.slice(0, 120);
     return acc;
   }, {});
   const source = String(utm.utm_source || '').toLowerCase();
-  const trafficSource = source.includes('instagram') ? 'instagram'
-    : source.includes('whatsapp') ? 'whatsapp'
-      : source.includes('facebook') || source === 'fb' ? 'facebook'
-        : source.includes('google') ? 'google'
-          : source ? 'other' : 'direct';
+  const trafficSource = normalizeCampaignSource(source, utm.utm_medium);
   return { traffic_source: trafficSource, ...utm };
+}
+
+function createBookingJourneyId() {
+  const randomValue = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+  return `booking_journey_${randomValue}`;
+}
+
+function isoMonthKey(value) {
+  const clean = String(value || '').trim();
+  const match = clean.match(/^(\d{4})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}` : '';
+}
+
+function withBookingJourneyId(context = {}, existingContext = {}, { forceNew = false } = {}) {
+  const bookingJourneyId = !forceNew && (existingContext?.booking_journey_id || existingContext?.analytics_journey_id || context?.booking_journey_id || context?.analytics_journey_id)
+    ? (existingContext?.booking_journey_id || existingContext?.analytics_journey_id || context?.booking_journey_id || context?.analytics_journey_id)
+    : createBookingJourneyId();
+  const selectedDate = context.selected_date || existingContext?.selected_date || '';
+  return {
+    ...(existingContext || {}),
+    ...(context || {}),
+    booking_journey_id: bookingJourneyId,
+    analytics_journey_id: bookingJourneyId,
+    booking_journey_version: BOOKING_JOURNEY_VERSION,
+    selected_month: context.selected_month || existingContext?.selected_month || isoMonthKey(selectedDate)
+  };
 }
 
 function buildBookingTrackingContext({
@@ -3190,8 +3505,12 @@ function buildBookingTrackingContext({
 } = {}) {
   const knownExperience = experiences.find((experience) => experience.id === experienceId) || null;
   const normalizedRequestType = requestType || (knownExperience ? 'experience' : 'private');
+  const browserAttribution = currentBrowserAttribution();
+  const analyticsIdentity = getAnalyticsIdentitySnapshot(sourceSection || ctaLocation || 'contact');
   return {
-    ...currentBrowserAttribution(),
+    ...analyticsIdentity,
+    ...browserAttribution,
+    traffic_source: browserAttribution.traffic_source || analyticsIdentity.traffic_source || 'direct',
     ...(knownExperience ? {
       experience_slug: knownExperience.id,
       experience_id: knownExperience.id,
@@ -3202,9 +3521,10 @@ function buildBookingTrackingContext({
     source_cta: sourceCta || 'unknown',
     cta_location: ctaLocation || 'unknown',
     selected_date: selectedDate || '',
+    selected_month: isoMonthKey(selectedDate),
     has_fixed_excursion: Boolean(hasFixedExcursion),
     language: language || 'it',
-    booking_journey_version: '20260616-submit-integrity'
+    booking_journey_version: BOOKING_JOURNEY_VERSION
   };
 }
 
@@ -3239,6 +3559,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const preferredContactValue = ['whatsapp', 'phone', 'email'].includes(formState.preferredContact) ? formState.preferredContact : 'whatsapp';
   const selectedHeardAboutUsMetadata = heardAboutUsMetadata(selectedHeardAboutUs, lang, selectedHeardAboutUsDetail);
   const trackedFormOpenRef = useRef(new Set());
+  const bookingJourneyIdRef = useRef(formState.trackingContext?.booking_journey_id || '');
   const modalRef = useRef(null);
   const previousFocusRef = useRef(null);
   const [leaflets, setLeaflets] = useState([]);
@@ -3290,6 +3611,11 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   useBodyScrollLock(Boolean(questionnaireTransition.shouldRender || fixedOptionsTransition.shouldRender || privateOptionsTransition.shouldRender || requestLeafletTransition.shouldRender || privateDetailTransition.shouldRender || fixedDetailTransition.shouldRender));
 
   useEffect(() => {
+    const existingJourneyId = formState.trackingContext?.booking_journey_id || formState.trackingContext?.analytics_journey_id || '';
+    if (existingJourneyId) bookingJourneyIdRef.current = existingJourneyId;
+  }, [formState.trackingContext?.booking_journey_id, formState.trackingContext?.analytics_journey_id]);
+
+  useEffect(() => {
     if (!questionnaireOpen) return undefined;
     previousFocusRef.current = document.activeElement;
     window.setTimeout(() => modalRef.current?.querySelector('button, input, select, textarea')?.focus(), 0);
@@ -3325,7 +3651,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const fixedOptions = useMemo(() => monthlyOptionsLeaflets({ leaflets, fixedExcursions, monthDate: detailsMonthDate, lang }), [leaflets, fixedExcursions, detailsMonthDate, lang]);
   const canGoPreviousDetailsMonth = isCurrentOrFutureMonth(new Date(detailsMonthDate.getFullYear(), detailsMonthDate.getMonth() - 1, 1));
 
-  const currentTrackingMetadata = mergeTrackingContext(mergeTrackingContext(buildBookingTrackingContext({
+  const currentTrackingMetadata = withBookingJourneyId(mergeTrackingContext(mergeTrackingContext(buildBookingTrackingContext({
     experienceId: effectiveExperienceId,
     requestType,
     sourceSection: 'contact',
@@ -3340,13 +3666,21 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     questionnaire_step: stepIndex + 1,
     questionnaire_step_key: currentStep.key,
     questionnaire_completed: currentStep.key === 'message'
-  });
+  }), { booking_journey_id: bookingJourneyIdRef.current || formState.trackingContext?.booking_journey_id || '' });
+
+  function trackQuestionnaireFieldStart(fieldName, extraMetadata = {}) {
+    if (!bookingJourneyIdRef.current && currentTrackingMetadata.booking_journey_id) bookingJourneyIdRef.current = currentTrackingMetadata.booking_journey_id;
+    if (trackedFormOpenRef.current.has('field_start')) return;
+    trackedFormOpenRef.current.add('field_start');
+    trackBookingFormFieldStart(effectiveExperienceId || requestType || 'private', {
+      ...currentTrackingMetadata,
+      ...extraMetadata,
+      first_field_name: fieldName || 'unknown'
+    });
+  }
 
   function update(field, value) {
-    if (!trackedFormOpenRef.current.has('field_start')) {
-      trackedFormOpenRef.current.add('field_start');
-      trackBookingFormFieldStart(effectiveExperienceId || requestType || 'private', currentTrackingMetadata);
-    }
+    trackQuestionnaireFieldStart(field, { changed_field: field });
     setStepError('');
     setFormState((current) => {
       if (field === 'heardAboutUs') {
@@ -3362,6 +3696,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   }
 
   function updateRequestType(value) {
+    trackQuestionnaireFieldStart('request_type', { changed_field: 'request_type', selected_request_type: value });
     setStepError('');
     setFormState((current) => ({
       ...current,
@@ -3375,6 +3710,12 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
 
   function updateFixedExcursion(id) {
     const fixed = fixedExcursions.find((item) => item.id === id);
+    trackQuestionnaireFieldStart('fixed_excursion_id', {
+      changed_field: 'fixed_excursion_id',
+      selected_fixed_excursion_id: id || '',
+      selected_experience_id: fixed?.experience_id || '',
+      selected_date: fixed?.date || ''
+    });
     setStepError('');
     setFormState((current) => ({
       ...current,
@@ -3446,6 +3787,10 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   }
 
   function usePrivateExperienceInRequest(experience) {
+    trackQuestionnaireFieldStart('private_experience_option', {
+      changed_field: 'private_experience_option',
+      selected_experience_id: experience?.id || ''
+    });
     setFormState((current) => ({
       ...current,
       requestTypeChoice: 'private',
@@ -3484,7 +3829,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   }
 
   function openQuestionnaire() {
-    const trackingContext = mergeTrackingContext(buildBookingTrackingContext({
+    const trackingContext = withBookingJourneyId(mergeTrackingContext(buildBookingTrackingContext({
       experienceId: effectiveExperienceId,
       requestType,
       sourceSection: 'contact',
@@ -3493,9 +3838,12 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       selectedDate: selectedFixed?.date || formState.requestedDate || '',
       hasFixedExcursion: requestType === 'fixed',
       language: lang
-    }), formState.trackingContext);
-    trackBookingFormOpen(effectiveExperienceId || requestType || 'private', { ...trackingContext, questionnaire_version: 'contact_request_v1' });
-    setFormState((current) => ({ ...current, trackingContext, language: current.language || lang }));
+    }), formState.trackingContext), formState.trackingContext, { forceNew: !formState.trackingContext?.booking_journey_id });
+    bookingJourneyIdRef.current = trackingContext.booking_journey_id || createBookingJourneyId();
+    trackedFormOpenRef.current.delete('field_start');
+    const journeyTrackingContext = withBookingJourneyId(trackingContext, { booking_journey_id: bookingJourneyIdRef.current });
+    trackBookingFormOpen(effectiveExperienceId || requestType || 'private', { ...journeyTrackingContext, questionnaire_version: 'contact_request_v1' });
+    setFormState((current) => ({ ...current, trackingContext: journeyTrackingContext, language: current.language || lang }));
     setQuestionnaireOpen(true);
   }
 
@@ -3511,49 +3859,91 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     setFormState((current) => ({ ...current, message: generated }));
   }
 
-  function validationForStep(index = stepIndex) {
+  function validationIssueForStep(index = stepIndex) {
     const stepKey = questionnaireSteps[index]?.key;
     const email = String(formState.email || '').trim();
     const phone = String(formState.phone || '').trim();
-    if (stepKey === 'request_type' && !requestChoice) return text(lang, 'answerRequired');
+    if (stepKey === 'request_type' && !requestChoice) return { error: text(lang, 'answerRequired'), fields: ['request_type'] };
     if (stepKey === 'experience') {
-      if (requestChoice === 'fixed' && !formState.fixedExcursionId) return text(lang, 'fixedExcursionRequired');
-      if (requestChoice !== 'fixed' && !formState.experienceId) return text(lang, 'chooseExperienceOptional');
+      if (requestChoice === 'fixed' && !formState.fixedExcursionId) return { error: text(lang, 'fixedExcursionRequired'), fields: ['fixed_excursion_id'] };
+      if (requestChoice !== 'fixed' && !formState.experienceId) return { error: text(lang, 'chooseExperienceOptional'), fields: ['experience_id'] };
     }
     if (stepKey === 'date') {
-      if (isPastPublicDate(formState.requestedDate) || isPastPublicDate(formState.alternativeDate)) return text(lang, 'dateTodayOrFuture');
+      const fields = [];
+      if (isPastPublicDate(formState.requestedDate)) fields.push('requested_date');
+      if (isPastPublicDate(formState.alternativeDate)) fields.push('alternative_date');
+      if (fields.length) return { error: text(lang, 'dateTodayOrFuture'), fields };
     }
-    if (stepKey === 'participants' && totalPeople < 1) return text(lang, 'peopleRequired');
+    if (stepKey === 'participants' && totalPeople < 1) return { error: text(lang, 'peopleRequired'), fields: ['adults', 'children'] };
     if (stepKey === 'contact') {
-      if (!email && !phone) return text(lang, 'contactRequired');
-      if ((preferredContactValue === 'whatsapp' || preferredContactValue === 'phone') && !phone) return text(lang, 'contactPhoneRequired');
-      if (preferredContactValue === 'email' && !email) return text(lang, 'contactEmailRequired');
-      if (phone && !isValidPublicPhone(phone)) return text(lang, 'contactPhoneInvalid');
-      if (email && !isValidPublicEmail(email)) return text(lang, 'contactEmailInvalid');
+      if (!email && !phone) return { error: text(lang, 'contactRequired'), fields: ['email', 'phone'] };
+      if ((preferredContactValue === 'whatsapp' || preferredContactValue === 'phone') && !phone) return { error: text(lang, 'contactPhoneRequired'), fields: ['phone', 'preferred_contact'] };
+      if (preferredContactValue === 'email' && !email) return { error: text(lang, 'contactEmailRequired'), fields: ['email', 'preferred_contact'] };
+      if (phone && !isValidPublicPhone(phone)) return { error: text(lang, 'contactPhoneInvalid'), fields: ['phone'] };
+      if (email && !isValidPublicEmail(email)) return { error: text(lang, 'contactEmailInvalid'), fields: ['email'] };
     }
     if (stepKey === 'attribution') {
-      if (!selectedHeardAboutUs) return text(lang, 'heardAboutUsRequired');
-      if (selectedHeardAboutUsNeedsDetail && !selectedHeardAboutUsDetail) return text(lang, 'heardAboutUsOtherRequired');
+      if (!selectedHeardAboutUs) return { error: text(lang, 'heardAboutUsRequired'), fields: ['heard_about_us'] };
+      if (selectedHeardAboutUsNeedsDetail && !selectedHeardAboutUsDetail) return { error: text(lang, 'heardAboutUsOtherRequired'), fields: ['heard_about_us_detail'] };
     }
     if (stepKey === 'message') {
-      if (isPastPublicDate(formState.requestedDate) || isPastPublicDate(formState.alternativeDate)) return text(lang, 'dateTodayOrFuture');
-      if (!String(message || '').trim()) return text(lang, 'requestDetailsRequired');
+      const fields = [];
+      if (isPastPublicDate(formState.requestedDate)) fields.push('requested_date');
+      if (isPastPublicDate(formState.alternativeDate)) fields.push('alternative_date');
+      if (fields.length) return { error: text(lang, 'dateTodayOrFuture'), fields };
+      if (!String(message || '').trim()) return { error: text(lang, 'requestDetailsRequired'), fields: ['message'] };
     }
-    return '';
+    return { error: '', fields: [] };
+  }
+
+  function validationForStep(index = stepIndex) {
+    return validationIssueForStep(index).error || '';
+  }
+
+  function firstValidationIssue() {
+    for (let index = 0; index < questionnaireSteps.length; index += 1) {
+      const issue = validationIssueForStep(index);
+      if (issue.error) return { ...issue, index, stepKey: questionnaireSteps[index]?.key || '' };
+    }
+    return null;
   }
 
   function firstValidationError() {
-    for (let index = 0; index < questionnaireSteps.length; index += 1) {
-      const error = validationForStep(index);
-      if (error) return error;
-    }
-    return '';
+    return firstValidationIssue()?.error || '';
+  }
+
+  function validationTrackingMetadata(reason, issue = null, extra = {}) {
+    const fields = issue?.fields?.length ? issue.fields : validationIssueForStep().fields;
+    return {
+      ...currentTrackingMetadata,
+      ...extra,
+      validation_reason: reason || 'unknown',
+      validation_error_fields: fields,
+      validation_error_count: fields.length,
+      current_questionnaire_step: (issue?.index ?? stepIndex) + 1,
+      current_questionnaire_step_key: issue?.stepKey || currentStep.key,
+      selected_date: selectedFixed?.date || formState.requestedDate || '',
+      selected_experience_id: effectiveExperienceId || experienceId || '',
+      selected_fixed_excursion_id: selectedFixed?.id || formState.fixedExcursionId || '',
+      selected_fixed_excursion_date: selectedFixed?.date || '',
+      request_type: requestType,
+      language: formState.language || lang
+    };
+  }
+
+  function trackQuestionnaireValidation(reason, issue = null, extra = {}) {
+    trackBookingSubmitValidationError(
+      effectiveExperienceId || requestType || 'private',
+      reason || 'questionnaire_validation_error',
+      validationTrackingMetadata(reason, issue, extra)
+    );
   }
 
   function goNext() {
-    const error = validationForStep();
+    const issue = validationIssueForStep();
+    const error = issue.error;
     if (error) {
-      trackBookingSubmitValidationError(effectiveExperienceId || requestType || 'private', `questionnaire_${currentStep.key}`, currentTrackingMetadata);
+      trackQuestionnaireValidation(`questionnaire_${currentStep.key}`, { ...issue, index: stepIndex, stepKey: currentStep.key });
       setStepError(error);
       return;
     }
@@ -3579,18 +3969,25 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     const selectedDate = String(formState.requestedDate || '').trim();
     const hasMessage = String(message || '').trim() && message !== text(lang, 'defaultMessage');
     const trackedExperience = effectiveExperienceId || requestType || 'private';
-    const trackingMetadata = { ...currentTrackingMetadata, questionnaire_completed: true, questionnaire_step_key: 'message' };
-    const preflightError = firstValidationError();
+    const trackingMetadata = withBookingJourneyId({ ...currentTrackingMetadata, questionnaire_completed: true, questionnaire_step_key: 'message' }, { booking_journey_id: bookingJourneyIdRef.current || currentTrackingMetadata.booking_journey_id || '' });
+    bookingJourneyIdRef.current = trackingMetadata.booking_journey_id;
+    trackBookingSubmitAttempt(trackedExperience, adults, children, {
+      ...trackingMetadata,
+      submit_trigger: 'questionnaire_submit_button'
+    });
+    const preflightIssue = firstValidationIssue();
+    const preflightError = preflightIssue?.error || '';
 
     if (preflightError) {
-      trackBookingSubmitValidationError(trackedExperience, 'questionnaire_incomplete', trackingMetadata);
+      trackQuestionnaireValidation('questionnaire_incomplete', preflightIssue, { questionnaire_completed: false });
       setStepError(preflightError);
       setSubmitState({ loading: false, error: preflightError, success: '' });
       return;
     }
 
     if (!hasMessage && !effectiveExperienceId && !selectedDate) {
-      trackBookingSubmitValidationError(trackedExperience, 'missing_request_details', trackingMetadata);
+      const messageIssue = { error: text(lang, 'requestDetailsRequired'), fields: ['message', 'experience_id', 'requested_date'], index: stepIndex, stepKey: currentStep.key };
+      trackQuestionnaireValidation('missing_request_details', messageIssue, { questionnaire_completed: false });
       setSubmitState({ loading: false, error: text(lang, 'requestDetailsRequired'), success: '' });
       return;
     }
@@ -3603,6 +4000,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
         adults,
         children,
         metadata: trackingMetadata,
+        attemptAlreadyTracked: true,
         payload: {
           customer_name: formState.name,
           customer_email: email,
@@ -3634,10 +4032,22 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
           utm_source: trackingMetadata.utm_source,
           utm_medium: trackingMetadata.utm_medium,
           utm_campaign: trackingMetadata.utm_campaign,
-          utm_content: trackingMetadata.utm_content
+          utm_content: trackingMetadata.utm_content,
+          utm_term: trackingMetadata.utm_term,
+          analytics_session_id: trackingMetadata.analytics_session_id || trackingMetadata.session_id,
+          analytics_visitor_id: trackingMetadata.analytics_visitor_id || trackingMetadata.visitor_id,
+          analytics_journey_id: trackingMetadata.booking_journey_id || trackingMetadata.analytics_journey_id,
+          booking_journey_version: trackingMetadata.booking_journey_version,
+          selected_month: trackingMetadata.selected_month || isoMonthKey(trackingMetadata.selected_date || selectedFixed?.date || formState.requestedDate),
+          device_type: trackingMetadata.device_type,
+          browser: trackingMetadata.browser,
+          operating_system: trackingMetadata.operating_system
         }
       });
       setSubmitState({ loading: false, error: '', success: text(lang, 'requestSent') });
+      setQuestionnaireOpen(false);
+      trackedFormOpenRef.current.delete('field_start');
+      bookingJourneyIdRef.current = '';
     } catch (error) {
       setSubmitState({ loading: false, error: text(lang, 'requestFallbackError'), success: '' });
     }
@@ -3645,9 +4055,10 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
 
   function openFormWhatsapp() {
     const trackedExperience = effectiveExperienceId || requestType || 'private';
-    const error = firstValidationError();
+    const issue = firstValidationIssue();
+    const error = issue?.error || '';
     if (error) {
-      trackBookingSubmitValidationError(trackedExperience, 'questionnaire_incomplete_whatsapp', currentTrackingMetadata);
+      trackQuestionnaireValidation('questionnaire_incomplete_whatsapp', issue, { contact_path: 'whatsapp' });
       setStepError(error);
       setSubmitState({ loading: false, error, success: '' });
       return;
@@ -4034,15 +4445,31 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
 }
 
 
-function SocialLinks({ lang, siteContent, className = '', compact = false }) {
+function SocialLinks({ lang, siteContent, className = '', compact = false, card = false, location = 'site' }) {
   const links = resolveSocialLinks(siteContent);
   if (!links.length) return null;
   return (
-    <div className={`social-links ${compact ? 'compact' : ''} ${className}`.trim()} aria-label={adminCopy(lang, 'Pagine social', 'Social pages')}>
+    <div className={`social-links ${compact ? 'compact' : ''} ${card ? 'card-layout' : ''} ${className}`.trim()} aria-label={adminCopy(lang, 'Pagine social', 'Social pages')}>
       {links.map((link) => (
-        <a key={link.id || `${link.platform}-${link.url}`} href={link.url} target="_blank" rel="noopener noreferrer">
+        <a
+          className={card ? "social-link-card" : undefined}
+          key={link.id || `${link.platform}-${link.url}`}
+          href={link.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => trackEvent('social_link_click', {
+            platform: link.platform,
+            cta_location: location,
+            source_section: location,
+            language: lang
+          }, { dedupe: false, transport: 'beacon' })}
+        >
           <Icon name={link.icon_key || socialPlatformOption(link.platform).icon || 'link'} />
-          <span>{socialLinkLabel(link, lang)}</span>
+          <span className="social-link-copy">
+            <strong>{socialLinkLabel(link, lang)}</strong>
+            {card && <small>{socialPlatformDescription(link.platform, lang)}</small>}
+          </span>
+          {card && <span className="social-card-cta">{adminCopy(lang, 'Apri', 'Open')} ↗</span>}
         </a>
       ))}
     </div>
@@ -4053,26 +4480,31 @@ function LatestNewsCard({ lang, siteContent, editor }) {
   const settings = resolveLatestNewsSettings(editor?.contentMap || siteContent || {}, lang);
   if (!settings.shouldRender && !editor?.isEditing) return null;
   const disabled = !settings.selectedUrl;
-  const content = (
-    <>
-      <div>
-        <span className="kicker">{adminCopy(lang, 'Ultime notizie', 'Latest news')}</span>
-        <EditableText as="h2" itemKey={latestNewsContentKey('title')} lang={lang} siteContent={siteContent} editor={editor} fallback={lang === 'it' ? LATEST_NEWS_DEFAULTS.title_it : LATEST_NEWS_DEFAULTS.title_en} />
-        <EditableText as="p" itemKey={latestNewsContentKey('description')} lang={lang} siteContent={siteContent} editor={editor} fallback={lang === 'it' ? LATEST_NEWS_DEFAULTS.description_it : LATEST_NEWS_DEFAULTS.description_en} />
-      </div>
-      {disabled ? (
-        <button className="button secondary" type="button" disabled>{adminCopy(lang, 'URL non configurato', 'URL not configured')}</button>
-      ) : (
-        <a className="button primary" href={settings.selectedUrl} target="_blank" rel="noopener noreferrer">
-          <EditableText itemKey={latestNewsContentKey('cta_label')} lang={lang} siteContent={siteContent} editor={editor} fallback={lang === 'it' ? LATEST_NEWS_DEFAULTS.cta_it : LATEST_NEWS_DEFAULTS.cta_en} />
-        </a>
-      )}
-    </>
+  const title = normalizeLatestNewsTitle(settings.title, lang);
+  const safetyCopy = adminCopy(
+    lang,
+    'Le condizioni del vulcano e del meteo possono cambiare rapidamente: controlla sempre gli aggiornamenti prima dell’escursione.',
+    'Volcanic and weather conditions can change quickly: always check the latest updates before your experience.'
   );
   return (
     <section className={`section latest-news-section ${!settings.shouldRender ? 'editor-only-hidden-public' : ''}`.trim()}>
-      <div className="container latest-news-card">
-        {content}
+      <div className="container latest-news-card etna-news-card">
+        <div className="etna-news-copy">
+          {editor?.isEditing ? <EditableText as="h2" itemKey={latestNewsContentKey('title')} lang={lang} siteContent={siteContent} editor={editor} fallback={title} /> : <h2>{title}</h2>}
+          <EditableText as="p" itemKey={latestNewsContentKey('description')} lang={lang} siteContent={siteContent} editor={editor} fallback={settings.description} />
+          <p className="small-note etna-news-safety-note">{safetyCopy}</p>
+        </div>
+        <div className="etna-news-action-card">
+          <strong>{adminCopy(lang, 'Aggiornamenti esterni selezionati', 'Selected external updates')}</strong>
+          <p>{adminCopy(lang, 'Apri la fonte configurata per consultare le notizie live sull’Etna.', 'Open the configured source to check live Etna news.')}</p>
+          {disabled ? (
+            <button className="button secondary" type="button" disabled>{adminCopy(lang, 'URL non configurato', 'URL not configured')}</button>
+          ) : (
+            <a className="button primary" href={settings.selectedUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent('external_link_click', { cta_location: 'etna_live_news_card', source_section: 'latest_news', language: lang }, { dedupe: false, transport: 'beacon' })}>
+              {editor?.isEditing ? <EditableText itemKey={latestNewsContentKey('cta_label')} lang={lang} siteContent={siteContent} editor={editor} fallback={settings.ctaLabel} /> : settings.ctaLabel}
+            </a>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -4083,13 +4515,24 @@ function SocialPage({ lang, siteContent, editor }) {
   return (
     <section className="section page-section social-page-section" id="social">
       <div className="container social-page-card">
-        <div className="section-header refined-section-header">
-          <span className="kicker">{adminCopy(lang, 'Social', 'Social')}</span>
+        <div className="section-header refined-section-header social-page-hero">
           <h2>{adminCopy(lang, 'Pagine social vulcanIQ', 'vulcanIQ social pages')}</h2>
-          <p>{adminCopy(lang, 'Segui vulcanIQ sui canali ufficiali.', 'Follow vulcanIQ on the official channels.')}</p>
+          <p>{adminCopy(lang, 'Segui vulcanIQ sui canali ufficiali per aggiornamenti sull’Etna, nuove esperienze, foto dal territorio e contenuti dietro le quinte.', 'Follow vulcanIQ on the official channels for Etna updates, new experiences, local stories and behind-the-scenes content.')}</p>
         </div>
         {links.length ? (
-          <SocialLinks lang={lang} siteContent={editor?.contentMap || siteContent} className="social-page-links" />
+          <>
+            {links.length === 1 && (
+              <article className="social-feature-card">
+                <div>
+                  <Icon name={links[0].icon_key || socialPlatformOption(links[0].platform).icon || 'link'} />
+                  <h3>{socialLinkLabel(links[0], lang)}</h3>
+                  <p>{socialPlatformDescription(links[0].platform, lang)}</p>
+                </div>
+                <a className="button primary" href={links[0].url} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent('social_link_click', { platform: links[0].platform, cta_location: 'social_page_featured', source_section: 'social_page', language: lang }, { dedupe: false, transport: 'beacon' })}>{adminCopy(lang, 'Apri', 'Open')}</a>
+              </article>
+            )}
+            <SocialLinks lang={lang} siteContent={editor?.contentMap || siteContent} className="social-page-links" card location="social_page" />
+          </>
         ) : (
           <article className="empty-state-card">
             <p>{adminCopy(lang, 'Nessun social configurato al momento.', 'No social links are configured yet.')}</p>
@@ -4108,16 +4551,82 @@ function LatestNewsPage({ lang, siteContent, editor }) {
         <LatestNewsCard lang={lang} siteContent={siteContent} editor={editor} />
       ) : (
         <div className="container">
-          <article className="empty-state-card">
-            <span className="kicker">{adminCopy(lang, 'Ultime notizie', 'Latest news')}</span>
-            <h2>{adminCopy(lang, 'Nessun link configurato', 'No latest-news link configured')}</h2>
-            <p>{adminCopy(lang, 'Le ultime notizie saranno disponibili appena verrà configurato il link.', 'Latest news will be available once the link is configured.')}</p>
+          <article className="empty-state-card latest-news-empty-card">
+            <h2>{adminCopy(lang, 'Nessun link configurato', 'No Etna live news link configured')}</h2>
+            <p>{adminCopy(lang, 'Le notizie live sull’Etna saranno disponibili appena verrà configurato il link.', 'Etna live news will be available once the link is configured.')}</p>
           </article>
         </div>
       )}
     </section>
   );
 }
+
+
+function LegalPage({ lang, page, siteContent }) {
+  const contact = resolvePublicContactDetails(siteContent);
+  const updated = '30/06/2026';
+  const content = {
+    privacy: {
+      title: adminCopy(lang, 'Privacy Policy', 'Privacy Policy'),
+      intro: adminCopy(lang, 'Questa informativa descrive in modo pratico come vulcanIQ tratta i dati inviati tramite il sito.', 'This policy explains in practical terms how vulcanIQ processes data submitted through the website.'),
+      sections: [
+        [adminCopy(lang, 'Titolare del trattamento', 'Data controller'), adminCopy(lang, 'Il sito è gestito da vulcanIQ. Per richieste privacy puoi usare l’indirizzo email indicato nei contatti del sito.', 'The site is managed by vulcanIQ. For privacy requests, use the email address listed in the website contact details.')],
+        [adminCopy(lang, 'Dati raccolti', 'Data collected'), adminCopy(lang, 'Possiamo ricevere dati inseriti nei moduli di contatto o prenotazione, come nome, telefono, email, preferenze di contatto, data richiesta, numero di partecipanti e testo del messaggio.', 'We may receive data entered in contact or booking forms, such as name, phone, email, contact preference, requested date, party size and message text.')],
+        [adminCopy(lang, 'Dati analytics', 'Analytics data'), adminCopy(lang, 'Il sito usa metriche anonime e privacy-first per capire visite, azioni di contatto, sorgenti UTM e percorso verso la richiesta di prenotazione. Nomi, email, numeri di telefono e testo dei messaggi non vengono inclusi negli analytics.', 'The site uses anonymous privacy-first metrics to understand visits, contact actions, UTM sources and the path toward booking requests. Names, emails, phone numbers and message text are not included in analytics.')],
+        [adminCopy(lang, 'Finalità', 'Purposes'), adminCopy(lang, 'I dati sono usati per rispondere alle richieste, gestire disponibilità e prenotazioni, migliorare il sito e mantenere sicurezza tecnica.', 'Data is used to answer requests, manage availability and bookings, improve the site and maintain technical security.')],
+        [adminCopy(lang, 'Servizi terzi', 'Third-party services'), adminCopy(lang, 'Il sito può collegarsi a servizi esterni come WhatsApp, email, Google Maps, social network, Supabase e Cloudflare. Quando apri un link esterno, si applicano anche le policy del relativo servizio.', 'The site may link to external services such as WhatsApp, email, Google Maps, social networks, Supabase and Cloudflare. When you open an external link, that service’s policies also apply.')],
+        [adminCopy(lang, 'Conservazione e diritti', 'Retention and rights'), adminCopy(lang, 'I dati vengono conservati per il tempo necessario alla gestione della richiesta e agli obblighi organizzativi o legali. Puoi chiedere accesso, rettifica o cancellazione contattando il team.', 'Data is retained for the time needed to manage the request and organizational or legal obligations. You may request access, correction or deletion by contacting the team.')],
+        [adminCopy(lang, 'Contatto', 'Contact'), contact.email]
+      ]
+    },
+    terms: {
+      title: adminCopy(lang, 'Termini e condizioni', 'Terms and Conditions'),
+      intro: adminCopy(lang, 'Queste condizioni regolano l’uso del sito e l’invio di richieste per esperienze vulcanIQ.', 'These terms govern use of the site and submission of requests for vulcanIQ experiences.'),
+      sections: [
+        [adminCopy(lang, 'Uso del sito', 'Website use'), adminCopy(lang, 'Le informazioni sono fornite per presentare esperienze, disponibilità indicative e modalità di contatto. Non usare il sito in modo illecito o dannoso.', 'Information is provided to present experiences, indicative availability and contact methods. Do not use the site in unlawful or harmful ways.')],
+        [adminCopy(lang, 'Richieste e conferme', 'Requests and confirmations'), adminCopy(lang, 'L’invio di una richiesta non costituisce conferma automatica. La prenotazione è confermata solo dopo risposta esplicita del team vulcanIQ.', 'Submitting a request is not an automatic confirmation. A booking is confirmed only after explicit confirmation from the vulcanIQ team.')],
+        [adminCopy(lang, 'Disponibilità, prezzi e programmi', 'Availability, prices and programs'), adminCopy(lang, 'Disponibilità, prezzi, orari, itinerari e programmi possono cambiare in base a meteo, ordinanze, attività vulcanica, logistica e valutazione della guida.', 'Availability, prices, times, routes and programs may change based on weather, regulations, volcanic activity, logistics and guide assessment.')],
+        [adminCopy(lang, 'Responsabilità del cliente', 'Customer responsibilities'), adminCopy(lang, 'Il cliente deve fornire informazioni corrette su partecipanti, età, condizioni fisiche, esigenze specifiche e contatti utili alla gestione dell’esperienza.', 'Customers must provide accurate information about participants, age, fitness level, specific needs and contact details required to manage the experience.')],
+        [adminCopy(lang, 'Sicurezza Etna e meteo', 'Etna safety and weather'), adminCopy(lang, 'Le esperienze sull’Etna dipendono da condizioni naturali variabili. La guida può modificare, rinviare o annullare l’attività per motivi di sicurezza.', 'Etna experiences depend on variable natural conditions. The guide may change, postpone or cancel the activity for safety reasons.')],
+        [adminCopy(lang, 'Link esterni e proprietà intellettuale', 'External links and intellectual property'), adminCopy(lang, 'I link esterni sono forniti per utilità. Testi, immagini, logo e contenuti vulcanIQ non possono essere copiati senza autorizzazione.', 'External links are provided for convenience. vulcanIQ text, images, logo and content may not be copied without permission.')],
+        [adminCopy(lang, 'Contatto', 'Contact'), contact.email]
+      ]
+    },
+    cookies: {
+      title: adminCopy(lang, 'Cookie Policy', 'Cookie Policy'),
+      intro: adminCopy(lang, 'Questa pagina spiega l’uso di cookie e tecnologie simili sul sito vulcanIQ.', 'This page explains the use of cookies and similar technologies on the vulcanIQ website.'),
+      sections: [
+        [adminCopy(lang, 'Cosa sono i cookie', 'What cookies are'), adminCopy(lang, 'I cookie sono piccoli file o identificatori tecnici usati dal browser per far funzionare un sito o ricordare alcune informazioni.', 'Cookies are small files or technical identifiers used by the browser to operate a site or remember certain information.')],
+        [adminCopy(lang, 'Cookie essenziali', 'Essential cookies'), adminCopy(lang, 'Il sito può usare dati tecnici essenziali per lingua, sessione, sicurezza, invio dei moduli e funzionamento dell’interfaccia.', 'The site may use essential technical data for language, session, security, form submission and interface operation.')],
+        [adminCopy(lang, 'Analytics', 'Analytics'), adminCopy(lang, 'Le metriche del sito sono configurate per essere anonime e diagnostiche. Se il browser invia preferenze Do Not Track o segnali simili, il tracciamento viene limitato quando supportato dal sito.', 'Site metrics are configured to be anonymous and diagnostic. If the browser sends Do Not Track preferences or similar signals, tracking is limited where supported by the site.')],
+        [adminCopy(lang, 'Servizi terzi', 'Third-party services'), adminCopy(lang, 'Link a Google Maps, social network, WhatsApp o altri servizi possono usare cookie propri solo dopo l’apertura del servizio esterno.', 'Links to Google Maps, social networks, WhatsApp or other services may use their own cookies only after the external service is opened.')],
+        [adminCopy(lang, 'Gestione cookie', 'Managing cookies'), adminCopy(lang, 'Puoi gestire o cancellare i cookie dalle impostazioni del browser. Il blocco di alcuni elementi tecnici può ridurre il corretto funzionamento del sito.', 'You can manage or delete cookies in your browser settings. Blocking some technical elements may reduce proper site functionality.')],
+        [adminCopy(lang, 'Contatto', 'Contact'), contact.email]
+      ]
+    }
+  };
+  const selected = content[page] || content.privacy;
+  return (
+    <section className="section page-section legal-page-section">
+      <div className="container legal-page-card">
+        <div className="section-header refined-section-header">
+          <h1>{selected.title}</h1>
+          <p>{selected.intro}</p>
+          <p className="small-note">{adminCopy(lang, 'Ultimo aggiornamento', 'Last updated')}: {updated}. {adminCopy(lang, 'Testo di base da far verificare al titolare o a un consulente legale prima della pubblicazione definitiva.', 'Baseline copy to be reviewed by the business owner or a legal advisor before final publication.')}</p>
+        </div>
+        <div className="legal-section-list">
+          {selected.sections.map(([title, body]) => (
+            <article className="legal-section-card" key={title}>
+              <h2>{title}</h2>
+              <p>{body}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 
 function FinalCTA({ lang, siteContent }) {
   return (
@@ -4161,12 +4670,22 @@ function Footer({ lang, siteContent, editor }) {
   }, [phoneChoicesOpen]);
 
   return (
-    <footer className="footer">
-      <div className="container footer-grid">
-        <div>
-          <p>
-            <EditableText as="strong" itemKey="footer.contact.name" lang={lang} siteContent={siteContent} editor={editor} fallback="Leonardo Chiavetta" />
-            <br />
+    <footer className="footer public-footer">
+      <div className="container footer-grid public-footer-grid">
+        <section className="footer-column footer-brand-column">
+          <h2>vulcanIQ</h2>
+          <p>{adminCopy(lang, 'Esperienze sull’Etna curate con conoscenza, sicurezza e relazione umana.', 'Mount Etna experiences curated with knowledge, safety and human connection.')}</p>
+          <p className="footer-contact-list">
+            <a
+              href={buildMailto(contact.email, subject, text(lang, 'defaultMessage'))}
+              onClick={(event) => requestContactAttribution(event, {
+                type: 'email',
+                location: 'footer',
+                metadata: { ...baseMetadata, source_cta: 'email_direct' },
+                confirmLabel: contactActionConfirmLabel('email', lang),
+                buildUrl: (_selectedMetadata, source, detail) => buildMailto(contact.email, subject, buildAttributionContactMessage(source, detail, lang))
+              })}
+            >{contact.email}</a>
             <span className="footer-phone-choice" ref={phoneChoiceRef}>
               <button
                 className="footer-phone-choice-trigger"
@@ -4198,20 +4717,26 @@ function Footer({ lang, siteContent, editor }) {
                 </span>
               )}
             </span>
-            <br />
-            <a
-              href={buildMailto(contact.email, subject, text(lang, 'defaultMessage'))}
-              onClick={(event) => requestContactAttribution(event, {
-                type: 'email',
-                location: 'footer',
-                metadata: { ...baseMetadata, source_cta: 'email_direct' },
-                confirmLabel: contactActionConfirmLabel('email', lang),
-                buildUrl: (_selectedMetadata, source, detail) => buildMailto(contact.email, subject, buildAttributionContactMessage(source, detail, lang))
-              })}
-            >{contact.email}</a>
           </p>
-          <SocialLinks lang={lang} siteContent={siteContent} className="footer-social-links" compact />
-        </div>
+        </section>
+        <section className="footer-column">
+          <h3>{adminCopy(lang, 'Legale', 'Legal')}</h3>
+          <a href="/privacy-policy">Privacy Policy</a>
+          <a href="/terms-and-conditions">{adminCopy(lang, 'Termini e condizioni', 'Terms and Conditions')}</a>
+          <a href="/cookie-policy">Cookie Policy</a>
+        </section>
+        <section className="footer-column">
+          <h3>{adminCopy(lang, 'Social', 'Social')}</h3>
+          <SocialLinks lang={lang} siteContent={siteContent} className="footer-social-links" compact location="footer" />
+        </section>
+        <section className="footer-column">
+          <h3>Etna</h3>
+          <a href="/latest-news">{adminCopy(lang, 'Notizie live sull’Etna', 'Etna live news')}</a>
+          <a href="/experiences">{adminCopy(lang, 'Prenota ora', 'Book now')}</a>
+        </section>
+      </div>
+      <div className="container footer-bottom-row">
+        <p>{adminCopy(lang, '© 2025 vulcanIQ – Tutti i diritti riservati', '© 2025 vulcanIQ – All rights reserved')}</p>
       </div>
       {contactAttributionModal}
     </footer>
@@ -5262,7 +5787,7 @@ const EDITOR_PAGE_OPTIONS = [
   { key: 'about', it: 'Chi siamo', en: 'Who we are' },
   { key: 'reviews', it: 'Recensioni', en: 'Reviews' },
   { key: 'social', it: 'Social', en: 'Social' },
-  { key: 'latestNews', it: 'Ultime notizie', en: 'Latest news' },
+  { key: 'latestNews', it: 'Notizie live sull’Etna', en: 'Etna live news' },
   { key: 'contact', it: 'Contatti', en: 'Contact' }
 ];
 
@@ -5384,8 +5909,8 @@ function LatestNewsEditor({ lang, contentMap, updateContentDraft }) {
   return (
     <details className="admin-archive-details edit-workspace-section latest-news-editor" open>
       <summary>
-        <span>{adminCopy(lang, 'Ultime notizie', 'Latest news')}</span>
-        <strong>{adminCopy(lang, 'Link ultime notizie', 'Latest news link')}</strong>
+        <span>{adminCopy(lang, 'Notizie live sull’Etna', 'Etna live news')}</span>
+        <strong>{adminCopy(lang, 'Link notizie live sull’Etna', 'Etna live news link')}</strong>
       </summary>
       <div className="admin-form-grid latest-news-grid">
         <label className="check-field full">
@@ -6185,12 +6710,12 @@ const SITE_CONTENT_DEFINITIONS = [
   { key: 'contact.channels.phone', section: 'Contatti', label_it: 'Telefono pubblico / WhatsApp', label_en: 'Public phone / WhatsApp', type: 'text', default_it: PHONE_DISPLAY, default_en: PHONE_DISPLAY },
   { key: 'contact.channels.email', section: 'Contatti', label_it: 'Email pubblica', label_en: 'Public email', type: 'text', default_it: EMAIL, default_en: EMAIL },
   { key: 'contact.channels.instagram_url', section: 'Contatti', label_it: 'Link Instagram pubblico', label_en: 'Public Instagram link', type: 'text', default_it: INSTAGRAM, default_en: INSTAGRAM },
-  { key: latestNewsContentKey('enabled'), section: 'Ultime notizie', label_it: 'Mostra ultime notizie', label_en: 'Show latest news', type: 'text', default_it: 'true', default_en: 'true' },
-  { key: latestNewsContentKey('title'), section: 'Ultime notizie', label_it: 'Titolo ultime notizie', label_en: 'Latest news title', type: 'text', default_it: LATEST_NEWS_DEFAULTS.title_it, default_en: LATEST_NEWS_DEFAULTS.title_en, text_size: 'large', style_variant: 'heading' },
-  { key: latestNewsContentKey('description'), section: 'Ultime notizie', label_it: 'Descrizione ultime notizie', label_en: 'Latest news description', type: 'textarea', default_it: LATEST_NEWS_DEFAULTS.description_it, default_en: LATEST_NEWS_DEFAULTS.description_en },
-  { key: latestNewsContentKey('cta_label'), section: 'Ultime notizie', label_it: 'Testo pulsante ultime notizie', label_en: 'Latest news button text', type: 'text', default_it: LATEST_NEWS_DEFAULTS.cta_it, default_en: LATEST_NEWS_DEFAULTS.cta_en, style_variant: 'label' },
-  { key: latestNewsContentKey('url_it'), section: 'Ultime notizie', label_it: 'URL italiano ultime notizie', label_en: 'Italian latest-news URL', type: 'text', default_it: '', default_en: '' },
-  { key: latestNewsContentKey('url_en'), section: 'Ultime notizie', label_it: 'URL inglese ultime notizie', label_en: 'English latest-news URL', type: 'text', default_it: '', default_en: '' },
+  { key: latestNewsContentKey('enabled'), section: 'Notizie live sull’Etna', label_it: 'Mostra notizie live sull’Etna', label_en: 'Show Etna live news', type: 'text', default_it: 'true', default_en: 'true' },
+  { key: latestNewsContentKey('title'), section: 'Notizie live sull’Etna', label_it: 'Titolo notizie live sull’Etna', label_en: 'Etna live news title', type: 'text', default_it: LATEST_NEWS_DEFAULTS.title_it, default_en: LATEST_NEWS_DEFAULTS.title_en, text_size: 'large', style_variant: 'heading' },
+  { key: latestNewsContentKey('description'), section: 'Notizie live sull’Etna', label_it: 'Descrizione notizie live sull’Etna', label_en: 'Etna live news description', type: 'textarea', default_it: LATEST_NEWS_DEFAULTS.description_it, default_en: LATEST_NEWS_DEFAULTS.description_en },
+  { key: latestNewsContentKey('cta_label'), section: 'Notizie live sull’Etna', label_it: 'Testo pulsante notizie live sull’Etna', label_en: 'Etna live news button text', type: 'text', default_it: LATEST_NEWS_DEFAULTS.cta_it, default_en: LATEST_NEWS_DEFAULTS.cta_en, style_variant: 'label' },
+  { key: latestNewsContentKey('url_it'), section: 'Notizie live sull’Etna', label_it: 'URL italiano notizie live sull’Etna', label_en: 'Italian latest-news URL', type: 'text', default_it: '', default_en: '' },
+  { key: latestNewsContentKey('url_en'), section: 'Notizie live sull’Etna', label_it: 'URL inglese notizie live sull’Etna', label_en: 'English latest-news URL', type: 'text', default_it: '', default_en: '' },
   { key: SOCIAL_LINKS_CONTENT_KEY, section: 'Social', label_it: 'Pagine social', label_en: 'Social pages', type: 'textarea', default_it: '', default_en: '' },
   { key: 'footer.contact.name', section: 'Footer', label_it: 'Nome footer', label_en: 'Footer name', type: 'text', default_it: 'Leonardo Chiavetta', default_en: 'Leonardo Chiavetta', style_variant: 'heading' }
 ];
@@ -7167,20 +7692,26 @@ function isInternalAnalyticsRow(row = {}) {
 
 function normalizedTrafficSourceForAnalytics(row = {}) {
   const metadata = row.metadata || {};
-  const raw = String(metadata.utm_source || row.traffic_source || row.referrer_domain || '').toLowerCase();
-  const medium = String(metadata.utm_medium || '').toLowerCase();
+  const raw = String(metadata.utm_source || row.traffic_source || row.referrer_domain || '').toLowerCase().replace(/[-\s]+/g, '_');
+  const medium = String(metadata.utm_medium || '').toLowerCase().replace(/[-\s]+/g, '_');
   if (raw.includes('instagram') || raw === 'ig') return 'instagram';
   if (raw.includes('whatsapp') || raw === 'wa') return 'whatsapp';
   if (raw.includes('facebook') || raw === 'fb') return 'facebook';
+  if (raw.includes('google_business_profile') || raw.includes('google_my_business') || raw === 'gbp') return 'google_business_profile';
   if (raw.includes('google')) return 'google';
+  if (raw.includes('partner') || medium === 'partner') return 'partner';
+  if (raw.includes('tiktok') || raw === 'tt') return 'tiktok';
   if (!raw || raw === 'direct') return 'direct';
-  if (medium === 'message' && raw.includes('whatsapp')) return 'whatsapp';
+  if (medium === 'share' && raw.includes('whatsapp')) return 'whatsapp';
   return 'other';
 }
 
 function trafficSourceLabel(source, lang) {
   if (source === 'direct') return adminCopy(lang, 'Diretto', 'Direct');
   if (source === 'whatsapp') return adminCopy(lang, 'WhatsApp condiviso', 'WhatsApp share');
+  if (source === 'google_business_profile') return 'Google Business Profile';
+  if (source === 'partner') return adminCopy(lang, 'Partner', 'Partner');
+  if (source === 'tiktok') return 'TikTok';
   if (source === 'other') return adminCopy(lang, 'Altri referrer', 'Other referrers');
   return source[0].toUpperCase() + source.slice(1);
 }
@@ -7264,6 +7795,18 @@ function eventMeta(event, key) {
 
 function eventBookingRequestId(event) {
   return String(eventMeta(event, 'booking_request_id') || eventMeta(event, 'request_id') || '').trim();
+}
+
+function eventBookingJourneyId(event) {
+  return String(eventMeta(event, 'booking_journey_id') || eventMeta(event, 'analytics_journey_id') || '').trim();
+}
+
+function requestBookingJourneyId(request = {}) {
+  return String(request.analytics_journey_id || request.booking_journey_id || '').trim();
+}
+
+function requestAnalyticsSessionId(request = {}) {
+  return String(request.analytics_session_id || '').trim();
 }
 
 function requestCreatedAtTime(request) {
@@ -7446,17 +7989,25 @@ function buildDeclaredAttributionRows({ events = [], bookingRequests = [], range
 
 function buildBookingRequestTrackingIntegrity({ requests = [], events = [], range, lang, isSubmitAttemptEvent, isSubmitSuccessEvent }) {
   const eventsByRequestId = new Map();
+  const eventsByJourneyId = new Map();
   events.forEach((event) => {
-    const id = eventBookingRequestId(event);
-    if (!id) return;
-    const list = eventsByRequestId.get(id) || [];
-    list.push(event);
-    eventsByRequestId.set(id, list);
+    const requestId = eventBookingRequestId(event);
+    if (requestId) {
+      const list = eventsByRequestId.get(requestId) || [];
+      list.push(event);
+      eventsByRequestId.set(requestId, list);
+    }
+    const journeyId = eventBookingJourneyId(event);
+    if (journeyId) {
+      const list = eventsByJourneyId.get(journeyId) || [];
+      list.push(event);
+      eventsByJourneyId.set(journeyId, list);
+    }
   });
 
-  const legacySuccessEvents = events.filter((event) => isSubmitSuccessEvent(event) && !eventBookingRequestId(event));
-  const legacyAttemptEvents = events.filter((event) => isSubmitAttemptEvent(event) && !eventBookingRequestId(event));
-  const formOpenEvents = events.filter((event) => event.event_name === 'booking_form_open');
+  const legacySuccessEvents = events.filter((event) => isSubmitSuccessEvent(event) && !eventBookingRequestId(event) && !eventBookingJourneyId(event));
+  const legacyAttemptEvents = events.filter((event) => isSubmitAttemptEvent(event) && !eventBookingRequestId(event) && !eventBookingJourneyId(event));
+  const formOpenEvents = events.filter((event) => event.event_name === 'booking_form_open' && !eventBookingJourneyId(event));
 
   function legacyMatches(request, candidates) {
     const requestTime = requestCreatedAtTime(request);
@@ -7472,38 +8023,66 @@ function buildBookingRequestTrackingIntegrity({ requests = [], events = [], rang
     .filter((request) => periodContains(request, range))
     .map((request) => {
       const id = String(request.id || '').trim();
-      const matchedEvents = id ? (eventsByRequestId.get(id) || []) : [];
-      const matchedAttemptById = matchedEvents.find(isSubmitAttemptEvent);
-      const matchedSuccessById = matchedEvents.find(isSubmitSuccessEvent);
-      const matchedCreatedById = matchedEvents.find((event) => event.event_name === 'booking_request_created');
-      const legacyAttempts = matchedAttemptById ? [] : legacyMatches(request, legacyAttemptEvents);
-      const legacySuccesses = matchedSuccessById ? [] : legacyMatches(request, legacySuccessEvents);
-      const legacyFormOpens = legacyMatches(request, formOpenEvents);
-      const hasAttempt = Boolean(matchedAttemptById || legacyAttempts.length);
-      const hasSuccess = Boolean(matchedSuccessById || legacySuccesses.length);
-      const hasCreated = Boolean(matchedCreatedById || matchedEvents.some((event) => event.event_name === 'booking_request_created'));
+      const journeyId = requestBookingJourneyId(request);
+      const matchedEventsById = id ? (eventsByRequestId.get(id) || []) : [];
+      const matchedEventsByJourney = journeyId ? (eventsByJourneyId.get(journeyId) || []) : [];
+      const allProperEvents = [...matchedEventsById, ...matchedEventsByJourney].filter((event, index, array) => array.findIndex((candidate) => candidate.id === event.id) === index);
+
+      const matchedAttemptById = matchedEventsById.find(isSubmitAttemptEvent);
+      const matchedSuccessById = matchedEventsById.find(isSubmitSuccessEvent);
+      const matchedCreatedById = matchedEventsById.find((event) => event.event_name === 'booking_request_created');
+      const matchedAttemptByJourney = matchedEventsByJourney.find(isSubmitAttemptEvent);
+      const matchedSuccessByJourney = matchedEventsByJourney.find(isSubmitSuccessEvent);
+      const matchedCreatedByJourney = matchedEventsByJourney.find((event) => event.event_name === 'booking_request_created');
+
+      const legacyAttempts = (matchedAttemptById || matchedAttemptByJourney) ? [] : legacyMatches(request, legacyAttemptEvents);
+      const legacySuccesses = (matchedSuccessById || matchedSuccessByJourney) ? [] : legacyMatches(request, legacySuccessEvents);
+      const legacyFormOpens = (journeyId || matchedEventsById.length) ? [] : legacyMatches(request, formOpenEvents);
+
+      const hasAttempt = Boolean(matchedAttemptById || matchedAttemptByJourney);
+      const hasSuccess = Boolean(matchedSuccessById || matchedSuccessByJourney);
+      const hasCreated = Boolean(matchedCreatedById || matchedCreatedByJourney);
       const adminManual = isAdminManualRequest(request);
-      const matchMethod = matchedSuccessById || matchedCreatedById
-        ? 'matched_by_booking_request_id'
-        : legacySuccesses.length || legacyAttempts.length || legacyFormOpens.length
-          ? 'matched_by_legacy_heuristic'
-          : adminManual
-            ? 'admin_manual'
-            : 'missing_submit_tracking';
+      const hasJourneyOnlySuccess = Boolean(!matchedSuccessById && matchedSuccessByJourney);
+      const hasRequestIdSuccess = Boolean(matchedSuccessById);
+      const hasRequestIdCreatedOnly = Boolean(!hasSuccess && matchedCreatedById);
+      const hasJourneyCreatedOnly = Boolean(!hasSuccess && !matchedCreatedById && matchedCreatedByJourney);
+      const hasLegacyOnly = Boolean(legacySuccesses.length || legacyAttempts.length || legacyFormOpens.length);
+
+      const matchMethod = adminManual
+        ? 'admin_manual'
+        : hasRequestIdSuccess
+          ? 'matched_by_booking_request_id'
+          : hasJourneyOnlySuccess
+            ? 'matched_by_journey_id'
+            : hasRequestIdCreatedOnly
+              ? 'matched_created_event_only_by_booking_request_id'
+              : hasJourneyCreatedOnly
+                ? 'matched_created_event_only_by_journey_id'
+                : hasLegacyOnly
+                  ? 'matched_by_legacy_heuristic'
+                  : 'missing_submit_tracking';
+
       const createdDate = String(request.created_at || '').slice(0, 10);
-      const legacyCutoff = '2026-06-16';
+      const legacyCutoff = '2026-06-29';
       const status = adminManual
         ? 'admin_manual'
-        : hasSuccess || hasCreated
+        : hasRequestIdSuccess
           ? 'matched_by_booking_request_id'
-          : matchMethod === 'matched_by_legacy_heuristic'
-            ? 'matched_by_legacy_heuristic'
-            : createdDate && createdDate < legacyCutoff
-              ? 'legacy_missing_tracking'
-              : 'missing_submit_tracking';
+          : hasJourneyOnlySuccess
+            ? 'matched_by_journey_id'
+            : hasRequestIdCreatedOnly || hasJourneyCreatedOnly
+              ? 'created_event_without_submit_success'
+              : hasLegacyOnly
+                ? 'matched_by_legacy_heuristic'
+                : createdDate && createdDate < legacyCutoff
+                  ? 'legacy_missing_tracking'
+                  : 'missing_submit_tracking';
 
       return {
         booking_request_id: id || null,
+        analytics_journey_id: journeyId || null,
+        analytics_session_id: requestAnalyticsSessionId(request) || null,
         created_at: request.created_at,
         request_type: request.request_type,
         experience_id: request.experience_id,
@@ -7512,9 +8091,13 @@ function buildBookingRequestTrackingIntegrity({ requests = [], events = [], rang
         matched_submit_attempt: hasAttempt,
         matched_submit_success: hasSuccess,
         matched_booking_request_created_event: hasCreated,
-        submit_attempt_at: (matchedAttemptById || legacyAttempts[0])?.occurred_at || null,
-        submit_success_at: (matchedSuccessById || legacySuccesses[0])?.occurred_at || null,
-        booking_request_created_event_at: matchedCreatedById?.occurred_at || null,
+        legacy_matched_submit_attempt: Boolean(legacyAttempts.length),
+        legacy_matched_submit_success: Boolean(legacySuccesses.length),
+        legacy_matched_form_open: Boolean(legacyFormOpens.length),
+        submit_attempt_at: (matchedAttemptById || matchedAttemptByJourney)?.occurred_at || null,
+        submit_success_at: (matchedSuccessById || matchedSuccessByJourney)?.occurred_at || null,
+        booking_request_created_event_at: (matchedCreatedById || matchedCreatedByJourney)?.occurred_at || null,
+        proper_event_count: allProperEvents.length,
         tracking_match_method: matchMethod,
         tracking_integrity_status: status,
         heard_about_us: normalizeHeardAboutUs(request.heard_about_us, { allowAdmin: true }) || null,
@@ -7573,7 +8156,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   function isSubmitErrorEvent(event) { return event.event_name === 'booking_form_submit_error' || (!hasNewSubmitErrors && event.event_name === 'booking_submit_error'); }
   function isMapClickEvent(event) { return event.event_name === 'google_maps_click' || (!hasNewMapClicks && event.event_name === 'maps_click'); }
 
-  const sourceRows = ['direct', 'instagram', 'whatsapp', 'google', 'facebook', 'other'].map((source) => ({
+  const sourceRows = ['direct', 'instagram', 'facebook', 'whatsapp', 'google_business_profile', 'google', 'partner', 'tiktok', 'other'].map((source) => ({
     label: trafficSourceLabel(source, lang),
     count: pageViewEvents.filter((event) => normalizedTrafficSourceForAnalytics(event) === source).length
   }));
@@ -7772,7 +8355,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
 
   const declaredAttributionRows = buildDeclaredAttributionRows({ events, bookingRequests, range, lang });
 
-  const trafficAttributionQuality = ['direct', 'instagram', 'whatsapp', 'google', 'facebook', 'other'].map((source) => ({
+  const trafficAttributionQuality = ['direct', 'instagram', 'facebook', 'whatsapp', 'google_business_profile', 'google', 'partner', 'tiktok', 'other'].map((source) => ({
     source: trafficSourceLabel(source, lang),
     count: pageViewEvents.filter((event) => normalizedTrafficSourceForAnalytics(event) === source).length,
     notes: source === 'direct'
@@ -7786,13 +8369,21 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
 
   const requestTrackingIntegrity = buildBookingRequestTrackingIntegrity({ requests: bookingRequests, events, range, lang, isSubmitAttemptEvent, isSubmitSuccessEvent });
   const publicRequestTrackingIntegrity = requestTrackingIntegrity.filter((row) => row.tracking_integrity_status !== 'admin_manual');
-  const requestsWithTrackedSubmit = publicRequestTrackingIntegrity.filter((row) => row.matched_submit_success || row.matched_booking_request_created_event).length;
-  const requestsWithoutTrackedSubmit = publicRequestTrackingIntegrity.filter((row) => ['missing_submit_tracking', 'legacy_missing_tracking'].includes(row.tracking_integrity_status)).length;
+  const requestsMatchedByBookingRequestId = publicRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'matched_by_booking_request_id').length;
+  const requestsMatchedByJourneyId = publicRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'matched_by_journey_id').length;
+  const requestsMatchedByLegacyHeuristic = publicRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'matched_by_legacy_heuristic').length;
+  const requestsCreatedEventOnly = publicRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'created_event_without_submit_success').length;
+  const requestsWithTrackedSubmit = requestsMatchedByBookingRequestId + requestsMatchedByJourneyId;
+  const requestsWithoutTrackedSubmit = publicRequestTrackingIntegrity.filter((row) => ['missing_submit_tracking', 'legacy_missing_tracking', 'created_event_without_submit_success', 'matched_by_legacy_heuristic'].includes(row.tracking_integrity_status)).length;
   const legacyIncompleteRequests = publicRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'legacy_missing_tracking').length;
 
   const dataQualityRows = [
-    { check: adminCopy(lang, 'Richieste con invio tracciato', 'Requests with tracked submit'), count: requestsWithTrackedSubmit, detail: adminCopy(lang, 'Preferenza: match tramite booking_request_id negli eventi analytics.', 'Preferred match: analytics metadata.booking_request_id.') },
+    { check: adminCopy(lang, 'Richieste con invio tracciato', 'Requests with tracked submit'), count: requestsWithTrackedSubmit, detail: adminCopy(lang, 'Conta solo match puliti tramite booking_request_id o booking_journey_id con submit_success.', 'Counts only clean booking_request_id or booking_journey_id matches with submit_success.') },
+    { check: adminCopy(lang, 'Richieste matchate tramite journey id', 'Requests matched by journey id'), count: requestsMatchedByJourneyId, detail: adminCopy(lang, 'Match tramite booking_requests.analytics_journey_id = analytics_events.metadata.booking_journey_id.', 'Match via booking_requests.analytics_journey_id = analytics_events.metadata.booking_journey_id.') },
+    { check: adminCopy(lang, 'Richieste matchate tramite booking_request_id', 'Requests matched by booking_request_id'), count: requestsMatchedByBookingRequestId, detail: adminCopy(lang, 'Match tramite analytics_events.metadata.booking_request_id.', 'Match via analytics_events.metadata.booking_request_id.') },
+    { check: adminCopy(lang, 'Richieste matchate solo da euristica legacy', 'Requests matched only by legacy heuristic'), count: requestsMatchedByLegacyHeuristic, detail: requestsMatchedByLegacyHeuristic ? adminCopy(lang, 'Warning: non contano come invio tracciato correttamente.', 'Warning: these do not count as properly tracked submits.') : '—' },
     { check: adminCopy(lang, 'Richieste senza invio tracciato', 'Requests without tracked submit'), count: requestsWithoutTrackedSubmit, detail: requestsWithoutTrackedSubmit ? trackingIncompleteLabel(lang) : '—' },
+    { check: adminCopy(lang, 'Eventi richiesta senza submit_success', 'Request events without submit_success'), count: requestsCreatedEventOnly, detail: requestsCreatedEventOnly ? adminCopy(lang, 'Esiste booking_request_created, ma manca booking_form_submit_success.', 'booking_request_created exists, but booking_form_submit_success is missing.') : '—' },
     { check: adminCopy(lang, 'Richieste admin/manuali escluse', 'Admin/manual requests excluded'), count: adminManualRequestRows.length, detail: adminCopy(lang, 'Escluse dal funnel pubblico sito.', 'Excluded from the public website funnel.') },
     { check: adminCopy(lang, 'Tracciamento legacy incompleto', 'Incomplete legacy tracking'), count: legacyIncompleteRequests, detail: legacyIncompleteRequests ? adminCopy(lang, 'Dati precedenti alla correzione: non vengono ricostruiti artificialmente.', 'Pre-fix data: not backfilled artificially.') : '—' },
     { check: adminCopy(lang, 'Richieste senza apertura modulo tracciata', 'Requests without tracked form open'), count: requestsWithoutTrackedFormOpen.reduce((sum, row) => sum + row.booking_requests, 0), detail: requestsWithoutTrackedFormOpen.map((row) => `${row.experience}: ${row.booking_requests}`).join(', ') || '—' },
@@ -7860,6 +8451,14 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     declaredAttributionRows,
     dataQualityRows,
     requestTrackingIntegrity,
+    requestTrackingSummary: {
+      requests_with_tracked_submit: requestsWithTrackedSubmit,
+      requests_matched_by_journey_id: requestsMatchedByJourneyId,
+      requests_matched_by_booking_request_id: requestsMatchedByBookingRequestId,
+      requests_matched_by_legacy_heuristic: requestsMatchedByLegacyHeuristic,
+      requests_created_event_only: requestsCreatedEventOnly,
+      requests_without_tracked_submit: requestsWithoutTrackedSubmit
+    },
     warnings,
     lowSampleNote: visitors < 50,
     internalEventsExcluded,
@@ -7962,6 +8561,14 @@ function safeBookingRequestRows(requests = [], range, lang) {
       source_section: request.source_section,
       source_cta: request.source_cta,
       cta_location: request.cta_location,
+      analytics_session_id: request.analytics_session_id || null,
+      analytics_visitor_id: request.analytics_visitor_id || null,
+      analytics_journey_id: request.analytics_journey_id || null,
+      booking_journey_version: request.booking_journey_version || null,
+      selected_month: request.selected_month || null,
+      device_type: request.device_type || null,
+      browser: request.browser || null,
+      operating_system: request.operating_system || null,
       experience_id: request.experience_id,
       requested_date_present: Boolean(request.requested_date),
       heard_about_us: normalizeHeardAboutUs(request.heard_about_us, { allowAdmin: true }) || null,
@@ -8046,8 +8653,12 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
       internal_events_excluded: model.internalEventsExcluded,
       internal_sessions_excluded: model.internalSessionsExcluded,
       website_booking_requests_in_period: bookingRequestsInPeriod(bookingRequests, range),
-      requests_with_tracked_submit: model.requestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'matched_by_booking_request_id' || row.tracking_integrity_status === 'matched_by_legacy_heuristic').length,
-      requests_without_tracked_submit: model.requestTrackingIntegrity.filter((row) => ['missing_submit_tracking', 'legacy_missing_tracking'].includes(row.tracking_integrity_status)).length
+      requests_with_tracked_submit: model.requestTrackingSummary?.requests_with_tracked_submit || 0,
+      requests_matched_by_journey_id: model.requestTrackingSummary?.requests_matched_by_journey_id || 0,
+      requests_matched_by_booking_request_id: model.requestTrackingSummary?.requests_matched_by_booking_request_id || 0,
+      requests_matched_by_legacy_heuristic: model.requestTrackingSummary?.requests_matched_by_legacy_heuristic || 0,
+      requests_created_event_only: model.requestTrackingSummary?.requests_created_event_only || 0,
+      requests_without_tracked_submit: model.requestTrackingSummary?.requests_without_tracked_submit || 0
     },
     tables: {
       countries: model.countryRows,
@@ -8083,7 +8694,7 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
       sessions: safeAnalyticsRows(sessions, 'session'),
       booking_requests: safeBookingRequestRows(bookingRequests, range, lang)
     },
-    privacy_note: 'Visitor IDs, session IDs, names, emails, phone numbers, message text, precise coordinates, payment data, and raw booking-request personal details are intentionally excluded from this export.'
+    privacy_note: 'Names, emails, phone numbers, message text, precise coordinates, payment data, and raw booking-request personal details are intentionally excluded. Analytics session/visitor/journey IDs are anonymous diagnostics used only to link funnel events.'
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -10233,6 +10844,10 @@ function AdminReviewsPanel({ lang, adminContent = {} }) {
   const [confirmReview, setConfirmReview] = useState(null);
   const [replyDrafts, setReplyDrafts] = useState({});
   const [savingReplyId, setSavingReplyId] = useState('');
+  const [editingReviewId, setEditingReviewId] = useState('');
+  const [editDrafts, setEditDrafts] = useState({});
+  const emptyManualReviewForm = { source: 'google', reviewer_name: '', rating: '5', review_text: '', language: lang, review_date: todayIso(), external_review_url: '', profile_photo_url: '', display_order: '0', active: true, approved: true };
+  const [manualForm, setManualForm] = useState(emptyManualReviewForm);
 
   useBodyScrollLock(Boolean(confirmReview));
 
@@ -10249,6 +10864,28 @@ function AdminReviewsPanel({ lang, adminContent = {} }) {
   }
 
   useEffect(() => { refresh(); }, []);
+
+  function updateManual(field, value) {
+    setManualForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submitManualReview(event) {
+    event.preventDefault();
+    setError('');
+    setFeedback('');
+    if (!manualForm.review_text.trim()) {
+      setError(adminCopy(lang, 'Inserisci il testo della recensione.', 'Enter the review text.'));
+      return;
+    }
+    try {
+      await createManualReview(manualForm);
+      setManualForm({ ...emptyManualReviewForm, language: lang, review_date: todayIso() });
+      setFeedback(adminCopy(lang, 'Recensione manuale salvata.', 'Manual review saved.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Recensione manuale non salvata.', 'Manual review not saved.'));
+    }
+  }
 
   async function setVisible(review, active) {
     setError('');
@@ -10274,7 +10911,6 @@ function AdminReviewsPanel({ lang, adminContent = {} }) {
       setError(err?.message || adminCopy(lang, 'Impossibile eliminare la recensione. Riprova.', 'Could not delete the review. Please try again.'));
     }
   }
-
 
   function replyDraft(review) {
     return replyDrafts[review.id] ?? review.admin_reply ?? '';
@@ -10315,11 +10951,89 @@ function AdminReviewsPanel({ lang, adminContent = {} }) {
     }
   }
 
+  function reviewEditDraft(review) {
+    return editDrafts[review.id] || {
+      source: review.source || 'website',
+      reviewer_name: review.reviewer_name || '',
+      rating: String(review.rating || '5'),
+      review_text: review.review_text || '',
+      language: review.language || lang,
+      review_date: review.review_date || String(review.created_at || '').slice(0, 10) || todayIso(),
+      external_review_url: review.external_review_url || '',
+      profile_photo_url: review.profile_photo_url || '',
+      display_order: String(review.display_order || 0),
+      active: review.active !== false,
+      approved: review.approved !== false
+    };
+  }
+
+  function updateReviewDraft(review, field, value) {
+    setEditDrafts((current) => ({ ...current, [review.id]: { ...reviewEditDraft(review), [field]: value } }));
+  }
+
+  function startEditingReview(review) {
+    setEditingReviewId(review.id);
+    setEditDrafts((current) => ({ ...current, [review.id]: reviewEditDraft(review) }));
+  }
+
+  async function saveReviewDetails(review) {
+    setError('');
+    setFeedback('');
+    const draft = reviewEditDraft(review);
+    try {
+      await updateReviewDetails(review.id, draft);
+      setEditingReviewId('');
+      setFeedback(adminCopy(lang, 'Recensione aggiornata.', 'Review updated.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Recensione non aggiornata.', 'Review not updated.'));
+    }
+  }
+
+  function renderReviewDetailsForm(review) {
+    const draft = reviewEditDraft(review);
+    return (
+      <div className="admin-form-grid single-card-form admin-review-edit-form">
+        <label className="admin-field"><span>{adminCopy(lang, 'Fonte', 'Source')}</span><select value={draft.source} onChange={(event) => updateReviewDraft(review, 'source', event.target.value)}><option value="website">Website</option><option value="google">Google</option></select></label>
+        <AdminInput label={adminCopy(lang, 'Nome', 'Name')} value={draft.reviewer_name} onChange={(value) => updateReviewDraft(review, 'reviewer_name', value)} />
+        <label className="admin-field"><span>{adminCopy(lang, 'Valutazione', 'Rating')}</span><select value={draft.rating} onChange={(event) => updateReviewDraft(review, 'rating', event.target.value)}>{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating}/5</option>)}</select></label>
+        <label className="admin-field"><span>{adminCopy(lang, 'Lingua', 'Language')}</span><select value={draft.language} onChange={(event) => updateReviewDraft(review, 'language', event.target.value)}><option value="it">Italiano</option><option value="en">English</option></select></label>
+        <AdminInput label={adminCopy(lang, 'Data recensione', 'Review date')} type="date" value={draft.review_date} onChange={(value) => updateReviewDraft(review, 'review_date', value)} />
+        <AdminInput label={adminCopy(lang, 'Ordine', 'Display order')} type="number" value={draft.display_order} onChange={(value) => updateReviewDraft(review, 'display_order', value)} />
+        <label className="admin-field full"><span>{adminCopy(lang, 'Testo recensione', 'Review text')}</span><textarea value={draft.review_text} onChange={(event) => updateReviewDraft(review, 'review_text', event.target.value)} rows={4} /></label>
+        <AdminInput label={adminCopy(lang, 'URL recensione Google opzionale', 'Optional Google review URL')} value={draft.external_review_url} onChange={(value) => updateReviewDraft(review, 'external_review_url', value)} />
+        <AdminInput label={adminCopy(lang, 'URL foto profilo opzionale', 'Optional profile photo URL')} value={draft.profile_photo_url} onChange={(value) => updateReviewDraft(review, 'profile_photo_url', value)} />
+        <label className="check-field"><input type="checkbox" checked={draft.active} onChange={(event) => updateReviewDraft(review, 'active', event.target.checked)} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
+        <label className="check-field"><input type="checkbox" checked={draft.approved} onChange={(event) => updateReviewDraft(review, 'approved', event.target.checked)} /> {adminCopy(lang, 'Approvata', 'Approved')}</label>
+        <div className="modal-actions full"><button className="button primary" type="button" onClick={() => saveReviewDetails(review)}>{adminCopy(lang, 'Salva dettagli', 'Save details')}</button><button className="button secondary" type="button" onClick={() => setEditingReviewId('')}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
+      </div>
+    );
+  }
+
   return (
     <section className="admin-panel admin-reviews-panel">
       <div className="admin-panel-header"><AdminEditableText as="h2" itemKey="admin.reviews.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestione recensioni', 'Review management')} /><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
+
+      <details className="admin-archive-details manual-review-editor" open>
+        <summary><span>{adminCopy(lang, 'Recensione manuale / Google', 'Manual / Google review')}</span><strong>{adminCopy(lang, 'Fonte gratuita gestita da admin', 'Free admin-managed source')}</strong></summary>
+        <form className="admin-form-grid" onSubmit={submitManualReview}>
+          <label className="admin-field"><span>{adminCopy(lang, 'Fonte', 'Source')}</span><select value={manualForm.source} onChange={(event) => updateManual('source', event.target.value)}><option value="google">Google</option><option value="website">Website</option></select></label>
+          <AdminInput label={adminCopy(lang, 'Nome autore', 'Author name')} value={manualForm.reviewer_name} onChange={(value) => updateManual('reviewer_name', value)} />
+          <label className="admin-field"><span>{adminCopy(lang, 'Valutazione', 'Rating')}</span><select value={manualForm.rating} onChange={(event) => updateManual('rating', event.target.value)}>{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating}/5</option>)}</select></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Lingua', 'Language')}</span><select value={manualForm.language} onChange={(event) => updateManual('language', event.target.value)}><option value="it">Italiano</option><option value="en">English</option></select></label>
+          <AdminInput label={adminCopy(lang, 'Data recensione', 'Review date')} type="date" value={manualForm.review_date} onChange={(value) => updateManual('review_date', value)} />
+          <AdminInput label={adminCopy(lang, 'Ordine', 'Display order')} type="number" value={manualForm.display_order} onChange={(value) => updateManual('display_order', value)} />
+          <label className="admin-field full"><span>{adminCopy(lang, 'Testo recensione', 'Review text')}</span><textarea value={manualForm.review_text} onChange={(event) => updateManual('review_text', event.target.value)} rows={4} required /></label>
+          <AdminInput label={adminCopy(lang, 'URL recensione Google opzionale', 'Optional Google review URL')} value={manualForm.external_review_url} onChange={(value) => updateManual('external_review_url', value)} />
+          <AdminInput label={adminCopy(lang, 'URL foto profilo opzionale', 'Optional profile photo URL')} value={manualForm.profile_photo_url} onChange={(value) => updateManual('profile_photo_url', value)} />
+          <label className="check-field"><input type="checkbox" checked={manualForm.active} onChange={(event) => updateManual('active', event.target.checked)} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
+          <div className="modal-actions full"><button className="button primary" type="submit">{adminCopy(lang, 'Salva recensione manuale', 'Save manual review')}</button></div>
+        </form>
+        <p className="small-note">{adminCopy(lang, 'Le recensioni Google sono inserite manualmente dall’admin. Nessuna API Google a pagamento, scraping o widget esterno è richiesto.', 'Google reviews are entered manually by the admin. No paid Google API, scraping or external widget is required.')}</p>
+      </details>
+
       {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : reviews.length === 0 ? <p>{adminCopy(lang, 'Nessuna recensione ricevuta.', 'No reviews received.')}</p> : (
         <>
           <p className="small-note admin-review-delete-note">{adminCopy(lang, 'Per eliminare una recensione pubblica, usa il pulsante rosso “Elimina definitivamente” sulla card della recensione.', 'To delete a public review, use the red “Delete permanently” button on that review card.')}</p>
@@ -10331,18 +11045,23 @@ function AdminReviewsPanel({ lang, adminContent = {} }) {
                     <strong>{review.reviewer_name || 'Guest'} · {review.rating || '-'}/5</strong>
                     <span className={`status-pill ${review.active && review.approved ? 'accepted' : 'cancelled'}`}>{review.active && review.approved ? adminCopy(lang, 'Pubblica sul sito', 'Public on website') : adminCopy(lang, 'Non pubblica', 'Not public')}</span>
                   </div>
-                  <div className="admin-review-body">{normalizeReviewText(review.review_text).map((paragraph, index) => <p key={`${review.id}-body-${index}`}>{paragraph}</p>)}</div>
-                  {review.admin_reply && (
-                    <div className="admin-review-existing-reply">
-                      <strong>{adminCopy(lang, 'Risposta vulcanIQ', 'vulcanIQ response')}</strong>
-                      {normalizeReviewText(review.admin_reply).map((paragraph, index) => <p key={`${review.id}-reply-${index}`}>{paragraph}</p>)}
-                    </div>
+                  <p className="small-note">{adminCopy(lang, 'Fonte', 'Source')}: {reviewSourceLabel(review, lang)} · {review.booking_code || '-'} · {review.language || '-'} · {review.review_date || String(review.created_at || '').slice(0, 10)}</p>
+                  {editingReviewId === review.id ? renderReviewDetailsForm(review) : (
+                    <>
+                      <div className="admin-review-body">{normalizeReviewText(review.review_text).map((paragraph, index) => <p key={`${review.id}-body-${index}`}>{paragraph}</p>)}</div>
+                      {review.admin_reply && (
+                        <div className="admin-review-existing-reply">
+                          <strong>{adminCopy(lang, 'Risposta vulcanIQ', 'vulcanIQ response')}</strong>
+                          {normalizeReviewText(review.admin_reply).map((paragraph, index) => <p key={`${review.id}-reply-${index}`}>{paragraph}</p>)}
+                        </div>
+                      )}
+                      <label className="field-label" htmlFor={`reviewReply-${review.id}`}>{review.admin_reply ? adminCopy(lang, 'Modifica risposta', 'Edit response') : adminCopy(lang, 'Rispondi alla recensione', 'Reply to review')}</label>
+                      <textarea id={`reviewReply-${review.id}`} className="admin-review-reply-input" value={replyDraft(review)} onChange={(event) => updateReplyDraft(review, event.target.value)} placeholder={adminCopy(lang, 'Scrivi una risposta pubblica da mostrare sotto la recensione.', 'Write a public response to show below the review.')} />
+                    </>
                   )}
-                  <p className="small-note">{review.booking_code} · {review.language || '-'}</p>
-                  <label className="field-label" htmlFor={`reviewReply-${review.id}`}>{review.admin_reply ? adminCopy(lang, 'Modifica risposta', 'Edit response') : adminCopy(lang, 'Rispondi alla recensione', 'Reply to review')}</label>
-                  <textarea id={`reviewReply-${review.id}`} className="admin-review-reply-input" value={replyDraft(review)} onChange={(event) => updateReplyDraft(review, event.target.value)} placeholder={adminCopy(lang, 'Scrivi una risposta pubblica da mostrare sotto la recensione.', 'Write a public response to show below the review.')} />
                 </div>
                 <div className="admin-review-actions">
+                  <button className="button secondary" type="button" onClick={() => startEditingReview(review)}>{adminCopy(lang, 'Modifica dettagli', 'Edit details')}</button>
                   <button className="button secondary" type="button" onClick={() => setVisible(review, !review.active)}>{review.active ? adminCopy(lang, 'Nascondi', 'Hide') : adminCopy(lang, 'Ripubblica', 'Republish')}</button>
                   <button className="button primary" type="button" onClick={() => saveReply(review)} disabled={savingReplyId === review.id}>{savingReplyId === review.id ? adminCopy(lang, 'Salvataggio...', 'Saving...') : adminCopy(lang, 'Salva risposta', 'Save response')}</button>
                   <button className="button secondary" type="button" onClick={() => clearReply(review)} disabled={savingReplyId === review.id || !replyDraft(review)}>{adminCopy(lang, 'Elimina risposta', 'Delete response')}</button>
@@ -10442,7 +11161,7 @@ function PartnershipsAdminPage({ lang, session, adminContent = {} }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
-  const emptyForm = { name: '', category_it: '', category_en: '', description_it: '', description_en: '', website_url: '', image_url: '', image_path: '', image_name: '', image_type: '', imageFile: null, display_order: '0', active: true };
+  const emptyForm = { name: '', category_key: 'other', category_it: 'Altro', category_en: 'Other', description_it: '', description_en: '', website_url: '', google_maps_url: '', social_url: '', image_url: '', image_path: '', image_name: '', image_type: '', imageFile: null, display_order: '0', active: true };
   const [form, setForm] = useState(emptyForm);
 
   async function refresh() {
@@ -10472,14 +11191,14 @@ function PartnershipsAdminPage({ lang, session, adminContent = {} }) {
       setError(adminCopy(lang, 'Il nome è obbligatorio.', 'Name is required.'));
       return;
     }
-    if (!isValidOptionalUrl(form.website_url) || (!form.imageFile && !isValidOptionalUrl(form.image_url))) {
+    if (!isValidOptionalUrl(form.website_url) || !isValidOptionalUrl(form.google_maps_url) || !isValidOptionalUrl(form.social_url) || (!form.imageFile && !isValidOptionalUrl(form.image_url))) {
       setError(adminCopy(lang, 'Inserisci URL validi che iniziano con http o https.', 'Enter valid URLs starting with http or https.'));
       return;
     }
     try {
       const imagePayload = form.imageFile ? await uploadPartnershipImage(form.imageFile, session.user.id) : {};
       const { imageFile, ...payload } = form;
-      await createPartnership({ ...payload, ...imagePayload, created_by: session.user.id, updated_by: session.user.id });
+      await createPartnership({ ...payload, ...partnershipCategoryLabelsForKey(form.category_key), ...imagePayload, created_by: session.user.id, updated_by: session.user.id });
       setForm(emptyForm);
       setFeedback(adminCopy(lang, 'Collaborazione creata.', 'Partnership created.'));
       refresh();
@@ -10504,11 +11223,12 @@ function PartnershipsAdminPage({ lang, session, adminContent = {} }) {
           <AdminEditableText as="h2" itemKey="admin.partnerships.create.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Crea collaborazione', 'Create partnership')} />
           <form className="admin-form-grid" onSubmit={submit}>
             <AdminInput label={adminCopy(lang, 'Nome', 'Name')} value={form.name} onChange={(value) => update('name', value)} />
-            <AdminInput label="Category IT" value={form.category_it} onChange={(value) => update('category_it', value)} />
-            <AdminInput label="Category EN" value={form.category_en} onChange={(value) => update('category_en', value)} />
+            <label className="admin-field"><span>{adminCopy(lang, 'Categoria', 'Category')}</span><select value={form.category_key} onChange={(event) => update('category_key', event.target.value)}>{PARTNERSHIP_CATEGORIES.map((category) => <option value={category.key} key={category.key}>{partnershipCategoryLabel(category.key, lang)}</option>)}</select></label>
             <label className="admin-field full"><span>Description IT</span><textarea value={form.description_it} onChange={(event) => update('description_it', event.target.value)} rows={3} /></label>
             <label className="admin-field full"><span>Description EN</span><textarea value={form.description_en} onChange={(event) => update('description_en', event.target.value)} rows={3} /></label>
             <AdminInput label="Website URL" value={form.website_url} onChange={(value) => update('website_url', value)} />
+            <AdminInput label={adminCopy(lang, 'Google Maps URL opzionale', 'Optional Google Maps URL')} value={form.google_maps_url} onChange={(value) => update('google_maps_url', value)} />
+            <AdminInput label={adminCopy(lang, 'Instagram/social URL opzionale', 'Optional Instagram/social URL')} value={form.social_url} onChange={(value) => update('social_url', value)} />
             <AdminInput label={adminCopy(lang, 'URL immagine opzionale', 'Optional image URL')} value={form.image_url} onChange={(value) => update('image_url', value)} />
             <label className="admin-field full"><span>{adminCopy(lang, 'Immagine collaborazione', 'Partnership image')}</span><input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={(event) => update('imageFile', event.target.files?.[0] || null)} /></label>
             {form.imageFile && <p className="small-note full">{adminCopy(lang, 'File selezionato', 'Selected file')}: {form.imageFile.name}</p>}
@@ -10534,11 +11254,14 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     name: item.name || '',
-    category_it: item.category_it || '',
-    category_en: item.category_en || '',
+    category_key: partnershipCategoryKey(item),
+    category_it: item.category_it || partnershipCategoryLabel(partnershipCategoryKey(item), 'it'),
+    category_en: item.category_en || partnershipCategoryLabel(partnershipCategoryKey(item), 'en'),
     description_it: item.description_it || '',
     description_en: item.description_en || '',
     website_url: item.website_url || '',
+    google_maps_url: item.google_maps_url || '',
+    social_url: item.social_url || '',
     image_url: item.image_url || '',
     image_path: item.image_path || '',
     image_name: item.image_name || '',
@@ -10556,7 +11279,7 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
       setError(adminCopy(lang, 'Il nome è obbligatorio.', 'Name is required.'));
       return;
     }
-    if (!isValidOptionalUrl(form.website_url) || (!form.imageFile && !form.removeImage && !isValidOptionalUrl(form.image_url))) {
+    if (!isValidOptionalUrl(form.website_url) || !isValidOptionalUrl(form.google_maps_url) || !isValidOptionalUrl(form.social_url) || (!form.imageFile && !form.removeImage && !isValidOptionalUrl(form.image_url))) {
       setError(adminCopy(lang, 'URL non valido.', 'Invalid URL.'));
       return;
     }
@@ -10570,7 +11293,7 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
         imagePayload = { image_url: null, image_path: null, image_name: null, image_type: null };
       }
       const { imageFile, removeImage, ...payload } = form;
-      await updatePartnership(item.id, { ...payload, ...imagePayload, updated_by: userId });
+      await updatePartnership(item.id, { ...payload, ...partnershipCategoryLabelsForKey(form.category_key), ...imagePayload, updated_by: userId });
       setEditing(false);
       onChanged(adminCopy(lang, 'Collaborazione aggiornata.', 'Partnership updated.'));
     } catch (err) {
@@ -10597,11 +11320,12 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
       {editing ? (
         <div className="admin-form-grid single-card-form">
           <AdminInput label={adminCopy(lang, 'Nome', 'Name')} value={form.name} onChange={(value) => setForm((current) => ({ ...current, name: value }))} />
-          <AdminInput label="Category IT" value={form.category_it} onChange={(value) => setForm((current) => ({ ...current, category_it: value }))} />
-          <AdminInput label="Category EN" value={form.category_en} onChange={(value) => setForm((current) => ({ ...current, category_en: value }))} />
+          <label className="admin-field"><span>{adminCopy(lang, 'Categoria', 'Category')}</span><select value={form.category_key} onChange={(event) => setForm((current) => ({ ...current, category_key: event.target.value }))}>{PARTNERSHIP_CATEGORIES.map((category) => <option value={category.key} key={category.key}>{partnershipCategoryLabel(category.key, lang)}</option>)}</select></label>
           <label className="admin-field full"><span>Description IT</span><textarea value={form.description_it} onChange={(event) => setForm((current) => ({ ...current, description_it: event.target.value }))} rows={3} /></label>
           <label className="admin-field full"><span>Description EN</span><textarea value={form.description_en} onChange={(event) => setForm((current) => ({ ...current, description_en: event.target.value }))} rows={3} /></label>
           <AdminInput label="Website URL" value={form.website_url} onChange={(value) => setForm((current) => ({ ...current, website_url: value }))} />
+          <AdminInput label={adminCopy(lang, 'Google Maps URL opzionale', 'Optional Google Maps URL')} value={form.google_maps_url} onChange={(value) => setForm((current) => ({ ...current, google_maps_url: value }))} />
+          <AdminInput label={adminCopy(lang, 'Instagram/social URL opzionale', 'Optional Instagram/social URL')} value={form.social_url} onChange={(value) => setForm((current) => ({ ...current, social_url: value }))} />
           <AdminInput label={adminCopy(lang, 'URL immagine', 'Image URL')} value={form.image_url} onChange={(value) => setForm((current) => ({ ...current, image_url: value }))} />
           <label className="admin-field full"><span>{adminCopy(lang, 'Sostituisci immagine', 'Replace image')}</span><input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={(event) => setForm((current) => ({ ...current, imageFile: event.target.files?.[0] || null, removeImage: false }))} /></label>
           {form.image_url && !form.removeImage && <p className="small-note full"><a href={form.image_url} target="_blank" rel="noopener noreferrer">{form.image_name || adminCopy(lang, 'Immagine esistente', 'Existing image')}</a> <button type="button" className="inline-danger-button" onClick={() => setForm((current) => ({ ...current, removeImage: true, imageFile: null }))}>{adminCopy(lang, 'Rimuovi immagine', 'Remove image')}</button></p>}
@@ -10614,8 +11338,8 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
       ) : (
         <>
           {item.image_url && <img className="admin-card-preview-image" src={item.image_url} alt={item.name} />}
-          {(item.description_it || item.description_en) && <p>{lang === 'it' ? item.description_it || item.description_en : item.description_en || item.description_it}</p>}
-          <p className="small-note">{item.website_url || '-'} · {item.image_name || adminCopy(lang, 'Nessuna immagine', 'No image')} · {adminCopy(lang, 'Ordine', 'Order')} {item.display_order}</p>
+          {(item.description_it || item.description_en) && <FormattedText textValue={lang === 'it' ? item.description_it || item.description_en : item.description_en || item.description_it} className="formatted-text admin-partnership-preview-text" />}
+          <p className="small-note">{item.website_url || '-'} · {item.google_maps_url ? 'Google Maps' : adminCopy(lang, 'Nessuna mappa', 'No map')} · {item.social_url ? 'Social' : adminCopy(lang, 'Nessun social', 'No social')} · {item.image_name || adminCopy(lang, 'Nessuna immagine', 'No image')} · {adminCopy(lang, 'Ordine', 'Order')} {item.display_order}</p>
           {error && <div className="admin-alert error">{error}</div>}
           <div className="request-actions"><button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>{item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}</div>
         </>
@@ -11242,7 +11966,7 @@ function App() {
   const [pathname, navigate] = usePathname();
   const [lang, setLang] = useState('it');
   const [formState, setFormState] = useState({ language: 'it', requestType: 'private', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', heardAboutUs: '', heardAboutUsDetail: '', message: i18n.it.defaultMessage });
-  const [activePage, setActivePage] = useState('home');
+  const [activePage, setActivePage] = useState(() => publicPageFromPathname(window.location.pathname) || 'home');
   const [siteMedia, setSiteMedia] = useState({});
   const [siteContent, setSiteContent] = useState({});
   const contactRef = useRef(null);
@@ -11259,8 +11983,17 @@ function App() {
 
   useEffect(() => {
     if (pathname.startsWith('/admin')) return;
-    trackPageView(activePage, { path: `/${activePage === 'home' ? '' : activePage}`, language: lang });
+    const legalPage = legalPageFromPathname(pathname);
+    const trackedSection = legalPage ? `legal_${legalPage}` : activePage;
+    const trackedPath = legalPage ? pathname : `/${activePage === 'home' ? '' : activePage}`;
+    trackPageView(trackedSection, { path: trackedPath, language: lang });
   }, [activePage, lang, pathname]);
+
+  useEffect(() => {
+    if (pathname.startsWith('/admin') || legalPageFromPathname(pathname)) return;
+    const routePage = publicPageFromPathname(pathname);
+    if (routePage) setActivePage(routePage);
+  }, [pathname]);
 
   useEffect(() => {
     const token = import.meta.env.VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN;
@@ -11309,7 +12042,7 @@ function App() {
   }
 
   function scrollToForm(metadata = {}) {
-    const trackingContext = buildBookingTrackingContext({
+    const trackingContext = withBookingJourneyId(buildBookingTrackingContext({
       experienceId: formState.experienceId || '',
       requestType: formState.requestType || 'private',
       sourceSection: metadata.source_section || 'hero',
@@ -11318,7 +12051,7 @@ function App() {
       selectedDate: formState.requestedDate || '',
       hasFixedExcursion: formState.requestType === 'fixed',
       language: lang
-    });
+    }), formState.trackingContext, { forceNew: !formState.trackingContext?.booking_journey_id });
     trackBookingFormOpen(formState.experienceId || formState.requestType || 'private', mergeTrackingContext(trackingContext, metadata));
     setFormState((current) => ({ ...current, trackingContext: mergeTrackingContext(trackingContext, metadata) }));
     scrollContactIntoView();
@@ -11337,12 +12070,14 @@ function App() {
       privateExperience: requestType ? requestType === 'private' : current.privateExperience,
       message: message || current.message,
       language: lang,
-      trackingContext: trackingContext || current.trackingContext
+      trackingContext: trackingContext ? withBookingJourneyId(trackingContext, current.trackingContext) : current.trackingContext
     }));
     if (scroll) scrollContactIntoView();
   }
 
   function renderPublicPage() {
+    const legalPage = legalPageFromPathname(pathname);
+    if (legalPage) return <LegalPage lang={lang} page={legalPage} siteContent={siteContent} />;
     switch (activePage) {
       case 'experiences':
         return <ExperienceAccordion lang={lang} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} />;

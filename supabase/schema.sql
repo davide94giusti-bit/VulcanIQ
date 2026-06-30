@@ -867,8 +867,16 @@ create table if not exists public.reviews (
   admin_reply text,
   admin_reply_at timestamptz null,
   admin_reply_by uuid references auth.users(id),
+  source text not null default 'website',
+  review_date date,
+  external_review_url text,
+  profile_photo_url text,
+  display_order integer not null default 0,
   constraint reviews_rating_check check (rating is null or (rating >= 1 and rating <= 5)),
-  constraint reviews_language_check check (language is null or language in ('it', 'en'))
+  constraint reviews_language_check check (language is null or language in ('it', 'en')),
+  constraint reviews_source_check check (source in ('website', 'internal', 'direct', 'google')),
+  constraint reviews_external_review_url_check check (external_review_url is null or external_review_url ~* '^https?://'),
+  constraint reviews_profile_photo_url_check check (profile_photo_url is null or profile_photo_url ~* '^https?://')
 );
 
 alter table public.reviews add column if not exists updated_at timestamptz not null default now();
@@ -883,10 +891,17 @@ alter table public.reviews add column if not exists active boolean not null defa
 alter table public.reviews add column if not exists admin_reply text;
 alter table public.reviews add column if not exists admin_reply_at timestamptz null;
 alter table public.reviews add column if not exists admin_reply_by uuid references auth.users(id);
+alter table public.reviews add column if not exists source text not null default 'website';
+alter table public.reviews add column if not exists review_date date;
+alter table public.reviews add column if not exists external_review_url text;
+alter table public.reviews add column if not exists profile_photo_url text;
+alter table public.reviews add column if not exists display_order integer not null default 0;
 
 create unique index if not exists reviews_booking_code_unique_idx on public.reviews(booking_code);
 create index if not exists reviews_active_idx on public.reviews(active, approved);
 create index if not exists reviews_created_at_idx on public.reviews(created_at desc);
+create index if not exists reviews_source_active_idx on public.reviews(source, active, approved);
+create index if not exists reviews_display_date_idx on public.reviews(display_order, review_date desc, created_at desc);
 
 drop trigger if exists reviews_set_updated_at on public.reviews;
 create trigger reviews_set_updated_at
@@ -973,14 +988,20 @@ create table if not exists public.partnerships (
   description_it text,
   description_en text,
   website_url text,
+  google_maps_url text,
+  social_url text,
   image_url text,
   category_it text,
   category_en text,
+  category_key text not null default 'other',
   active boolean not null default true,
   display_order integer not null default 0,
   created_by uuid references auth.users(id),
   updated_by uuid references auth.users(id),
   constraint partnerships_website_url_check check (website_url is null or website_url ~* '^https?://'),
+  constraint partnerships_google_maps_url_check check (google_maps_url is null or google_maps_url ~* '^https?://'),
+  constraint partnerships_social_url_check check (social_url is null or social_url ~* '^https?://'),
+  constraint partnerships_category_key_check check (category_key in ('activities', 'restaurants', 'accommodation', 'transport', 'guides_services', 'shops', 'other')),
   constraint partnerships_image_url_check check (image_url is null or image_url ~* '^https?://')
 );
 
@@ -988,9 +1009,13 @@ create table if not exists public.partnerships (
 alter table public.partnerships add column if not exists image_path text;
 alter table public.partnerships add column if not exists image_name text;
 alter table public.partnerships add column if not exists image_type text;
+alter table public.partnerships add column if not exists category_key text not null default 'other';
+alter table public.partnerships add column if not exists google_maps_url text;
+alter table public.partnerships add column if not exists social_url text;
 
 create index if not exists partnerships_active_idx on public.partnerships(active);
 create index if not exists partnerships_display_order_idx on public.partnerships(display_order, name);
+create index if not exists partnerships_category_display_idx on public.partnerships(category_key, display_order, name);
 
 drop trigger if exists partnerships_set_updated_at on public.partnerships;
 create trigger partnerships_set_updated_at
@@ -1260,10 +1285,13 @@ select
   description_it,
   description_en,
   website_url,
+  google_maps_url,
+  social_url,
   image_url,
   image_path,
   image_name,
   image_type,
+  category_key,
   category_it,
   category_en,
   active,
@@ -1331,7 +1359,12 @@ select
   rating,
   language,
   admin_reply,
-  admin_reply_at
+  admin_reply_at,
+  source,
+  review_date,
+  external_review_url,
+  profile_photo_url,
+  display_order
 from public.reviews
 where active = true
   and approved = true;
