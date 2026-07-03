@@ -10710,3 +10710,292 @@ body.modal-scroll-lock {
     display: grid;
   }
 }
+
+/* Booking-code and desktop hero CTA patch */
+.hero-action-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.48fr);
+  gap: 12px;
+  align-items: stretch;
+  width: min(100%, 620px);
+  margin: 28px 0 18px;
+}
+.hero-action-grid .button,
+.hero-action-grid .pill-action {
+  width: 100%;
+  min-height: 54px;
+}
+.hero-action-code {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.hero-action-guide {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 74px;
+}
+
+.find-experience-backdrop,
+.booking-code-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1900;
+  background: rgba(8, 16, 31, 0.76);
+  backdrop-filter: blur(18px);
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  padding: clamp(10px, 2vw, 24px);
+  overflow-y: auto;
+}
+.find-experience-modal,
+.booking-code-modal {
+  width: min(1040px, 100%);
+  min-height: min(860px, 100%);
+  background: var(--paper);
+  border: 1px solid rgba(255,255,255,0.58);
+  border-radius: clamp(22px, 3vw, 34px);
+  box-shadow: var(--shadow-strong);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+}
+.booking-code-modal {
+  width: min(760px, 100%);
+  min-height: auto;
+  align-self: center;
+  grid-template-rows: auto auto auto;
+}
+.find-experience-header,
+.find-experience-footer,
+.booking-code-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: clamp(24px, 5vw, 48px);
+}
+.find-experience-header h2,
+.booking-code-header h2 {
+  margin: 0 0 clamp(16px, 2.6vw, 26px);
+  color: var(--night);
+  font-size: clamp(3rem, 7vw, 5.4rem);
+  line-height: 0.94;
+  letter-spacing: -0.07em;
+}
+.booking-code-header h2 { font-size: clamp(2.5rem, 5vw, 4rem); }
+.find-experience-header p,
+.booking-code-header p {
+  display: block;
+  max-width: 620px;
+  margin: 0;
+  color: var(--ash);
+  font-weight: 850;
+  line-height: 1.55;
+}
+.find-experience-body,
+.booking-code-form,
+.booking-code-success-card,
+.booking-code-support-card {
+  padding: 0 clamp(24px, 5vw, 48px) clamp(24px, 5vw, 48px);
+}
+.find-experience-step h3,
+.find-experience-result h3 {
+  margin: 0 0 18px;
+  color: var(--night);
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  line-height: 1;
+}
+.find-experience-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 720px;
+}
+.find-experience-choice-grid.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.find-experience-choice {
+  min-height: 96px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: #fff;
+  color: var(--night);
+  box-shadow: 0 18px 38px rgba(13,22,38,0.08);
+  font-weight: 900;
+  text-align: left;
+}
+.find-experience-choice.active {
+  border-color: var(--night);
+  outline: 2px solid rgba(13,22,38,0.28);
+  outline-offset: 2px;
+}
+.find-experience-result {
+  max-width: 680px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: 0 18px 38px rgba(13,22,38,0.08);
+}
+.find-experience-result dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+.find-experience-result dt {
+  color: var(--ash);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.find-experience-result dd { margin: 4px 0 0; color: var(--night); font-weight: 850; }
+.find-experience-footer { align-items: center; }
+.find-experience-footer .button { width: auto; min-width: 106px; }
+.booking-code-form input {
+  width: 100%;
+  min-height: 58px;
+  margin-top: 8px;
+  font-size: 1.2rem;
+  text-transform: uppercase;
+}
+.booking-code-submit { width: 100%; margin-top: 16px; min-height: 58px; }
+.booking-code-support-card {
+  margin: 0 clamp(24px, 5vw, 48px) clamp(24px, 5vw, 48px);
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgba(255,255,255,0.72);
+}
+.booking-code-support-card h3,
+.booking-code-success-card h3 { margin: 0 0 8px; color: var(--night); }
+.booking-code-support-card p { margin: 0 0 14px; color: var(--ash); }
+.booking-code-support-card .contact-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.booking-code-support-card .pill-action,
+.booking-code-support-card .email-action-wrap,
+.booking-code-support-card .email-action-wrap .pill-action {
+  width: 100%;
+}
+.booking-code-support-card .pill-action {
+  min-height: 48px;
+  justify-content: center;
+  white-space: nowrap;
+}
+.booking-code-success-card {
+  margin: 0 clamp(24px, 5vw, 48px) 22px;
+  padding: 24px;
+  border: 1px solid rgba(79, 163, 112, 0.28);
+  border-radius: 26px;
+  background: rgba(79, 163, 112, 0.10);
+}
+.admin-header-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.booking-code-admin-modal .admin-modal-header p { margin: 6px 0 0; color: var(--ash); }
+.admin-code-result-card {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: #fff;
+}
+.admin-code-result-card h3 {
+  margin: 8px 0;
+  color: var(--night);
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 760px) {
+  .hero-action-grid {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+  .hero-action-guide { width: 100%; }
+  .find-experience-modal,
+  .booking-code-modal {
+    min-height: 100%;
+  }
+  .find-experience-header,
+  .booking-code-header {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .find-experience-header h2,
+  .booking-code-header h2 {
+    font-size: clamp(2.7rem, 13vw, 4.2rem);
+    letter-spacing: -0.08em;
+  }
+  .find-experience-choice-grid,
+  .find-experience-choice-grid.compact,
+  .booking-code-support-card .contact-actions,
+  .find-experience-result dl {
+    grid-template-columns: 1fr;
+  }
+  .find-experience-choice { min-height: 82px; }
+  .find-experience-footer .button { width: 100%; }
+}
+
+/* Booking code CTA conflict-resolution polish */
+.find-wizard-header h2 {
+  margin-bottom: clamp(16px, 2.6vw, 26px);
+}
+
+.find-wizard-header p {
+  margin-top: 0;
+  max-width: 620px;
+  line-height: 1.55;
+}
+
+.booking-code-only-card {
+  display: grid;
+  gap: 16px;
+}
+
+.booking-code-close-button {
+  width: fit-content;
+  justify-self: start;
+}
+
+.booking-code-dedicated-panel {
+  margin-top: 0;
+}
+
+.booking-code-dedicated-panel h3 {
+  margin: 0 0 8px;
+  color: var(--night);
+  font-size: clamp(1.55rem, 3vw, 2.35rem);
+}
+
+.booking-code-support-card.inline-support-card {
+  margin: 0;
+}
+
+.booking-code-support-card.inline-support-card .contact-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.booking-code-support-card.inline-support-card .pill-action,
+.booking-code-support-card.inline-support-card .email-action-wrap,
+.booking-code-support-card.inline-support-card .email-action-wrap .pill-action {
+  width: 100%;
+}
+
+.booking-code-support-card.inline-support-card .pill-action {
+  min-height: 48px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .booking-code-support-card.inline-support-card .contact-actions {
+    grid-template-columns: 1fr;
+  }
+}

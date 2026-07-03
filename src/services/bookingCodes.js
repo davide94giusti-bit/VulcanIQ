@@ -60,6 +60,42 @@ function normalizeRow(row) {
   };
 }
 
+function parseRpcResult(data) {
+  if (typeof data === 'string') {
+    try {
+      return JSON.parse(data);
+    } catch {
+      return data;
+    }
+  }
+  return data;
+}
+
+function normalizeRpcResult(result) {
+  if (!result || typeof result !== 'object') return result;
+  const error = String(result.error || result.error_code || '').toUpperCase();
+  if (!error) return result;
+
+  const errorMap = {
+    BOOKING_CODE_REQUIRED: 'required',
+    BOOKING_CODE_NOT_FOUND: 'not_found',
+    BOOKING_CODE_ALREADY_REDEEMED: 'already_used',
+    BOOKING_CODE_ALREADY_USED: 'already_used',
+    BOOKING_CODE_EXPIRED: 'expired',
+    BOOKING_CODE_CANCELLED: 'cancelled'
+  };
+
+  return {
+    ...result,
+    error_code: result.error_code || errorMap[error] || String(result.error || '').toLowerCase()
+  };
+}
+
+function shouldRetryWithLegacyRpcName(error) {
+  const message = String(error?.message || error?.details || error?.hint || '').toLowerCase();
+  return message.includes('function') || message.includes('could not find') || message.includes('schema cache') || message.includes('parameter') || message.includes('argument');
+}
+
 export async function listBookingCodes(filters = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
   let query = supabase
@@ -91,15 +127,16 @@ export async function listAvailableBookingCodeExperiences() {
   });
 }
 
-export async function createBookingCode(input, userId) {
+export async function createBookingCode(input = {}, userId = null) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
   const amount = normalizeAmount(input.expected_amount);
   if (!cleanText(input.customer_name)) throw new Error('Customer name is required.');
-  if (!cleanText(input.experience_name_it) && !cleanText(input.experience_name_en)) throw new Error('Experience is required.');
+  if (!cleanText(input.experience_name_it) && !cleanText(input.experience_name_en) && !cleanText(input.experience_name)) throw new Error('Experience is required.');
   if (!Number.isFinite(amount)) throw new Error('Expected amount must be a valid number greater than or equal to zero.');
 
   let code = normalizeBookingCode(input.code || generateHumanBookingCode());
   for (let attempt = 0; attempt < 5; attempt += 1) {
+    const expiresAt = cleanText(input.expires_at || input.expiry_date);
     const payload = {
       code,
       customer_name: cleanText(input.customer_name),
@@ -107,8 +144,8 @@ export async function createBookingCode(input, userId) {
       customer_phone: cleanText(input.customer_phone),
       experience_id: cleanText(input.experience_id),
       fixed_excursion_id: cleanText(input.fixed_excursion_id),
-      experience_name_it: cleanText(input.experience_name_it) || cleanText(input.experience_name_en),
-      experience_name_en: cleanText(input.experience_name_en) || cleanText(input.experience_name_it),
+      experience_name_it: cleanText(input.experience_name_it || input.experience_name) || cleanText(input.experience_name_en),
+      experience_name_en: cleanText(input.experience_name_en) || cleanText(input.experience_name_it || input.experience_name),
       experience_type: cleanText(input.experience_type) || (input.fixed_excursion_id ? 'fixed' : 'manual'),
       scheduled_date: cleanText(input.scheduled_date),
       scheduled_time: cleanText(input.scheduled_time),
@@ -119,7 +156,7 @@ export async function createBookingCode(input, userId) {
       source: cleanText(input.source) || 'manual',
       admin_note: cleanText(input.admin_note),
       customer_note: cleanText(input.customer_note),
-      expires_at: cleanText(input.expires_at),
+      expires_at: expiresAt && expiresAt.length === 10 ? `${expiresAt}T23:59:59+00:00` : expiresAt,
       created_by: userId || null,
       status: 'unused'
     };
@@ -153,10 +190,23 @@ export async function cancelBookingCode(id) {
 export async function redeemBookingCode(code, { language = 'it' } = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
   const normalized = normalizeBookingCode(code);
-  const { data, error } = await supabase.rpc('redeem_booking_code', {
+
+  if (!normalized) {
+    return { ok: false, error_code: 'required', error: 'BOOKING_CODE_REQUIRED' };
+  }
+
+  let response = await supabase.rpc('redeem_booking_code', {
     input_code: normalized,
     input_language: language || 'it'
   });
-  if (error) throw error;
-  return data;
+
+  if (response.error && shouldRetryWithLegacyRpcName(response.error)) {
+    response = await supabase.rpc('redeem_booking_code', {
+      p_code: normalized,
+      p_language: language || 'it'
+    });
+  }
+
+  if (response.error) throw response.error;
+  return normalizeRpcResult(parseRpcResult(response.data));
 }
