@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { blockedDates, defaultExperienceAvailability } from './data/availability.js';
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
@@ -232,7 +233,7 @@ const i18n = {
     heroKicker: '',
     heroTitle: "L'Etna non è solo uno scenario.",
     heroLead: 'Esperienze private e fisse sull’Etna per leggere il vulcano come territorio vivo: con conoscenza, sicurezza e relazione umana.',
-    findExperience: "Trova l'esperienza giusta",
+    findExperience: "Trova l'esperienza corretta",
     viewAvailability: 'Prenota ora',
     bookWithCode: 'PRENOTA CON CODICE',
     findExperienceModalIntro: "Rispondi a poche domande: ti suggeriremo l'esperienza migliore e le prossime date disponibili.",
@@ -2349,7 +2350,7 @@ function FindExperienceModal({ lang, onClose, onRequestExperience }) {
     });
   }
 
-  return (
+  return createPortal((
     <div className="find-experience-backdrop motion-backdrop" role="presentation" onClick={onClose}>
       <section className="find-experience-modal motion-panel" role="dialog" aria-modal="true" aria-labelledby="findExperienceTitle" ref={modalRef} onClick={(event) => event.stopPropagation()}>
         <header className="find-experience-header">
@@ -2415,7 +2416,7 @@ function FindExperienceModal({ lang, onClose, onRequestExperience }) {
         </footer>
       </section>
     </div>
-  );
+  ), document.body);
 }
 
 function bookingCodeErrorMessage(error, lang) {
@@ -2468,7 +2469,7 @@ function BookingCodeModal({ lang, onClose, siteContent }) {
     ? 'Hi Leonardo, I need help with a vulcanIQ booking code.'
     : 'Ciao Leonardo, ho bisogno di aiuto con un codice prenotazione vulcanIQ.';
 
-  return (
+  return createPortal((
     <div className="booking-code-backdrop motion-backdrop" role="presentation" onClick={onClose}>
       <section className="booking-code-modal motion-panel" role="dialog" aria-modal="true" aria-labelledby="bookingCodeTitle" onClick={(event) => event.stopPropagation()}>
         <header className="booking-code-header compact-only-close">
@@ -2505,7 +2506,7 @@ function BookingCodeModal({ lang, onClose, siteContent }) {
         </aside>
       </section>
     </div>
-  );
+  ), document.body);
 }
 
 
@@ -2524,7 +2525,7 @@ function SupportContactModal({ lang, onClose, siteContent }) {
     ? 'Hi Leonardo, I need help with vulcanIQ.'
     : 'Ciao Leonardo, ho bisogno di aiuto con vulcanIQ.';
 
-  return (
+  return createPortal((
     <div className="booking-code-backdrop support-contact-backdrop motion-backdrop" role="presentation" onClick={onClose}>
       <section className="booking-code-modal support-contact-modal motion-panel" role="dialog" aria-modal="true" aria-labelledby="supportContactTitle" onClick={(event) => event.stopPropagation()}>
         <header className="support-contact-header">
@@ -2532,16 +2533,14 @@ function SupportContactModal({ lang, onClose, siteContent }) {
             <h2 id="supportContactTitle">{text(lang, 'bookingCodeNeedHelp')}</h2>
             <p>{text(lang, 'bookingCodeHelpText')}</p>
           </div>
+          <button className="date-modal-close support-contact-top-close" type="button" onClick={onClose} aria-label={text(lang, 'close')}>{text(lang, 'close')}</button>
         </header>
         <aside className="booking-code-support-card support-contact-card">
           <ContactActions lang={lang} contextMessage={supportMessage} location="hero_contact_support" siteContent={siteContent} />
         </aside>
-        <footer className="support-contact-footer">
-          <button className="button secondary support-contact-close" type="button" onClick={onClose}>{text(lang, 'close')}</button>
-        </footer>
       </section>
     </div>
-  );
+  ), document.body);
 }
 
 function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteContent, editor }) {

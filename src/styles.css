@@ -10652,3 +10652,271 @@ body.modal-scroll-lock {
     min-height: 100%;
   }
 }
+
+/* 20260703 modal scroll, close placement, and support-button alignment refinements */
+.find-experience-backdrop,
+.booking-code-backdrop {
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.find-experience-modal,
+.booking-code-modal,
+.support-contact-modal {
+  width: min(100%, 1040px);
+  min-height: auto;
+  max-height: calc(100dvh - 28px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overflow-x: hidden;
+  grid-template-rows: auto auto auto;
+  align-self: center;
+  -webkit-overflow-scrolling: touch;
+}
+
+.booking-code-modal,
+.support-contact-modal {
+  width: min(100%, 760px);
+}
+
+.find-experience-header,
+.booking-code-header,
+.support-contact-header {
+  position: relative;
+  padding-right: clamp(112px, 16vw, 148px);
+}
+
+.find-experience-header .date-modal-close,
+.booking-code-header .date-modal-close,
+.support-contact-header .date-modal-close {
+  position: absolute;
+  top: clamp(18px, 3vw, 28px);
+  right: clamp(18px, 3vw, 32px);
+  z-index: 3;
+  white-space: nowrap;
+}
+
+.find-experience-header h2 {
+  max-width: 780px;
+  font-size: clamp(2.9rem, 6vw, 5.1rem);
+  line-height: 0.99;
+  letter-spacing: -0.052em;
+  text-wrap: balance;
+}
+
+.find-experience-header p {
+  max-width: 700px;
+}
+
+.booking-code-header.compact-only-close {
+  min-height: 68px;
+  padding: 16px clamp(24px, 5vw, 48px) 6px;
+}
+
+.booking-code-form {
+  padding-bottom: clamp(12px, 2vw, 18px);
+}
+
+.booking-code-submit {
+  margin-top: 12px;
+}
+
+.booking-code-support-card,
+.support-contact-card {
+  margin-top: clamp(10px, 2vw, 16px);
+  margin-bottom: clamp(18px, 3vw, 28px);
+}
+
+.support-contact-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: clamp(24px, 5vw, 42px) clamp(24px, 5vw, 48px) 0;
+}
+
+.support-contact-header h2 {
+  font-size: clamp(2.1rem, 4.8vw, 3.2rem);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+}
+
+.support-contact-card {
+  padding-top: 18px;
+}
+
+.booking-code-support-card .contact-actions,
+.support-contact-card .contact-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.booking-code-support-card .email-action-wrap,
+.support-contact-card .email-action-wrap {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+}
+
+.booking-code-support-card .pill-action,
+.booking-code-support-card .email-action-wrap .pill-action,
+.support-contact-card .pill-action,
+.support-contact-card .email-action-wrap .pill-action {
+  min-height: 56px;
+  height: 100%;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: normal;
+}
+
+.booking-code-support-card .email-action-wrap .pill-action .icon,
+.support-contact-card .email-action-wrap .pill-action .icon {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 760px) {
+  .find-experience-backdrop,
+  .booking-code-backdrop {
+    align-items: flex-start;
+    padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+  }
+
+  .find-experience-modal,
+  .booking-code-modal,
+  .support-contact-modal {
+    width: 100%;
+    min-height: auto;
+    max-height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    border-radius: 26px;
+  }
+
+  .find-experience-header,
+  .booking-code-header,
+  .support-contact-header {
+    display: block;
+    padding: 76px 20px 14px;
+  }
+
+  .find-experience-header .date-modal-close,
+  .booking-code-header .date-modal-close,
+  .support-contact-header .date-modal-close {
+    top: 14px;
+    right: 14px;
+  }
+
+  .find-experience-header h2 {
+    font-size: clamp(2.55rem, 12vw, 3.9rem);
+    line-height: 1.01;
+    letter-spacing: -0.045em;
+    margin-bottom: 14px;
+  }
+
+  .find-experience-header p {
+    font-size: 1rem;
+    line-height: 1.42;
+  }
+
+  .find-experience-body,
+  .booking-code-form,
+  .booking-code-success-card,
+  .booking-code-support-card {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .booking-code-header.compact-only-close {
+    min-height: 64px;
+    padding: 14px 20px 0;
+  }
+
+  .booking-code-header.compact-only-close + .booking-code-form {
+    padding-top: 4px;
+  }
+
+  .booking-code-form {
+    padding-bottom: 8px;
+  }
+
+  .booking-code-form input {
+    min-height: 56px;
+    font-size: 1rem;
+  }
+
+  .booking-code-submit {
+    min-height: 56px;
+    margin-top: 10px;
+  }
+
+  .booking-code-support-card,
+  .support-contact-card {
+    margin: 8px 20px 18px;
+    padding: 16px;
+  }
+
+  .booking-code-support-card h3,
+  .booking-code-success-card h3,
+  .support-contact-header h2 {
+    font-size: clamp(1.75rem, 8vw, 2.35rem);
+    line-height: 1.04;
+  }
+
+  .booking-code-support-card p,
+  .support-contact-header p {
+    font-size: 1rem;
+    line-height: 1.42;
+    margin-bottom: 12px;
+  }
+
+  .booking-code-support-card .contact-actions,
+  .support-contact-card .contact-actions {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .booking-code-support-card .pill-action,
+  .booking-code-support-card .email-action-wrap .pill-action,
+  .support-contact-card .pill-action,
+  .support-contact-card .email-action-wrap .pill-action {
+    min-height: 50px;
+    font-size: 0.98rem;
+  }
+
+  .find-experience-choice {
+    min-height: 70px;
+    padding: 16px;
+  }
+
+  .find-experience-footer {
+    padding: 12px 20px 20px;
+  }
+}
+
+@media (max-width: 420px) {
+  .find-experience-header h2 {
+    font-size: clamp(2.35rem, 11vw, 3.2rem);
+  }
+
+  .find-experience-step h3 {
+    font-size: clamp(1.65rem, 8vw, 2.25rem);
+  }
+
+  .booking-code-support-card h3,
+  .support-contact-header h2 {
+    font-size: clamp(1.55rem, 7vw, 2rem);
+  }
+}
