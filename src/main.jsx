@@ -5,7 +5,7 @@ import { blockedDates, defaultExperienceAvailability } from './data/availability
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
 import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
-import { createBookingCode, redeemBookingCode } from './services/bookingCodes.js';
+import { listBookingCodes, createBookingCode, cancelBookingCode, redeemBookingCode } from './services/bookingCodes.js';
 import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadFixedExcursionLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
 import { loadPublicReviews, submitPublicReview, listReviews, createManualReview, updateReviewDetails, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply, deleteReview } from './services/reviewsService.js';
@@ -35,6 +35,7 @@ const ADMIN_NAV_SECTIONS = [
   { key: 'calendar', path: '/admin/calendar', labelIt: 'Calendario', labelEn: 'Calendar', editable: true },
   { key: 'upcoming', path: '/admin/upcoming', labelIt: 'Prossime', labelEn: 'Upcoming', editable: true },
   { key: 'requests', path: '/admin/requests', labelIt: 'Richieste prenotazione', labelEn: 'Booking requests', editable: true },
+  { key: 'bookingCodes', path: '/admin/booking-codes', labelIt: 'Codici prenotazione', labelEn: 'Booking codes', editable: true },
   { key: 'availability', path: '/admin/availability', labelIt: 'Disponibilità', labelEn: 'Availability', editable: true },
   { key: 'partnerships', path: '/admin/partnerships', labelIt: 'Collaborazioni', labelEn: 'Collaborations', editable: true },
   { key: 'edit', path: '/admin/edit', labelIt: 'Modifica sito e recensioni', labelEn: 'Edit website & reviews', editable: true },
@@ -46,7 +47,7 @@ const ADMIN_NAV_SECTIONS = [
 
 const ADMIN_NAV_GROUPS = [
   { key: 'operations', labelIt: 'Operazioni', labelEn: 'Operations', items: ['today', 'upcoming', 'calendar'] },
-  { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'availability'] },
+  { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'bookingCodes', 'availability'] },
   { key: 'website', labelIt: 'Gestione sito', labelEn: 'Website management', items: ['edit', 'publicSite'] },
   { key: 'business', labelIt: 'Business', labelEn: 'Business', items: ['partnerships', 'finance', 'analytics'] },
   { key: 'system', labelIt: 'Sistema', labelEn: 'System', items: ['backup'] }
@@ -59,6 +60,7 @@ function adminNavLabel(section, lang) {
 function isAdminNavSectionActive(normalizedPath, section) {
   if (!section || section.external) return false;
   if (section.key === 'analytics') return normalizedPath.includes('/analytics') || normalizedPath.includes('/data');
+  if (section.key === 'bookingCodes') return normalizedPath.includes('/booking-codes');
   if (section.key === 'backup') return normalizedPath.includes('/system') || normalizedPath.includes('/backup');
   if (section.key === 'edit') return normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media');
   if (section.key === 'partnerships') return normalizedPath.includes('/partnerships');
@@ -2420,12 +2422,18 @@ function FindExperienceModal({ lang, onClose, onRequestExperience }) {
 }
 
 function bookingCodeErrorMessage(error, lang) {
-  const code = String(error?.code || error?.message || '').toUpperCase();
+  const raw = String(error?.code || error?.message || '');
+  const code = raw.toUpperCase();
   if (code.includes('REQUIRED')) return text(lang, 'bookingCodeRequired');
   if (code.includes('NOT_FOUND')) return text(lang, 'bookingCodeNotFound');
   if (code.includes('ALREADY') || code.includes('REDEEMED')) return text(lang, 'bookingCodeAlreadyUsed');
   if (code.includes('EXPIRED')) return text(lang, 'bookingCodeExpired');
   if (code.includes('CANCELLED')) return text(lang, 'bookingCodeCancelled');
+  if (code.includes('RPC_MISSING') || code.includes('REDEEM_BOOKING_CODE') || code.includes('SCHEMA CACHE') || code.includes('FUNCTION')) {
+    return lang === 'it'
+      ? 'Il codice non può essere verificato al momento. Contatta direttamente il team.'
+      : 'The code cannot be verified right now. Contact the team directly.';
+  }
   return error?.message && !code.includes('BOOKING_CODE') ? error.message : text(lang, 'bookingCodeGenericError');
 }
 
@@ -5878,6 +5886,8 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           <PartnershipsAdminPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/upcoming') ? (
           <UpcomingPage lang={lang} session={session} navigate={navigate} adminContent={adminContent} />
+        ) : normalizedPath.includes('/booking-codes') ? (
+          <BookingCodesPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/requests') ? (
           <RequestsPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/availability') ? (
@@ -11644,6 +11654,167 @@ function AdminReviewsPanel({ lang, adminContent = {} }) {
           </article>
         </div>
       )}
+    </section>
+  );
+}
+
+function useAdminBookingCodes(filters = {}) {
+  const [codes, setCodes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await listBookingCodes(filters);
+      setCodes(data || []);
+    } catch (err) {
+      setError(err?.message || 'Could not load booking codes.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, [JSON.stringify(filters)]);
+
+  return { codes, loading, error, refresh };
+}
+
+function bookingCodeStatusLabel(status, lang) {
+  const labels = {
+    unused: { it: 'Non usato', en: 'Unused' },
+    redeemed: { it: 'Usato', en: 'Redeemed' },
+    expired: { it: 'Scaduto', en: 'Expired' },
+    cancelled: { it: 'Annullato', en: 'Cancelled' }
+  };
+  return labels[status]?.[lang] || status || '-';
+}
+
+function bookingCodeTitleForAdmin(code, lang) {
+  return lang === 'en'
+    ? (code.experience_name_en || code.experience_name_it || adminExperienceLabel(code.experience_id, lang))
+    : (code.experience_name_it || code.experience_name_en || adminExperienceLabel(code.experience_id, lang));
+}
+
+function adminMoney(value, currency = 'EUR') {
+  const amount = Number(value || 0);
+  return `${Number.isFinite(amount) ? amount.toFixed(2) : '0.00'} ${currency || 'EUR'}`;
+}
+
+function BookingCodesPage({ lang, session, adminContent = {} }) {
+  const [filters, setFilters] = useState({ status: 'all', search: '', limit: 250 });
+  const { codes, loading, error, refresh } = useAdminBookingCodes(filters);
+  const [bookingCodeOpen, setBookingCodeOpen] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [actionError, setActionError] = useState('');
+
+  function updateFilter(field, value) {
+    setFilters((current) => ({ ...current, [field]: value }));
+  }
+
+  async function refreshWithFeedback(message = '') {
+    await refresh();
+    if (message) setFeedback(message);
+  }
+
+  async function copyCode(code) {
+    await copyText(code);
+    setFeedback(adminCopy(lang, 'Codice copiato.', 'Code copied.'));
+  }
+
+  async function cancelCode(item) {
+    if (!window.confirm(adminCopy(lang, `Annullare il codice ${item.code}?`, `Cancel code ${item.code}?`))) return;
+    setActionError('');
+    setFeedback('');
+    try {
+      await cancelBookingCode(item.id);
+      await refreshWithFeedback(adminCopy(lang, 'Codice annullato.', 'Code cancelled.'));
+    } catch (err) {
+      setActionError(err?.message || adminCopy(lang, 'Codice non annullato.', 'Code not cancelled.'));
+    }
+  }
+
+  const unusedCount = codes.filter((item) => item.status === 'unused').length;
+  const redeemedCount = codes.filter((item) => item.status === 'redeemed').length;
+  const totalExpected = codes
+    .filter((item) => item.status !== 'cancelled')
+    .reduce((sum, item) => sum + Number(item.expected_amount || 0), 0);
+
+  return (
+    <section className="admin-page booking-codes-admin-page">
+      <div className="admin-page-header">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'Codici prenotazione', 'Booking codes')}</span>
+          <AdminEditableText as="h1" itemKey="admin.bookingCodes.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Codici prenotazione', 'Booking codes')} />
+          <AdminEditableText as="p" itemKey="admin.bookingCodes.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Vedi i codici generati, controlla stato, cliente, esperienza, importo e collegamenti creati al momento dell’uso.', 'View generated codes, status, customer, experience, amount, and linked records created on redemption.')} />
+        </div>
+        <div className="admin-header-actions">
+          <button className="button secondary" type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+          <button className="button primary" type="button" onClick={() => setBookingCodeOpen(true)}>{adminCopy(lang, 'Genera codice', 'Generate code')}</button>
+        </div>
+      </div>
+
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {(error || actionError) && <div className="admin-alert error" role="alert">{error || actionError}</div>}
+
+      <div className="admin-summary-grid booking-code-summary-grid">
+        <SummaryCard label={adminCopy(lang, 'Totali caricati', 'Loaded total')} value={codes.length} />
+        <SummaryCard label={adminCopy(lang, 'Non usati', 'Unused')} value={unusedCount} />
+        <SummaryCard label={adminCopy(lang, 'Usati', 'Redeemed')} value={redeemedCount} />
+        <SummaryCard label={adminCopy(lang, 'Importo previsto', 'Expected amount')} value={adminMoney(totalExpected, 'EUR')} />
+      </div>
+
+      <div className="admin-filter-bar booking-code-filter-bar">
+        <input aria-label="Search booking codes" placeholder={adminCopy(lang, 'Cerca codice, cliente, email, telefono', 'Search code, customer, email, phone')} value={filters.search} onChange={(event) => updateFilter('search', event.target.value)} />
+        <select aria-label="Status" value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}>
+          <option value="all">{adminCopy(lang, 'Tutti gli stati', 'All statuses')}</option>
+          {['unused', 'redeemed', 'expired', 'cancelled'].map((status) => <option key={status} value={status}>{bookingCodeStatusLabel(status, lang)}</option>)}
+        </select>
+      </div>
+
+      <section className="admin-panel">
+        <div className="admin-panel-header">
+          <h2>{adminCopy(lang, 'Codici generati', 'Generated codes')} · {codes.length}</h2>
+          <button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+        </div>
+        {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : codes.length === 0 ? <p>{adminCopy(lang, 'Nessun codice trovato.', 'No booking codes found.')}</p> : (
+          <div className="booking-code-admin-list">
+            {codes.map((item) => {
+              const title = bookingCodeTitleForAdmin(item, lang);
+              const mapsUrl = normalizeGoogleMapsUrl(item.meeting_point_maps_url);
+              return (
+                <article className={`booking-code-admin-card status-${item.status || 'unused'}`} key={item.id}>
+                  <div className="booking-code-admin-card-head">
+                    <div>
+                      <button className="booking-code-copy-button" type="button" onClick={() => copyCode(item.code)} title={adminCopy(lang, 'Copia codice', 'Copy code')}>{item.code}</button>
+                      <p className="small-note">{item.customer_name || '-'} · {item.customer_email || item.customer_phone || '-'}</p>
+                    </div>
+                    <span className={`status-pill ${item.status === 'redeemed' ? 'accepted' : item.status === 'cancelled' || item.status === 'expired' ? 'cancelled' : 'pending'}`}>{bookingCodeStatusLabel(item.status, lang)}</span>
+                  </div>
+                  <dl className="request-details-grid booking-code-details-grid">
+                    <div><dt>{adminCopy(lang, 'Esperienza', 'Experience')}</dt><dd>{title}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Data', 'Date')}</dt><dd>{item.scheduled_date || '-'}{item.scheduled_time ? ` · ${item.scheduled_time}` : ''}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Importo', 'Amount')}</dt><dd>{adminMoney(item.expected_amount, item.currency)}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Creato', 'Created')}</dt><dd>{formatLocalDateTime(item.created_at, lang, '-')}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Scadenza', 'Expiry')}</dt><dd>{formatLocalDateTime(item.expires_at, lang, item.expires_at || '-')}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Usato il', 'Redeemed at')}</dt><dd>{formatLocalDateTime(item.redeemed_at, lang, '-')}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Punto d’incontro', 'Meeting point')}</dt><dd>{mapsUrl ? <a className="inline-link" href={mapsUrl} target="_blank" rel="noopener noreferrer">{item.meeting_point_name || adminCopy(lang, 'Apri Maps', 'Open Maps')}</a> : (item.meeting_point_name || '-')}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Collegamenti', 'Links')}</dt><dd>{item.redeemed_booking_request_id ? adminCopy(lang, 'Richiesta creata', 'Request created') : '-'}{item.redeemed_finance_entry_id ? ` · ${adminCopy(lang, 'Finanza creata', 'Finance created')}` : ''}</dd></div>
+                  </dl>
+                  {item.admin_note && <p className="request-message"><strong>{adminCopy(lang, 'Nota interna', 'Internal note')}:</strong> {item.admin_note}</p>}
+                  <div className="admin-quick-actions">
+                    <button type="button" onClick={() => copyCode(item.code)}>{adminCopy(lang, 'Copia codice', 'Copy code')}</button>
+                    {item.status === 'unused' && <button type="button" onClick={() => cancelCode(item)}>{adminCopy(lang, 'Annulla codice', 'Cancel code')}</button>}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {bookingCodeOpen && <AdminBookingCodeModal lang={lang} session={session} onClose={() => setBookingCodeOpen(false)} onSaved={(code) => { setBookingCodeOpen(false); refreshWithFeedback(adminCopy(lang, `Codice creato: ${code}`, `Code created: ${code}`)); }} />}
     </section>
   );
 }

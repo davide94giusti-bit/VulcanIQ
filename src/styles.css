@@ -10920,3 +10920,72 @@ body.modal-scroll-lock {
     font-size: clamp(1.55rem, 7vw, 2rem);
   }
 }
+
+/* Booking-code admin ledger and RPC hotfix UI */
+.booking-code-filter-bar {
+  grid-template-columns: minmax(260px, 1fr) minmax(160px, 220px);
+}
+
+.booking-code-admin-list {
+  display: grid;
+  gap: 14px;
+}
+
+.booking-code-admin-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.84);
+  box-shadow: var(--shadow-soft);
+}
+
+.booking-code-admin-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.booking-code-copy-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(240,107,79,0.34);
+  border-radius: 999px;
+  background: var(--lava-soft);
+  color: #9d3b2c;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+}
+
+.booking-code-details-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.booking-code-admin-card.status-redeemed {
+  border-color: rgba(140, 162, 143, 0.38);
+}
+
+.booking-code-admin-card.status-cancelled,
+.booking-code-admin-card.status-expired {
+  opacity: 0.78;
+}
+
+@media (max-width: 1060px) {
+  .booking-code-details-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .booking-code-filter-bar,
+  .booking-code-details-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .booking-code-admin-card-head {
+    display: grid;
+  }
+}
