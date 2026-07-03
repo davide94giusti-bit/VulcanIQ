@@ -10989,3 +10989,210 @@ body.modal-scroll-lock {
     display: grid;
   }
 }
+
+/* 20260703 support-card copy removal and booking-code close/input spacing fix */
+.booking-code-header.compact-only-close {
+  min-height: 86px;
+  padding-top: 24px;
+  padding-bottom: 14px;
+}
+
+.booking-code-header.compact-only-close + .booking-code-form {
+  padding-top: 6px;
+}
+
+.booking-code-form input {
+  position: relative;
+  z-index: 1;
+}
+
+.booking-code-support-card h3,
+.support-contact-header h2 {
+  margin-bottom: 0;
+}
+
+.booking-code-support-card .contact-actions,
+.support-contact-card .contact-actions {
+  margin-top: 16px;
+}
+
+.support-contact-card {
+  margin-top: 14px;
+}
+
+.support-contact-header {
+  padding-bottom: 0;
+}
+
+.booking-code-support-card .email-action-wrap .pill-action,
+.support-contact-card .email-action-wrap .pill-action {
+  align-self: stretch;
+}
+
+@media (max-width: 760px) {
+  .booking-code-header.compact-only-close {
+    min-height: 76px;
+    padding: 14px 20px 8px;
+  }
+
+  .booking-code-header.compact-only-close + .booking-code-form {
+    padding-top: 8px;
+  }
+
+  .booking-code-support-card,
+  .support-contact-card {
+    margin-top: 8px;
+  }
+
+  .booking-code-support-card .contact-actions,
+  .support-contact-card .contact-actions {
+    margin-top: 14px;
+  }
+}
+
+/* 20260703 dedicated celebratory booking-confirmation popup */
+.booking-code-modal.has-booking-code-success {
+  width: min(720px, 100%);
+  grid-template-rows: auto auto;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(240, 107, 79, 0.18), transparent 30%),
+    radial-gradient(circle at 82% 14%, rgba(241, 184, 107, 0.20), transparent 28%),
+    linear-gradient(180deg, #fff, #fff9f3);
+}
+
+.booking-code-success-card.celebration {
+  position: relative;
+  isolation: isolate;
+  margin: 0 clamp(24px, 5vw, 48px) clamp(28px, 5vw, 48px);
+  padding: clamp(30px, 5vw, 54px);
+  overflow: hidden;
+  text-align: center;
+  border: 1px solid rgba(240, 107, 79, 0.22);
+  border-radius: clamp(26px, 4vw, 38px);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 157, 118, 0.24), transparent 34%),
+    linear-gradient(145deg, rgba(255,255,255,0.96), rgba(255,240,234,0.88));
+  box-shadow: 0 26px 70px rgba(240, 107, 79, 0.18);
+}
+
+.booking-code-success-card.celebration::before,
+.booking-code-success-card.celebration::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 160px;
+  height: 160px;
+  border-radius: 999px;
+  background: rgba(240, 107, 79, 0.12);
+  filter: blur(2px);
+}
+
+.booking-code-success-card.celebration::before {
+  top: -74px;
+  left: -58px;
+}
+
+.booking-code-success-card.celebration::after {
+  right: -66px;
+  bottom: -78px;
+  background: rgba(241, 184, 107, 0.14);
+}
+
+.booking-code-celebration-mark {
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 18px;
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--lava), #ff9d76);
+  box-shadow: 0 18px 42px rgba(240, 107, 79, 0.34);
+  font-size: 2.2rem;
+  font-weight: 950;
+}
+
+.booking-code-celebration-kicker {
+  display: inline-flex;
+  width: fit-content;
+  margin-bottom: 12px;
+  padding: 7px 12px;
+  border: 1px solid rgba(240,107,79,0.22);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.82);
+  color: #b64c38;
+  font-size: 0.74rem;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.booking-code-success-card.celebration h3 {
+  margin: 0 auto 12px;
+  max-width: 560px;
+  color: var(--night);
+  font-size: clamp(2.25rem, 5.2vw, 4.15rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.booking-code-success-card.celebration p {
+  max-width: 560px;
+  margin: 0 auto 20px;
+  color: var(--basalt);
+  font-size: clamp(1rem, 1.6vw, 1.18rem);
+  line-height: 1.55;
+}
+
+.booking-code-celebration-detail {
+  width: min(100%, 340px);
+  display: grid;
+  gap: 3px;
+  margin: 20px auto 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(24, 33, 43, 0.10);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.74);
+}
+
+.booking-code-celebration-detail span {
+  color: var(--ash);
+  font-size: 0.74rem;
+  font-weight: 950;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+}
+
+.booking-code-celebration-detail strong {
+  color: var(--night);
+  font-size: 1.14rem;
+}
+
+.booking-code-success-card.celebration small {
+  display: block;
+  margin-top: 18px;
+  color: #b64c38;
+  font-weight: 900;
+}
+
+@media (max-width: 760px) {
+  .booking-code-modal.has-booking-code-success {
+    min-height: auto;
+  }
+
+  .booking-code-success-card.celebration {
+    margin: 0 20px 22px;
+    padding: 28px 18px 30px;
+  }
+
+  .booking-code-celebration-mark {
+    width: 64px;
+    height: 64px;
+    font-size: 1.9rem;
+  }
+
+  .booking-code-success-card.celebration h3 {
+    font-size: clamp(2rem, 10vw, 3rem);
+  }
+}

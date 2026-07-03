@@ -250,6 +250,11 @@ const i18n = {
     bookingCodeHelpText: 'Se il codice non funziona, contatta direttamente il team.',
     bookingCodeSuccessPrefix: 'Congratulazioni',
     bookingCodeSuccessText: 'Hai prenotato con successo {experience}.',
+    bookingCodeCelebrationKicker: 'Prenotazione confermata',
+    bookingCodeCelebrationTitle: 'Fantastico, {name}!',
+    bookingCodeCelebrationSubtitle: 'La tua esperienza {experience} è confermata. Preparati a vivere l\u2019Etna con vulcanIQ.',
+    bookingCodeCelebrationDateLabel: 'Data esperienza',
+    bookingCodeCelebrationFooter: 'Ci vediamo sull\u2019Etna.',
     bookingCodeRequired: 'Inserisci un codice prenotazione.',
     bookingCodeNotFound: 'Codice non trovato.',
     bookingCodeAlreadyUsed: 'Codice già utilizzato.',
@@ -527,6 +532,11 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     bookingCodeHelpText: 'If the code does not work, contact the team directly.',
     bookingCodeSuccessPrefix: 'Congratulations',
     bookingCodeSuccessText: 'You successfully booked {experience}.',
+    bookingCodeCelebrationKicker: 'Booking confirmed',
+    bookingCodeCelebrationTitle: 'Fantastic, {name}!',
+    bookingCodeCelebrationSubtitle: 'Your {experience} experience is confirmed. Get ready to experience Mount Etna with vulcanIQ.',
+    bookingCodeCelebrationDateLabel: 'Experience date',
+    bookingCodeCelebrationFooter: 'See you on Mount Etna.',
     bookingCodeRequired: 'Enter a booking code.',
     bookingCodeNotFound: 'Code not found.',
     bookingCodeAlreadyUsed: 'Code already used.',
@@ -2479,17 +2489,24 @@ function BookingCodeModal({ lang, onClose, siteContent }) {
 
   return createPortal((
     <div className="booking-code-backdrop motion-backdrop" role="presentation" onClick={onClose}>
-      <section className="booking-code-modal motion-panel" role="dialog" aria-modal="true" aria-labelledby="bookingCodeTitle" onClick={(event) => event.stopPropagation()}>
+      <section className={`booking-code-modal motion-panel ${success ? 'has-booking-code-success' : ''}`.trim()} role="dialog" aria-modal="true" aria-labelledby="bookingCodeTitle" onClick={(event) => event.stopPropagation()}>
         <header className="booking-code-header compact-only-close">
           <h2 id="bookingCodeTitle" className="sr-only">{text(lang, 'bookingCodeTitle')}</h2>
           <button className="date-modal-close" type="button" onClick={onClose} aria-label={text(lang, 'close')}>{text(lang, 'close')}</button>
         </header>
         {success ? (
-          <div className="booking-code-success-card" role="status">
-            <h3>{text(lang, 'bookingCodeSuccessPrefix')}, {success.customer_name}</h3>
-            <p>{text(lang, 'bookingCodeSuccessText').replace('{experience}', successExperience || 'vulcanIQ')}</p>
-            {success.scheduled_date && <p className="small-note">{formatDateForMessage(success.scheduled_date, lang)}</p>}
-            <button className="button primary" type="button" onClick={onClose}>{text(lang, 'close')}</button>
+          <div className="booking-code-success-card celebration" role="status">
+            <div className="booking-code-celebration-mark" aria-hidden="true">✓</div>
+            <span className="booking-code-celebration-kicker">{text(lang, 'bookingCodeCelebrationKicker')}</span>
+            <h3>{text(lang, 'bookingCodeCelebrationTitle').replace('{name}', success.customer_name || 'vulcanIQ guest')}</h3>
+            <p>{text(lang, 'bookingCodeCelebrationSubtitle').replace('{experience}', successExperience || 'vulcanIQ')}</p>
+            {success.scheduled_date && (
+              <div className="booking-code-celebration-detail">
+                <span>{text(lang, 'bookingCodeCelebrationDateLabel')}</span>
+                <strong>{formatDateForMessage(success.scheduled_date, lang)}</strong>
+              </div>
+            )}
+            <small>{text(lang, 'bookingCodeCelebrationFooter')}</small>
           </div>
         ) : (
           <form className="booking-code-form" onSubmit={submit}>
@@ -2507,11 +2524,12 @@ function BookingCodeModal({ lang, onClose, siteContent }) {
             <button className="button primary booking-code-submit" type="submit" disabled={state.loading}>{state.loading ? (lang === 'it' ? 'Verifica...' : 'Checking...') : text(lang, 'confirmBookingCode')}</button>
           </form>
         )}
-        <aside className="booking-code-support-card">
-          <h3>{text(lang, 'bookingCodeNeedHelp')}</h3>
-          <p>{text(lang, 'bookingCodeHelpText')}</p>
-          <ContactActions lang={lang} contextMessage={supportMessage} location="booking_code_screen" siteContent={siteContent} />
-        </aside>
+        {!success && (
+          <aside className="booking-code-support-card">
+            <h3>{text(lang, 'bookingCodeNeedHelp')}</h3>
+            <ContactActions lang={lang} contextMessage={supportMessage} location="booking_code_screen" siteContent={siteContent} />
+          </aside>
+        )}
       </section>
     </div>
   ), document.body);
@@ -2539,7 +2557,6 @@ function SupportContactModal({ lang, onClose, siteContent }) {
         <header className="support-contact-header">
           <div>
             <h2 id="supportContactTitle">{text(lang, 'bookingCodeNeedHelp')}</h2>
-            <p>{text(lang, 'bookingCodeHelpText')}</p>
           </div>
           <button className="date-modal-close support-contact-top-close" type="button" onClick={onClose} aria-label={text(lang, 'close')}>{text(lang, 'close')}</button>
         </header>
