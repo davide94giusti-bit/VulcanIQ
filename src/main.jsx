@@ -4,7 +4,7 @@ import { blockedDates, defaultExperienceAvailability } from './data/availability
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
 import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
-import { listBookingCodes, listAvailableBookingCodeExperiences, createBookingCode, cancelBookingCode, redeemBookingCode, normalizeBookingCode } from './services/bookingCodes.js';
+import { createBookingCode, redeemBookingCode } from './services/bookingCodes.js';
 import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadFixedExcursionLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
 import { loadPublicReviews, submitPublicReview, listReviews, createManualReview, updateReviewDetails, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply, deleteReview } from './services/reviewsService.js';
@@ -34,7 +34,6 @@ const ADMIN_NAV_SECTIONS = [
   { key: 'calendar', path: '/admin/calendar', labelIt: 'Calendario', labelEn: 'Calendar', editable: true },
   { key: 'upcoming', path: '/admin/upcoming', labelIt: 'Prossime', labelEn: 'Upcoming', editable: true },
   { key: 'requests', path: '/admin/requests', labelIt: 'Richieste prenotazione', labelEn: 'Booking requests', editable: true },
-  { key: 'bookingCodes', path: '/admin/booking-codes', labelIt: 'Codici prenotazione', labelEn: 'Booking codes', editable: true },
   { key: 'availability', path: '/admin/availability', labelIt: 'Disponibilità', labelEn: 'Availability', editable: true },
   { key: 'partnerships', path: '/admin/partnerships', labelIt: 'Collaborazioni', labelEn: 'Collaborations', editable: true },
   { key: 'edit', path: '/admin/edit', labelIt: 'Modifica sito e recensioni', labelEn: 'Edit website & reviews', editable: true },
@@ -46,7 +45,7 @@ const ADMIN_NAV_SECTIONS = [
 
 const ADMIN_NAV_GROUPS = [
   { key: 'operations', labelIt: 'Operazioni', labelEn: 'Operations', items: ['today', 'upcoming', 'calendar'] },
-  { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'bookingCodes', 'availability'] },
+  { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'availability'] },
   { key: 'website', labelIt: 'Gestione sito', labelEn: 'Website management', items: ['edit', 'publicSite'] },
   { key: 'business', labelIt: 'Business', labelEn: 'Business', items: ['partnerships', 'finance', 'analytics'] },
   { key: 'system', labelIt: 'Sistema', labelEn: 'System', items: ['backup'] }
@@ -59,7 +58,6 @@ function adminNavLabel(section, lang) {
 function isAdminNavSectionActive(normalizedPath, section) {
   if (!section || section.external) return false;
   if (section.key === 'analytics') return normalizedPath.includes('/analytics') || normalizedPath.includes('/data');
-  if (section.key === 'bookingCodes') return normalizedPath.includes('/booking-codes');
   if (section.key === 'backup') return normalizedPath.includes('/system') || normalizedPath.includes('/backup');
   if (section.key === 'edit') return normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media');
   if (section.key === 'partnerships') return normalizedPath.includes('/partnerships');
@@ -236,10 +234,7 @@ const i18n = {
     heroLead: 'Esperienze private e fisse sull’Etna per leggere il vulcano come territorio vivo: con conoscenza, sicurezza e relazione umana.',
     findExperience: "Trova l'esperienza giusta",
     viewAvailability: 'Prenota ora',
-    bookNow: 'Prenota ora',
     bookWithCode: 'PRENOTA CON CODICE',
-    bookWithoutCode: 'Prenota senza codice',
-    enterBookingCode: 'Inserisci codice prenotazione',
     findExperienceModalIntro: "Rispondi a poche domande: ti suggeriremo l'esperienza migliore e le prossime date disponibili.",
     findExperienceInterestQuestion: 'Cosa ti interessa di più?',
     findExperienceGroupQuestion: 'Con chi viaggi?',
@@ -249,7 +244,6 @@ const i18n = {
     bookingCodePlaceholder: 'Inserisci codice prenotazione',
     confirmBookingCode: 'Conferma codice',
     bookingCodeNeedHelp: 'Hai bisogno di aiuto?',
-    bookingCodeHelp: 'Inserisci il codice ricevuto dal team vulcanIQ.',
     bookingCodeHelpText: 'Se il codice non funziona, contatta direttamente il team.',
     bookingCodeSuccessPrefix: 'Congratulazioni',
     bookingCodeSuccessText: 'Hai prenotato con successo {experience}.',
@@ -258,27 +252,7 @@ const i18n = {
     bookingCodeAlreadyUsed: 'Codice già utilizzato.',
     bookingCodeExpired: 'Codice scaduto.',
     bookingCodeCancelled: 'Codice annullato.',
-    bookingCodeCheck: 'Controlla il codice e riprova.',
     bookingCodeGenericError: 'Controlla il codice e riprova.',
-    bookingCodeSuccessTitle: 'Congratulazioni, {name}',
-    contactVulcaniq: 'Contatta vulcanIQ',
-    openMeetingPoint: 'Apri punto d’incontro',
-    recommendedExperienceDates: 'Date disponibili consigliate',
-    noRecommendedDates: 'Non ci sono date fisse aperte per questa esperienza. Puoi richiedere una proposta privata.',
-    recommendationReasonLive: 'Hai indicato interesse per lava, attività vulcanica o fotografia: questa è l’opzione più diretta quando le condizioni lo permettono.',
-    recommendationReasonStories: 'Hai indicato interesse per geologia, cultura e racconto del territorio: questa è l’opzione più equilibrata.',
-    recommendationReasonPremium: 'Hai indicato preferenza per un ritmo privato o premium: questa è l’opzione più personalizzabile.',
-    recommendationReasonLearning: 'Hai indicato un contesto educativo, aziendale o formativo: questa opzione è pensata per apprendimento guidato.',
-    findWizardTitle: 'Trova l’esperienza giusta',
-    findWizardIntro: 'Rispondi a poche domande: ti proponiamo l’esperienza più adatta e le prossime date aperte.',
-    findWizardInterest: 'Cosa ti interessa di più?',
-    findWizardGroup: 'Con chi viaggi?',
-    findWizardPace: 'Che ritmo preferisci?',
-    findWizardStyle: 'Preferisci un’esperienza privata o fissa?',
-    findWizardLanguage: 'Lingua preferita',
-    findWizardResult: 'Risultato consigliato',
-    findWizardUse: 'Usa questa esperienza nella richiesta',
-    findWizardUseDate: 'Richiedi questa data',
     call: 'Chiama Leonardo',
     whatsapp: 'Scrivici su WhatsApp',
     email: "Invia un'email",
@@ -537,10 +511,7 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     heroLead: 'Private and fixed Mount Etna experiences that help guests read the volcano as a living territory: with knowledge, safety, and human connection.',
     findExperience: 'Find the right experience',
     viewAvailability: 'Book now',
-    bookNow: 'Book now',
     bookWithCode: 'BOOK WITH CODE',
-    bookWithoutCode: 'Book without code',
-    enterBookingCode: 'Enter booking code',
     findExperienceModalIntro: 'Answer a few questions: we will suggest the best experience and the next open dates.',
     findExperienceInterestQuestion: 'What interests you most?',
     findExperienceGroupQuestion: 'Who are you travelling with?',
@@ -550,7 +521,6 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     bookingCodePlaceholder: 'Enter booking code',
     confirmBookingCode: 'Confirm code',
     bookingCodeNeedHelp: 'Need help?',
-    bookingCodeHelp: 'Enter the code received from the vulcanIQ team.',
     bookingCodeHelpText: 'If the code does not work, contact the team directly.',
     bookingCodeSuccessPrefix: 'Congratulations',
     bookingCodeSuccessText: 'You successfully booked {experience}.',
@@ -559,27 +529,7 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     bookingCodeAlreadyUsed: 'Code already used.',
     bookingCodeExpired: 'Code expired.',
     bookingCodeCancelled: 'Code cancelled.',
-    bookingCodeCheck: 'Check the code and try again.',
     bookingCodeGenericError: 'Check the code and try again.',
-    bookingCodeSuccessTitle: 'Congratulations, {name}',
-    contactVulcaniq: 'Contact vulcanIQ',
-    openMeetingPoint: 'Open meeting point',
-    recommendedExperienceDates: 'Recommended available dates',
-    noRecommendedDates: 'There are no open fixed dates for this experience. You can request a private proposal.',
-    recommendationReasonLive: 'You selected lava, volcanic activity or photography: this is the most direct option when conditions allow it.',
-    recommendationReasonStories: 'You selected geology, culture and local storytelling: this is the most balanced option.',
-    recommendationReasonPremium: 'You selected a private or premium pace: this is the most customizable option.',
-    recommendationReasonLearning: 'You selected an educational, company or learning context: this option is designed for guided learning.',
-    findWizardTitle: 'Find the right experience',
-    findWizardIntro: 'Answer a few questions: we will suggest the best experience and the next open dates.',
-    findWizardInterest: 'What interests you most?',
-    findWizardGroup: 'Who are you travelling with?',
-    findWizardPace: 'Which pace do you prefer?',
-    findWizardStyle: 'Do you prefer a private or fixed experience?',
-    findWizardLanguage: 'Preferred language',
-    findWizardResult: 'Recommended result',
-    findWizardUse: 'Use this experience in the request',
-    findWizardUseDate: 'Request this date',
     call: 'Call Leonardo',
     whatsapp: 'Message on WhatsApp',
     email: 'Send an email',
@@ -2327,25 +2277,282 @@ function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor })
   );
 }
 
-function Hero({ lang, setActivePage, scrollToForm, openBookingCodeMode, openFindExperienceWizard, siteMedia, siteContent, editor }) {
+const FIND_EXPERIENCE_INTERESTS = [
+  { value: 'lava-activity', it: 'Lava / attività', en: 'Lava / activity', experienceId: 'etna-live' },
+  { value: 'geology', it: 'Geologia', en: 'Geology', experienceId: 'etna-learning' },
+  { value: 'local-culture', it: 'Cultura locale', en: 'Local culture', experienceId: 'etna-stories' },
+  { value: 'photography', it: 'Fotografia', en: 'Photography', experienceId: 'etna-live' },
+  { value: 'premium', it: 'Premium', en: 'Premium', experienceId: 'etna-premium' }
+];
+
+const FIND_EXPERIENCE_GROUPS = [
+  { value: 'solo-couple', it: 'Singolo / coppia', en: 'Solo / couple' },
+  { value: 'family', it: 'Famiglia', en: 'Family' },
+  { value: 'group', it: 'Gruppo', en: 'Group' },
+  { value: 'school-company', it: 'Scuola / azienda', en: 'School / company' }
+];
+
+function recommendationFromFindAnswers(interest, group) {
+  const selected = FIND_EXPERIENCE_INTERESTS.find((item) => item.value === interest) || FIND_EXPERIENCE_INTERESTS[0];
+  if (group === 'school-company' && interest !== 'premium') return experienceById('etna-learning');
+  if (group === 'family' && interest === 'lava-activity') return experienceById('etna-learning');
+  return experienceById(selected.experienceId);
+}
+
+function FindExperienceModal({ lang, onClose, onRequestExperience }) {
+  const [step, setStep] = useState(0);
+  const [interest, setInterest] = useState('');
+  const [group, setGroup] = useState('');
+  const modalRef = useRef(null);
+  useBodyScrollLock(true);
+
+  useEffect(() => {
+    trackEvent('find_experience_started', { language: lang }, { dedupe: false });
+    const timer = window.setTimeout(() => modalRef.current?.querySelector('button')?.focus?.(), 0);
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [lang, onClose]);
+
+  const selectedExperience = recommendationFromFindAnswers(interest, group);
+  const selectedInterest = FIND_EXPERIENCE_INTERESTS.find((item) => item.value === interest);
+  const selectedGroup = FIND_EXPERIENCE_GROUPS.find((item) => item.value === group);
+
+  function selectInterest(value) {
+    setInterest(value);
+    trackEvent('find_experience_interest_selected', { interest: value, language: lang }, { dedupe: false });
+  }
+
+  function selectGroup(value) {
+    setGroup(value);
+    trackEvent('find_experience_group_selected', { group: value, language: lang }, { dedupe: false });
+  }
+
+  function goNext() {
+    if (step === 0 && !interest) return;
+    if (step === 1 && !group) return;
+    if (step >= 1) {
+      trackEvent('find_experience_completed', { recommended_experience_id: selectedExperience.id, interest, group, language: lang }, { dedupe: false });
+    }
+    setStep((current) => Math.min(current + 1, 2));
+  }
+
+  function requestExperience() {
+    onRequestExperience?.(selectedExperience, {
+      interest: selectedInterest?.[lang === 'en' ? 'en' : 'it'] || interest,
+      group: selectedGroup?.[lang === 'en' ? 'en' : 'it'] || group
+    });
+  }
+
+  return (
+    <div className="find-experience-backdrop motion-backdrop" role="presentation" onClick={onClose}>
+      <section className="find-experience-modal motion-panel" role="dialog" aria-modal="true" aria-labelledby="findExperienceTitle" ref={modalRef} onClick={(event) => event.stopPropagation()}>
+        <header className="find-experience-header">
+          <div>
+            <h2 id="findExperienceTitle">{text(lang, 'findExperience')}</h2>
+            <p>{text(lang, 'findExperienceModalIntro')}</p>
+          </div>
+          <button className="date-modal-close" type="button" onClick={onClose} aria-label={text(lang, 'close')}>{text(lang, 'close')}</button>
+        </header>
+        <main className="find-experience-body">
+          {step === 0 && (
+            <section className="find-experience-step" aria-live="polite">
+              <h3>{text(lang, 'findExperienceInterestQuestion')}</h3>
+              <div className="find-experience-choice-grid">
+                {FIND_EXPERIENCE_INTERESTS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`find-experience-choice ${interest === option.value ? 'active' : ''}`}
+                    onClick={() => selectInterest(option.value)}
+                    aria-pressed={interest === option.value}
+                  >
+                    {option[lang === 'en' ? 'en' : 'it']}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+          {step === 1 && (
+            <section className="find-experience-step" aria-live="polite">
+              <h3>{text(lang, 'findExperienceGroupQuestion')}</h3>
+              <div className="find-experience-choice-grid compact">
+                {FIND_EXPERIENCE_GROUPS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`find-experience-choice ${group === option.value ? 'active' : ''}`}
+                    onClick={() => selectGroup(option.value)}
+                    aria-pressed={group === option.value}
+                  >
+                    {option[lang === 'en' ? 'en' : 'it']}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+          {step === 2 && (
+            <section className="find-experience-result" aria-live="polite">
+              <span className="kicker">{text(lang, 'findExperienceResultTitle')}</span>
+              <h3>{selectedExperience.title}</h3>
+              <p>{selectedExperience.summary[lang === 'en' ? 'en' : 'it']}</p>
+              <dl>
+                <div><dt>{text(lang, 'interest')}</dt><dd>{selectedInterest?.[lang === 'en' ? 'en' : 'it'] || '-'}</dd></div>
+                <div><dt>{text(lang, 'travelingWith')}</dt><dd>{selectedGroup?.[lang === 'en' ? 'en' : 'it'] || '-'}</dd></div>
+              </dl>
+              <button className="button primary" type="button" onClick={requestExperience}>{text(lang, 'requestThis')}</button>
+            </section>
+          )}
+        </main>
+        <footer className="find-experience-footer">
+          <button className="button secondary" type="button" onClick={() => step === 0 ? onClose() : setStep((current) => Math.max(current - 1, 0))}>{text(lang, 'back')}</button>
+          {step < 2 && <button className="button primary" type="button" onClick={goNext} disabled={(step === 0 && !interest) || (step === 1 && !group)}>{text(lang, 'next')}</button>}
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function bookingCodeErrorMessage(error, lang) {
+  const code = String(error?.code || error?.message || '').toUpperCase();
+  if (code.includes('REQUIRED')) return text(lang, 'bookingCodeRequired');
+  if (code.includes('NOT_FOUND')) return text(lang, 'bookingCodeNotFound');
+  if (code.includes('ALREADY') || code.includes('REDEEMED')) return text(lang, 'bookingCodeAlreadyUsed');
+  if (code.includes('EXPIRED')) return text(lang, 'bookingCodeExpired');
+  if (code.includes('CANCELLED')) return text(lang, 'bookingCodeCancelled');
+  return error?.message && !code.includes('BOOKING_CODE') ? error.message : text(lang, 'bookingCodeGenericError');
+}
+
+function BookingCodeModal({ lang, onClose, siteContent }) {
+  const [code, setCode] = useState('');
+  const [state, setState] = useState({ loading: false, error: '', success: null });
+  const inputRef = useRef(null);
+  useBodyScrollLock(true);
+
+  useEffect(() => {
+    trackEvent('book_with_code_clicked', { language: lang }, { dedupe: false });
+    const timer = window.setTimeout(() => inputRef.current?.focus?.(), 0);
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [lang, onClose]);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (state.loading) return;
+    setState({ loading: true, error: '', success: null });
+    try {
+      trackEvent('booking_code_submitted', { language: lang }, { dedupe: false });
+      const result = await redeemBookingCode(code, { language: lang });
+      trackEvent('booking_code_redeemed', { language: lang, has_scheduled_date: Boolean(result.scheduled_date) }, { dedupe: false });
+      setState({ loading: false, error: '', success: result });
+    } catch (error) {
+      trackEvent('booking_code_invalid', { language: lang, reason: String(error?.code || error?.message || 'invalid') }, { dedupe: false });
+      setState({ loading: false, error: bookingCodeErrorMessage(error, lang), success: null });
+    }
+  }
+
+  const success = state.success;
+  const successExperience = success ? (lang === 'en' ? success.experience_name_en || success.experience_name_it : success.experience_name_it || success.experience_name_en) : '';
+  const supportMessage = lang === 'en'
+    ? 'Hi Leonardo, I need help with a vulcanIQ booking code.'
+    : 'Ciao Leonardo, ho bisogno di aiuto con un codice prenotazione vulcanIQ.';
+
+  return (
+    <div className="booking-code-backdrop motion-backdrop" role="presentation" onClick={onClose}>
+      <section className="booking-code-modal motion-panel" role="dialog" aria-modal="true" aria-labelledby="bookingCodeTitle" onClick={(event) => event.stopPropagation()}>
+        <header className="booking-code-header compact-only-close">
+          <h2 id="bookingCodeTitle" className="sr-only">{text(lang, 'bookingCodeTitle')}</h2>
+          <button className="date-modal-close" type="button" onClick={onClose} aria-label={text(lang, 'close')}>{text(lang, 'close')}</button>
+        </header>
+        {success ? (
+          <div className="booking-code-success-card" role="status">
+            <h3>{text(lang, 'bookingCodeSuccessPrefix')}, {success.customer_name}</h3>
+            <p>{text(lang, 'bookingCodeSuccessText').replace('{experience}', successExperience || 'vulcanIQ')}</p>
+            {success.scheduled_date && <p className="small-note">{formatDateForMessage(success.scheduled_date, lang)}</p>}
+            <button className="button primary" type="button" onClick={onClose}>{text(lang, 'close')}</button>
+          </div>
+        ) : (
+          <form className="booking-code-form" onSubmit={submit}>
+            <input
+              id="publicBookingCodeInput"
+              ref={inputRef}
+              value={code}
+              onChange={(event) => setCode(event.target.value.toUpperCase())}
+              placeholder={text(lang, 'bookingCodePlaceholder')}
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck="false"
+            />
+            {state.error && <p className="form-status error" role="alert">{state.error}</p>}
+            <button className="button primary booking-code-submit" type="submit" disabled={state.loading}>{state.loading ? (lang === 'it' ? 'Verifica...' : 'Checking...') : text(lang, 'confirmBookingCode')}</button>
+          </form>
+        )}
+        <aside className="booking-code-support-card">
+          <h3>{text(lang, 'bookingCodeNeedHelp')}</h3>
+          <p>{text(lang, 'bookingCodeHelpText')}</p>
+          <ContactActions lang={lang} contextMessage={supportMessage} location="booking_code_screen" siteContent={siteContent} />
+        </aside>
+      </section>
+    </div>
+  );
+}
+
+
+function SupportContactModal({ lang, onClose, siteContent }) {
+  useBodyScrollLock(true);
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  const supportMessage = lang === 'en'
+    ? 'Hi Leonardo, I need help with vulcanIQ.'
+    : 'Ciao Leonardo, ho bisogno di aiuto con vulcanIQ.';
+
+  return (
+    <div className="booking-code-backdrop support-contact-backdrop motion-backdrop" role="presentation" onClick={onClose}>
+      <section className="booking-code-modal support-contact-modal motion-panel" role="dialog" aria-modal="true" aria-labelledby="supportContactTitle" onClick={(event) => event.stopPropagation()}>
+        <header className="support-contact-header">
+          <div>
+            <h2 id="supportContactTitle">{text(lang, 'bookingCodeNeedHelp')}</h2>
+            <p>{text(lang, 'bookingCodeHelpText')}</p>
+          </div>
+        </header>
+        <aside className="booking-code-support-card support-contact-card">
+          <ContactActions lang={lang} contextMessage={supportMessage} location="hero_contact_support" siteContent={siteContent} />
+        </aside>
+        <footer className="support-contact-footer">
+          <button className="button secondary support-contact-close" type="button" onClick={onClose}>{text(lang, 'close')}</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteContent, editor }) {
   const mediaSource = editor?.mediaMap || siteMedia || {};
   const backgroundItem = editorMediaItem(mediaSource, 'home_hero_background', '', lang === 'it' ? 'Sfondo hero homepage' : 'Home hero background');
   const heroBackground = backgroundItem.file_url || '';
   const heroStyle = heroBackground ? { backgroundImage: `linear-gradient(90deg, rgba(5,10,20,0.72), rgba(5,10,20,0.50) 50%, rgba(5,10,20,0.34)), url("${heroBackground}")` } : undefined;
   const backgroundSelected = editor?.selected?.type === 'image' && editor.selected.key === 'home_hero_background';
-  function handleBookNow() {
-    trackEvent('book_now_clicked', { language: lang, source_section: 'hero', source_cta: 'book_now' }, { dedupe: false, transport: 'beacon' });
-    setActivePage('experiences');
-    window.setTimeout(() => window.scrollTo({ top: 0, behavior: motionScrollBehavior() }), 0);
-  }
-
-  function handleContact() {
-    trackEvent('contact_us_clicked', { language: lang, source_section: 'hero', source_cta: 'contact_us' }, { dedupe: false, transport: 'beacon' });
-    scrollToForm({ source_section: 'hero', source_cta: 'contact_us', cta_location: 'hero' });
-  }
-
   const [findExperienceOpen, setFindExperienceOpen] = useState(false);
   const [bookingCodeOpen, setBookingCodeOpen] = useState(false);
+  const [supportContactOpen, setSupportContactOpen] = useState(false);
 
   function handleBookNow() {
     trackEvent('book_now_clicked', { language: lang, source_section: 'hero', source_cta: 'book_now' }, { dedupe: false });
@@ -2355,7 +2562,13 @@ function Hero({ lang, setActivePage, scrollToForm, openBookingCodeMode, openFind
 
   function handleContact() {
     trackEvent('contact_us_clicked', { language: lang, source_section: 'hero', source_cta: 'contact_us' }, { dedupe: false });
-    scrollToForm({ source_section: 'hero', source_cta: 'contact_us', cta_location: 'hero' });
+    setSupportContactOpen(true);
+  }
+
+  function closeSupportContact() {
+    setSupportContactOpen(false);
+    setActivePage('home');
+    window.setTimeout(() => window.scrollTo({ top: 0, behavior: motionScrollBehavior() }), 0);
   }
 
   function handleFindExperienceRequest(experience, details = {}) {
@@ -2404,8 +2617,8 @@ function Hero({ lang, setActivePage, scrollToForm, openBookingCodeMode, openFind
           <EditableText as="p" className="lead" itemKey="home.hero.subtitle" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroLead')} />
           <div className="hero-action-grid">
             <button className="button primary hero-action-main" type="button" onClick={handleBookNow}><EditableText itemKey="home.hero.secondary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'viewAvailability')} /></button>
-            <button className="button secondary dark hero-action-code" type="button" onClick={openBookingCodeMode}>{text(lang, 'bookWithCode')}</button>
-            <button className="button secondary dark hero-action-main" type="button" onClick={openFindExperienceWizard}><EditableText itemKey="home.hero.primary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'findExperience')} /></button>
+            <button className="button secondary dark hero-action-code" type="button" onClick={() => setBookingCodeOpen(true)}>{text(lang, 'bookWithCode')}</button>
+            <button className="button secondary dark hero-action-main" type="button" onClick={() => setFindExperienceOpen(true)}><EditableText itemKey="home.hero.primary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'findExperience')} /></button>
             <button className="button secondary dark hero-action-code" type="button" onClick={handleContact}><EditableText itemKey="home.hero.contact_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'contact')} /></button>
             <a
               className="trust-card guide-license-card hero-action-guide"
@@ -2438,6 +2651,7 @@ function Hero({ lang, setActivePage, scrollToForm, openBookingCodeMode, openFind
       </div>
       {findExperienceOpen && <FindExperienceModal lang={lang} onClose={() => setFindExperienceOpen(false)} onRequestExperience={handleFindExperienceRequest} />}
       {bookingCodeOpen && <BookingCodeModal lang={lang} onClose={() => setBookingCodeOpen(false)} siteContent={siteContent} />}
+      {supportContactOpen && <SupportContactModal lang={lang} onClose={closeSupportContact} siteContent={siteContent} />}
     </section>
   );
 }
@@ -2562,7 +2776,6 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
       hasFixedExcursion: true,
       language: lang
     }));
-    trackEvent('request_information_clicked', { ...trackingContext, request_target: 'fixed_excursion' }, { dedupe: false, transport: 'beacon' });
     trackBookingFormOpen(item?.experience_id || 'fixed', trackingContext);
     const message = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
     setDateModalOpen(false);
@@ -3024,7 +3237,6 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
       hasFixedExcursion: true,
       language: lang
     }));
-    trackEvent('request_information_clicked', { ...trackingContext, request_target: 'fixed_excursion' }, { dedupe: false, transport: 'beacon' });
     trackBookingFormOpen(item?.experience_id || 'fixed', trackingContext);
     const message = buildFixedExcursionMessage({ fixedExcursion: item, people: '' }, lang);
     fillForm({
@@ -3706,230 +3918,6 @@ function mergeTrackingContext(base = {}, override = {}) {
   return { ...(base || {}), ...(override || {}) };
 }
 
-function bookingCodeErrorMessage(errorCode, lang) {
-  const map = {
-    not_found: text(lang, 'bookingCodeNotFound'),
-    already_used: text(lang, 'bookingCodeAlreadyUsed'),
-    expired: text(lang, 'bookingCodeExpired'),
-    cancelled: text(lang, 'bookingCodeCancelled')
-  };
-  return map[errorCode] || text(lang, 'bookingCodeCheck');
-}
-
-function PublicBookingCodePanel({ lang, contactDetails, siteContent }) {
-  const contact = contactDetails || resolvePublicContactDetails(siteContent);
-  const [code, setCode] = useState('');
-  const [state, setState] = useState({ loading: false, error: '', success: null });
-  const confirmation = state.success;
-  const successTransition = useTransitionValue(confirmation);
-  const renderedConfirmation = successTransition.renderedValue;
-
-  useBodyScrollLock(Boolean(successTransition.shouldRender));
-
-  async function submit(event) {
-    event.preventDefault();
-    const clean = normalizeBookingCode(code);
-    if (!clean) {
-      setState({ loading: false, error: text(lang, 'bookingCodeCheck'), success: null });
-      return;
-    }
-    setState({ loading: true, error: '', success: null });
-    trackEvent('booking_code_submitted', { language: lang, code_length: clean.length }, { dedupe: false, transport: 'beacon' });
-    try {
-      const result = await redeemBookingCode(clean, { language: lang });
-      if (!result?.ok) {
-        const errorCode = result?.error_code || 'not_found';
-        trackEvent(`booking_code_${errorCode === 'already_used' ? 'already_used' : errorCode}`, { language: lang }, { dedupe: false, transport: 'beacon' });
-        setState({ loading: false, error: bookingCodeErrorMessage(errorCode, lang), success: null });
-        return;
-      }
-      trackEvent('booking_code_redeemed', { language: lang, experience_name: result.experience_name || '', has_date: Boolean(result.scheduled_date) }, { dedupe: false, transport: 'beacon' });
-      setState({ loading: false, error: '', success: result });
-      setCode('');
-    } catch (error) {
-      setState({ loading: false, error: text(lang, 'bookingCodeCheck'), success: null });
-    }
-  }
-
-  const contactMessage = confirmation ? `${text(lang, 'bookingCode')}: ${confirmation.code || ''}\n${confirmation.experience_name || ''}` : text(lang, 'defaultMessage');
-
-  return (
-    <>
-      <form className="booking-code-panel booking-code-dedicated-panel" onSubmit={submit}>
-        <h3>{text(lang, 'bookingCodeTitle')}</h3>
-        <p>{text(lang, 'bookingCodeIntro')}</p>
-        <label className="field-label" htmlFor="publicBookingCodeInput">{text(lang, 'bookingCodeTitle')}</label>
-        <div className="booking-code-input-row">
-          <input id="publicBookingCodeInput" value={code} onChange={(event) => setCode(normalizeBookingCode(event.target.value))} placeholder={text(lang, 'bookingCodePlaceholder')} autoComplete="off" />
-          <button className="request-action-button request-action-button-primary" type="submit" disabled={state.loading}>{state.loading ? (lang === 'it' ? 'Verifica...' : 'Checking...') : text(lang, 'confirmBookingCode')}</button>
-        </div>
-        {state.error && <p className="form-status error" role="alert">{state.error}</p>}
-      </form>
-      <aside className="booking-code-support-card inline-support-card">
-        <h3>{text(lang, 'bookingCodeNeedHelp')}</h3>
-        <p>{text(lang, 'bookingCodeHelpText')}</p>
-        <ContactActions lang={lang} contextMessage={lang === 'it' ? 'Ciao Leonardo, ho bisogno di aiuto con un codice prenotazione vulcanIQ.' : 'Hi Leonardo, I need help with a vulcanIQ booking code.'} compact={false} location="booking_code_screen" siteContent={siteContent} contactDetails={contact} />
-      </aside>
-      {renderedConfirmation && (
-        <div className={`booking-code-success-overlay motion-backdrop ${successTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="booking-code-success-title" onClick={() => setState({ loading: false, error: '', success: null })}>
-          <article className="booking-code-success-modal motion-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="date-modal-header">
-              <div>
-                <span className="kicker">vulcanIQ</span>
-                <h2 id="booking-code-success-title">{text(lang, 'bookingCodeSuccessTitle').replace('{name}', renderedConfirmation.customer_name || '')}</h2>
-                <p>{text(lang, 'bookingCodeSuccessText').replace('{experience}', renderedConfirmation.experience_name || '')}</p>
-              </div>
-              <button className="date-modal-close" type="button" onClick={() => setState({ loading: false, error: '', success: null })}>{text(lang, 'close')}</button>
-            </div>
-            <dl className="public-details-grid booking-code-success-details">
-              {renderedConfirmation.scheduled_date && <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(renderedConfirmation.scheduled_date, lang)}</dd></div>}
-              {renderedConfirmation.scheduled_time && <div><dt>{text(lang, 'timeLabel')}</dt><dd>{String(renderedConfirmation.scheduled_time).slice(0, 5)}</dd></div>}
-              {renderedConfirmation.meeting_point_name && <div><dt>{text(lang, 'meetingPoint')}</dt><dd>{renderedConfirmation.meeting_point_name}</dd></div>}
-              <div><dt>{adminCopy(lang, 'Importo', 'Amount')}</dt><dd>{formatMoney(renderedConfirmation.amount, renderedConfirmation.currency)}</dd></div>
-            </dl>
-            <div className="request-action-row date-modal-actions">
-              {renderedConfirmation.meeting_point_maps_url && <a className="request-action-button request-action-button-secondary" href={renderedConfirmation.meeting_point_maps_url} target="_blank" rel="noopener noreferrer" onClick={() => trackMapsClick('booking_code_success', { language: lang })}>{text(lang, 'openMeetingPoint')}</a>}
-              <a className="request-action-button request-action-button-primary" href={`https://wa.me/${contact.phoneWa}?text=${encode(contactMessage)}`} target="_blank" rel="noopener noreferrer" onClick={() => trackContactClick('whatsapp', 'booking_code_success', { language: lang, source_section: 'booking_code' })}>{text(lang, 'contactVulcaniq')}</a>
-              <button className="request-action-button request-action-button-secondary" type="button" onClick={() => setState({ loading: false, error: '', success: null })}>{text(lang, 'close')}</button>
-            </div>
-          </article>
-        </div>
-      )}
-    </>
-  );
-}
-
-function scoreExperienceForAnswers(answers = {}) {
-  const scores = {
-    'etna-premium': 0,
-    'etna-learning': 0,
-    'etna-live': 0,
-    'etna-stories': 0
-  };
-  if (answers.interest === 'lava') scores['etna-live'] += 6;
-  if (answers.interest === 'geology') { scores['etna-stories'] += 4; scores['etna-learning'] += 2; }
-  if (answers.interest === 'culture') scores['etna-stories'] += 5;
-  if (answers.interest === 'photo') { scores['etna-live'] += 3; scores['etna-premium'] += 2; }
-  if (answers.interest === 'premium') scores['etna-premium'] += 6;
-  if (answers.group === 'family') { scores['etna-stories'] += 3; scores['etna-premium'] += 2; }
-  if (answers.group === 'school' || answers.group === 'company') scores['etna-learning'] += 6;
-  if (answers.pace === 'easy') scores['etna-stories'] += 3;
-  if (answers.pace === 'moderate') scores['etna-stories'] += 2;
-  if (answers.pace === 'intense') { scores['etna-live'] += 2; scores['etna-premium'] += 2; }
-  if (answers.style === 'private') scores['etna-premium'] += 5;
-  if (answers.style === 'fixed') { scores['etna-live'] += 2; scores['etna-stories'] += 2; }
-  const winner = Object.entries(scores).sort((a, b) => b[1] - a[1])[0]?.[0] || 'etna-stories';
-  return winner;
-}
-
-function recommendationReasonKey(experienceId) {
-  if (experienceId === 'etna-live') return 'recommendationReasonLive';
-  if (experienceId === 'etna-premium') return 'recommendationReasonPremium';
-  if (experienceId === 'etna-learning') return 'recommendationReasonLearning';
-  return 'recommendationReasonStories';
-}
-
-function FindExperienceWizard({ lang, open, onClose, fillForm, contactDetails }) {
-  const [answers, setAnswers] = useState({ interest: 'geology', group: 'couple', pace: 'moderate', style: 'fixed', language: lang });
-  const [step, setStep] = useState(0);
-  const [fixedRows, setFixedRows] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const transition = useTransitionPresence(open);
-  const contact = contactDetails || resolvePublicContactDetails({});
-  const steps = ['interest', 'group', 'pace', 'style', 'language', 'result'];
-  const current = steps[step] || 'interest';
-  const recommendedId = scoreExperienceForAnswers(answers);
-  const recommended = experienceById(recommendedId);
-  const recommendedDates = fixedRows.filter((item) => item.experience_id === recommendedId && (!item.date || item.date >= todayIso())).slice(0, 5);
-
-  useBodyScrollLock(Boolean(transition.shouldRender));
-
-  useEffect(() => {
-    if (!open) return undefined;
-    setLoading(true);
-    let active = true;
-    loadPublicFixedExcursions()
-      .then((rows) => { if (active) setFixedRows((rows || []).filter((item) => item.date >= todayIso() && item.active !== false && item.status === 'available')); })
-      .catch(() => { if (active) setFixedRows([]); })
-      .finally(() => { if (active) setLoading(false); });
-    trackEvent('find_experience_started', { language: lang }, { dedupe: false, transport: 'beacon' });
-    return () => { active = false; };
-  }, [open, lang]);
-
-  useEffect(() => {
-    if (!open || current !== 'result') return;
-    trackEvent('find_experience_completed', { language: lang, recommended_experience_id: recommendedId }, { dedupe: false, transport: 'beacon' });
-  }, [open, current, recommendedId, lang]);
-
-  if (!transition.shouldRender) return null;
-
-  function update(field, value) {
-    setAnswers((currentAnswers) => ({ ...currentAnswers, [field]: value }));
-  }
-
-  function finishWithExperience(item = null) {
-    const selected = item || null;
-    trackEvent('recommended_experience_selected', { language: lang, experience_id: recommendedId, fixed_excursion_id: selected?.id || '' }, { dedupe: false, transport: 'beacon' });
-    fillForm({
-      experienceId: selected?.experience_id || recommendedId,
-      requestType: selected ? 'fixed' : 'private',
-      fixedExcursionId: selected?.id || '',
-      requestedDate: selected?.date || '',
-      message: selected ? buildFixedExcursionMessage({ fixedExcursion: selected, people: '' }, lang) : buildExperienceMessage(recommended, lang),
-      trackingContext: withBookingJourneyId(buildBookingTrackingContext({ experienceId: selected?.experience_id || recommendedId, requestType: selected ? 'fixed' : 'private', sourceSection: 'find_experience', sourceCta: selected ? 'recommended_date' : 'recommended_experience', ctaLocation: 'find_experience_wizard', selectedDate: selected?.date || '', hasFixedExcursion: Boolean(selected), language: lang })),
-      scroll: true
-    });
-    onClose();
-  }
-
-  function renderChoice(field, options) {
-    return <div className="questionnaire-choice-grid find-wizard-choice-grid" role="radiogroup">{options.map(([value, label]) => <button key={value} type="button" className={`questionnaire-choice ${answers[field] === value ? 'active' : ''}`} onClick={() => update(field, value)}>{label}</button>)}</div>;
-  }
-
-  function renderBody() {
-    if (current === 'interest') return <><h3>{text(lang, 'findWizardInterest')}</h3>{renderChoice('interest', [['lava', lang === 'it' ? 'Lava / attività' : 'Lava / activity'], ['geology', lang === 'it' ? 'Geologia' : 'Geology'], ['culture', lang === 'it' ? 'Cultura locale' : 'Local culture'], ['photo', lang === 'it' ? 'Fotografia' : 'Photography'], ['premium', 'Premium']])}</>;
-    if (current === 'group') return <><h3>{text(lang, 'findWizardGroup')}</h3>{renderChoice('group', [['couple', lang === 'it' ? 'Coppia' : 'Couple'], ['family', lang === 'it' ? 'Famiglia' : 'Family'], ['group', lang === 'it' ? 'Gruppo' : 'Group'], ['school', lang === 'it' ? 'Scuola' : 'School'], ['company', lang === 'it' ? 'Azienda' : 'Company']])}</>;
-    if (current === 'pace') return <><h3>{text(lang, 'findWizardPace')}</h3>{renderChoice('pace', [['easy', lang === 'it' ? 'Facile' : 'Easy'], ['moderate', lang === 'it' ? 'Moderato' : 'Moderate'], ['intense', lang === 'it' ? 'Intenso' : 'Intense']])}</>;
-    if (current === 'style') return <><h3>{text(lang, 'findWizardStyle')}</h3>{renderChoice('style', [['fixed', lang === 'it' ? 'Escursione fissa' : 'Fixed excursion'], ['private', lang === 'it' ? 'Privata / su misura' : 'Private / tailored'], ['unsure', lang === 'it' ? 'Non so' : 'Not sure']])}</>;
-    if (current === 'language') return <><h3>{text(lang, 'findWizardLanguage')}</h3>{renderChoice('language', [['it', 'Italiano'], ['en', 'English']])}</>;
-    return (
-      <div className="find-wizard-result">
-        <span className="kicker">{text(lang, 'findWizardResult')}</span>
-        <h3>{recommended.title}</h3>
-        <p>{text(lang, recommendationReasonKey(recommendedId))}</p>
-        <p className="small-note">{recommended.summary[lang]}</p>
-        <h4>{text(lang, 'recommendedExperienceDates')}</h4>
-        {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : recommendedDates.length ? (
-          <div className="find-wizard-date-list">
-            {recommendedDates.map((item) => <button key={item.id} type="button" className="request-fixed-option" onClick={() => finishWithExperience(item)}><strong>{fixedExcursionLabel(item, lang)}</strong><span>{text(lang, 'placesRemaining')} {item.places_remaining}/{item.capacity}</span></button>)}
-          </div>
-        ) : <p className="empty-state-card">{text(lang, 'noRecommendedDates')}</p>}
-        <div className="request-action-row date-modal-actions">
-          <button className="request-action-button request-action-button-primary" type="button" onClick={() => finishWithExperience()}>{text(lang, 'findWizardUse')}</button>
-          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(recommended, lang))}`} target="_blank" rel="noopener noreferrer" onClick={() => trackContactClick('whatsapp', 'find_experience_wizard', { language: lang, experience_id: recommendedId })}>{text(lang, 'sendWhatsapp')}</a>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className={`questionnaire-overlay find-wizard-overlay motion-backdrop ${transition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="find-wizard-title" onClick={onClose}>
-      <article className="questionnaire-modal find-wizard-modal motion-panel" onClick={(event) => event.stopPropagation()}>
-        <header className="questionnaire-header find-wizard-header">
-          <div>
-            <h2 id="find-wizard-title">{text(lang, 'findWizardTitle')}</h2>
-            <p>{text(lang, 'findWizardIntro')}</p>
-          </div>
-          <button className="date-modal-close" type="button" onClick={onClose}>{text(lang, 'close')}</button>
-        </header>
-        <main className="questionnaire-body"><section className="questionnaire-step">{renderBody()}</section></main>
-        {current !== 'result' && <footer className="questionnaire-footer"><button className="button secondary" type="button" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>{text(lang, 'back')}</button><button className="request-action-button request-action-button-primary" type="button" onClick={() => setStep(Math.min(steps.length - 1, step + 1))}>{text(lang, 'next')}</button></footer>}
-      </article>
-    </div>
-  );
-}
-
-
 function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, editor }) {
   const contact = resolvePublicContactDetails(siteContent);
   const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
@@ -3967,7 +3955,6 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const [activeLeaflet, setActiveLeaflet] = useState(null);
   const [selectedPrivateExperience, setSelectedPrivateExperience] = useState(null);
   const [selectedFixedExcursionDetails, setSelectedFixedExcursionDetails] = useState(null);
-  const [bookingCodeMode, setBookingCodeMode] = useState(Boolean(formState.bookingCodeMode));
   const questionnaireTransition = useTransitionPresence(questionnaireOpen);
   const fixedOptionsTransition = useTransitionPresence(fixedOptionsOpen);
   const privateOptionsTransition = useTransitionPresence(privateOptionsOpen);
@@ -3989,10 +3976,6 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   ];
   const currentStep = questionnaireSteps[stepIndex] || questionnaireSteps[0];
   const todayMinDate = todayIso();
-
-  useEffect(() => {
-    if (formState.bookingCodeMode) setBookingCodeMode(true);
-  }, [formState.bookingCodeMode]);
 
   useEffect(() => {
     let active = true;
@@ -4636,46 +4619,16 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     <section className="section alt-section" id="contact">
       <div className="container contact-section-grid contact-questionnaire-entry">
         <div>
-          {bookingCodeMode ? (
-            <>
-              <h2>{text(lang, 'bookingCodeTitle')}</h2>
-              <p>{text(lang, 'bookingCodeIntro')}</p>
-            </>
-          ) : (
-            <>
-              <EditableText as="h2" itemKey="contact.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formTitle')} />
-              <EditableText as="p" itemKey="contact.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formIntro')} />
-              <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={openQuestionnaire} siteContent={siteContent} contactDetails={contact} />
-            </>
-          )}
+          <EditableText as="h2" itemKey="contact.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formTitle')} />
+          <EditableText as="p" itemKey="contact.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formIntro')} />
+          <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={openQuestionnaire} siteContent={siteContent} contactDetails={contact} />
         </div>
-        <article className={`contact-form questionnaire-start-card ${bookingCodeMode ? 'booking-code-only-card' : ''}`.trim()}>
-          {bookingCodeMode ? (
-            <>
-              <PublicBookingCodePanel lang={lang} contactDetails={contact} siteContent={siteContent} />
-              <button
-                className="text-button booking-code-close-button"
-                type="button"
-                onClick={() => {
-                  setBookingCodeMode(false);
-                  setFormState((current) => ({ ...current, bookingCodeMode: false }));
-                  trackEvent('booking_code_mode_closed', { language: lang }, { dedupe: false, transport: 'beacon' });
-                }}
-              >{text(lang, 'close')}</button>
-            </>
-          ) : (
-            <>
-              <span className="kicker">{text(lang, 'formKicker')}</span>
-              <h3>{text(lang, 'prepareYourRequest')}</h3>
-              <p>{text(lang, 'contactQuestionnaireIntro')}</p>
-              <div className="booking-cta-split-row">
-                <button className="request-action-button request-action-button-primary questionnaire-start-button" type="button" onClick={() => { setBookingCodeMode(false); openQuestionnaire(); }}>{text(lang, 'bookNow')}</button>
-                <button className="request-action-button request-action-button-secondary questionnaire-start-button" type="button" onClick={() => { setBookingCodeMode(true); setFormState((current) => ({ ...current, bookingCodeMode: true })); trackEvent('book_with_code_clicked', { language: lang }, { dedupe: false, transport: 'beacon' }); }}>{text(lang, 'bookWithCode')}</button>
-              </div>
-              <button className="request-action-button request-action-button-secondary questionnaire-start-button" type="button" onClick={openQuestionnaire}>{text(lang, 'startQuestionnaire')}</button>
-              {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
-            </>
-          )}
+        <article className="contact-form questionnaire-start-card">
+          <span className="kicker">{text(lang, 'formKicker')}</span>
+          <h3>{text(lang, 'prepareYourRequest')}</h3>
+          <p>{text(lang, 'contactQuestionnaireIntro')}</p>
+          <button className="request-action-button request-action-button-primary questionnaire-start-button" type="button" onClick={openQuestionnaire}>{text(lang, 'startQuestionnaire')}</button>
+          {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
         </article>
       </div>
 
@@ -5924,8 +5877,6 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           <AdminEditPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/partnerships') ? (
           <PartnershipsAdminPage lang={lang} session={session} adminContent={adminContent} />
-        ) : normalizedPath.includes('/booking-codes') ? (
-          <BookingCodesAdminPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/upcoming') ? (
           <UpcomingPage lang={lang} session={session} navigate={navigate} adminContent={adminContent} />
         ) : normalizedPath.includes('/requests') ? (
@@ -11698,257 +11649,6 @@ function AdminReviewsPanel({ lang, adminContent = {} }) {
   );
 }
 
-function bookingCodeStatusLabel(status, lang) {
-  const labels = {
-    unused: adminCopy(lang, 'Attivo', 'Active'),
-    redeemed: adminCopy(lang, 'Usato', 'Redeemed'),
-    expired: adminCopy(lang, 'Scaduto', 'Expired'),
-    cancelled: adminCopy(lang, 'Annullato', 'Cancelled')
-  };
-  return labels[status] || status || '-';
-}
-
-function bookingCodeExperienceName(item, lang) {
-  return lang === 'it' ? (item.experience_name_it || item.experience_name_en || '-') : (item.experience_name_en || item.experience_name_it || '-');
-}
-
-function BookingCodesAdminPage({ lang, session, adminContent = {} }) {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [feedback, setFeedback] = useState('');
-  const [filters, setFilters] = useState({ status: 'all', search: '' });
-  const [createOpen, setCreateOpen] = useState(false);
-
-  async function refresh() {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await listBookingCodes({ ...filters, limit: 250 });
-      setItems(data);
-    } catch (err) {
-      setError(err?.message || adminCopy(lang, 'Codici non caricati.', 'Could not load booking codes.'));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { refresh(); }, [filters.status]);
-
-  async function copyCode(code) {
-    try {
-      await navigator.clipboard.writeText(code);
-      setFeedback(adminCopy(lang, 'Codice copiato.', 'Code copied.'));
-    } catch {
-      setFeedback(code);
-    }
-  }
-
-  async function cancelCode(item) {
-    setError('');
-    setFeedback('');
-    try {
-      await cancelBookingCode(item.id);
-      trackEvent('admin_booking_code_cancelled', { language: lang }, { dedupe: false });
-      setFeedback(adminCopy(lang, 'Codice annullato.', 'Code cancelled.'));
-      refresh();
-    } catch (err) {
-      setError(err?.message || adminCopy(lang, 'Codice non annullato.', 'Code not cancelled.'));
-    }
-  }
-
-  const activeCount = items.filter((item) => item.status === 'unused').length;
-  const redeemedCount = items.filter((item) => item.status === 'redeemed').length;
-
-  return (
-    <section className="admin-page booking-codes-admin-page">
-      <div className="admin-page-header">
-        <div>
-          <span className="kicker">{adminCopy(lang, 'Prenotazioni esterne', 'External bookings')}</span>
-          <AdminEditableText as="h1" itemKey="admin.bookingCodes.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Codici prenotazione', 'Booking codes')} />
-          <AdminEditableText as="p" itemKey="admin.bookingCodes.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Genera codici per prenotazioni confermate fuori dal sito e collega automaticamente richiesta e finanze quando il cliente li usa.', 'Generate codes for bookings confirmed outside the website and automatically link request and finance records when the customer redeems them.')} />
-        </div>
-        <button className="button primary" type="button" onClick={() => setCreateOpen(true)}>{adminCopy(lang, 'Genera codice prenotazione', 'Generate booking code')}</button>
-      </div>
-      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
-      {error && <div className="admin-alert error" role="alert">{error}</div>}
-      <div className="admin-summary-grid finance-summary-grid booking-code-summary-grid">
-        <SummaryCard label={adminCopy(lang, 'Codici attivi', 'Active codes')} value={activeCount} />
-        <SummaryCard label={adminCopy(lang, 'Codici usati', 'Used codes')} value={redeemedCount} />
-        <SummaryCard label={adminCopy(lang, 'Totale codici', 'Total codes')} value={items.length} />
-      </div>
-      <div className="admin-filter-bar">
-        <input aria-label="Search booking codes" placeholder={adminCopy(lang, 'Cerca codice, cliente, telefono, email', 'Search code, customer, phone, email')} value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') refresh(); }} />
-        <select aria-label="Status" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}>
-          <option value="all">{adminCopy(lang, 'Tutti gli stati', 'All statuses')}</option>
-          {['unused', 'redeemed', 'expired', 'cancelled'].map((status) => <option key={status} value={status}>{bookingCodeStatusLabel(status, lang)}</option>)}
-        </select>
-        <button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
-      </div>
-      <section className="admin-panel">
-        <div className="admin-panel-header"><h2>{adminCopy(lang, 'Codici', 'Codes')} · {items.length}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
-        {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : items.length === 0 ? <p>{adminCopy(lang, 'Nessun codice trovato.', 'No booking codes found.')}</p> : (
-          <div className="booking-code-list">
-            {items.map((item) => (
-              <article className={`booking-code-card ${item.status}`} key={item.id}>
-                <div className="request-card-head">
-                  <div>
-                    <h3>{item.code}</h3>
-                    <p>{item.customer_name} · {bookingCodeExperienceName(item, lang)}</p>
-                  </div>
-                  <span className={`status-pill ${item.status}`}>{bookingCodeStatusLabel(item.status, lang)}</span>
-                </div>
-                <dl className="request-details-grid">
-                  <div><dt>{adminCopy(lang, 'Data', 'Date')}</dt><dd>{item.scheduled_date ? formatDateForMessage(item.scheduled_date, lang) : '-'}</dd></div>
-                  <div><dt>{adminCopy(lang, 'Importo previsto', 'Expected amount')}</dt><dd>{formatMoney(item.expected_amount, item.currency)}</dd></div>
-                  <div><dt>{adminCopy(lang, 'Fonte prenotazione', 'Booking source')}</dt><dd>{item.source || '-'}</dd></div>
-                  <div><dt>{adminCopy(lang, 'Creato il', 'Created')}</dt><dd>{formatDateForMessage(String(item.created_at || '').slice(0, 10), lang)}</dd></div>
-                  <div><dt>{adminCopy(lang, 'Usato il', 'Redeemed')}</dt><dd>{item.redeemed_at ? formatDateForMessage(String(item.redeemed_at).slice(0, 10), lang) : '-'}</dd></div>
-                  <div><dt>{adminCopy(lang, 'Contatto', 'Contact')}</dt><dd>{item.customer_phone || item.customer_email || '-'}</dd></div>
-                </dl>
-                {item.admin_note && <p className="small-note"><strong>{adminCopy(lang, 'Nota interna', 'Internal note')}:</strong> {item.admin_note}</p>}
-                <div className="request-actions">
-                  <button className="button secondary" type="button" onClick={() => copyCode(item.code)}>{adminCopy(lang, 'Copia codice', 'Copy code')}</button>
-                  {item.status === 'unused' && <button className="button secondary" type="button" onClick={() => cancelCode(item)}>{adminCopy(lang, 'Annulla codice', 'Cancel code')}</button>}
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-      {createOpen && <BookingCodeCreateModal lang={lang} session={session} onClose={() => setCreateOpen(false)} onCreated={(created) => { setCreateOpen(false); setFeedback(`${adminCopy(lang, 'Codice creato', 'Code created')}: ${created.code}`); refresh(); }} />}
-    </section>
-  );
-}
-
-function BookingCodeCreateModal({ lang, session, onClose, onCreated }) {
-  const emptyForm = { customer_name: '', customer_email: '', customer_phone: '', source: 'manual', fixed_excursion_id: '', expected_amount: '', currency: 'EUR', expires_at: '', admin_note: '' };
-  const [form, setForm] = useState(emptyForm);
-  const [available, setAvailable] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [createdCode, setCreatedCode] = useState(null);
-
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    listAvailableBookingCodeExperiences()
-      .then((rows) => { if (active) setAvailable(rows || []); })
-      .catch((err) => { if (active) setError(err?.message || adminCopy(lang, 'Esperienze non caricate.', 'Could not load experiences.')); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, []);
-
-  const selected = available.find((item) => item.id === form.fixed_excursion_id) || null;
-
-  function update(field, value) {
-    setError('');
-    setForm((current) => ({ ...current, [field]: value }));
-  }
-
-  async function copyCreated() {
-    if (!createdCode?.code) return;
-    try { await navigator.clipboard.writeText(createdCode.code); } catch {}
-  }
-
-  async function submit(event) {
-    event.preventDefault();
-    setError('');
-    setSaving(true);
-    if (!form.customer_name.trim()) {
-      setError(adminCopy(lang, 'Il nome cliente è obbligatorio.', 'Customer name is required.'));
-      setSaving(false);
-      return;
-    }
-    if (!selected) {
-      setError(adminCopy(lang, 'Seleziona un’esperienza futura disponibile.', 'Select an available future experience.'));
-      setSaving(false);
-      return;
-    }
-    const amount = Number.parseFloat(String(form.expected_amount || '').replace(',', '.'));
-    if (!Number.isFinite(amount) || amount < 0) {
-      setError(adminCopy(lang, 'Inserisci un importo previsto valido.', 'Enter a valid expected amount.'));
-      setSaving(false);
-      return;
-    }
-    try {
-      const created = await createBookingCode({
-        ...form,
-        expected_amount: amount,
-        fixed_excursion_id: selected.id,
-        experience_id: selected.experience_id,
-        experience_type: 'fixed',
-        experience_name_it: fixedExcursionTitle(selected, 'it') || adminExperienceLabel(selected.experience_id, 'it'),
-        experience_name_en: fixedExcursionTitle(selected, 'en') || adminExperienceLabel(selected.experience_id, 'en'),
-        scheduled_date: selected.date,
-        scheduled_time: selected.start_time ? String(selected.start_time).slice(0, 5) : '',
-        meeting_point_name: fixedExcursionField(selected, 'meeting_point', lang),
-        meeting_point_maps_url: selected.meeting_point_maps_url || ''
-      }, session?.user?.id);
-      setCreatedCode(created);
-      trackEvent('admin_booking_code_created', { language: lang, experience_id: selected.experience_id, booking_source: form.source }, { dedupe: false });
-    } catch (err) {
-      setError(err?.message || adminCopy(lang, 'Codice non creato.', 'Code not created.'));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="modal-backdrop booking-code-admin-backdrop" role="dialog" aria-modal="true" aria-labelledby="bookingCodeCreateTitle">
-      <section className="admin-modal full-screen-admin-modal booking-code-admin-modal">
-        <div className="admin-modal-header">
-          <div>
-            <span className="kicker">{adminCopy(lang, 'Codice prenotazione', 'Booking code')}</span>
-            <h2 id="bookingCodeCreateTitle">{adminCopy(lang, 'Genera codice prenotazione', 'Generate booking code')}</h2>
-          </div>
-          <button className="modal-close-button" type="button" onClick={() => createdCode ? onCreated(createdCode) : onClose()}>{adminCopy(lang, 'Chiudi', 'Close')}</button>
-        </div>
-        {createdCode ? (
-          <div className="booking-code-created-panel">
-            <p>{adminCopy(lang, 'Codice creato correttamente.', 'Code created successfully.')}</p>
-            <strong className="booking-code-created-value">{createdCode.code}</strong>
-            <div className="modal-actions">
-              <button className="button primary" type="button" onClick={copyCreated}>{adminCopy(lang, 'Copia codice', 'Copy code')}</button>
-              <button className="button secondary" type="button" onClick={() => { setCreatedCode(null); setForm(emptyForm); }}>{adminCopy(lang, 'Crea un altro', 'Create another')}</button>
-              <button className="button secondary" type="button" onClick={() => onCreated(createdCode)}>{adminCopy(lang, 'Chiudi', 'Close')}</button>
-            </div>
-          </div>
-        ) : (
-          <form className="admin-form-grid booking-code-create-form" onSubmit={submit}>
-            <AdminInput label={adminCopy(lang, 'Nome cliente', 'Customer name')} value={form.customer_name} onChange={(value) => update('customer_name', value)} />
-            <AdminInput label={adminCopy(lang, 'Email cliente opzionale', 'Customer email optional')} value={form.customer_email} onChange={(value) => update('customer_email', value)} />
-            <AdminInput label={adminCopy(lang, 'Telefono / WhatsApp opzionale', 'Phone / WhatsApp optional')} value={form.customer_phone} onChange={(value) => update('customer_phone', value)} />
-            <label className="admin-field"><span>{adminCopy(lang, 'Fonte prenotazione', 'Booking source')}</span><select value={form.source} onChange={(event) => update('source', event.target.value)}>
-              <option value="manual">Manual</option>
-              <option value="whatsapp">WhatsApp</option>
-              <option value="phone">Phone</option>
-              <option value="instagram">Instagram</option>
-              <option value="partner_platform">Partner platform</option>
-              <option value="in_person">In person</option>
-              <option value="other">Other</option>
-            </select></label>
-            <label className="admin-field full"><span>{adminCopy(lang, 'Esperienza prenotata', 'Booked experience')}</span><select value={form.fixed_excursion_id} onChange={(event) => update('fixed_excursion_id', event.target.value)}>
-              <option value="">{adminCopy(lang, 'Seleziona esperienza futura disponibile', 'Select an available future experience')}</option>
-              {available.map((item) => <option key={item.id} value={item.id}>{fixedExcursionLabel(item, lang)} · {adminExperienceLabel(item.experience_id, lang)} · {adminCopy(lang, 'Posti', 'Places')} {item.places_remaining}/{item.capacity}</option>)}
-            </select></label>
-            {loading && <p className="small-note full">{adminCopy(lang, 'Caricamento esperienze...', 'Loading experiences...')}</p>}
-            {selected && <p className="small-note full">{fixedExcursionTitle(selected, lang)} · {formatDateForMessage(selected.date, lang)} · {fixedExcursionField(selected, 'meeting_point', lang) || '-'}</p>}
-            <AdminInput label={adminCopy(lang, 'Importo previsto', 'Expected amount')} type="number" value={form.expected_amount} onChange={(value) => update('expected_amount', value)} />
-            <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => update('currency', value)} />
-            <AdminInput label={adminCopy(lang, 'Scadenza opzionale', 'Optional expiry')} type="datetime-local" value={form.expires_at} onChange={(value) => update('expires_at', value)} />
-            <label className="admin-field full"><span>{adminCopy(lang, 'Nota interna opzionale', 'Optional internal note')}</span><textarea value={form.admin_note} onChange={(event) => update('admin_note', event.target.value)} rows={3} /></label>
-            {error && <div className="admin-alert error full" role="alert">{error}</div>}
-            <div className="modal-actions full"><button className="button primary" type="submit" disabled={saving || loading}>{saving ? adminCopy(lang, 'Creazione...', 'Creating...') : adminCopy(lang, 'Genera codice', 'Generate code')}</button><button className="button secondary" type="button" onClick={onClose}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
-          </form>
-        )}
-      </section>
-    </div>
-  );
-}
-
-
 function RequestsPage({ lang, session, adminContent = {} }) {
   const [filters, setFilters] = useState({ status: 'all', experience_id: 'all', source: 'all', search: '', fromDate: '', toDate: '', limit: 250 });
   const { requests, loading, error, refresh } = useAdminRequests(filters);
@@ -12830,7 +12530,6 @@ function App() {
   const [activePage, setActivePage] = useState(() => publicPageFromPathname(window.location.pathname) || 'home');
   const [siteMedia, setSiteMedia] = useState({});
   const [siteContent, setSiteContent] = useState({});
-  const [findWizardOpen, setFindWizardOpen] = useState(false);
   const contactRef = useRef(null);
   const analyticsContextRef = useRef({ section: 'home', language: 'it' });
 
@@ -12903,16 +12602,6 @@ function App() {
     window.setTimeout(() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   }
 
-  function openBookingCodeMode() {
-    trackEvent('booking_code_mode_opened', { language: lang, source_section: activePage, cta_location: 'hero' }, { dedupe: false, transport: 'beacon' });
-    setFormState((current) => ({ ...current, bookingCodeMode: true }));
-    scrollContactIntoView();
-  }
-
-  function openFindExperienceWizard() {
-    setFindWizardOpen(true);
-  }
-
   function scrollToForm(metadata = {}) {
     const trackingContext = withBookingJourneyId(buildBookingTrackingContext({
       experienceId: formState.experienceId || '',
@@ -12967,7 +12656,7 @@ function App() {
         return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'home':
       default:
-        return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} openBookingCodeMode={openBookingCodeMode} openFindExperienceWizard={openFindExperienceWizard} siteMedia={siteMedia} siteContent={siteContent} />;
+        return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} />;
     }
   }
 
@@ -12983,7 +12672,6 @@ function App() {
       </main>
       <Footer lang={lang} siteContent={siteContent} />
       <StickyMobileBar lang={lang} siteContent={siteContent} />
-      <FindExperienceWizard lang={lang} open={findWizardOpen} onClose={() => setFindWizardOpen(false)} fillForm={fillForm} contactDetails={resolvePublicContactDetails(siteContent)} />
     </>
   );
 }

@@ -91,7 +91,7 @@ with check (public.is_admin());
 
 grant select, insert, update on public.booking_codes to authenticated;
 
-create or replace function public.redeem_booking_code(input_code text, input_language text default 'it')
+create or replace function public.redeem_booking_code(p_code text, p_language text default 'it')
 returns jsonb
 language plpgsql
 security definer
@@ -104,8 +104,8 @@ declare
   clean_code text;
   clean_language text;
 begin
-  clean_code := upper(trim(coalesce(input_code, '')));
-  clean_language := case when input_language = 'en' then 'en' else 'it' end;
+  clean_code := upper(trim(coalesce(p_code, '')));
+  clean_language := case when p_language = 'en' then 'en' else 'it' end;
 
   if clean_code = '' then
     return jsonb_build_object('ok', false, 'error', 'BOOKING_CODE_REQUIRED');
