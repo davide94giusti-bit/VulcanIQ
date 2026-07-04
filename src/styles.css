@@ -263,7 +263,7 @@ button:not(:disabled):active,
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  color: #fff;
+  color: var(--night);
   min-width: fit-content;
 }
 
@@ -274,7 +274,7 @@ button:not(:disabled):active,
   display: grid;
   place-items: center;
   background: linear-gradient(135deg, var(--lava), #ff9d76);
-  color: #fff;
+  color: var(--night);
   box-shadow: 0 10px 28px rgba(240, 107, 79, 0.28);
   font-weight: 900;
 }
@@ -314,7 +314,7 @@ button:not(:disabled):active,
 .nav-toggle {
   min-height: 44px;
   border: 1px solid var(--line-dark);
-  color: #fff;
+  color: var(--night);
   border-radius: 999px;
   background: rgba(255,255,255,0.08);
   padding: 0 14px;
@@ -340,7 +340,7 @@ button:not(:disabled):active,
     url('/images/etna-eruption-hero.jpg') center / cover no-repeat,
     radial-gradient(circle at 72% 22%, rgba(240,107,79,0.38), transparent 32%),
     linear-gradient(135deg, #101a28, #243850);
-  color: #fff;
+  color: var(--night);
 }
 
 .hero::after {
@@ -445,7 +445,7 @@ button:not(:disabled):active,
 
 .pill-action {
   padding: 10px 14px;
-  color: #fff;
+  color: var(--night);
   background: rgba(13, 22, 38, 0.74);
   border-color: rgba(255,255,255,0.14);
   box-shadow: 0 10px 30px rgba(0,0,0,0.1);
@@ -458,7 +458,7 @@ button:not(:disabled):active,
 .contact-form .pill-action,
 .final-panel .pill-action {
   background: var(--night);
-  color: #fff;
+  color: var(--night);
 }
 
 .pill-action:hover { border-color: rgba(255,255,255,0.36); }
@@ -567,7 +567,7 @@ button:not(:disabled):active,
   padding: 8px 10px;
   border-radius: 999px;
   background: rgba(13,22,38,0.78);
-  color: #fff;
+  color: var(--night);
   font-size: clamp(0.76rem, 1.2vw, 0.9rem);
   line-height: 1.2;
   backdrop-filter: blur(10px);
@@ -589,7 +589,7 @@ button:not(:disabled):active,
   background:
     radial-gradient(circle at 70% 25%, rgba(240,107,79,0.28), transparent 24%),
     linear-gradient(145deg, #172338, #283b55);
-  color: #fff;
+  color: var(--night);
 }
 
 .image-placeholder strong {
@@ -832,7 +832,7 @@ blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cr
   background:
     linear-gradient(90deg, rgba(13,22,38,0.94), rgba(13,22,38,0.72)),
     radial-gradient(circle at 80% 20%, rgba(240,107,79,0.44), transparent 26%);
-  color: #fff;
+  color: var(--night);
   box-shadow: var(--shadow);
 }
 .final-panel h2, .final-panel p { color: #fff; }
@@ -871,7 +871,7 @@ blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cr
   justify-content: center;
   gap: 6px;
   border-radius: 999px;
-  color: #fff;
+  color: var(--night);
   font-weight: 850;
   font-size: 0.85rem;
 }
@@ -1027,7 +1027,7 @@ blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cr
   align-items: center;
   padding: 12px clamp(16px, 3vw, 34px);
   background: rgba(13, 22, 38, 0.96);
-  color: #fff;
+  color: var(--night);
   border-bottom: 1px solid var(--line-dark);
   backdrop-filter: blur(18px);
 }
@@ -1063,7 +1063,7 @@ blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cr
 .admin-nav button:hover,
 .admin-nav a:hover,
 .admin-userbox button:hover {
-  color: #fff;
+  color: var(--night);
   background: rgba(240, 107, 79, 0.32);
   border-color: rgba(240, 107, 79, 0.44);
 }
@@ -1483,13 +1483,13 @@ blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cr
 }
 
 .admin-loading {
-  color: #fff;
+  color: var(--night);
   text-align: center;
 }
 
 .admin-loading h1,
 .admin-loading p {
-  color: #fff;
+  color: var(--night);
 }
 
 .admin-login-card {
@@ -1683,7 +1683,7 @@ blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cr
   padding: 8px 11px;
   border-radius: 999px;
   background: rgba(13,22,38,0.78);
-  color: #fff;
+  color: var(--night);
   font-size: 0.88rem;
   backdrop-filter: blur(10px);
 }
@@ -1754,7 +1754,7 @@ blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cr
 
 .mode-toggle button.active {
   background: var(--night);
-  color: #fff;
+  color: var(--night);
 }
 
 .form-mode-toggle,
@@ -1932,7 +1932,7 @@ blockquote { margin: 0; padding: 14px; border-radius: 16px; background: var(--cr
 
 .nav-links button:not(.language-toggle):hover,
 .nav-links button:not(.language-toggle).active {
-  color: #fff;
+  color: var(--night);
   border-color: rgba(241,184,107,0.38);
   background: rgba(255,255,255,0.08);
 }
@@ -2179,7 +2179,7 @@ h3 {
   border: 1px solid rgba(255,255,255,0.18);
   border-radius: 14px;
   background: rgba(255,255,255,0.08);
-  color: #fff;
+  color: var(--night);
   padding: 0 12px;
   font-weight: 850;
 }
@@ -2840,7 +2840,7 @@ h3 {
 .review-sort-control button:hover {
   background: var(--night);
   border-color: var(--night);
-  color: #fff;
+  color: var(--night);
 }
 
 .featured-review-card {
@@ -3299,7 +3299,7 @@ h3 {
 
 .visual-editor-toolbar h1 {
   margin: 2px 0 0;
-  color: #fff;
+  color: var(--night);
   font-size: clamp(1.3rem, 2vw, 2rem);
 }
 
@@ -3321,7 +3321,7 @@ h3 {
   border: 1px solid rgba(241, 184, 107, 0.28);
   border-radius: 999px;
   background: rgba(255,255,255,0.08);
-  color: #fff;
+  color: var(--night);
   padding: 0 14px;
   font-weight: 850;
 }
@@ -4412,7 +4412,7 @@ body.modal-scroll-lock { overflow: hidden; }
     align-items: center;
     justify-content: center;
     background: rgba(5, 7, 10, 0.96);
-    color: #fff;
+    color: var(--night);
     font-weight: 900;
     box-shadow: 0 12px 30px rgba(0,0,0,0.18);
   }
@@ -4753,7 +4753,7 @@ body.modal-scroll-lock { overflow: hidden; }
 .button.primary.danger {
   background: #a63a2f;
   border-color: #a63a2f;
-  color: #fff;
+  color: var(--night);
   box-shadow: 0 12px 28px rgba(166, 58, 47, 0.18);
 }
 
@@ -5187,7 +5187,7 @@ body.modal-scroll-lock { overflow: hidden; }
   display: block;
   max-width: min(860px, 100%);
   margin: 0 0 0.35em;
-  color: #fff;
+  color: var(--night);
   line-height: 0.98;
   font-weight: 950;
   letter-spacing: -0.06em;
@@ -5577,7 +5577,7 @@ body.modal-scroll-lock {
 }
 
 .footer-whatsapp-link {
-  color: #fff;
+  color: var(--night);
   font-weight: 850;
   text-decoration: none;
 }
@@ -5799,7 +5799,7 @@ body.modal-scroll-lock {
   border: 0;
   padding: 0;
   background: transparent;
-  color: #fff;
+  color: var(--night);
   cursor: pointer;
   font: inherit;
   font-weight: 850;
@@ -5839,7 +5839,7 @@ body.modal-scroll-lock {
   padding: 0 14px;
   border-radius: 999px;
   background: rgba(255,255,255,0.08);
-  color: #fff;
+  color: var(--night);
   font-weight: 900;
   text-decoration: none;
 }
@@ -6356,7 +6356,7 @@ body.modal-scroll-lock {
   padding: 12px 18px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.1);
   background: rgba(13, 22, 38, 0.94);
-  color: #fff;
+  color: var(--night);
   font-size: 0.82rem;
   font-weight: 900;
 }
@@ -6998,7 +6998,7 @@ body.modal-scroll-lock {
   align-items: center;
   justify-content: center;
   background: var(--night);
-  color: #fff;
+  color: var(--night);
   font-weight: 900;
   text-align: center;
   box-shadow: 0 14px 34px rgba(7, 16, 33, 0.18);
@@ -7610,7 +7610,7 @@ body.modal-scroll-lock {
 .questionnaire-option-actions .button.secondary {
   background: linear-gradient(135deg, var(--blue), var(--night-2));
   border-color: rgba(71, 103, 132, 0.18);
-  color: #fff;
+  color: var(--night);
   box-shadow: 0 14px 30px rgba(19, 36, 59, 0.18);
 }
 .questionnaire-option-actions .button.secondary:hover,
@@ -7675,7 +7675,7 @@ body.modal-scroll-lock {
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 999px;
   background: var(--night);
-  color: #fff;
+  color: var(--night);
   font-weight: 950;
   box-shadow: 0 14px 34px rgba(7, 16, 33, 0.20);
 }
@@ -7683,7 +7683,7 @@ body.modal-scroll-lock {
 .questionnaire-option-actions .button.secondary:hover,
 .questionnaire-option-actions .button.secondary:focus-visible {
   background: var(--night-2);
-  color: #fff;
+  color: var(--night);
   border-color: rgba(255,255,255,0.22);
   transform: translateY(-1px);
   box-shadow: 0 18px 40px rgba(7, 16, 33, 0.24);
@@ -8415,7 +8415,7 @@ body.modal-scroll-lock {
 
 .admin-menu-trigger:hover,
 .admin-menu-trigger:focus-visible {
-  color: #fff;
+  color: var(--night);
   background: rgba(240, 107, 79, 0.32);
   border-color: rgba(240, 107, 79, 0.44);
   outline: none;
@@ -8425,7 +8425,7 @@ body.modal-scroll-lock {
   display: inline-flex;
   flex-direction: column;
   min-width: 0;
-  color: #fff;
+  color: var(--night);
   font-size: 0.92rem;
   font-weight: 900;
   line-height: 1.1;
@@ -8492,7 +8492,7 @@ body.modal-scroll-lock {
 .admin-menu-item:hover,
 .admin-menu-item:focus-visible,
 .admin-menu-item-active {
-  color: #fff;
+  color: var(--night);
   background: rgba(240, 107, 79, 0.28);
   border-color: rgba(240, 107, 79, 0.5);
   outline: none;
@@ -9096,7 +9096,7 @@ body.modal-scroll-lock {
 
 .partnership-category-list button.is-active {
   background: var(--night);
-  color: #fff;
+  color: var(--night);
   border-color: var(--night);
 }
 
@@ -9342,12 +9342,12 @@ body.modal-scroll-lock {
 .public-footer h2,
 .public-footer h3,
 .public-footer a {
-  color: #fff;
+  color: var(--night);
 }
 
 .public-footer p,
 .public-footer .small-note {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--ash);
 }
 
 .public-footer-grid {
@@ -9536,7 +9536,7 @@ body.modal-scroll-lock {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: #fff;
+  color: var(--night);
   font-weight: 950;
   line-height: 1.35;
 }
@@ -9605,7 +9605,7 @@ body.modal-scroll-lock {
   padding: 14px;
   border-radius: 18px;
   background: var(--night);
-  color: #fff;
+  color: var(--night);
 }
 
 .social-page-links .social-link-copy,
@@ -11294,4 +11294,63 @@ body.modal-scroll-lock {
   .partnership-filter-trigger.review-filter-trigger > span:first-child {
     display: inline;
   }
+}
+
+/* 20260704 legal/hero/analytics funnel integrity patch */
+.hero-action-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(100%, 680px);
+}
+
+.hero-action-grid .hero-action-main,
+.hero-action-grid .hero-action-code {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .hero-action-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+}
+
+.analytics-warning-list.grouped {
+  display: grid;
+  gap: 12px;
+}
+
+.analytics-warning-group {
+  border: 1px solid rgba(159, 98, 50, 0.18);
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.analytics-warning-group.critical {
+  border-color: rgba(255, 127, 102, 0.42);
+  background: rgba(255, 127, 102, 0.12);
+}
+
+.analytics-warning-group h3 {
+  margin: 0 0 8px;
+  color: var(--night);
+  font-size: 0.78rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.analytics-warning-group p {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+}
+
+.analytics-warning-group small {
+  color: var(--ash);
+  font-size: 0.72rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
 }
