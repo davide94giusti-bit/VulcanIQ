@@ -1673,7 +1673,12 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
   const experienceName = experienceId && experienceId !== 'unsure' ? adminExperienceLabel(experienceId, lang) : text(lang, 'notSure');
   const requestedDate = selectedFixed?.date || formState.requestedDate || '';
   const alternativeDate = formState.alternativeDate || '';
-  const fixedTitle = requestType === 'fixed' && selectedFixed ? fixedExcursionTitle(selectedFixed, lang) : '';
+  const fixedTitle = requestType === 'fixed' && selectedFixed ? (fixedExcursionTitle(selectedFixed, lang) || adminExperienceLabel(selectedFixed.experience_id || experienceId, lang)) : '';
+  const fixedDateText = cleanDateForMessage(requestedDate, lang);
+  const fixedStart = selectedFixed?.start_time ? String(selectedFixed.start_time).slice(0, 5) : '';
+  const fixedEnd = selectedFixed?.end_time ? String(selectedFixed.end_time).slice(0, 5) : '';
+  const fixedTime = fixedStart ? `${fixedStart}${fixedEnd ? `-${fixedEnd}` : ''}` : '';
+  const fixedMeetingPoint = selectedFixed ? fixedExcursionField(selectedFixed, 'meeting_point', lang) : '';
   const requestTypeText = requestType === 'fixed' && fixedTitle
     ? `${text(lang, 'fixedExcursion')} - "${fixedTitle}"`
     : requestChoiceLabel(requestChoice, lang);
@@ -1693,9 +1698,10 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
   if (lang === 'it') {
     const requestLines = joinMessageLines([
       messageLine('Tipo', requestTypeText),
-      messageLine('Esperienza', experienceName),
-      messageLine(requestType === 'fixed' ? 'Data' : 'Data preferita', cleanDateForMessage(requestedDate, lang)),
-      requestType === 'private' ? messageLine('Data alternativa', cleanDateForMessage(alternativeDate, lang)) : '',
+      messageLine('Esperienza', requestType === 'fixed' && fixedTitle ? fixedTitle : experienceName),
+      messageLine(requestType === 'fixed' ? 'Data' : 'Data preferita', fixedDateText),
+      requestType === 'fixed' ? messageLine('Orario', fixedTime) : messageLine('Data alternativa', cleanDateForMessage(alternativeDate, lang)),
+      requestType === 'fixed' ? messageLine('Punto d\u2019incontro', fixedMeetingPoint) : '',
       messageLine('Persone', people)
     ]);
     const contactLines = joinMessageLines([
@@ -1704,11 +1710,15 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
       messageLine('Email', email),
       messageLine('Contatto preferito', preferredContact, { trailingPeriod: true })
     ]);
-    const opening = heardDisplay
-      ? `Ho sentito parlare di vulcanIQ da ${heardDisplay} e vorrei informazioni per un’esperienza vulcanIQ sull’Etna.`
-      : 'Vorrei informazioni per un’esperienza vulcanIQ sull’Etna.';
+    const opening = requestType === 'fixed' && fixedTitle
+      ? `Vorrei informazioni circa l\u2019escursione fissa del ${fixedDateText || '-'}: ${fixedTitle}.`
+      : (heardDisplay
+        ? `Ho sentito parlare di vulcanIQ da ${heardDisplay} e vorrei informazioni per un\u2019esperienza vulcanIQ sull\u2019Etna.`
+        : 'Vorrei informazioni per un\u2019esperienza vulcanIQ sull\u2019Etna.');
+    const sourceLine = requestType === 'fixed' && heardDisplay ? `Come ho conosciuto vulcanIQ: ${heardDisplay}.` : '';
     const sections = [
       `Ciao Leonardo,\n\n${opening}`,
+      sourceLine,
       requestLines ? `Richiesta:\n${requestLines}` : '',
       contactLines ? `Contatti:\n${contactLines}` : '',
       'Vorrei sapere se la richiesta può essere confermata e ricevere dettagli su disponibilità, durata, prezzo e abbigliamento consigliato.',
@@ -1720,9 +1730,10 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
 
   const requestLines = joinMessageLines([
     messageLine('Type', requestTypeText),
-    messageLine('Experience', experienceName),
-    messageLine(requestType === 'fixed' ? 'Date' : 'Preferred date', cleanDateForMessage(requestedDate, lang)),
-    requestType === 'private' ? messageLine('Alternative date', cleanDateForMessage(alternativeDate, lang)) : '',
+    messageLine('Experience', requestType === 'fixed' && fixedTitle ? fixedTitle : experienceName),
+    messageLine(requestType === 'fixed' ? 'Date' : 'Preferred date', fixedDateText),
+    requestType === 'fixed' ? messageLine('Time', fixedTime) : messageLine('Alternative date', cleanDateForMessage(alternativeDate, lang)),
+    requestType === 'fixed' ? messageLine('Meeting point', fixedMeetingPoint) : '',
     messageLine('People', people)
   ]);
   const contactLines = joinMessageLines([
@@ -1731,11 +1742,15 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
     messageLine('Email', email),
     messageLine('Preferred contact', preferredContact, { trailingPeriod: true })
   ]);
-  const opening = heardDisplay
-    ? `I heard about vulcanIQ from ${heardDisplay} and I would like information about a vulcanIQ experience on Mount Etna.`
-    : 'I would like information about a vulcanIQ experience on Mount Etna.';
+  const opening = requestType === 'fixed' && fixedTitle
+    ? `I would like information about the fixed excursion on ${fixedDateText || '-'}: ${fixedTitle}.`
+    : (heardDisplay
+      ? `I heard about vulcanIQ from ${heardDisplay} and I would like information about a vulcanIQ experience on Mount Etna.`
+      : 'I would like information about a vulcanIQ experience on Mount Etna.');
+  const sourceLine = requestType === 'fixed' && heardDisplay ? `How I heard about vulcanIQ: ${heardDisplay}.` : '';
   const sections = [
     `Hi Leonardo,\n\n${opening}`,
+    sourceLine,
     requestLines ? `Request:\n${requestLines}` : '',
     contactLines ? `Contact:\n${contactLines}` : '',
     'I would like to know whether the request can be confirmed and receive details about availability, duration, price, and recommended clothing.',
@@ -2021,25 +2036,23 @@ function MeetingPointDetailCard({ item, lang }) {
 }
 
 function buildFixedExcursionMessage({ fixedExcursion, people }, lang) {
-  const title = fixedExcursionLabel(fixedExcursion, lang);
+  const title = fixedExcursionTitle(fixedExcursion, lang) || adminExperienceLabel(fixedExcursion?.experience_id, lang);
+  const dateText = formatDateForMessage(fixedExcursion?.date, lang) || '-';
+  const start = fixedExcursion?.start_time ? String(fixedExcursion.start_time).slice(0, 5) : '';
+  const end = fixedExcursion?.end_time ? String(fixedExcursion.end_time).slice(0, 5) : '';
+  const timeText = start ? `${start}${end ? `-${end}` : ''}` : '';
+  const meetingPoint = fixedExcursionField(fixedExcursion, 'meeting_point', lang);
+  const detailLines = joinMessageLines([
+    messageLine(lang === 'it' ? 'Data' : 'Date', dateText),
+    messageLine(lang === 'it' ? 'Orario' : 'Time', timeText),
+    messageLine(lang === 'it' ? 'Punto d\u2019incontro' : 'Meeting point', meetingPoint),
+    messageLine(lang === 'it' ? 'Persone' : 'People', people || '')
+  ]);
+
   if (lang === 'it') {
-    return `Ciao Leonardo,
-vorrei richiedere un posto per l’escursione fissa ${title}.
-
-Persone: ${people || '-'}
-
-Vorrei sapere se la richiesta può essere confermata e ricevere i dettagli pratici.
-
-Grazie.`;
+    return `Ciao Leonardo,\n\nVorrei informazioni circa l\u2019escursione fissa del ${dateText}: ${title}.\n\n${detailLines ? `Dettagli:\n${detailLines}\n\n` : ''}Vorrei sapere disponibilità, durata indicativa, prezzo e consigli sull\u2019abbigliamento.\n\nGrazie!`;
   }
-  return `Hi Leonardo,
-I would like to request a place for the fixed excursion ${title}.
-
-People: ${people || '-'}
-
-I would like to know whether the request can be confirmed and receive the practical details.
-
-Thank you.`;
+  return `Hi Leonardo,\n\nI would like information about the fixed excursion on ${dateText}: ${title}.\n\n${detailLines ? `Details:\n${detailLines}\n\n` : ''}I would like to know availability, approximate duration, price, and clothing recommendations.\n\nThank you!`;
 }
 
 function buildAvailableDateRequestMessage({ date, experienceId, adults, children, childrenUnder3Count }, lang) {
@@ -2162,7 +2175,7 @@ function ContactActions({ lang, contextMessage, compact = false, onUseForm, expe
   const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(message)}`;
   const className = compact ? 'contact-actions compact' : 'contact-actions';
   const metadata = buildBookingTrackingContext({ experienceId: experienceId || '', requestType: experienceId ? 'private' : 'contact', sourceSection: 'contact', sourceCta: 'contact_direct', ctaLocation: location, language: lang });
-  const emailMessage = buildAttributionContactMessage(emailAttributionSource, emailAttributionDetail, lang);
+  const emailMessage = buildContextualAttributionContactMessage(message, emailAttributionSource, emailAttributionDetail, lang);
 
   return (
     <div className={className} data-experience={experienceId || undefined}>
@@ -2182,7 +2195,7 @@ function ContactActions({ lang, contextMessage, compact = false, onUseForm, expe
           location,
           metadata: { ...metadata, source_cta: 'whatsapp_direct' },
           confirmLabel: contactActionConfirmLabel('whatsapp', lang),
-          buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}`
+          buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildContextualAttributionContactMessage(message, source, detail, lang))}`
         })}
       ><Icon name="chat" />{text(lang, 'whatsapp')}</a>
       <div className="email-action-wrap">
@@ -2642,8 +2655,6 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
           <div className="hero-action-grid">
             <button className="button primary hero-action-main" type="button" onClick={handleBookNow}><EditableText itemKey="home.hero.secondary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'viewAvailability')} /></button>
             <button className="button secondary dark hero-action-code" type="button" onClick={() => setBookingCodeOpen(true)}>{text(lang, 'bookWithCode')}</button>
-            <button className="button secondary dark hero-action-main" type="button" onClick={() => setFindExperienceOpen(true)}><EditableText itemKey="home.hero.primary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'findExperience')} /></button>
-            <button className="button secondary dark hero-action-code" type="button" onClick={handleContact}><EditableText itemKey="home.hero.contact_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'contact')} /></button>
             <a
               className="trust-card guide-license-card hero-action-guide"
               href="https://www.guidealpinevulcanologichesicilia.it/tutte-le-guide/chiavetta-leonardo/"
@@ -2673,7 +2684,6 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
           />
         </div>
       </div>
-      {findExperienceOpen && <FindExperienceModal lang={lang} onClose={() => setFindExperienceOpen(false)} onRequestExperience={handleFindExperienceRequest} />}
       {bookingCodeOpen && <BookingCodeModal lang={lang} onClose={() => setBookingCodeOpen(false)} siteContent={siteContent} />}
       {supportContactOpen && <SupportContactModal lang={lang} onClose={closeSupportContact} siteContent={siteContent} />}
     </section>
@@ -2789,14 +2799,19 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
     });
   }
 
-  function requestItem(item) {
+  function requestItem(item, event) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     const trackingContext = withBookingJourneyId(buildBookingTrackingContext({
       experienceId: item?.experience_id || '',
       requestType: 'fixed',
       sourceSection: 'calendar',
-      sourceCta: 'fixed_excursion',
+      sourceCta: 'calendar_fixed_excursion_request_info',
       ctaLocation: 'calendar_modal',
       selectedDate: item?.date || '',
+      selectedTime: item?.start_time || '',
+      fixedExcursionId: item?.id || '',
+      experienceName: fixedExcursionTitle(item, lang),
       hasFixedExcursion: true,
       language: lang
     }));
@@ -2871,6 +2886,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
           <h3>{title}</h3>
           <span>{timeRange}</span>
         </div>
+        <BlockedDatesAttachment item={item} lang={lang} onOpenFile={(file, label) => openLeafletModal(file, label || text(lang, 'openExcursionProgram'))} />
         <FormattedDescription textValue={description || experienceById(item.experience_id).summary[lang]} />
         <dl className="public-details-grid date-modal-details-grid">
           <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(item.date, lang)}</dd></div>
@@ -2880,10 +2896,9 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
           {price && <div><dt>{text(lang, 'priceNote')}</dt><dd>{price}</dd></div>}
           <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{item.places_remaining}/{item.capacity}</dd></div>
         </dl>
-        <BlockedDatesAttachment item={item} lang={lang} onOpenFile={(file, label) => openLeafletModal(file, label || text(lang, 'openExcursionProgram'))} />
         <div className="request-action-row date-modal-actions">
-          <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestInformation')}</button>
-          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`, target: '_blank', location: 'calendar_modal', metadata: buildBookingTrackingContext({ experienceId: item.experience_id || '', requestType: 'fixed', sourceSection: 'calendar', sourceCta: 'whatsapp_direct', ctaLocation: 'calendar_modal', selectedDate: item.date || '', hasFixedExcursion: true, language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
+          <button className="request-action-button request-action-button-primary" type="button" onClick={(event) => requestItem(item, event)}>{text(lang, 'requestInformation')}</button>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`, target: '_blank', location: 'calendar_modal', metadata: withBookingJourneyId(buildBookingTrackingContext({ experienceId: item.experience_id || '', requestType: 'fixed', sourceSection: 'calendar', sourceCta: 'fixed_excursion_whatsapp', ctaLocation: 'calendar_modal', selectedDate: item.date || '', selectedTime: item.start_time || '', fixedExcursionId: item.id || '', experienceName: fixedExcursionTitle(item, lang), hasFixedExcursion: true, language: lang })), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildContextualAttributionContactMessage(fixedMessage, source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
           {selectedDateLeaflet && (
             <button className="request-action-button request-action-button-secondary" type="button" onClick={() => openLeafletModal(selectedDateLeaflet, text(lang, 'openExcursionProgram'))}>{text(lang, 'openExcursionProgram')}</button>
           )}
@@ -2922,7 +2937,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         </div>
         <div className="request-action-row date-modal-actions">
           <button className="request-action-button request-action-button-primary" type="button" onClick={requestAvailableDate}>{text(lang, 'requestDate')}</button>
-          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(message)}`, target: '_blank', location: 'calendar_modal', metadata: buildBookingTrackingContext({ experienceId: dateRequest.experienceId || '', requestType: 'private', sourceSection: 'calendar', sourceCta: 'whatsapp_direct', ctaLocation: 'calendar_modal', selectedDate, language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(message)}`, target: '_blank', location: 'calendar_modal', metadata: buildBookingTrackingContext({ experienceId: dateRequest.experienceId || '', requestType: 'private', sourceSection: 'calendar', sourceCta: 'whatsapp_direct', ctaLocation: 'calendar_modal', selectedDate, language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildContextualAttributionContactMessage(message, source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
         </div>
       </div>
     );
@@ -3030,7 +3045,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
                 </dl>
                 <div className="request-action-row experience-modal-actions">
                   <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestExperience(renderedExperience)}>{text(lang, 'request')}</button>
-                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(renderedExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(renderedExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: buildBookingTrackingContext({ experienceId: renderedExperience?.id || '', requestType: 'private', sourceSection: 'experiences', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
+                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(renderedExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(renderedExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: buildBookingTrackingContext({ experienceId: renderedExperience?.id || '', requestType: 'private', sourceSection: 'experiences', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildContextualAttributionContactMessage(buildExperienceMessage(renderedExperience, lang), source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
                 </div>
               </div>
             </div>
@@ -3125,7 +3140,9 @@ function BlockedDatesAttachment({ item, lang, publicView = true, onOpenFile }) {
   const label = publicView ? text(lang, 'openExcursionProgram') : adminCopy(lang, 'Apri volantino', 'Open leaflet');
   const filePayload = { file_url: url, file_type: type, file_name: name, title_it: name, title_en: name };
 
-  const openFile = () => {
+  const openFile = (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     if (typeof onOpenFile === 'function') {
       onOpenFile(filePayload, label);
     } else if (typeof window !== 'undefined') {
@@ -3450,17 +3467,16 @@ function PartnershipsPage({ lang, siteContent, editor }) {
             {!loading && enrichedItems.length > 0 && (
               <div className="partnership-filter-control" ref={partnershipFilterRef}>
                 <button
-                  className="partnership-filter-trigger"
+                  className="partnership-filter-trigger review-filter-trigger"
                   type="button"
                   onClick={() => setPartnershipFilterOpen((open) => !open)}
                   aria-expanded={partnershipFilterOpen}
                   aria-haspopup="menu"
                 >
-                  <strong>{selectedCategoryLabel}</strong>
-                  <span aria-hidden="true">⌄</span>
+                  {adminCopy(lang, 'Filtra', 'Filter')}: {selectedCategoryLabel} <span aria-hidden="true">▾</span>
                 </button>
                 {partnershipFilterOpen && (
-                  <div className="partnership-filter-menu" role="menu">
+                  <div className="partnership-filter-menu review-filter-menu" role="menu">
                     {partnershipFilterOptions.map((category) => {
                       const label = category.key === 'all' ? adminCopy(lang, 'Tutte', 'All') : partnershipCategoryLabel(category.key, lang);
                       return (
@@ -3910,8 +3926,12 @@ function buildBookingTrackingContext({
   sourceCta = 'prepare_request',
   ctaLocation = 'contact_section',
   selectedDate = '',
+  selectedTime = '',
+  fixedExcursionId = '',
+  experienceName = '',
   hasFixedExcursion = false,
-  language = 'it'
+  language = 'it',
+  extra = {}
 } = {}) {
   const knownExperience = experiences.find((experience) => experience.id === experienceId) || null;
   const normalizedRequestType = requestType || (knownExperience ? 'experience' : 'private');
@@ -3931,9 +3951,13 @@ function buildBookingTrackingContext({
     source_cta: sourceCta || 'unknown',
     cta_location: ctaLocation || 'unknown',
     selected_date: selectedDate || '',
+    selected_time: selectedTime || '',
     selected_month: isoMonthKey(selectedDate),
+    ...(fixedExcursionId ? { fixed_excursion_id: fixedExcursionId } : {}),
+    ...(experienceName ? { experience_name: experienceName } : {}),
     has_fixed_excursion: Boolean(hasFixedExcursion),
     language: language || 'it',
+    ...(extra || {}),
     booking_journey_version: BOOKING_JOURNEY_VERSION
   };
 }
@@ -4640,13 +4664,8 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const finalActionsDisabled = Boolean(finalError || submitState.loading);
 
   return (
-    <section className="section alt-section" id="contact">
-      <div className="container contact-section-grid contact-questionnaire-entry">
-        <div>
-          <EditableText as="h2" itemKey="contact.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formTitle')} />
-          <EditableText as="p" itemKey="contact.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formIntro')} />
-          <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={openQuestionnaire} siteContent={siteContent} contactDetails={contact} />
-        </div>
+    <section className="section alt-section contact-page-clean-section" id="contact">
+      <div className="container contact-questionnaire-entry contact-questionnaire-entry-clean">
         <article className="contact-form questionnaire-start-card">
           <span className="kicker">{text(lang, 'formKicker')}</span>
           <h3>{text(lang, 'prepareYourRequest')}</h3>
@@ -4654,6 +4673,9 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
           <button className="request-action-button request-action-button-primary questionnaire-start-button" type="button" onClick={openQuestionnaire}>{text(lang, 'startQuestionnaire')}</button>
           {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
         </article>
+        <div className="desktop-contact-actions-below-card">
+          <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={openQuestionnaire} siteContent={siteContent} contactDetails={contact} location="contact_page_desktop_actions" />
+        </div>
       </div>
 
       {questionnaireTransition.shouldRender && (
@@ -4793,6 +4815,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
             </div>
             <div className="date-modal-content fixed-date-content">
               <article className="date-modal-fixed-card request-fixed-detail-card">
+                <BlockedDatesAttachment item={renderedFixedExcursionDetails} lang={lang} onOpenFile={(file, label) => setActiveLeaflet({ leaflet: file, label: label || text(lang, 'openExcursionProgram'), fixedExcursion: renderedFixedExcursionDetails })} />
                 <FormattedDescription textValue={fixedExcursionProgram(renderedFixedExcursionDetails, lang) || renderedFixedExcursionDetails[`note_${lang}`] || renderedFixedExcursionDetails.note_it || renderedFixedExcursionDetails.note_en || experienceById(renderedFixedExcursionDetails.experience_id).summary[lang]} />
                 <dl className="public-details-grid date-modal-details-grid">
                   <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(renderedFixedExcursionDetails.date, lang)}</dd></div>
@@ -4802,7 +4825,6 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
                   {fixedExcursionField(renderedFixedExcursionDetails, 'price_note', lang) && <div><dt>{text(lang, 'priceNote')}</dt><dd>{fixedExcursionField(renderedFixedExcursionDetails, 'price_note', lang)}</dd></div>}
                   <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{renderedFixedExcursionDetails.places_remaining}/{renderedFixedExcursionDetails.capacity}</dd></div>
                 </dl>
-                <BlockedDatesAttachment item={renderedFixedExcursionDetails} lang={lang} onOpenFile={(file, label) => setActiveLeaflet({ leaflet: file, label: label || text(lang, 'openExcursionProgram'), fixedExcursion: renderedFixedExcursionDetails })} />
                 <div className="request-action-row date-modal-actions">
                   <button className="request-action-button request-action-button-primary" type="button" onClick={() => { updateFixedExcursion(renderedFixedExcursionDetails.id); setSelectedFixedExcursionDetails(null); setFixedOptionsOpen(false); }}>{text(lang, 'useThisOptionInRequest')}</button>
                 </div>
@@ -5299,6 +5321,19 @@ function buildAttributionContactMessage(value, detail, lang) {
     return `Hi Leonardo,\n\nI heard about vulcanIQ from "${display}" and I would like information about a vulcanIQ experience on Mount Etna.\n\nI would like to know availability, approximate duration, price and clothing recommendations.\n\nThank you!`;
   }
   return `Ciao Leonardo,\n\nHo sentito parlare di vulcanIQ da "${display}" e vorrei informazioni su un’esperienza vulcanIQ sull’Etna.\n\nVorrei sapere disponibilità, durata indicativa, prezzo e consigli sull’abbigliamento.\n\nGrazie!`;
+}
+
+
+function buildContextualAttributionContactMessage(baseMessage, value, detail, lang) {
+  const cleanBase = String(baseMessage || '').trim();
+  const defaultMessage = String(text(lang, 'defaultMessage') || '').trim();
+  const display = heardAboutUsDisplay(value, detail, lang);
+  if (!cleanBase || cleanBase === defaultMessage) return buildAttributionContactMessage(value, detail, lang);
+  if (!display) return cleanBase;
+  const sourceLine = lang === 'en'
+    ? `How I heard about vulcanIQ: ${display}.`
+    : `Come ho conosciuto vulcanIQ: ${display}.`;
+  return `${cleanBase}\n\n${sourceLine}`;
 }
 
 function ContactAttributionSelect({ lang, value, onChange, includeAdmin = false, id = 'heardAboutUs' }) {

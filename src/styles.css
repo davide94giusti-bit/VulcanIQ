@@ -11196,3 +11196,102 @@ body.modal-scroll-lock {
     font-size: clamp(2rem, 10vw, 3rem);
   }
 }
+
+
+/* 20260704 contact flow, fixed excursion leaflet, and shared filter cleanup */
+.contact-questionnaire-entry-clean {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  width: min(100%, 980px);
+}
+
+.contact-questionnaire-entry-clean .questionnaire-start-card {
+  width: 100%;
+}
+
+.desktop-contact-actions-below-card {
+  display: flex;
+  justify-content: center;
+}
+
+.desktop-contact-actions-below-card .contact-actions {
+  justify-content: center;
+}
+
+.date-modal-fixed-card > .fixed-excursion-leaflet-attachment {
+  margin: 4px 0 18px;
+}
+
+.date-modal-fixed-card > .fixed-excursion-leaflet-attachment .blocked-dates-preview-button {
+  width: min(100%, 520px);
+  margin-inline: auto;
+}
+
+.partnership-filter-trigger.review-filter-trigger {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--night);
+  padding: 10px 15px;
+  font-weight: 900;
+  box-shadow: 0 10px 22px rgba(13, 22, 38, 0.05);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.partnership-filter-menu.review-filter-menu {
+  top: calc(100% + 8px);
+  width: min(300px, calc(100vw - 36px));
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: var(--shadow);
+  gap: 4px;
+}
+
+.partnership-filter-menu.review-filter-menu button {
+  min-height: 42px;
+  border-radius: 12px;
+  padding: 9px 11px;
+  font-weight: 850;
+}
+
+.partnership-filter-menu.review-filter-menu button:hover,
+.partnership-filter-menu.review-filter-menu button:focus-visible,
+.partnership-filter-menu.review-filter-menu button.is-active {
+  background: var(--lava-soft);
+  color: var(--night);
+}
+
+@media (max-width: 760px) {
+  .desktop-contact-actions-below-card {
+    display: none;
+  }
+
+  .contact-questionnaire-entry-clean {
+    gap: 0;
+  }
+
+  .partnership-filter-trigger.review-filter-trigger {
+    min-width: 0;
+    justify-content: center;
+  }
+}
+
+.partnership-filter-trigger.review-filter-trigger > span:first-child {
+  display: inline;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+@media (max-width: 760px) {
+  .partnership-filter-trigger.review-filter-trigger > span:first-child {
+    display: inline;
+  }
+}
