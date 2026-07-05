@@ -17,6 +17,9 @@ import { createDatabaseBackup, downloadLatestDatabaseBackup, getBackupSchedule, 
 import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot } from './analytics.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import { submitPublicBookingRequestWithTracking } from './services/publicBookingSubmit.js';
+import { formatCurrencyAmount, normalizeCurrency, parseMoneyAmount } from './utils/money.js';
+import { applySeo } from './seo.js';
+import { ADMIN_ROLES, listAdminUsers, updateAdminUser } from './services/adminUsers.js';
 import './styles.css';
 
 const PHONE_DISPLAY = '+39 334 929 8246';
@@ -42,6 +45,7 @@ const ADMIN_NAV_SECTIONS = [
   { key: 'finance', path: '/admin/finance', labelIt: 'Finanze', labelEn: 'Finance', editable: true },
   { key: 'analytics', path: '/admin/analytics', labelIt: 'Analytics', labelEn: 'Analytics', editable: true },
   { key: 'backup', path: '/admin/system/backup', labelIt: 'Sistema e backup', labelEn: 'System & backup', editable: false, ownerOnly: true },
+  { key: 'users', path: '/admin/users', labelIt: 'Utenti admin', labelEn: 'Admin users', editable: false, ownerOnly: true },
   { key: 'publicSite', path: '/', labelIt: 'Visualizza sito pubblico', labelEn: 'View public site', editable: true, external: true }
 ];
 
@@ -50,7 +54,7 @@ const ADMIN_NAV_GROUPS = [
   { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'bookingCodes', 'availability'] },
   { key: 'website', labelIt: 'Gestione sito', labelEn: 'Website management', items: ['edit', 'publicSite'] },
   { key: 'business', labelIt: 'Business', labelEn: 'Business', items: ['partnerships', 'finance', 'analytics'] },
-  { key: 'system', labelIt: 'Sistema', labelEn: 'System', items: ['backup'] }
+  { key: 'system', labelIt: 'Sistema', labelEn: 'System', items: ['backup', 'users'] }
 ];
 
 function adminNavLabel(section, lang) {
@@ -62,6 +66,7 @@ function isAdminNavSectionActive(normalizedPath, section) {
   if (section.key === 'analytics') return normalizedPath.includes('/analytics') || normalizedPath.includes('/data');
   if (section.key === 'bookingCodes') return normalizedPath.includes('/booking-codes');
   if (section.key === 'backup') return normalizedPath.includes('/system') || normalizedPath.includes('/backup');
+  if (section.key === 'users') return normalizedPath.includes('/users');
   if (section.key === 'edit') return normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media');
   if (section.key === 'partnerships') return normalizedPath.includes('/partnerships');
   return normalizedPath.includes(`/${section.key}`);
@@ -1084,6 +1089,7 @@ function publicPageFromPathname(pathname = '/') {
   if (clean === '/social') return 'social';
   if (clean === '/latest-news' || clean === '/etna-live-news') return 'latestNews';
   if (clean === '/contact') return 'contact';
+  if (clean === '/gift-card') return 'giftCard';
   return '';
 }
 
@@ -2548,6 +2554,7 @@ function BookingCodeModal({ lang, onClose, siteContent }) {
               </div>
             )}
             <small>{text(lang, 'bookingCodeCelebrationFooter')}</small>
+            <a className="button secondary booking-code-review-cta" href="/reviews" onClick={() => trackEvent('booking_code_review_open', { source: 'booking_code', source_section: 'booking_code_success', source_cta: 'leave_review_after_redeem', cta_location: 'booking_code_success_card', language: lang }, { dedupe: false })}>{lang === 'it' ? 'Usa questo codice per una recensione' : 'Use this code for a review'}</a>
           </div>
         ) : (
           <form className="booking-code-form" onSubmit={submit}>
@@ -2604,6 +2611,131 @@ function SupportContactModal({ lang, onClose, siteContent }) {
         <aside className="booking-code-support-card support-contact-card">
           <ContactActions lang={lang} contextMessage={supportMessage} location="hero_contact_support" siteContent={siteContent} />
         </aside>
+      </section>
+    </div>
+  ), document.body);
+}
+
+
+function GiftCardPage({ lang, siteContent }) {
+  const contact = resolvePublicContactDetails(siteContent);
+  useEffect(() => {
+    trackEvent('gift_card_view', { language: lang, source_section: 'gift_card_page' }, { dedupe: false });
+  }, [lang]);
+  const message = lang === 'it'
+    ? 'Ciao Leonardo,\n\nvorrei informazioni per regalare una gift card vulcanIQ.\n\nTipo esperienza: [Etna Premium / Etna Live / Etna Stories / Non so ancora]\nBudget indicativo: [opzionale]\nPer: [coppia / famiglia / gruppo / regalo aziendale]\nPeriodo preferito: [opzionale]\n\nGrazie!'
+    : 'Hi Leonardo,\n\nI would like information about gifting a vulcanIQ gift card.\n\nExperience type: [Etna Premium / Etna Live / Etna Stories / Not sure yet]\nIndicative budget: [optional]\nFor: [couple / family / group / company gift]\nPreferred period: [optional]\n\nThank you!';
+  const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(message)}`;
+  return (
+    <section className="page-section gift-card-page">
+      <div className="container narrow-copy">
+        <span className="kicker">{lang === 'it' ? 'Gift card' : 'Gift card'}</span>
+        <h1>{lang === 'it' ? 'Regala un’esperienza sull’Etna' : 'Gift a Mount Etna experience'}</h1>
+        <p className="lead">{lang === 'it' ? 'Una gift card vulcanIQ per chi ama natura, vulcani e storie vere. La prima versione è richiesta via WhatsApp: nessun pagamento viene raccolto dal sito.' : 'A vulcanIQ gift card for people who love nature, volcanoes and real stories. This first version is request-only via WhatsApp: no payment is collected on the website.'}</p>
+        <div className="gift-card-option-grid">
+          <article className="info-card">
+            <h2>{lang === 'it' ? 'Come funziona' : 'How it works'}</h2>
+            <p>{lang === 'it' ? 'Invia una richiesta strutturata, indica il tipo di regalo e ricevi conferma manuale con dettagli, validità e modalità di consegna.' : 'Send a structured request, indicate the gift type and receive manual confirmation with details, validity and delivery method.'}</p>
+          </article>
+          <article className="info-card">
+            <h2>{lang === 'it' ? 'Ideale per' : 'Best for'}</h2>
+            <p>{lang === 'it' ? 'Coppie, famiglie, compleanni, anniversari, lauree e regali aziendali.' : 'Couples, families, birthdays, anniversaries, graduations and company gifts.'}</p>
+          </article>
+        </div>
+        <div className="modal-actions">
+          <a className="button primary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent('gift_card_request_click', { language: lang, source_section: 'gift_card_page', source_cta: 'whatsapp' }, { dedupe: false })}>{lang === 'it' ? 'Richiedi gift card' : 'Request gift card'}</a>
+          <a className="button secondary" href="/experiences">{lang === 'it' ? 'Vedi esperienze' : 'View experiences'}</a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FastRequestModal({ lang, siteContent, onClose }) {
+  const contact = resolvePublicContactDetails(siteContent);
+  const [step, setStep] = useState(1);
+  const [form, setForm] = useState(() => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem('vulcaniq_fast_request') || '{}');
+      if (stored?.expires_at && Date.now() < stored.expires_at) return { experienceId: stored.experienceId || 'etna-premium', dateMode: stored.dateMode || 'flexible', customDate: stored.customDate || '', adults: stored.adults || '2', children: stored.children || '0' };
+    } catch {}
+    return { experienceId: 'etna-premium', dateMode: 'flexible', customDate: '', adults: '2', children: '0' };
+  });
+
+  useEffect(() => {
+    trackEvent('fast_request_start', { language: lang, source_section: 'sticky_mobile_bar' }, { dedupe: false });
+    return () => {
+      try {
+        window.localStorage.setItem('vulcaniq_fast_request', JSON.stringify({ ...form, expires_at: Date.now() + 24 * 60 * 60 * 1000 }));
+      } catch {}
+    };
+  }, []);
+
+  function update(key, value) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function completeStep(nextStep) {
+    trackEvent('fast_request_step_complete', { language: lang, step, next_step: nextStep }, { dedupe: false });
+    setStep(nextStep);
+  }
+
+  const experience = experienceById(form.experienceId);
+  const dateLabel = form.dateMode === 'custom'
+    ? (form.customDate || (lang === 'it' ? 'data da definire' : 'date to define'))
+    : (lang === 'it' ? 'Sono flessibile' : "I'm flexible");
+  const peopleSummary = lang === 'it'
+    ? `${form.adults || 0} adulti, ${form.children || 0} bambini`
+    : `${form.adults || 0} adults, ${form.children || 0} children`;
+  const message = lang === 'it'
+    ? `Ciao Leonardo,\n\nvorrei verificare disponibilità per una esperienza vulcanIQ.\n\nEsperienza: ${experience.title}\nData: ${dateLabel}\nPersone: ${peopleSummary}\nLingua: Italiano\nFonte: richiesta rapida\n\nVorrei sapere disponibilità, prezzo, durata e abbigliamento consigliato.\n\nGrazie!`
+    : `Hi Leonardo,\n\nI would like to check availability for a vulcanIQ experience.\n\nExperience: ${experience.title}\nDate: ${dateLabel}\nPeople: ${peopleSummary}\nLanguage: English\nSource: fast request\n\nI would like to know availability, price, duration and recommended clothing.\n\nThank you!`;
+  const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(message)}`;
+
+  function handleClose() {
+    trackEvent('fast_request_abandon', { language: lang, step, experience_id: form.experienceId }, { dedupe: true });
+    onClose();
+  }
+
+  function handleWhatsApp() {
+    trackEvent('fast_request_whatsapp_click', { language: lang, experience_id: form.experienceId, date_mode: form.dateMode }, { dedupe: false });
+    trackEvent('fast_request_submit_success', { language: lang, experience_id: form.experienceId, channel: 'whatsapp' }, { dedupe: false });
+    try { window.localStorage.removeItem('vulcaniq_fast_request'); } catch {}
+  }
+
+  return createPortal((
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="fastRequestTitle">
+      <section className="admin-modal fast-request-modal">
+        <header className="admin-modal-header">
+          <div><span className="kicker">{lang === 'it' ? 'Richiesta rapida' : 'Fast request'}</span><h2 id="fastRequestTitle">{lang === 'it' ? 'Verifica disponibilità in pochi passaggi' : 'Check availability in a few steps'}</h2></div>
+          <button className="modal-close-button" type="button" onClick={handleClose}>{text(lang, 'close')}</button>
+        </header>
+        {step === 1 && (
+          <div className="admin-form-grid">
+            <label className="admin-field full"><span>{lang === 'it' ? 'Esperienza' : 'Experience'}</span><select value={form.experienceId} onChange={(event) => update('experienceId', event.target.value)}>{experiences.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+            <div className="modal-actions full"><button className="button primary" type="button" onClick={() => completeStep(2)}>{lang === 'it' ? 'Continua' : 'Continue'}</button></div>
+          </div>
+        )}
+        {step === 2 && (
+          <div className="admin-form-grid">
+            <label className="admin-field"><span>{lang === 'it' ? 'Data' : 'Date'}</span><select value={form.dateMode} onChange={(event) => update('dateMode', event.target.value)}><option value="flexible">{lang === 'it' ? 'Sono flessibile' : "I'm flexible"}</option><option value="custom">{lang === 'it' ? 'Data specifica' : 'Specific date'}</option></select></label>
+            {form.dateMode === 'custom' && <label className="admin-field"><span>{lang === 'it' ? 'Data preferita' : 'Preferred date'}</span><input type="date" value={form.customDate} onChange={(event) => update('customDate', event.target.value)} /></label>}
+            <div className="modal-actions full"><button className="button secondary" type="button" onClick={() => setStep(1)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(3)}>{lang === 'it' ? 'Continua' : 'Continue'}</button></div>
+          </div>
+        )}
+        {step === 3 && (
+          <div className="admin-form-grid">
+            <label className="admin-field"><span>{lang === 'it' ? 'Adulti' : 'Adults'}</span><input type="number" min="0" value={form.adults} onChange={(event) => update('adults', event.target.value)} /></label>
+            <label className="admin-field"><span>{lang === 'it' ? 'Bambini' : 'Children'}</span><input type="number" min="0" value={form.children} onChange={(event) => update('children', event.target.value)} /></label>
+            <div className="modal-actions full"><button className="button secondary" type="button" onClick={() => setStep(2)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(4)}>{lang === 'it' ? 'Rivedi messaggio' : 'Review message'}</button></div>
+          </div>
+        )}
+        {step === 4 && (
+          <div className="fast-request-review">
+            <textarea readOnly value={message} rows={10} />
+            <div className="modal-actions"><button className="button secondary" type="button" onClick={() => setStep(3)}>{lang === 'it' ? 'Modifica' : 'Edit'}</button><a className="button primary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>WhatsApp</a></div>
+          </div>
+        )}
       </section>
     </div>
   ), document.body);
@@ -2683,6 +2815,7 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
           <div className="hero-action-grid">
             <button className="button primary hero-action-main" type="button" onClick={handleBookNow}><EditableText itemKey="home.hero.secondary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'viewAvailability')} /></button>
             <button className="button secondary dark hero-action-code" type="button" onClick={() => setBookingCodeOpen(true)}>{text(lang, 'bookWithCode')}</button>
+            <a className="button secondary dark hero-action-gift" href="/gift-card" onClick={() => trackEvent('gift_card_request_click', { language: lang, source_section: 'home_hero', source_cta: 'gift_card' }, { dedupe: false })}>{lang === 'it' ? 'Gift card' : 'Gift card'}</a>
             <a
               className="trust-card guide-license-card hero-action-guide"
               href="https://www.guidealpinevulcanologichesicilia.it/tutte-le-guide/chiavetta-leonardo/"
@@ -3639,21 +3772,28 @@ function ReviewsPage({ lang, siteContent, editor }) {
   function readableSubmitError(error) {
     const message = error?.message || '';
     if (message.includes('INVALID_BOOKING_CODE')) return lang === 'it' ? 'Codice non valido.' : 'Invalid code.';
-    if (message.includes('BOOKING_CODE_ALREADY_USED') || message.includes('duplicate key')) return lang === 'it' ? 'Questo codice è già stato usato.' : 'This code has already been used.';
+    if (message.includes('BOOKING_CODE_ALREADY_USED') || message.includes('BOOKING_CODE_USED') || message.includes('duplicate key')) return lang === 'it' ? 'Questo codice è già stato usato.' : 'This code has already been used.';
     if (message.includes('REVIEW_TEXT_REQUIRED')) return lang === 'it' ? 'Compila tutti i campi obbligatori.' : 'Please complete all required fields.';
     return lang === 'it' ? 'Recensione non inviata. Controlla il codice e riprova.' : 'Review not submitted. Check the code and try again.';
   }
 
   async function submitReview(event) {
     event.preventDefault();
+    const reviewCode = String(form.booking_code || '').trim().toUpperCase();
     setSubmitState({ loading: true, error: '', success: '' });
+    await trackEvent('booking_code_review_submit_attempt', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'review_modal', has_code: Boolean(reviewCode), language: lang }, { dedupe: false });
     try {
-      await submitPublicReview({ ...form, language: lang });
+      const reviewResult = await submitPublicReview({ ...form, booking_code: reviewCode, language: lang });
       setForm({ booking_code: '', reviewer_name: '', review_text: '', rating: '5' });
+      await trackEvent('booking_code_review_submit_success', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'review_modal', review_id: reviewResult?.id || '', language: lang }, { dedupe: false });
       setSubmitState({ loading: false, error: '', success: lang === 'it' ? 'Recensione pubblicata. Grazie.' : 'Review published. Thank you.' });
       refreshReviews();
       window.setTimeout(() => setModalOpen(false), 1200);
     } catch (err) {
+      const rawError = String(err?.message || err?.code || '');
+      if (rawError.includes('USED') || rawError.includes('duplicate')) {
+        await trackEvent('booking_code_review_duplicate', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'review_modal', language: lang }, { dedupe: false });
+      }
       setSubmitState({ loading: false, error: readableSubmitError(err), success: '' });
     }
   }
@@ -3705,7 +3845,7 @@ function ReviewsPage({ lang, siteContent, editor }) {
             <EditableText as="p" itemKey="reviews.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'reviewsIntro')} />
           </div>
           <div className="reviews-header-actions">
-            <button className="button primary" type="button" onClick={() => { setSubmitState({ loading: false, error: '', success: '' }); setModalOpen(true); }}><EditableText itemKey="reviews.publish_button" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'publishReview')} /></button>
+            <button className="button primary" type="button" onClick={() => { trackEvent('booking_code_review_open', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'reviews_header', language: lang }, { dedupe: false }); setSubmitState({ loading: false, error: '', success: '' }); setModalOpen(true); }}><EditableText itemKey="reviews.publish_button" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'publishReview')} /></button>
             <div className="review-filter-dropdown" ref={filterRef}>
               <button type="button" className="review-filter-trigger" aria-haspopup="menu" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)}>
                 {adminCopy(lang, 'Filtra', 'Filter')}: {reviewFilterLabel(filterMode, lang)} <span aria-hidden="true">▾</span>
@@ -5215,6 +5355,7 @@ function Footer({ lang, siteContent, editor }) {
 
 function StickyMobileBar({ lang, siteContent }) {
   const contact = resolvePublicContactDetails(siteContent);
+  const [fastRequestOpen, setFastRequestOpen] = useState(false);
   const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
   const metadata = buildBookingTrackingContext({ requestType: 'contact', sourceSection: 'sticky_contact_bar', sourceCta: 'contact_direct', ctaLocation: 'sticky_contact_bar', language: lang });
   const subject = text(lang, 'emailSubject');
@@ -5224,6 +5365,7 @@ function StickyMobileBar({ lang, siteContent }) {
   return (
     <>
       <div className="mobile-sticky-bar" aria-label="Mobile contact actions">
+        <button type="button" onClick={() => setFastRequestOpen(true)}><Icon name="calendar" />{lang === 'it' ? 'Rapida' : 'Fast'}</button>
         <a href={`tel:${contact.phoneTel}`} onClick={() => trackContactClick('phone', 'sticky_contact_bar', { ...metadata, source_cta: 'phone_direct' })}><Icon name="phone" />{lang === 'it' ? 'Chiama' : 'Call'}</a>
         <a
           href={whatsappUrl}
@@ -5250,6 +5392,7 @@ function StickyMobileBar({ lang, siteContent }) {
         ><Icon name="mail" />Email</a>
       </div>
       {contactAttributionModal}
+      {fastRequestOpen && <FastRequestModal lang={lang} siteContent={siteContent} onClose={() => setFastRequestOpen(false)} />}
     </>
   );
 }
@@ -5791,6 +5934,77 @@ function AdminMenuDropdown({ lang, visibleSections, normalizedPath, currentNavVa
   );
 }
 
+
+function AdminUsersPage({ lang }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    try {
+      setUsers(await listAdminUsers());
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Utenti non caricati.', 'Users not loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  async function save(user, changes) {
+    setError('');
+    setFeedback('');
+    try {
+      await updateAdminUser(user.user_id, changes);
+      setFeedback(adminCopy(lang, 'Utente aggiornato.', 'User updated.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Aggiornamento non riuscito.', 'Update failed.'));
+    }
+  }
+
+  return (
+    <section className="admin-panel admin-users-page">
+      <div className="admin-panel-header">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'Owner only', 'Owner only')}</span>
+          <h1>{adminCopy(lang, 'Utenti admin', 'Admin users')}</h1>
+          <p>{adminCopy(lang, 'Gestisci ruoli e stato degli account già presenti in Supabase Auth. La creazione sicura di nuovi account resta manuale in Supabase.', 'Manage roles and status for accounts already present in Supabase Auth. Secure creation of new accounts remains manual in Supabase.')}</p>
+        </div>
+      </div>
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {error && <div className="admin-alert error" role="alert">{error}</div>}
+      <div className="admin-alert warning">
+        {adminCopy(lang, 'Per aggiungere un nuovo utente: crea prima l’utente in Supabase Auth, poi inserisci o aggiorna il profilo in admin_profiles con ruolo e active=true. Non usare mai service-role key nel frontend.', 'To add a new user: first create the user in Supabase Auth, then insert or update the profile in admin_profiles with role and active=true. Never use a service-role key in the frontend.')}
+      </div>
+      {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : (
+        <div className="admin-table-wrap admin-users-table">
+          <table className="admin-table">
+            <thead><tr><th>{adminCopy(lang, 'Nome', 'Name')}</th><th>Email</th><th>{adminCopy(lang, 'Ruolo', 'Role')}</th><th>{adminCopy(lang, 'Attivo', 'Active')}</th><th>{adminCopy(lang, 'Ultimo accesso', 'Last seen')}</th><th>{adminCopy(lang, 'Azioni', 'Actions')}</th></tr></thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.user_id}>
+                  <td>{user.full_name || '-'}</td>
+                  <td>{user.email || '-'}</td>
+                  <td><select value={user.role || 'manager'} onChange={(event) => save(user, { role: event.target.value })}>{ADMIN_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}</select></td>
+                  <td>{user.active === false ? adminCopy(lang, 'No', 'No') : adminCopy(lang, 'Sì', 'Yes')}</td>
+                  <td>{user.last_seen_at ? new Date(user.last_seen_at).toLocaleString(lang === 'it' ? 'it-IT' : 'en-GB') : '-'}</td>
+                  <td><button className="button secondary" type="button" onClick={() => save(user, { active: user.active === false })}>{user.active === false ? adminCopy(lang, 'Riattiva', 'Reactivate') : adminCopy(lang, 'Disattiva', 'Deactivate')}</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+
 function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
   const currentAdminPath = adminPathFromLocation(pathname);
@@ -5798,6 +6012,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
   const currentNavValue = visibleSections.some((section) => section.path === currentAdminPath) ? currentAdminPath : '/admin/today';
   const isOwner = profile?.role === 'owner' && profile?.active !== false;
   const isBackupPage = normalizedPath.includes('/system') || normalizedPath.includes('/backup');
+  const isUsersPage = normalizedPath.includes('/users');
 
   const [adminContentRows, setAdminContentRows] = useState([]);
   const [globalBackupProgress, setGlobalBackupProgress] = useState(inactiveBackupProgress);
@@ -5943,7 +6158,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           </span>
         </div>
       </header>
-      {isOwner && !isBackupPage && (
+      {isOwner && !isBackupPage && !isUsersPage && (
         <GlobalBackupProgressBanner
           lang={lang}
           progress={globalBackupProgress}
@@ -5959,6 +6174,8 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           <AdminAnalyticsPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/system') || normalizedPath.includes('/backup') ? (
           isOwner ? <AdminBackupPage lang={lang} session={session} profile={profile} adminContent={adminContent} globalBackupProgress={globalBackupProgress} startGlobalBackupMonitor={startGlobalBackupMonitor} stopGlobalBackupMonitor={stopBackupMonitor} /> : <OwnerOnlyAdminPage lang={lang} />
+        ) : normalizedPath.includes('/users') ? (
+          isOwner ? <AdminUsersPage lang={lang} session={session} profile={profile} /> : <OwnerOnlyAdminPage lang={lang} />
         ) : normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media') ? (
           <AdminEditPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/partnerships') ? (
@@ -7936,8 +8153,8 @@ function financeDateFilterLabel(value, lang) {
   return found ? (lang === 'it' ? found[1] : found[2]) : value || '';
 }
 
-function formatMoney(amount, currency = 'EUR') {
-  return new Intl.NumberFormat('it-IT', { style: 'currency', currency: currency || 'EUR' }).format(Number(amount || 0));
+function formatMoney(amount, currency = 'EUR', lang = 'it') {
+  return formatCurrencyAmount(amount, currency, lang === 'en' ? 'en-GB' : 'it-IT');
 }
 
 function parseLocalIsoDate(value) {
@@ -10269,6 +10486,41 @@ function analyticsTechnicalError(error) {
   return error?.message || error?.details || error?.hint || error?.code || '';
 }
 
+
+function ShortLinksPanel({ lang }) {
+  const links = [
+    ['/r/google-profile', '/?utm_source=google_business_profile&utm_medium=organic&utm_campaign=profile', 'Google profile'],
+    ['/r/google-booking', '/experiences?utm_source=google_business_profile&utm_medium=booking&utm_campaign=fixed_excursions', 'Google booking'],
+    ['/r/ig-bio', '/?utm_source=instagram&utm_medium=social&utm_campaign=bio', 'Instagram bio'],
+    ['/r/wa', '/?utm_source=whatsapp&utm_medium=share&utm_campaign=direct', 'WhatsApp'],
+    ['/r/partner', '/?utm_source=partner&utm_medium=referral&utm_campaign=partner', 'Partner'],
+    ['/r/qr', '/?utm_source=qr&utm_medium=offline&utm_campaign=printed_qr', 'QR'],
+    ['/r/card', '/?utm_source=business_card&utm_medium=offline&utm_campaign=card', 'Business card']
+  ];
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  async function copyLink(path) {
+    const value = `${origin}${path}`;
+    try { await navigator.clipboard.writeText(value); } catch {}
+    trackEvent('gbp_utm_link_click', { language: lang, short_link: path, action: 'copy' }, { dedupe: false });
+  }
+  return (
+    <AnalyticsPanel title={adminCopy(lang, 'Link UTM rapidi', 'Quick UTM links')}>
+      <AnalyticsHelperNote>{adminCopy(lang, 'Usa questo link nella scheda Google per distinguere il traffico Google Business Profile da Instagram, WhatsApp, QR e partner.', 'Use this link in Google Business Profile to separate Google traffic from Instagram, WhatsApp, QR and partner traffic.')}</AnalyticsHelperNote>
+      <div className="short-link-panel">
+        {links.map(([path, destination, label]) => (
+          <div className="short-link-row" key={path}>
+            <strong>{label}</strong>
+            <code>{origin}{path}</code>
+            <button className="button secondary" type="button" onClick={() => copyLink(path)}>{adminCopy(lang, 'Copia', 'Copy')}</button>
+            <small>{destination}</small>
+          </div>
+        ))}
+      </div>
+    </AnalyticsPanel>
+  );
+}
+
+
 function AdminAnalyticsPage({ lang, adminContent = {} }) {
   const [period, setPeriod] = useState('30d');
   const [state, setState] = useState({ loading: true, error: '', technicalError: '', events: [], sessions: [], bookingRequests: [] });
@@ -10319,6 +10571,8 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           <button className="button secondary analytics-export-button" type="button" disabled={state.loading} onClick={() => downloadAnalyticsExport({ lang, period, range, model, events: state.events, sessions: state.sessions, bookingRequests: state.bookingRequests })}>{adminCopy(lang, 'Esporta metriche', 'Export metrics')}</button>
         </div>
       </div>
+
+      <ShortLinksPanel lang={lang} />
 
       {state.error && (
         <div className="admin-alert warning" role="status">
@@ -10715,13 +10969,14 @@ function FinanceAdminPage({ lang, session, adminContent = {} }) {
     event.preventDefault();
     setError('');
     setFeedback('');
-    if (!form.entry_date || !form.title.trim() || Number(form.amount || 0) <= 0) {
+    if (!form.entry_date || !form.title.trim() || parseMoneyAmount(form.amount) <= 0) {
       setError(adminCopy(lang, 'Data, titolo e importo positivo sono obbligatori.', 'Date, title, and a positive amount are required.'));
       return;
     }
     try {
-      if (editing) await updateFinanceEntry(editing.id, form, session.user.id);
-      else await createFinanceEntry(form, session.user.id);
+      const normalizedForm = { ...form, amount: parseMoneyAmount(form.amount), currency: normalizeCurrency(form.currency) };
+      if (editing) await updateFinanceEntry(editing.id, normalizedForm, session.user.id);
+      else await createFinanceEntry(normalizedForm, session.user.id);
       setFeedback(editing ? adminCopy(lang, 'Voce aggiornata.', 'Entry updated.') : adminCopy(lang, 'Voce aggiunta.', 'Entry added.'));
       resetForm();
       await refresh();
@@ -10793,8 +11048,8 @@ function FinanceAdminPage({ lang, session, adminContent = {} }) {
           <form className="admin-form-grid" onSubmit={submit}>
             <AdminSelect label={adminCopy(lang, 'Tipo', 'Type')} value={form.type} onChange={(value) => update('type', value)} options={['income', 'expense']} formatter={(value) => value === 'income' ? adminCopy(lang, 'Entrata', 'Income') : adminCopy(lang, 'Uscita', 'Expense')} />
             <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.entry_date} onChange={(value) => update('entry_date', value)} />
-            <AdminInput label={adminCopy(lang, 'Importo', 'Amount')} type="number" value={form.amount} onChange={(value) => update('amount', value)} />
-            <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => update('currency', value)} />
+            <AdminInput label={adminCopy(lang, 'Importo', 'Amount')} type="text" value={form.amount} onChange={(value) => update('amount', value)} />
+            <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => update('currency', normalizeCurrency(value))} />
             <AdminInput label={adminCopy(lang, 'Titolo', 'Title')} value={form.title} onChange={(value) => update('title', value)} />
             <AdminSelect label={adminCopy(lang, 'Categoria', 'Category')} value={form.category} onChange={(value) => update('category', value)} options={(form.type === 'income' ? FINANCE_CATEGORIES.income : FINANCE_CATEGORIES.expense).map(([key]) => key)} formatter={(value) => financeCategoryLabel(value, lang)} />
             <AdminInput label={adminCopy(lang, 'Metodo pagamento', 'Payment method')} value={form.payment_method} onChange={(value) => update('payment_method', value)} />
@@ -11755,7 +12010,7 @@ function AdminBookingCodeModal({ lang, session, onClose, onSaved }) {
             <AdminInput label={adminCopy(lang, 'Punto d’incontro', 'Meeting point')} value={form.meeting_point_name} onChange={(value) => update('meeting_point_name', value)} />
             <AdminInput label="Google Maps URL" value={form.meeting_point_maps_url} onChange={(value) => update('meeting_point_maps_url', value)} />
             <AdminInput label={adminCopy(lang, 'Importo previsto', 'Expected amount')} type="number" value={form.expected_amount} onChange={(value) => update('expected_amount', value)} />
-            <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => update('currency', value.toUpperCase())} />
+            <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => update('currency', normalizeCurrency(value))} />
             <AdminInput label={adminCopy(lang, 'Scadenza opzionale', 'Optional expiry')} type="date" value={form.expiry_date} onChange={(value) => update('expiry_date', value)} />
             <label className="admin-field full"><span>{adminCopy(lang, 'Nota interna opzionale', 'Optional internal note')}</span><textarea value={form.admin_note} onChange={(event) => update('admin_note', event.target.value)} rows={4} /></label>
             {error && <div className="admin-alert error full" role="alert">{error}</div>}
@@ -12113,9 +12368,8 @@ function bookingCodeTitleForAdmin(code, lang) {
     : (code.experience_name_it || code.experience_name_en || adminExperienceLabel(code.experience_id, lang));
 }
 
-function adminMoney(value, currency = 'EUR') {
-  const amount = Number(value || 0);
-  return `${Number.isFinite(amount) ? amount.toFixed(2) : '0.00'} ${currency || 'EUR'}`;
+function adminMoney(value, currency = 'EUR', lang = 'it') {
+  return formatMoney(value, currency, lang);
 }
 
 function BookingCodesPage({ lang, session, adminContent = {} }) {
@@ -12178,7 +12432,7 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
         <SummaryCard label={adminCopy(lang, 'Totali caricati', 'Loaded total')} value={codes.length} />
         <SummaryCard label={adminCopy(lang, 'Non usati', 'Unused')} value={unusedCount} />
         <SummaryCard label={adminCopy(lang, 'Usati', 'Redeemed')} value={redeemedCount} />
-        <SummaryCard label={adminCopy(lang, 'Importo previsto', 'Expected amount')} value={adminMoney(totalExpected, 'EUR')} />
+        <SummaryCard label={adminCopy(lang, 'Importo previsto', 'Expected amount')} value={adminMoney(totalExpected, 'EUR', lang)} />
       </div>
 
       <div className="admin-filter-bar booking-code-filter-bar">
@@ -12211,7 +12465,7 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
                   <dl className="request-details-grid booking-code-details-grid">
                     <div><dt>{adminCopy(lang, 'Esperienza', 'Experience')}</dt><dd>{title}</dd></div>
                     <div><dt>{adminCopy(lang, 'Data', 'Date')}</dt><dd>{item.scheduled_date || '-'}{item.scheduled_time ? ` · ${item.scheduled_time}` : ''}</dd></div>
-                    <div><dt>{adminCopy(lang, 'Importo', 'Amount')}</dt><dd>{adminMoney(item.expected_amount, item.currency)}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Importo', 'Amount')}</dt><dd>{adminMoney(item.expected_amount, item.currency, lang)}</dd></div>
                     <div><dt>{adminCopy(lang, 'Creato', 'Created')}</dt><dd>{formatLocalDateTime(item.created_at, lang, '-')}</dd></div>
                     <div><dt>{adminCopy(lang, 'Scadenza', 'Expiry')}</dt><dd>{formatLocalDateTime(item.expires_at, lang, item.expires_at || '-')}</dd></div>
                     <div><dt>{adminCopy(lang, 'Usato il', 'Redeemed at')}</dt><dd>{formatLocalDateTime(item.redeemed_at, lang, '-')}</dd></div>
@@ -13154,6 +13408,11 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (pathname.startsWith('/admin')) return;
+    applySeo({ page: activePage, lang, pathname });
+  }, [activePage, lang, pathname]);
+
+  useEffect(() => {
     if (!isSupabaseConfigured) return;
     let active = true;
     Promise.allSettled([listSiteMedia({ activeOnly: true }), loadPublicSiteContent()])
@@ -13167,7 +13426,6 @@ function App() {
 
   useEffect(() => {
     document.documentElement.lang = lang;
-    document.title = lang === 'it' ? 'vulcanIQ | Esperienze sull\'Etna' : 'vulcanIQ | Mount Etna experiences';
     setFormState((current) => ({
       ...current,
       language: current.language || lang,
@@ -13240,6 +13498,8 @@ function App() {
         return <LatestNewsPage lang={lang} siteContent={siteContent} />;
       case 'contact':
         return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteMedia={siteMedia} siteContent={siteContent} />;
+      case 'giftCard':
+        return <GiftCardPage lang={lang} siteContent={siteContent} />;
       case 'home':
       default:
         return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} />;

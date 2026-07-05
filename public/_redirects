@@ -10,3 +10,16 @@
 /r/qr /experiences?utm_source=qr&utm_medium=print&utm_campaign=summer_2026 302
 /r/card /experiences?utm_source=business_card&utm_medium=print&utm_campaign=summer_2026 302
 /* /index.html 200
+/r/google-profile /?utm_source=google_business_profile&utm_medium=organic&utm_campaign=profile 302
+/r/google-booking /experiences?utm_source=google_business_profile&utm_medium=booking&utm_campaign=fixed_excursions 302
+/r/ig-bio /?utm_source=instagram&utm_medium=social&utm_campaign=bio 302
+/r/ig-story /?utm_source=instagram&utm_medium=social&utm_campaign=story 302
+/r/ig-post /?utm_source=instagram&utm_medium=social&utm_campaign=post 302
+/r/fb-page /?utm_source=facebook&utm_medium=social&utm_campaign=page 302
+/r/fb-post /?utm_source=facebook&utm_medium=social&utm_campaign=post 302
+/r/tt-bio /?utm_source=tiktok&utm_medium=social&utm_campaign=bio 302
+/r/tt-video /?utm_source=tiktok&utm_medium=social&utm_campaign=video 302
+/r/wa /?utm_source=whatsapp&utm_medium=share&utm_campaign=direct 302
+/r/partner /?utm_source=partner&utm_medium=referral&utm_campaign=partner 302
+/r/qr /?utm_source=qr&utm_medium=offline&utm_campaign=printed_qr 302
+/r/card /?utm_source=business_card&utm_medium=offline&utm_campaign=card 302

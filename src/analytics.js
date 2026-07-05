@@ -43,7 +43,30 @@ const EVENT_NAMES = new Set([
   'google_reviews_click',
   'session_start',
   'session_heartbeat',
-  'session_end'
+  'session_end',
+  'pricing_card_view',
+  'pricing_cta_click',
+  'fast_request_start',
+  'fast_request_step_complete',
+  'fast_request_abandon',
+  'fast_request_whatsapp_click',
+  'fast_request_submit_attempt',
+  'fast_request_submit_success',
+  'gift_card_view',
+  'gift_card_request_click',
+  'gbp_utm_link_click',
+  'lead_status_changed',
+  'lead_follow_up_set',
+  'booking_code_review_open',
+  'booking_code_review_submit_attempt',
+  'booking_code_review_submit_success',
+  'booking_code_review_duplicate',
+  'review_request_sent',
+  'google_review_request_click',
+  'referral_code_created',
+  'referral_link_click',
+  'abandoned_form_detected',
+  'abandoned_form_recovered_whatsapp'
 ]);
 
 const VISITOR_KEY = 'vulcaniq_analytics_visitor_id';

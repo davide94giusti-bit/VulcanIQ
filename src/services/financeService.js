@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
+import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
 
 function cleanText(value) {
   if (value === undefined || value === null) return null;
@@ -13,8 +14,8 @@ function normalize(row) {
     updated_at: row.updated_at,
     entry_date: row.entry_date,
     type: row.type,
-    amount: Number(row.amount || 0),
-    currency: row.currency || 'EUR',
+    amount: parseMoneyAmount(row.amount),
+    currency: normalizeCurrency(row.currency),
     title: row.title || '',
     description: row.description || '',
     category: row.category || '',
@@ -58,8 +59,8 @@ export async function createFinanceEntry(input, userId) {
   const payload = {
     entry_date: input.entry_date,
     type: input.type,
-    amount: Number(input.amount || 0),
-    currency: cleanText(input.currency) || 'EUR',
+    amount: parseMoneyAmount(input.amount),
+    currency: normalizeCurrency(input.currency),
     title: cleanText(input.title),
     description: cleanText(input.description),
     category: cleanText(input.category),
@@ -87,7 +88,8 @@ export async function updateFinanceEntry(id, input, userId) {
     updated_by: userId || null,
     updated_at: new Date().toISOString()
   };
-  if (payload.amount !== undefined) payload.amount = Number(payload.amount || 0);
+  if (payload.amount !== undefined) payload.amount = parseMoneyAmount(payload.amount);
+  if (payload.currency !== undefined) payload.currency = normalizeCurrency(payload.currency);
   ['booking_request_id', 'fixed_excursion_id', 'leaflet_id', 'description', 'category', 'payment_method'].forEach((key) => {
     if (payload[key] === '') payload[key] = null;
   });

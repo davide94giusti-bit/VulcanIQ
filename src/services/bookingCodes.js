@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
+import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const BOOKING_CODE_FIELDS = `
@@ -20,8 +21,7 @@ function nullableText(value) {
 }
 
 function cleanAmount(value) {
-  const normalized = String(value ?? '').replace(',', '.').trim();
-  const parsed = Number.parseFloat(normalized);
+  const parsed = parseMoneyAmount(value);
   return Number.isFinite(parsed) && parsed >= 0 ? Number(parsed.toFixed(2)) : 0;
 }
 
@@ -63,7 +63,7 @@ function normalizeBookingCodeRow(row) {
   return {
     ...row,
     expected_amount: Number(row.expected_amount || 0),
-    currency: row.currency || 'EUR',
+    currency: normalizeCurrency(row.currency),
     status: row.status || 'unused'
   };
 }
@@ -124,7 +124,7 @@ export async function createBookingCode(input = {}, userId = null) {
       meeting_point_name: nullableText(input.meeting_point_name),
       meeting_point_maps_url: nullableText(input.meeting_point_maps_url),
       expected_amount: cleanAmount(input.expected_amount),
-      currency: nullableText(input.currency) || 'EUR',
+      currency: normalizeCurrency(input.currency),
       source: nullableText(input.source) || 'manual',
       admin_note: nullableText(input.admin_note),
       customer_note: nullableText(input.customer_note),

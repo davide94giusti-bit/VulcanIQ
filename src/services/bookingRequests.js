@@ -13,6 +13,7 @@ const requestFields = `
   analytics_session_id, analytics_visitor_id, analytics_journey_id, booking_journey_version,
   device_type, browser, operating_system,
   admin_note, decision_note, decided_at, decided_by,
+  lead_status, lead_priority, lead_owner_id, next_follow_up_at, contacted_at, quoted_at, deposit_sent_at, deposit_paid_at, confirmed_at, completed_at, review_requested_at, review_received_at, lost_at, lost_reason, expected_value, quoted_amount, internal_notes,
   created_by_admin, availability_block_id
 `;
 
@@ -145,6 +146,13 @@ export function normalizeRequestInput(input, defaults = {}) {
     browser: textOrNull(input.browser),
     operating_system: textOrNull(input.operating_system),
     admin_note: textOrNull(input.admin_note),
+    lead_status: textOrNull(input.lead_status),
+    lead_priority: textOrNull(input.lead_priority),
+    next_follow_up_at: textOrNull(input.next_follow_up_at),
+    expected_value: input.expected_value === undefined || input.expected_value === '' ? null : Number(input.expected_value),
+    quoted_amount: input.quoted_amount === undefined || input.quoted_amount === '' ? null : Number(input.quoted_amount),
+    lost_reason: textOrNull(input.lost_reason),
+    internal_notes: textOrNull(input.internal_notes),
     status: defaults.status || input.status || 'pending',
     created_by_admin: input.created_by_admin || defaults.created_by_admin || null
   };
