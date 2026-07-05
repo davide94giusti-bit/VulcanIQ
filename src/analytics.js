@@ -365,12 +365,9 @@ export function getAnalyticsIdentitySnapshot(section = '') {
 }
 
 async function directSupabaseFallback(payload) {
-  if (!isSupabaseConfigured || !supabase) return false;
-
-  // Keep session writes best-effort. A duplicate/session policy issue must not stop
-  // the critical event row from being inserted.
-  if (payload.is_new_session || payload.event_name === 'session_start') {
-    try {
+  if (!isSupabaseConfigured || !supabase) return;
+  try {
+    if (payload.is_new_session || payload.event_name === 'session_start') {
       await supabase.from('analytics_sessions').insert({
         session_id: payload.session_id,
         visitor_id: payload.visitor_id,
@@ -387,13 +384,8 @@ async function directSupabaseFallback(payload) {
         browser: payload.browser || null,
         operating_system: payload.operating_system || null
       });
-    } catch {
-      // Ignore session insert failures; the event itself is more important.
     }
-  }
-
-  try {
-    const { error } = await supabase.from('analytics_events').insert({
+    await supabase.from('analytics_events').insert({
       event_name: payload.event_name,
       session_id: payload.session_id,
       visitor_id: payload.visitor_id,
@@ -408,10 +400,8 @@ async function directSupabaseFallback(payload) {
       operating_system: payload.operating_system || null,
       metadata: payload.metadata || {}
     });
-    return !error;
   } catch {
     // Analytics must never affect public browsing.
-    return false;
   }
 }
 
@@ -426,14 +416,9 @@ function sendWithBeacon(endpoint, payload) {
 }
 
 async function sendPayload(payload, options = {}) {
-  if (options.transport === 'direct' || options.transport === 'direct_first') {
-    const directInserted = await directSupabaseFallback(payload);
-    if (directInserted || options.transport === 'direct') return directInserted;
-  }
-
   if (options.transport === 'beacon') {
     const sent = EVENT_ENDPOINTS.some((endpoint) => sendWithBeacon(endpoint, payload));
-    if (sent) return true;
+    if (sent) return;
   }
   for (const endpoint of EVENT_ENDPOINTS) {
     try {
@@ -443,12 +428,12 @@ async function sendPayload(payload, options = {}) {
         body: JSON.stringify(payload),
         keepalive: Boolean(options.keepalive || payload.event_name.startsWith('session_'))
       });
-      if (response.ok || response.status === 204) return true;
+      if (response.ok || response.status === 204) return;
     } catch {
       // Try the next endpoint, then direct Supabase fallback.
     }
   }
-  return directSupabaseFallback(payload);
+  await directSupabaseFallback(payload);
 }
 
 export async function trackEvent(eventName, metadata = {}, options = {}) {
@@ -551,7 +536,7 @@ export async function trackBookingSubmitAttempt(experience, adults, children, me
     source: 'booking_form'
   };
   await Promise.allSettled([
-    trackEvent('booking_form_submit_attempt', base, { dedupe: false, transport: 'direct_first' }),
+    trackEvent('booking_form_submit_attempt', base, { dedupe: false }),
     trackEvent('booking_submit_attempt', base, { dedupe: false })
   ]);
 }
@@ -578,8 +563,8 @@ export async function trackBookingSubmitSuccess(experience, adults, children, me
     source: 'booking_form'
   };
   await Promise.allSettled([
-    trackEvent('booking_form_submit_success', base, { dedupe: false, transport: 'direct_first' }),
-    trackEvent('booking_request_created', base, { dedupe: false, transport: 'direct_first' }),
+    trackEvent('booking_form_submit_success', base, { dedupe: false }),
+    trackEvent('booking_request_created', base, { dedupe: false }),
     trackEvent('booking_submit_success', base, { dedupe: false }),
     trackEvent('booking_submit', base, { dedupe: false })
   ]);

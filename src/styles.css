@@ -11614,62 +11614,62 @@ body.modal-scroll-lock {
   }
 }
 
-/* 20260705 contrast and analytics follow-up patch */
+/* 20260705 follow-up: force dark-header button contrast and admin dropdown contrast */
+.site-header .nav-toggle,
+.site-header .nav-toggle:hover,
+.site-header .nav-toggle:focus-visible,
+.site-header .nav-toggle:active,
 .site-header .language-toggle,
-.site-header .desktop-language-toggle,
-.mobile-language-switch {
-  color: #fff !important;
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.22);
-}
-
 .site-header .language-toggle:hover,
 .site-header .language-toggle:focus-visible,
-.site-header .desktop-language-toggle:hover,
-.site-header .desktop-language-toggle:focus-visible,
+.site-header .language-toggle:active,
+.site-header .mobile-language-switch,
+.site-header .mobile-language-switch:hover,
+.site-header .mobile-language-switch:focus-visible,
+.site-header .mobile-language-switch:active,
+.mobile-language-switch,
 .mobile-language-switch:hover,
-.mobile-language-switch:focus-visible {
+.mobile-language-switch:focus-visible,
+.mobile-language-switch:active {
   color: #fff !important;
-  background: rgba(240, 107, 79, 0.32);
-  border-color: rgba(240, 107, 79, 0.48);
-  outline: none;
+  -webkit-text-fill-color: #fff !important;
 }
 
+.site-header .nav-toggle *,
+.site-header .language-toggle *,
+.site-header .mobile-language-switch *,
+.mobile-language-switch * {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+
+.admin-menu-trigger,
+.admin-menu-trigger:hover,
+.admin-menu-trigger:focus-visible,
+.admin-menu-trigger:active,
 .admin-menu-current,
-.admin-menu-current strong,
-.admin-menu-current b {
+.admin-menu-current span,
+.admin-menu-group-title,
+.admin-menu-item,
+.admin-menu-item:hover,
+.admin-menu-item:focus-visible,
+.admin-menu-item:active,
+.admin-menu-item-active,
+.admin-menu-item-active:hover,
+.admin-menu-item-active:focus-visible {
   color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
 }
 
-.admin-menu-current span {
-  color: rgba(255, 255, 255, 0.66) !important;
+.admin-menu-item:hover,
+.admin-menu-item:focus-visible,
+.admin-menu-item-active {
+  background: rgba(240, 107, 79, 0.34) !important;
+  border-color: rgba(240, 107, 79, 0.58) !important;
 }
 
 .admin-menu-trigger:hover,
-.admin-menu-trigger:focus-visible,
-.admin-menu-item:hover,
-.admin-menu-item:focus-visible,
-.admin-menu-item-active,
-.admin-menu-item-active:hover,
-.admin-menu-item-active:focus-visible,
-.admin-nav button.active,
-.admin-nav button:hover,
-.admin-nav a:hover,
-.admin-userbox button:hover,
-.admin-mobile-nav:hover,
-.admin-mobile-nav:focus-visible {
-  color: #fff !important;
-  background: rgba(240, 107, 79, 0.36);
-  border-color: rgba(240, 107, 79, 0.58);
-  outline: none;
-}
-
-.admin-menu-item:hover *,
-.admin-menu-item:focus-visible *,
-.admin-menu-item-active *,
-.admin-nav button.active *,
-.admin-nav button:hover *,
-.admin-nav a:hover *,
-.admin-userbox button:hover * {
-  color: #fff !important;
+.admin-menu-trigger:focus-visible {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.26) !important;
 }

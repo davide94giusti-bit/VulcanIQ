@@ -8904,8 +8904,21 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   const requestsMatchedByLegacyHeuristic = websiteFormRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'matched_by_legacy_heuristic').length;
   const requestsCreatedEventOnly = websiteFormRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'created_event_without_submit_success').length;
   const requestsWithTrackedSubmit = requestsMatchedByBookingRequestId + requestsMatchedByJourneyId;
-  const requestsWithoutTrackedSubmit = websiteFormRequestTrackingIntegrity.filter((row) => ['missing_submit_tracking', 'legacy_missing_tracking', 'created_event_without_submit_success', 'matched_by_legacy_heuristic'].includes(row.tracking_integrity_status)).length;
-  const legacyIncompleteRequests = websiteFormRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'legacy_missing_tracking').length;
+  const websiteSubmitGapStatuses = ['missing_submit_tracking', 'legacy_missing_tracking', 'created_event_without_submit_success', 'matched_by_legacy_heuristic'];
+  const websiteSubmitTrackingFixCutoffMs = Date.parse('2026-07-05T07:45:00.000Z');
+  const isPostSubmitTrackingFixRequest = (row) => {
+    const time = Date.parse(row?.created_at || '');
+    return Number.isFinite(time) && time >= websiteSubmitTrackingFixCutoffMs;
+  };
+  const requestsWithoutTrackedSubmit = websiteFormRequestTrackingIntegrity.filter((row) => websiteSubmitGapStatuses.includes(row.tracking_integrity_status)).length;
+  const postFixRequestsWithoutTrackedSubmit = websiteFormRequestTrackingIntegrity.filter((row) => websiteSubmitGapStatuses.includes(row.tracking_integrity_status) && isPostSubmitTrackingFixRequest(row)).length;
+  const historicalRequestsWithoutTrackedSubmit = Math.max(0, requestsWithoutTrackedSubmit - postFixRequestsWithoutTrackedSubmit);
+  const legacyIncompleteRequests = websiteFormRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'legacy_missing_tracking' || (websiteSubmitGapStatuses.includes(row.tracking_integrity_status) && !isPostSubmitTrackingFixRequest(row))).length;
+  const websiteSubmitGapDetail = requestsWithoutTrackedSubmit
+    ? postFixRequestsWithoutTrackedSubmit
+      ? trackingIncompleteLabel(lang)
+      : adminCopy(lang, 'Solo storico precedente alla correzione: non viene ricostruito artificialmente.', 'Historical pre-fix data only: not backfilled artificially.')
+    : '—';
   const bookingCodeRequestsWithRedeemSuccess = bookingCodeRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'booking_code_redeem_success').length;
   const bookingCodeRequestsWithoutRedeemSuccess = bookingCodeRequestTrackingIntegrity.filter((row) => ['booking_code_missing_redeem_success', 'booking_code_legacy_untracked'].includes(row.tracking_integrity_status)).length;
 
@@ -8914,7 +8927,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     { check: adminCopy(lang, 'Richieste con codice create', 'Created booking-code requests'), count: bookingCodeRequests, detail: adminCopy(lang, 'Tracciate separatamente dal funnel del modulo pubblico.', 'Tracked separately from the public form funnel.') },
     { check: adminCopy(lang, 'Richieste admin/manuali create', 'Created admin/manual requests'), count: adminManualRequestRows.length, detail: adminCopy(lang, 'Escluse dal funnel pubblico sito.', 'Excluded from the public website funnel.') },
     { check: adminCopy(lang, 'Richieste sito con submit_success', 'Website requests with tracked submit_success'), count: requestsWithTrackedSubmit, detail: adminCopy(lang, 'Conta solo match puliti tramite booking_request_id o booking_journey_id con submit_success.', 'Counts only clean booking_request_id or booking_journey_id matches with submit_success.') },
-    { check: adminCopy(lang, 'Richieste sito senza submit_success', 'Website form requests without tracked submit_success'), count: requestsWithoutTrackedSubmit, detail: requestsWithoutTrackedSubmit ? trackingIncompleteLabel(lang) : '—' },
+    { check: adminCopy(lang, 'Richieste sito senza submit_success', 'Website form requests without tracked submit_success'), count: requestsWithoutTrackedSubmit, detail: websiteSubmitGapDetail },
     { check: adminCopy(lang, 'Richieste sito matchate tramite journey id', 'Website requests matched by journey id'), count: requestsMatchedByJourneyId, detail: adminCopy(lang, 'Match tramite booking_requests.analytics_journey_id = analytics_events.metadata.booking_journey_id.', 'Match via booking_requests.analytics_journey_id = analytics_events.metadata.booking_journey_id.') },
     { check: adminCopy(lang, 'Richieste sito matchate tramite booking_request_id', 'Website requests matched by booking_request_id'), count: requestsMatchedByBookingRequestId, detail: adminCopy(lang, 'Match tramite analytics_events.metadata.booking_request_id.', 'Match via analytics_events.metadata.booking_request_id.') },
     { check: adminCopy(lang, 'Richieste sito matchate solo da euristica legacy', 'Website requests matched only by legacy heuristic'), count: requestsMatchedByLegacyHeuristic, detail: requestsMatchedByLegacyHeuristic ? adminCopy(lang, 'Warning: non contano come invio tracciato correttamente.', 'Warning: these do not count as properly tracked submits.') : '—' },
@@ -8934,15 +8947,15 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   function addWarning(type, message, helper = '', detail = '') {
     warnings.push({ type, message, helper, detail });
   }
-  if (websiteRequests > 0 && requestsWithTrackedSubmit === 0 && requestsWithoutTrackedSubmit > 0) {
+  if (websiteRequests > 0 && postFixRequestsWithoutTrackedSubmit > 0) {
     addWarning(
       'critical',
       adminCopy(lang, 'Il tracciamento del modulo sito è incompleto.', 'Website form tracking is incomplete.'),
-      adminCopy(lang, `${websiteRequests} richieste sito create, ${submitSuccesses} eventi submit_success tracciati.`, `${websiteRequests} website requests created, ${submitSuccesses} tracked submit_success events.`),
+      adminCopy(lang, `${postFixRequestsWithoutTrackedSubmit} nuove richieste sito senza submit_success tracciato.`, `${postFixRequestsWithoutTrackedSubmit} new website requests without tracked submit_success.`),
       adminCopy(
         lang,
-        'Sono state create richieste dal sito, ma non è stato registrato un evento submit_success corrispondente. Significa che la richiesta è stata salvata nel database, ma il funnel analytics non ha registrato correttamente il passaggio finale. Testare il modulo pubblico e verificare che booking_form_submit_attempt, booking_form_submit_success e booking_request_created vengano salvati con lo stesso booking_journey_id o booking_request_id.',
-        'Website booking requests were created, but no matching submit_success event was recorded. This means the database saved the request, but the analytics funnel did not capture the final submission step. Test the public form and verify booking_form_submit_attempt, booking_form_submit_success, and booking_request_created are written with the same booking_journey_id or booking_request_id.'
+        'Sono state create nuove richieste dal sito dopo la correzione del tracciamento, ma manca ancora un evento submit_success corrispondente. Testare il modulo pubblico e verificare che booking_form_submit_attempt, booking_form_submit_success e booking_request_created vengano salvati con lo stesso booking_journey_id o booking_request_id.',
+        'New website requests were created after the tracking fix, but a matching submit_success event is still missing. Test the public form and verify booking_form_submit_attempt, booking_form_submit_success, and booking_request_created are written with the same booking_journey_id or booking_request_id.'
       )
     );
   }
