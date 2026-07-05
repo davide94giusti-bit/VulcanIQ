@@ -11613,3 +11613,63 @@ body.modal-scroll-lock {
     border-radius: 22px;
   }
 }
+
+/* 20260705 contrast and analytics follow-up patch */
+.site-header .language-toggle,
+.site-header .desktop-language-toggle,
+.mobile-language-switch {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.site-header .language-toggle:hover,
+.site-header .language-toggle:focus-visible,
+.site-header .desktop-language-toggle:hover,
+.site-header .desktop-language-toggle:focus-visible,
+.mobile-language-switch:hover,
+.mobile-language-switch:focus-visible {
+  color: #fff !important;
+  background: rgba(240, 107, 79, 0.32);
+  border-color: rgba(240, 107, 79, 0.48);
+  outline: none;
+}
+
+.admin-menu-current,
+.admin-menu-current strong,
+.admin-menu-current b {
+  color: #fff !important;
+}
+
+.admin-menu-current span {
+  color: rgba(255, 255, 255, 0.66) !important;
+}
+
+.admin-menu-trigger:hover,
+.admin-menu-trigger:focus-visible,
+.admin-menu-item:hover,
+.admin-menu-item:focus-visible,
+.admin-menu-item-active,
+.admin-menu-item-active:hover,
+.admin-menu-item-active:focus-visible,
+.admin-nav button.active,
+.admin-nav button:hover,
+.admin-nav a:hover,
+.admin-userbox button:hover,
+.admin-mobile-nav:hover,
+.admin-mobile-nav:focus-visible {
+  color: #fff !important;
+  background: rgba(240, 107, 79, 0.36);
+  border-color: rgba(240, 107, 79, 0.58);
+  outline: none;
+}
+
+.admin-menu-item:hover *,
+.admin-menu-item:focus-visible *,
+.admin-menu-item-active *,
+.admin-nav button.active *,
+.admin-nav button:hover *,
+.admin-nav a:hover *,
+.admin-userbox button:hover * {
+  color: #fff !important;
+}

@@ -178,6 +178,9 @@ export async function onRequestPost(context) {
 
     return json(204);
   } catch (error) {
-    return json(204);
+    console.error('vulcanIQ analytics event write failed', {
+      message: String(error?.message || error || 'unknown').slice(0, 220)
+    });
+    return json(502, { ok: false, error: 'analytics_write_failed' });
   }
 }
