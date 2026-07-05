@@ -269,8 +269,9 @@ export function backupErrorMessage(language, code) {
     case 'github_backup_not_configured':
       return localized(language, 'Endpoint backup non configurato.', 'Backup endpoint is not configured.');
     case 'no_successful_backup_runs':
+      return localized(language, 'Nessun backup completato trovato. Crea prima un backup.', 'No completed backup found. Create a backup first.');
     case 'no_backup_artifacts':
-      return localized(language, 'Nessun backup scaricabile trovato. Crea prima un backup.', 'No downloadable backup found. Create a backup first.');
+      return localized(language, 'Nessuno ZIP backup scaricabile trovato per l’ultimo workflow.', 'No downloadable backup ZIP found for the latest workflow.');
     case 'latest_artifact_expired':
       return localized(language, 'L\'ultimo artifact backup è scaduto. Crea un nuovo backup.', 'The latest backup artifact has expired. Create a new backup.');
     case 'github_access_denied':

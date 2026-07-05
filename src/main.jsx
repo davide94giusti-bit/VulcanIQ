@@ -8931,26 +8931,55 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   ];
 
   const warnings = [];
-  function addWarning(type, message, helper = '') {
-    warnings.push({ type, message, helper });
+  function addWarning(type, message, helper = '', detail = '') {
+    warnings.push({ type, message, helper, detail });
   }
   if (websiteRequests > 0 && requestsWithTrackedSubmit === 0 && requestsWithoutTrackedSubmit > 0) {
-    addWarning('critical', adminCopy(lang, 'Possibile problema di tracciamento del modulo sito: esistono richieste dal sito, ma nessun evento submit_success corrispondente è stato registrato.', 'Possible website form tracking issue: website requests exist, but no matching submit_success event was recorded.'));
+    addWarning(
+      'critical',
+      adminCopy(lang, 'Il tracciamento del modulo sito è incompleto.', 'Website form tracking is incomplete.'),
+      adminCopy(lang, `${websiteRequests} richieste sito create, ${submitSuccesses} eventi submit_success tracciati.`, `${websiteRequests} website requests created, ${submitSuccesses} tracked submit_success events.`),
+      adminCopy(
+        lang,
+        'Sono state create richieste dal sito, ma non è stato registrato un evento submit_success corrispondente. Significa che la richiesta è stata salvata nel database, ma il funnel analytics non ha registrato correttamente il passaggio finale. Testare il modulo pubblico e verificare che booking_form_submit_attempt, booking_form_submit_success e booking_request_created vengano salvati con lo stesso booking_journey_id o booking_request_id.',
+        'Website booking requests were created, but no matching submit_success event was recorded. This means the database saved the request, but the analytics funnel did not capture the final submission step. Test the public form and verify booking_form_submit_attempt, booking_form_submit_success, and booking_request_created are written with the same booking_journey_id or booking_request_id.'
+      )
+    );
   }
   if (bookingCodeRequests > 0 && websiteRequests === 0) {
-    addWarning('diagnostic', adminCopy(lang, 'Le richieste con codice prenotazione sono tracciate separatamente dal funnel del modulo pubblico.', 'Booking-code requests are tracked separately from the public form funnel.'));
+    addWarning(
+      'diagnostic',
+      adminCopy(lang, 'Le richieste con codice sono separate dal funnel del modulo pubblico.', 'Booking-code requests are separate from the public form funnel.'),
+      adminCopy(lang, `${bookingCodeRequests} richieste con codice create.`, `${bookingCodeRequests} booking-code requests created.`),
+      adminCopy(lang, 'Le richieste generate tramite codice prenotazione devono essere diagnosticate nel funnel booking-code, non come errori del modulo pubblico.', 'Requests created through booking codes should be diagnosed in the booking-code funnel, not as public form errors.')
+    );
   }
   if (visitors < 50) {
-    addWarning('diagnostic', adminCopy(lang, 'Campione dati ridotto: usa questi numeri come diagnostica, non come prova marketing.', 'Small data sample: use these numbers as diagnostics, not marketing proof.'));
+    addWarning(
+      'diagnostic',
+      adminCopy(lang, 'Campione dati ancora piccolo.', 'Small sample size.'),
+      adminCopy(lang, `${visitors} visitatori nel periodo.`, `${visitors} visitors in this period.`),
+      adminCopy(lang, 'Usa questi numeri per diagnosi tecnica e controlli UX, non ancora per decidere quale canale, campagna o esperienza converte meglio.', 'Use these numbers for technical diagnosis and UX checks only. Do not use them yet to decide which channel, campaign, or experience converts best.')
+    );
   }
-  if (requestsWithoutTrackedFormOpen.length) addWarning('diagnostic', adminCopy(lang, 'Alcune richieste sito non hanno una apertura modulo tracciata nella stessa esperienza/tipologia.', 'Some website requests have no tracked form open for the same experience/request type.'));
-  if (formOpenMissingCtaCount) addWarning('diagnostic', adminCopy(lang, 'Alcune aperture modulo non hanno cta_location.', 'Some form opens have no cta_location.'));
-  if (internalEventsExcluded || internalSessionsExcluded) addWarning('diagnostic', adminCopy(lang, 'Traffico interno/admin escluso dalle metriche pubbliche.', 'Internal/admin traffic was excluded from public metrics.'));
+  if (requestsWithoutTrackedFormOpen.length) addWarning('diagnostic', adminCopy(lang, 'Alcune richieste sito non hanno una apertura modulo tracciata.', 'Some website requests have no tracked form open.'), '', adminCopy(lang, 'Controllare se i CTA interessati chiamano correttamente booking_form_open con esperienza e tipologia richiesta.', 'Check whether the affected CTAs correctly emit booking_form_open with experience and request type.'));
+  if (formOpenMissingCtaCount) addWarning('diagnostic', adminCopy(lang, 'Alcune aperture modulo non hanno cta_location.', 'Some form opens have no cta_location.'), '', adminCopy(lang, 'Aggiornare i CTA che non inviano cta_location per rendere leggibili i percorsi.', 'Update CTAs that do not send cta_location so paths are readable.'));
+  if (internalEventsExcluded || internalSessionsExcluded) addWarning('diagnostic', adminCopy(lang, 'Traffico interno escluso dalle metriche pubbliche.', 'Internal traffic excluded from public metrics.'), '', adminCopy(lang, 'Admin, API, CMS/editor, finanze e dashboard analytics restano esclusi dai conteggi pubblici.', 'Admin, API, CMS/editor, finance, and analytics dashboard rows remain excluded from public metrics.'));
   if (directTrafficShare > 0.8) {
-    addWarning('attribution', adminCopy(lang, 'Attribuzione limitata: gran parte del traffico risulta Diretto. Usa link UTM per Instagram, WhatsApp, partner e Google Business Profile.', 'Limited attribution: most traffic is Direct. Use UTM links for Instagram, WhatsApp, partners, and Google Business Profile.'), '?utm_source=instagram&utm_medium=social&utm_campaign=july_2026 · ?utm_source=whatsapp&utm_medium=share&utm_campaign=fixed_excursions · ?utm_source=google_business_profile&utm_medium=organic&utm_campaign=profile');
+    addWarning(
+      'attribution',
+      adminCopy(lang, 'Attribuzione ancora limitata.', 'Attribution is still limited.'),
+      adminCopy(lang, 'Gran parte del traffico risulta Direct.', 'Most traffic is still classified as Direct.'),
+      adminCopy(lang, 'Gran parte del traffico risulta Direct, quindi la performance dei canali non è ancora affidabile. Usa link UTM in modo coerente per bio Instagram, storie Instagram, condivisioni WhatsApp, partner e Profilo Google Business.', 'Most traffic is still classified as Direct, so source performance is not reliable yet. Use UTM links consistently for Instagram bio, Instagram stories, WhatsApp shares, partner links, and Google Business Profile.')
+    );
   }
   if (mobileShare > 0.7) {
-    addWarning('ux', adminCopy(lang, 'Traffico prevalentemente mobile: testa l’intero percorso richiesta su iPhone Safari e Android Chrome dopo ogni release.', 'Mobile-heavy traffic: test the full request journey on iPhone Safari and Android Chrome after each release.'));
+    addWarning(
+      'ux',
+      adminCopy(lang, 'Priorità ai test mobile.', 'Mobile journey needs priority testing.'),
+      adminCopy(lang, 'La maggior parte dell’attività arriva da mobile.', 'Most activity is mobile.'),
+      adminCopy(lang, 'La maggior parte dell’attività arriva da mobile. Dopo ogni release, testa il percorso completo su iPhone Safari e Android Chrome: apertura escursione, selezione data, avvio modulo, modifica campi, invio richiesta, apertura WhatsApp e ritorno al sito.', 'Most activity is mobile. After each release, test the complete request path on iPhone Safari and Android Chrome: open excursion, select date, start form, edit fields, submit request, open WhatsApp, and return to the site.')
+    );
   }
 
 
@@ -9054,9 +9083,9 @@ function AnalyticsRowList({ rows, total, empty, helperLabel }) {
   );
 }
 
-function AnalyticsWarningList({ warnings = [], lang = 'it' }) {
+function AnalyticsWarningList({ warnings = [], lang = 'it', onOpenDetails }) {
   if (!warnings.length) return null;
-  const normalized = warnings.map((warning) => (typeof warning === 'string' ? { type: 'diagnostic', message: warning, helper: '' } : warning));
+  const normalized = warnings.map((warning) => (typeof warning === 'string' ? { type: 'diagnostic', message: warning, helper: '', detail: '' } : warning));
   const groups = [
     ['critical', adminCopy(lang, 'Problemi critici di tracciamento', 'Critical tracking issues')],
     ['diagnostic', adminCopy(lang, 'Note diagnostiche', 'Diagnostic notes')],
@@ -9080,6 +9109,144 @@ function AnalyticsWarningList({ warnings = [], lang = 'it' }) {
           </section>
         );
       })}
+      {onOpenDetails && (
+        <div className="analytics-warning-actions">
+          <button className="button secondary analytics-details-button" type="button" onClick={onOpenDetails}>
+            {adminCopy(lang, 'Dettagli analytics', 'Analytics details')}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AnalyticsDetailsModal({ lang = 'it', model, onClose }) {
+  useBodyScrollLock(true);
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose?.();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  const warnings = Array.isArray(model?.warnings) ? model.warnings : [];
+  const utmExamples = [
+    '?utm_source=instagram&utm_medium=social&utm_campaign=july_2026',
+    '?utm_source=instagram&utm_medium=story&utm_campaign=summer_2026',
+    '?utm_source=whatsapp&utm_medium=share&utm_campaign=fixed_excursions',
+    '?utm_source=google_business_profile&utm_medium=organic&utm_campaign=profile'
+  ];
+
+  return (
+    <div className="modal-backdrop analytics-details-backdrop" role="presentation" onClick={onClose}>
+      <section className="admin-modal full-screen-admin-modal analytics-details-modal" role="dialog" aria-modal="true" aria-labelledby="analyticsDetailsTitle" onClick={(event) => event.stopPropagation()}>
+        <div className="admin-modal-header analytics-details-header">
+          <div>
+            <span className="kicker">vulcanIQ</span>
+            <h2 id="analyticsDetailsTitle">{adminCopy(lang, 'Dettagli analytics', 'Analytics details')}</h2>
+            <p>{adminCopy(lang, 'Diagnostica tecnica del funnel, qualità dati, attribuzione e percorso mobile. Usare questi dettagli per correggere il tracciamento, non come prova marketing.', 'Technical diagnostics for funnel integrity, data quality, attribution, and mobile paths. Use these details to fix tracking, not as marketing proof.')}</p>
+          </div>
+          <button className="modal-close-button" type="button" onClick={onClose}>{adminCopy(lang, 'Chiudi', 'Close')}</button>
+        </div>
+
+        <div className="admin-summary-grid analytics-mini-summary-grid analytics-details-summary">
+          <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model?.websiteRequests ?? 0} />
+          <SummaryCard label={adminCopy(lang, 'Submit success tracciati', 'Tracked submit successes')} value={model?.submitSuccesses ?? 0} />
+          <SummaryCard label={adminCopy(lang, 'Richieste con codice', 'Booking-code requests')} value={model?.bookingCodeRequests ?? 0} />
+          <SummaryCard label={adminCopy(lang, 'Riscatti codice riusciti', 'Booking-code redeem successes')} value={model?.bookingCodeRedeemSuccesses ?? 0} />
+        </div>
+
+        {warnings.length > 0 && (
+          <AnalyticsSubsection title={adminCopy(lang, 'Spiegazione degli avvisi', 'Warning explanations')}>
+            <div className="analytics-detail-warning-grid">
+              {warnings.map((warning, index) => (
+                <article className={`analytics-detail-warning-card ${warning.type || 'diagnostic'}`} key={`${warning.type || 'warning'}-${index}`}>
+                  <h4>{warning.message}</h4>
+                  {warning.helper && <p className="small-note">{warning.helper}</p>}
+                  {warning.detail && <p>{warning.detail}</p>}
+                </article>
+              ))}
+            </div>
+          </AnalyticsSubsection>
+        )}
+
+        <AnalyticsSubsection title={adminCopy(lang, 'Esempi UTM da usare', 'UTM examples to use')}>
+          <div className="analytics-utm-list">
+            {utmExamples.map((example) => <code key={example}>{example}</code>)}
+          </div>
+        </AnalyticsSubsection>
+
+        <AnalyticsSubsection title={adminCopy(lang, 'Qualità dati', 'Data quality')}>
+          <AnalyticsTable
+            columns={[
+              { key: 'check', label: adminCopy(lang, 'Controllo', 'Check') },
+              { key: 'count', label: adminCopy(lang, 'Conteggio', 'Count') },
+              { key: 'detail', label: adminCopy(lang, 'Dettaglio', 'Detail') }
+            ]}
+            rows={model?.dataQualityRows || []}
+            empty={adminCopy(lang, 'Nessun dato disponibile.', 'No data available.')}
+          />
+        </AnalyticsSubsection>
+
+        <AnalyticsSubsection title={adminCopy(lang, 'Diagnostica funnel', 'Funnel diagnostics')}>
+          <AnalyticsTable
+            columns={[
+              { key: 'step', label: adminCopy(lang, 'Step', 'Step') },
+              { key: 'count', label: adminCopy(lang, 'Conteggio', 'Count') },
+              { key: 'dropoff', label: 'Drop-off' }
+            ]}
+            rows={model?.funnelDiagnostics || []}
+            empty={adminCopy(lang, 'Nessun dato disponibile.', 'No data available.')}
+          />
+        </AnalyticsSubsection>
+
+        <AnalyticsSubsection title={adminCopy(lang, 'Integrità richieste', 'Request tracking integrity')}>
+          <AnalyticsTable
+            columns={[
+              { key: 'created_at', label: adminCopy(lang, 'Creata il', 'Created at') },
+              { key: 'request_type', label: adminCopy(lang, 'Tipo', 'Type') },
+              { key: 'experience_id', label: adminCopy(lang, 'Esperienza', 'Experience') },
+              { key: 'source', label: adminCopy(lang, 'Sorgente', 'Source') },
+              { key: 'matched_submit_success', label: adminCopy(lang, 'Submit success', 'Submit success') },
+              { key: 'matched_booking_code_redeem_success', label: adminCopy(lang, 'Riscatto codice', 'Code redeem') },
+              { key: 'tracking_integrity_status', label: adminCopy(lang, 'Stato', 'Status') }
+            ]}
+            rows={(model?.requestTrackingIntegrity || []).slice(0, 50)}
+            empty={adminCopy(lang, 'Nessuna richiesta disponibile.', 'No requests available.')}
+          />
+        </AnalyticsSubsection>
+
+        <AnalyticsSubsection title={adminCopy(lang, 'Funnel mobile', 'Mobile funnel')}>
+          <AnalyticsTable
+            columns={[
+              { key: 'device_browser', label: adminCopy(lang, 'Dispositivo/browser', 'Device/browser') },
+              { key: 'page_views', label: adminCopy(lang, 'Page views', 'Page views') },
+              { key: 'form_opens', label: adminCopy(lang, 'Aperture modulo', 'Form opens') },
+              { key: 'field_starts', label: adminCopy(lang, 'Avvio campi', 'Field starts') },
+              { key: 'submit_attempts', label: adminCopy(lang, 'Tentativi invio', 'Submit attempts') },
+              { key: 'submit_successes', label: adminCopy(lang, 'Invii riusciti', 'Submit successes') },
+              { key: 'whatsapp_clicks', label: 'WhatsApp' },
+              { key: 'phone_clicks', label: adminCopy(lang, 'Telefono', 'Phone') }
+            ]}
+            rows={model?.mobileFunnel || []}
+            empty={adminCopy(lang, 'Nessun dato mobile disponibile.', 'No mobile data available.')}
+          />
+          <p className="small-note analytics-mobile-checklist">{adminCopy(lang, 'Checklist: apri escursione, seleziona data, avvia modulo, modifica campi, invia richiesta, apri WhatsApp e torna al sito su iPhone Safari e Android Chrome.', 'Checklist: open excursion, select date, start form, edit fields, submit request, open WhatsApp, and return to the site on iPhone Safari and Android Chrome.')}</p>
+        </AnalyticsSubsection>
+
+        <AnalyticsSubsection title={adminCopy(lang, 'Qualità attribuzione traffico', 'Traffic attribution quality')}>
+          <AnalyticsTable
+            columns={[
+              { key: 'source', label: adminCopy(lang, 'Sorgente', 'Source') },
+              { key: 'count', label: adminCopy(lang, 'Conteggio', 'Count') },
+              { key: 'notes', label: adminCopy(lang, 'Note', 'Notes') }
+            ]}
+            rows={model?.trafficAttributionQuality || []}
+            empty={adminCopy(lang, 'Nessun dato attribuzione disponibile.', 'No attribution data available.')}
+          />
+        </AnalyticsSubsection>
+      </section>
     </div>
   );
 }
@@ -9792,17 +9959,50 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
   }
 
   const latestBackup = statusState.latestBackup;
-  const latestBackupLabel = statusState.loading
-    ? adminCopy(lang, 'Caricamento...', 'Loading...')
-    : latestBackup?.createdAt
-      ? <BackupTimeValue value={latestBackup.createdAt} lang={lang} />
-      : adminCopy(lang, 'Nessun backup', 'No backup');
-  const latestBackupHelper = latestBackup
-    ? <BackupSummaryHelper latestBackup={latestBackup} lang={lang} />
-    : (statusState.message || adminCopy(lang, 'Nessun backup scaricabile trovato.', 'No downloadable backup found.'));
-  const lastStatusLabel = statusState.configured ? adminCopy(lang, 'Pronto', 'Ready') : adminCopy(lang, 'Da configurare', 'Needs configuration');
   const workflowRun = statusState.workflowRun;
   const workflowIsActive = workflowRun && ['queued', 'in_progress'].includes(workflowRun.status);
+  const workflowCompleted = workflowRun?.status === 'completed';
+  const workflowSucceeded = workflowCompleted && workflowRun?.conclusion === 'success';
+  const workflowFailed = workflowCompleted && workflowRun?.conclusion && workflowRun.conclusion !== 'success';
+  const hasDownloadableBackup = Boolean(latestBackup?.createdAt && latestBackup?.expired !== true);
+  const latestCompletedAt = latestBackup?.createdAt || (workflowSucceeded ? workflowRun?.updatedAt || workflowRun?.createdAt : null);
+  const workflowArtifactMissing = workflowSucceeded && !hasDownloadableBackup;
+
+  const latestBackupLabel = statusState.loading
+    ? adminCopy(lang, 'Caricamento...', 'Loading...')
+    : latestCompletedAt
+      ? <BackupTimeValue value={latestCompletedAt} lang={lang} />
+      : workflowFailed
+        ? adminCopy(lang, 'Backup non riuscito', 'Backup failed')
+        : adminCopy(lang, 'Nessun backup completato', 'No completed backup yet');
+  const latestBackupHelper = hasDownloadableBackup
+    ? <BackupSummaryHelper latestBackup={latestBackup} lang={lang} />
+    : workflowArtifactMissing
+      ? adminCopy(lang, 'L’ultimo workflow di backup è terminato correttamente, ma non è stato trovato uno ZIP scaricabile. L’artifact potrebbe essere scaduto, non caricato o non risolto dall’endpoint di download diretto.', 'The latest backup workflow completed successfully, but no downloadable ZIP artifact was found. The artifact may have expired, may not have been uploaded, or the direct-download lookup may need checking.')
+      : latestBackup?.expired
+        ? adminCopy(lang, 'L’ultimo artifact backup è scaduto. Crea un nuovo backup per abilitarne il download diretto.', 'The latest backup artifact has expired. Create a new backup to enable direct download.')
+        : (statusState.message || adminCopy(lang, 'Crea un backup per generare il primo ZIP scaricabile.', 'Create a backup to generate the first downloadable ZIP.'));
+  const downloadAvailabilityLabel = statusState.loading
+    ? adminCopy(lang, 'Caricamento...', 'Loading...')
+    : hasDownloadableBackup
+      ? adminCopy(lang, 'Disponibile', 'Available')
+      : adminCopy(lang, 'Non disponibile', 'Not available');
+  const downloadAvailabilityHelper = hasDownloadableBackup
+    ? adminCopy(lang, 'Lo ZIP dell’ultimo backup può essere scaricato direttamente da questa pagina.', 'The latest backup ZIP can be downloaded directly from this page.')
+    : workflowArtifactMissing
+      ? adminCopy(lang, 'Il backup risulta completato, ma lo ZIP non è disponibile per il download diretto.', 'The backup appears completed, but the ZIP is not available for direct download.')
+      : adminCopy(lang, 'Nessun artifact scaricabile disponibile.', 'No downloadable artifact available.');
+  const lastStatusLabel = statusState.loading
+    ? adminCopy(lang, 'Caricamento...', 'Loading...')
+    : workflowIsActive
+      ? workflowStatusText(workflowRun, lang)
+      : workflowSucceeded
+        ? adminCopy(lang, 'Completato', 'Completed')
+        : workflowFailed
+          ? adminCopy(lang, 'Fallito', 'Failed')
+          : statusState.configured
+            ? adminCopy(lang, 'Pronto', 'Ready')
+            : adminCopy(lang, 'Da configurare', 'Needs configuration');
   const workflowHelper = workflowRun
     ? <BackupInlineTime label={workflowStatusText(workflowRun, lang)} value={workflowRun.updatedAt || workflowRun.createdAt} lang={lang} />
     : adminCopy(lang, 'Nessuna esecuzione workflow disponibile.', 'No workflow run available.');
@@ -9816,7 +10016,7 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
           <h1>{adminCopy(lang, 'Backup del database', 'Database backup')}</h1>
         </div>
         <div className="backup-header-actions">
-          <button className="button primary" type="button" disabled={actionState.downloadLoading || actionState.createLoading} onClick={handleDownloadBackup}>
+          <button className="button primary" type="button" disabled={actionState.downloadLoading || actionState.createLoading || statusState.loading || !hasDownloadableBackup} onClick={handleDownloadBackup}>
             {actionState.downloadLoading ? adminCopy(lang, 'Download del backup in corso...', 'Downloading backup...') : adminCopy(lang, 'Scarica ultimo backup', 'Download latest backup')}
           </button>
           <button className="button secondary" type="button" disabled={actionState.createLoading || actionState.downloadLoading} onClick={handleCreateBackup}>
@@ -9858,13 +10058,14 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
           <dl className="backup-workflow-grid compact-workflow-grid">
             <div><dt>{adminCopy(lang, 'Backup corrente avviato', 'Current backup started')}</dt><dd><BackupTimeValue value={workflowRun.createdAt || workflowRun.runStartedAt} lang={lang} compact /></dd></div>
             <div><dt>{adminCopy(lang, 'Backup corrente aggiornato', 'Current backup updated')}</dt><dd><BackupTimeValue value={workflowRun.updatedAt} lang={lang} compact /></dd></div>
-            <div><dt>{adminCopy(lang, 'Ultimo backup completato', 'Last completed backup')}</dt><dd>{latestBackup?.createdAt ? <BackupTimeValue value={latestBackup.createdAt} lang={lang} compact /> : adminCopy(lang, 'Nessun backup', 'No backup')}</dd></div>
+            <div><dt>{adminCopy(lang, 'Ultimo backup completato', 'Last completed backup')}</dt><dd>{latestBackup?.createdAt ? <BackupTimeValue value={latestBackup.createdAt} lang={lang} compact /> : adminCopy(lang, 'Nessun backup completato', 'No completed backup yet')}</dd></div>
           </dl>
         </section>
       )}
 
       <div className="admin-summary-grid backup-summary-grid">
         <SummaryCard label={adminCopy(lang, 'Ultimo backup completato', 'Last completed backup')} value={latestBackupLabel} helper={latestBackupHelper} />
+        <SummaryCard label={adminCopy(lang, 'Download backup', 'Backup download')} value={downloadAvailabilityLabel} helper={downloadAvailabilityHelper} />
         <SummaryCard label={adminCopy(lang, 'Ultimo stato', 'Last status')} value={lastStatusLabel} helper={latestBackup?.artifactName || workflowHelper} />
         <SummaryCard label={adminCopy(lang, 'Programmazione backup', 'Backup schedule')} value={backupFrequencyLabel(scheduleDraft.frequency, lang)} helper={backupScheduleSummary(scheduleDraft, lang)} />
         <SummaryCard label={adminCopy(lang, 'Storage incluso', 'Storage included')} value={storageIncludedLabel(latestBackup?.storage, lang)} helper={backupStorageHelper(latestBackup, lang)} />
@@ -10058,6 +10259,7 @@ function analyticsTechnicalError(error) {
 function AdminAnalyticsPage({ lang, adminContent = {} }) {
   const [period, setPeriod] = useState('30d');
   const [state, setState] = useState({ loading: true, error: '', technicalError: '', events: [], sessions: [], bookingRequests: [] });
+  const [analyticsDetailsOpen, setAnalyticsDetailsOpen] = useState(false);
   const range = useMemo(() => analyticsDateRange(period), [period]);
 
   useEffect(() => {
@@ -10123,7 +10325,7 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           {state.events.length >= 10000 && <p className="small-note analytics-limit-note">{adminCopy(lang, 'Risultati limitati ai primi 10.000 eventi del periodo.', 'Results are capped at the first 10,000 events in this period.')}</p>}
 
           <AnalyticsStaticPanel title={<AdminEditableText itemKey="admin.analytics.overview.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Panoramica', 'Overview')} />}>
-            <AnalyticsWarningList warnings={model.warnings} lang={lang} />
+            <AnalyticsWarningList warnings={model.warnings} lang={lang} onOpenDetails={() => setAnalyticsDetailsOpen(true)} />
             <div className="admin-summary-grid analytics-summary-grid">
               <SummaryCard label={adminCopy(lang, 'Visitatori', 'Visitors')} value={model.visitors || '—'} />
               <SummaryCard label={adminCopy(lang, 'Visualizzazioni pagina', 'Page views')} value={model.pageViews} />
@@ -10382,6 +10584,7 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           </AnalyticsPanel>
         </>
       )}
+      {analyticsDetailsOpen && <AnalyticsDetailsModal lang={lang} model={model} onClose={() => setAnalyticsDetailsOpen(false)} />}
     </section>
   );
 }

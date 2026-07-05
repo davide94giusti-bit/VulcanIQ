@@ -11354,3 +11354,262 @@ body.modal-scroll-lock {
   font-weight: 750;
   overflow-wrap: anywhere;
 }
+
+/* 20260705 targeted visual regression, analytics details, and backup-status cleanup */
+.hero,
+.hero .hero-copy,
+.hero .hero-copy *,
+.hero .hero-title.controlled-text,
+.hero .lead.controlled-text,
+.hero-action-guide,
+.hero-action-guide *,
+.trust-card,
+.trust-card *,
+.site-header,
+.site-header .nav-links a,
+.site-header .nav-links button:not(.language-toggle),
+.mobile-sticky-bar,
+.mobile-sticky-bar *,
+.public-footer,
+.public-footer h2,
+.public-footer h3,
+.public-footer p,
+.public-footer a,
+.public-footer .social-links a,
+.public-footer .footer-social-links a,
+.public-footer .social-links a svg,
+.public-footer .footer-social-links a svg {
+  color: #fff;
+}
+
+.admin-header,
+.admin-header *,
+.admin-mobile-nav,
+.admin-nav button,
+.admin-nav a,
+.admin-userbox,
+.admin-userbox * {
+  color: rgba(255,255,255,0.88);
+}
+
+.admin-nav button.active,
+.admin-nav button:hover,
+.admin-nav a:hover,
+.admin-userbox button:hover,
+.admin-mobile-nav:focus,
+.admin-mobile-nav:hover {
+  color: #fff;
+}
+
+.hero .button.secondary,
+.hero .button.secondary .controlled-text,
+.hero-action-code,
+.hero-action-code .controlled-text,
+.contact-actions .pill-action,
+.contact-actions .pill-action *,
+.mobile-sticky-bar a,
+.mobile-sticky-bar a * {
+  color: #fff;
+}
+
+.social-page-links .social-link-card svg,
+.social-links.card-layout .social-link-card svg {
+  color: #fff;
+  fill: currentColor;
+}
+
+.social-page-links .social-link-card svg path,
+.social-links.card-layout .social-link-card svg path,
+.footer-social-links a svg path,
+.public-footer .social-links a svg path {
+  fill: currentColor;
+}
+
+.latest-news-card .etna-news-action-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.latest-news-card .etna-news-action-card .button {
+  width: fit-content;
+  justify-content: center;
+}
+
+.analytics-warning-list.grouped {
+  align-items: stretch;
+}
+
+.analytics-warning-group {
+  border: 1px solid rgba(159, 98, 50, 0.16);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.7);
+  padding: 12px 14px;
+}
+
+.analytics-warning-group.critical {
+  border-color: rgba(240, 107, 79, 0.46);
+  background: rgba(240, 107, 79, 0.10);
+}
+
+.analytics-warning-group h3 {
+  margin: 0 0 8px;
+  color: var(--night);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.analytics-warning-group p {
+  display: grid;
+  gap: 4px;
+  color: var(--ink);
+}
+
+.analytics-warning-group p + p {
+  margin-top: 10px;
+}
+
+.analytics-warning-group small {
+  color: var(--ash);
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.analytics-warning-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.analytics-details-backdrop {
+  z-index: 10000;
+  padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+}
+
+.analytics-details-modal {
+  width: min(1180px, calc(100vw - 28px));
+  max-height: calc(100dvh - 28px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  display: grid;
+  gap: 18px;
+  background: var(--paper);
+}
+
+.analytics-details-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  align-items: flex-start;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.9));
+  border-bottom: 1px solid rgba(10, 20, 34, 0.08);
+  padding-bottom: 16px;
+}
+
+.analytics-details-header h2 {
+  margin: 0 0 6px;
+  color: var(--night);
+  font-size: clamp(2.2rem, 5vw, 4.3rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.analytics-details-header p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--ash);
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.analytics-details-summary {
+  margin: 0;
+}
+
+.analytics-detail-warning-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 12px;
+}
+
+.analytics-detail-warning-card {
+  padding: 16px;
+  border: 1px solid rgba(159, 98, 50, 0.20);
+  border-radius: 20px;
+  background: rgba(255,255,255,0.74);
+}
+
+.analytics-detail-warning-card.critical {
+  border-color: rgba(240, 107, 79, 0.48);
+  background: rgba(240, 107, 79, 0.10);
+}
+
+.analytics-detail-warning-card h4 {
+  margin: 0 0 8px;
+  color: var(--night);
+  font-size: 1.02rem;
+}
+
+.analytics-detail-warning-card p {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.analytics-detail-warning-card p + p {
+  margin-top: 8px;
+}
+
+.analytics-utm-list {
+  display: grid;
+  gap: 8px;
+}
+
+.analytics-utm-list code {
+  display: block;
+  padding: 10px 12px;
+  border: 1px solid rgba(10, 20, 34, 0.10);
+  border-radius: 12px;
+  background: rgba(13, 22, 38, 0.05);
+  color: var(--night);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
+.analytics-mobile-checklist {
+  margin-top: 10px;
+}
+
+.backup-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.backup-page-header .button.primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+  box-shadow: none;
+}
+
+@media (max-width: 680px) {
+  .latest-news-card .etna-news-action-card .button {
+    width: 100%;
+  }
+
+  .analytics-warning-actions,
+  .analytics-details-header {
+    display: grid;
+  }
+
+  .analytics-details-button,
+  .analytics-details-header .modal-close-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .analytics-details-modal {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    border-radius: 22px;
+  }
+}
