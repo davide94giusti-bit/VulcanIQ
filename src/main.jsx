@@ -15,7 +15,7 @@ import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFina
 import { assignPartnerToBookingRequest, calculatePartnerCommission, listPartnerCommissions, listPartnerCommissionSummary, updatePartnerCommissionStatus, upsertPartnerCommissionForSource } from './services/partnerCommissions.js';
 import { listAnalyticsEvents, listAnalyticsSessions } from './services/analyticsService.js';
 import { createDatabaseBackup, downloadLatestDatabaseBackup, getBackupSchedule, getBackupStatus, saveBackupSchedule } from './services/backupService.js';
-import { createGiftCardRequest, listGiftCardRequests, updateGiftCardRequest } from './services/giftCards.js';
+import { createGiftCardRequest, listGiftCardRequests, updateGiftCardRequest, ensureGiftCardReviewCode } from './services/giftCards.js';
 import { createCustomerReferralCode, disableCustomerReferralCode, listCustomerReferralCodes, referralAttributionPayload, referralLink, storeReferralJourney, validateAndRecordReferralClick } from './services/referrals.js';
 import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot, createFormJourney, markFormFieldStarted, markFormActivity, markFormSubmitted, markFormAbandoned, markFormRecoveredViaWhatsApp } from './analytics.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
@@ -2671,6 +2671,29 @@ function GiftCardPage({ lang, siteContent, onClose }) {
   });
   const [state, setState] = useState({ loading: false, error: '', success: '' });
 
+  const todayMinDate = todayIso();
+
+  function sanitizeGiftCardPhone(value) {
+    return String(value || '').replace(/[^\d+\s().-]/g, '');
+  }
+
+  function isValidGiftCardEmail(value) {
+    const clean = String(value || '').trim();
+    if (!clean) return true;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean);
+  }
+
+  function isValidGiftCardPhone(value) {
+    const clean = String(value || '').trim();
+    if (!clean) return true;
+    return clean.replace(/\D/g, '').length >= 7;
+  }
+
+  function isPastGiftCardDate(value) {
+    const clean = String(value || '').trim();
+    return Boolean(clean && clean < todayMinDate);
+  }
+
   const sourceMetadata = { language: lang, source_section: 'gift_card_page', source_cta: 'gift_card_form', form_type: 'gift_card_request' };
   const stepDefinitions = [
     { key: 'buyer', title: lang === 'it' ? 'Chi acquista la Gift Card?' : 'Who is buying the Gift Card?' },
@@ -2703,14 +2726,15 @@ function GiftCardPage({ lang, siteContent, onClose }) {
 
   useEffect(() => {
     const timer = window.setTimeout(() => modalRef.current?.focus?.(), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     function handleKeyDown(event) {
       if (event.key === 'Escape') attemptClose();
     }
     window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => window.removeEventListener('keydown', handleKeyDown);
   });
 
   useEffect(() => {
@@ -2753,17 +2777,18 @@ function GiftCardPage({ lang, siteContent, onClose }) {
   }
 
   function update(field, value) {
+    const nextValue = field === 'buyer_phone' ? sanitizeGiftCardPhone(value) : value;
     setState((current) => ({ ...current, error: '' }));
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => ({ ...current, [field]: nextValue }));
     markFormFieldStarted(journeyRef.current?.journey_id, field, {
       ...sourceMetadata,
       step_index: started ? stepIndex + 1 : 0,
       step_key: field
     });
     markFormActivity(journeyRef.current?.journey_id, {
-      has_selected_experience: field === 'experience_type' ? Boolean(value) : Boolean(form.experience_type),
-      has_selected_date: field === 'preferred_delivery_date' ? Boolean(value) : Boolean(form.preferred_delivery_date),
-      has_budget: field === 'budget' ? Boolean(value) : Boolean(form.budget)
+      has_selected_experience: field === 'experience_type' ? Boolean(nextValue) : Boolean(form.experience_type),
+      has_selected_date: field === 'preferred_delivery_date' ? Boolean(nextValue) : Boolean(form.preferred_delivery_date),
+      has_budget: field === 'budget' ? Boolean(nextValue) : Boolean(form.budget)
     });
   }
 
@@ -2773,6 +2798,8 @@ function GiftCardPage({ lang, siteContent, onClose }) {
       const hasContact = String(form.buyer_email || '').trim() || String(form.buyer_phone || '').trim();
       if (!String(form.buyer_name || '').trim()) return lang === 'it' ? 'Inserisci il nome di chi acquista.' : 'Enter the buyer name.';
       if (!hasContact) return lang === 'it' ? 'Inserisci almeno email o telefono/WhatsApp.' : 'Enter at least an email or phone/WhatsApp.';
+      if (!isValidGiftCardEmail(form.buyer_email)) return lang === 'it' ? 'Inserisci un indirizzo email valido.' : 'Enter a valid email address.';
+      if (!isValidGiftCardPhone(form.buyer_phone)) return lang === 'it' ? 'Inserisci un numero WhatsApp / telefono valido.' : 'Enter a valid WhatsApp / phone number.';
     }
     if (key === 'recipient' && !String(form.recipient_name || '').trim()) {
       return lang === 'it' ? 'Inserisci il nome del destinatario.' : 'Enter the recipient name.';
@@ -2782,6 +2809,9 @@ function GiftCardPage({ lang, siteContent, onClose }) {
     }
     if (key === 'budget' && String(form.budget || '').trim() && parseMoneyAmount(form.budget) <= 0) {
       return lang === 'it' ? 'Inserisci un budget valido oppure lascia il campo vuoto.' : 'Enter a valid budget or leave the field empty.';
+    }
+    if (key === 'delivery' && isPastGiftCardDate(form.preferred_delivery_date)) {
+      return lang === 'it' ? 'Seleziona una data di oggi o futura.' : 'Select today or a future date.';
     }
     return '';
   }
@@ -2899,8 +2929,8 @@ function GiftCardPage({ lang, siteContent, onClose }) {
         return (
           <div className="admin-form-grid gift-card-step-grid">
             <label className="admin-field full"><span>{lang === 'it' ? 'Nome di chi acquista' : 'Buyer name'}</span><input value={form.buyer_name} onChange={(event) => update('buyer_name', event.target.value)} autoComplete="name" /></label>
-            <label className="admin-field"><span>Email</span><input type="email" value={form.buyer_email} onChange={(event) => update('buyer_email', event.target.value)} autoComplete="email" /></label>
-            <label className="admin-field"><span>WhatsApp / Phone</span><input value={form.buyer_phone} onChange={(event) => update('buyer_phone', event.target.value)} autoComplete="tel" /></label>
+            <label className="admin-field"><span>Email</span><input type="email" inputMode="email" value={form.buyer_email} onChange={(event) => update('buyer_email', event.target.value)} autoComplete="email" /></label>
+            <label className="admin-field"><span>WhatsApp / Phone</span><input type="tel" inputMode="tel" value={form.buyer_phone} onChange={(event) => update('buyer_phone', event.target.value)} autoComplete="tel" pattern="[0-9+\s().-]*" /></label>
           </div>
         );
       case 'recipient':
@@ -2922,7 +2952,7 @@ function GiftCardPage({ lang, siteContent, onClose }) {
           </div>
         );
       case 'delivery':
-        return <label className="admin-field full"><span>{lang === 'it' ? 'Data consegna preferita' : 'Preferred delivery date'}</span><input type="date" value={form.preferred_delivery_date} onChange={(event) => update('preferred_delivery_date', event.target.value)} /></label>;
+        return <label className="admin-field full"><span>{lang === 'it' ? 'Data consegna preferita' : 'Preferred delivery date'}</span><input type="date" min={todayMinDate} value={form.preferred_delivery_date} onChange={(event) => update('preferred_delivery_date', event.target.value)} /></label>;
       case 'message':
         return <label className="admin-field full"><span>{lang === 'it' ? 'Messaggio opzionale' : 'Optional message'}</span><textarea rows={6} value={form.message} onChange={(event) => update('message', event.target.value)} /></label>;
       case 'review':
@@ -2983,7 +3013,7 @@ function GiftCardPage({ lang, siteContent, onClose }) {
               {state.error && <p className="form-status error" role="alert">{state.error}</p>}
               {state.success && <p className="form-status success" role="status">{state.success}</p>}
             </section>
-            <footer className="gift-card-flow-footer">
+            <footer className={`gift-card-flow-footer ${currentStep.key === 'review' ? 'review-step' : ''}`.trim()}>
               <button className="button secondary" type="button" onClick={goBack} disabled={stepIndex === 0 || state.loading}>{lang === 'it' ? 'Indietro' : 'Back'}</button>
               {currentStep.key !== 'review' ? (
                 <button className="button primary" type="button" onClick={goNext} disabled={state.loading}>{lang === 'it' ? 'Avanti' : 'Next'}</button>
@@ -3079,7 +3109,7 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
         {step === 2 && (
           <div className="admin-form-grid">
             <label className="admin-field"><span>{lang === 'it' ? 'Data' : 'Date'}</span><select value={form.dateMode} onChange={(event) => update('dateMode', event.target.value)}><option value="flexible">{lang === 'it' ? 'Sono flessibile' : "I'm flexible"}</option><option value="custom">{lang === 'it' ? 'Data specifica' : 'Specific date'}</option></select></label>
-            {form.dateMode === 'custom' && <label className="admin-field"><span>{lang === 'it' ? 'Data preferita' : 'Preferred date'}</span><input type="date" value={form.customDate} onChange={(event) => update('customDate', event.target.value)} /></label>}
+            {form.dateMode === 'custom' && <label className="admin-field"><span>{lang === 'it' ? 'Data preferita' : 'Preferred date'}</span><input type="date" min={todayIso()} value={form.customDate} onChange={(event) => update('customDate', event.target.value)} /></label>}
             <div className="modal-actions full fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(1)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(3)}>{lang === 'it' ? 'Continua' : 'Continue'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
           </div>
         )}
@@ -5614,6 +5644,7 @@ function FinalCTA({ lang, siteContent }) {
 
 function Footer({ lang, siteContent, editor }) {
   const contact = resolvePublicContactDetails(siteContent);
+  const [footerBookNowOpen, setFooterBookNowOpen] = useState(false);
   const [phoneChoicesOpen, setPhoneChoicesOpen] = useState(false);
   const [legalModalPage, setLegalModalPage] = useState(null);
   const phoneChoiceRef = useRef(null);
@@ -5706,7 +5737,13 @@ function Footer({ lang, siteContent, editor }) {
         <section className="footer-column">
           <h3>Etna</h3>
           <a href="/latest-news">{adminCopy(lang, 'Notizie live sull’Etna', 'Etna live news')}</a>
-          <a href="/experiences">{adminCopy(lang, 'Prenota ora', 'Book now')}</a>
+          <a
+            href="/contact"
+            onClick={(event) => {
+              event.preventDefault();
+              setFooterBookNowOpen(true);
+            }}
+          >{adminCopy(lang, 'Prenota ora', 'Book now')}</a>
         </section>
       </div>
       <div className="container footer-bottom-row">
@@ -5722,6 +5759,17 @@ function Footer({ lang, siteContent, editor }) {
             <LegalPage lang={lang} page={legalModalPage} siteContent={siteContent} modal />
           </article>
         </div>
+      )}
+      {footerBookNowOpen && (
+        <FastRequestModal
+          lang={lang}
+          siteContent={siteContent}
+          sourceSection="footer"
+          sourceCta="book_now"
+          ctaLocation="footer_book_now"
+          flowType="fast_request"
+          onClose={() => setFooterBookNowOpen(false)}
+        />
       )}
       {contactAttributionModal}
     </footer>
@@ -6917,7 +6965,7 @@ function CalendarBookingModal({ lang, request, onClose, onSave }) {
         <div className="admin-modal-header booking-edit-modal-header"><div><h2>{request.customer_name || adminCopy(lang, 'Prenotazione', 'Booking')}</h2><p>{request.customer_email || '-'} · {request.customer_phone || '-'}</p></div><button className="modal-close-button booking-modal-close-button" type="button" aria-label={adminCopy(lang, 'Chiudi', 'Close')} onClick={onClose}>{adminCopy(lang, 'Chiudi', 'Close')}</button></div>
         <div className="admin-form-grid booking-edit-modal-grid">
           <AdminSelect label={adminCopy(lang, 'Stato', 'Status')} value={form.status} onChange={(value) => setForm((current) => ({ ...current, status: value }))} options={REQUEST_STATUSES} formatter={(value) => requestStatusLabels[value]?.[lang] || value} />
-          <label className="admin-field confirmed-date-section"><span>{adminCopy(lang, 'Data confermata', 'Confirmed date')}</span><input type="date" value={form.requested_date || ''} onChange={(event) => setForm((current) => ({ ...current, requested_date: event.target.value }))} /></label>
+          <label className="admin-field confirmed-date-section"><span>{adminCopy(lang, 'Data confermata', 'Confirmed date')}</span><input type="date" min={todayIso()} value={form.requested_date || ''} onChange={(event) => setForm((current) => ({ ...current, requested_date: event.target.value }))} /></label>
           <AdminInput label={adminCopy(lang, 'Adulti', 'Adults')} type="number" value={form.adults} onChange={(value) => setForm((current) => ({ ...current, adults: value }))} />
           <AdminInput label={adminCopy(lang, 'Bambini', 'Children')} type="number" value={form.children} onChange={(value) => setForm((current) => ({ ...current, children: value }))} />
           <AdminSelect label={text(lang, 'heardAboutUsAdmin')} value={form.heard_about_us || 'not_specified'} onChange={(value) => setForm((current) => ({ ...current, heard_about_us: value, heard_about_us_label: heardAboutUsLabel(value, lang), heard_about_us_detail: needsHeardAboutUsDetail(value) ? current.heard_about_us_detail : '' }))} options={heardAboutUsOptions({ includeAdmin: true }).map((option) => option.value)} formatter={(value) => heardAboutUsLabel(value, lang)} />
@@ -6939,7 +6987,7 @@ function CalendarFixedModal({ lang, item, onClose, onSave }) {
       <div className="admin-modal wide" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <div className="admin-modal-header"><div><h2>{fixedExcursionTitle(item, lang)}</h2><p>{adminExperienceLabel(item.experience_id, lang)}</p></div><button className="round-button" type="button" onClick={onClose}>{text(lang, 'close')}</button></div>
         <div className="admin-form-grid">
-          <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.date} onChange={(value) => setForm((current) => ({ ...current, date: value }))} />
+          <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" min={todayIso()} value={form.date} onChange={(value) => setForm((current) => ({ ...current, date: value }))} />
           <AdminInput label={adminCopy(lang, 'Ora inizio', 'Start time')} type="time" value={form.start_time} onChange={(value) => setForm((current) => ({ ...current, start_time: value }))} />
           <AdminInput label={adminCopy(lang, 'Ora fine', 'End time')} type="time" value={form.end_time} onChange={(value) => setForm((current) => ({ ...current, end_time: value }))} />
           <AdminInput label={adminCopy(lang, 'Capienza', 'Capacity')} type="number" value={form.capacity} onChange={(value) => setForm((current) => ({ ...current, capacity: value }))} />
@@ -11571,7 +11619,7 @@ const [filters, setFilters] = useState({
         <SummaryCard label={adminCopy(lang, 'Utile netto', 'Net profit')} value={formatMoney(financeSummary.net)} onClick={() => setActiveFinanceDetail({ key: 'net', title: adminCopy(lang, 'Utile netto', 'Net profit'), entries: reportEntries, total: financeSummary.net })} helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
         <SummaryCard label={adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings')} value={linkedEntries.length} onClick={() => setActiveFinanceDetail({ key: 'linked', title: adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings'), entries: linkedEntries, total: linkedEntries.length })} helper={adminCopy(lang, 'Vedi movimenti', 'View entries')} />
         <SummaryCard label={adminCopy(lang, 'Spese non collegate', 'Unlinked expenses')} value={unlinkedExpenseEntries.length} onClick={() => setActiveFinanceDetail({ key: 'unlinked-expenses', title: adminCopy(lang, 'Spese non collegate', 'Unlinked expenses'), entries: unlinkedExpenseEntries, total: unlinkedExpenseEntries.length })} helper={adminCopy(lang, 'Vedi spese', 'View expenses')} />
-        <SummaryCard label={adminCopy(lang, 'Liabilità commissioni partner', 'Partner commission liabilities')} value={formatMoney(partnerCommissionSummary?.unpaidLiability || 0, 'EUR', lang)} helper={adminCopy(lang, 'In attesa + approvate non pagate', 'Pending + approved unpaid')} />
+        {Number(partnerCommissionSummary?.unpaidLiability || 0) > 0 && <SummaryCard label={adminCopy(lang, 'Liabilità commissioni partner', 'Partner commission liabilities')} value={formatMoney(partnerCommissionSummary.unpaidLiability, 'EUR', lang)} helper={adminCopy(lang, 'In attesa + approvate non pagate', 'Pending + approved unpaid')} />}
         <SummaryCard label={adminCopy(lang, 'Commissioni pagate', 'Paid commissions')} value={formatMoney(partnerCommissionSummary?.paidAmount || 0, 'EUR', lang)} helper={`${partnerCommissionSummary?.paidCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
       </div>
       <div className="admin-filter-bar finance-filter-bar">
@@ -11658,7 +11706,7 @@ function PartnerCommissionsFinancePanel({ lang, session, commissions = [], summa
     <details className="admin-panel finance-collapsible-panel partner-commissions-panel" open>
       <summary className="finance-collapsible-summary">
         <strong>{adminCopy(lang, 'Commissioni partner', 'Partner commissions')}</strong>
-        <em>{formatMoney(data.unpaidLiability || 0, 'EUR', lang)} {adminCopy(lang, 'non pagate', 'unpaid')}</em>
+        {Number(data.unpaidLiability || 0) > 0 && <em>{formatMoney(data.unpaidLiability || 0, 'EUR', lang)} {adminCopy(lang, 'non pagate', 'unpaid')}</em>}
       </summary>
       <div className="finance-collapsible-body">
         <p className="small-note">{adminCopy(lang, 'Le commissioni sono interne, non pubbliche, e vengono conteggiate come liabilità fino al pagamento manuale.', 'Commissions are internal, non-public, and counted as liabilities until manually paid.')}</p>
@@ -11666,7 +11714,7 @@ function PartnerCommissionsFinancePanel({ lang, session, commissions = [], summa
         <div className="admin-summary-grid partner-commission-summary-grid">
           <SummaryCard label={adminCopy(lang, 'In attesa', 'Pending')} value={formatMoney(data.pendingAmount || 0, 'EUR', lang)} helper={`${data.pendingCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
           <SummaryCard label={adminCopy(lang, 'Approvate non pagate', 'Approved unpaid')} value={formatMoney(data.approvedUnpaidAmount || 0, 'EUR', lang)} helper={`${data.approvedCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
-          <SummaryCard label={adminCopy(lang, 'Totale non pagato', 'Total unpaid')} value={formatMoney(data.unpaidLiability || 0, 'EUR', lang)} helper={adminCopy(lang, 'Liabilità finance', 'Finance liability')} />
+          {Number(data.unpaidLiability || 0) > 0 && <SummaryCard label={adminCopy(lang, 'Totale non pagato', 'Total unpaid')} value={formatMoney(data.unpaidLiability || 0, 'EUR', lang)} helper={adminCopy(lang, 'Liabilità finance', 'Finance liability')} />}
           <SummaryCard label={adminCopy(lang, 'Pagate', 'Paid')} value={formatMoney(data.paidAmount || 0, 'EUR', lang)} helper={`${data.paidCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
           <SummaryCard label={adminCopy(lang, 'Annullate', 'Cancelled')} value={formatMoney(data.cancelledAmount || 0, 'EUR', lang)} helper={`${data.cancelledCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
         </div>
@@ -12578,8 +12626,8 @@ function giftCardStatusLabel(status, lang) {
 function buildGiftCardAdminReply(request, lang) {
   const budget = request.budget ? formatMoney(request.budget, request.currency || 'EUR', lang) : (lang === 'it' ? 'da definire' : 'to define');
   return lang === 'it'
-    ? `Ciao ${request.buyer_name || ''},\n\ngrazie per la richiesta Gift Card vulcanIQ.\n\nGift Card per: ${request.recipient_name || '-'}\nEsperienza/interesse: ${request.experience_type || '-'}\nBudget indicativo: ${budget}\n\nTi confermiamo disponibilità e proposta il prima possibile.\n\nTeam vulcanIQ`
-    : `Hi ${request.buyer_name || ''},\n\nthank you for your vulcanIQ Gift Card request.\n\nGift Card for: ${request.recipient_name || '-'}\nExperience/interest: ${request.experience_type || '-'}\nIndicative budget: ${budget}\n\nWe will confirm availability and proposal as soon as possible.\n\nvulcanIQ team`;
+    ? `Ciao ${request.buyer_name || ''},\n\ngrazie per la richiesta Gift Card vulcanIQ.\n\nGift Card per: ${request.recipient_name || '-'}\nEsperienza/interesse: ${request.experience_type || '-'}\nBudget indicativo: ${budget}\n${request.booking_code ? `Codice destinatario: ${request.booking_code}\n` : ''}\nTi confermiamo disponibilità e proposta il prima possibile.\n\nTeam vulcanIQ`
+    : `Hi ${request.buyer_name || ''},\n\nthank you for your vulcanIQ Gift Card request.\n\nGift Card for: ${request.recipient_name || '-'}\nExperience/interest: ${request.experience_type || '-'}\nIndicative budget: ${budget}\n${request.booking_code ? `Recipient code: ${request.booking_code}\n` : ''}\nWe will confirm availability and proposal as soon as possible.\n\nvulcanIQ team`;
 }
 
 function useAdminGiftCards(filters = {}) {
@@ -12614,6 +12662,13 @@ function GiftCardsAdminPage({ lang, session, adminContent = {} }) {
         if (patch.status === 'paid') trackEvent('gift_card_paid', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
         if (patch.status === 'issued') trackEvent('gift_card_issued', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
         if (patch.status === 'cancelled') trackEvent('gift_card_cancelled', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
+        if (['paid', 'issued'].includes(patch.status)) {
+          const code = await ensureGiftCardReviewCode(updated, session.user.id);
+          if (code?.code) {
+            trackEvent('gift_card_review_code_created', { request_id: item.id, booking_code_id: code.id || '', language: lang }, { dedupe: false });
+            message = message || adminCopy(lang, `Gift Card aggiornata. Codice destinatario: ${code.code}`, `Gift Card updated. Recipient code: ${code.code}`);
+          }
+        }
       }
       await refresh();
       setFeedback(message || adminCopy(lang, 'Gift Card aggiornata.', 'Gift Card updated.'));
@@ -12662,6 +12717,7 @@ function GiftCardsAdminPage({ lang, session, adminContent = {} }) {
                   <div><dt>{adminCopy(lang, 'Consegna preferita', 'Preferred delivery')}</dt><dd>{formatDateForMessage(item.preferred_delivery_date, lang) || '-'}</dd></div>
                   <div><dt>{adminCopy(lang, 'Lingua', 'Language')}</dt><dd>{item.buyer_preferred_language || '-'}</dd></div>
                   <div><dt>{adminCopy(lang, 'Finance', 'Finance')}</dt><dd>{item.finance_entry_id ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Not linked')}</dd></div>
+                  <div><dt>{adminCopy(lang, 'Codice destinatario', 'Recipient code')}</dt><dd>{item.booking_code || '-'}</dd></div>
                 </dl>
                 {item.message && <p className="request-message">{item.message}</p>}
                 <label className="admin-field full"><span>{adminCopy(lang, 'Nota interna', 'Internal note')}</span><textarea rows={3} defaultValue={item.admin_note || ''} onBlur={(event) => { if (event.target.value !== (item.admin_note || '')) updateItem(item, { admin_note: event.target.value }, adminCopy(lang, 'Nota interna aggiornata.', 'Internal note updated.')); }} /></label>
@@ -13010,7 +13066,7 @@ function ManualRequestModal({ lang, session, onClose, onSaved }) {
         </div>
         <form className="admin-form-grid" onSubmit={submit}>
           <AdminInput label={adminCopy(lang, 'Nome cliente', 'Customer name')} value={form.customer_name} onChange={(value) => update('customer_name', value)} />
-          <AdminInput label="Phone / WhatsApp" value={form.customer_phone} onChange={(value) => update('customer_phone', value)} />
+          <AdminInput label="Phone / WhatsApp" type="tel" inputMode="tel" pattern="[0-9+\s().-]*" value={form.customer_phone} onChange={(value) => update('customer_phone', value.replace(/[^\d+\s().-]/g, ''))} />
           <AdminInput label="Email" type="email" value={form.customer_email} onChange={(value) => update('customer_email', value)} />
           <AdminSelect label={adminCopy(lang, 'Contatto preferito', 'Preferred contact')} value={form.preferred_contact} onChange={(value) => update('preferred_contact', value)} options={['whatsapp', 'phone', 'email', 'unknown']} />
           <AdminSelect label={adminCopy(lang, 'Fonte', 'Source')} value={form.source} onChange={(value) => update('source', value)} options={['whatsapp', 'phone', 'email', 'manual']} />
@@ -13019,8 +13075,8 @@ function ManualRequestModal({ lang, session, onClose, onSaved }) {
           <AdminSelect label={adminCopy(lang, 'Tipo richiesta', 'Request type')} value={form.request_type} onChange={(value) => update('request_type', value)} options={['private', 'fixed']} formatter={(value) => value === 'fixed' ? adminCopy(lang, 'Escursione fissa', 'Fixed excursion') : adminCopy(lang, 'Escursione privata', 'Private excursion')} />
           <AdminSelect label={adminCopy(lang, 'Tipo gruppo', 'Party type')} value={form.party_type} onChange={(value) => update('party_type', value)} options={['solo', 'couple', 'family', 'group', 'company', 'school', 'other']} formatter={(value) => ({ solo: adminCopy(lang, 'Singolo', 'Solo traveler'), couple: adminCopy(lang, 'Coppia', 'Couple'), family: adminCopy(lang, 'Famiglia', 'Family'), group: adminCopy(lang, 'Gruppo', 'Group'), company: adminCopy(lang, 'Azienda', 'Company'), school: adminCopy(lang, 'Scuola', 'School'), other: adminCopy(lang, 'Altro', 'Other') }[value] || value)} />
           <AdminSelect label={adminCopy(lang, 'Esperienza', 'Experience')} value={form.experience_id} onChange={(value) => update('experience_id', value)} options={ADMIN_EXPERIENCE_OPTIONS} formatter={(value) => adminExperienceLabel(value, lang)} />
-          <AdminInput label={adminCopy(lang, 'Data richiesta', 'Requested date')} type="date" value={form.requested_date} onChange={(value) => update('requested_date', value)} />
-          <AdminInput label={adminCopy(lang, 'Data alternativa', 'Alternative date')} type="date" value={form.alternative_date} onChange={(value) => update('alternative_date', value)} />
+          <AdminInput label={adminCopy(lang, 'Data richiesta', 'Requested date')} type="date" min={todayIso()} value={form.requested_date} onChange={(value) => update('requested_date', value)} />
+          <AdminInput label={adminCopy(lang, 'Data alternativa', 'Alternative date')} type="date" min={todayIso()} value={form.alternative_date} onChange={(value) => update('alternative_date', value)} />
           <AdminSelect label={adminCopy(lang, 'Lingua', 'Language')} value={form.language} onChange={(value) => update('language', value)} options={['it', 'en']} />
           <AdminInput label="Adults" type="number" value={form.adults} onChange={(value) => update('adults', value)} />
           <AdminInput label="Children" type="number" value={form.children} onChange={(value) => update('children', value)} />
@@ -13121,6 +13177,10 @@ function AdminBookingCodeModal({ lang, session, onClose, onSaved }) {
       setError(adminCopy(lang, 'Importo non valido.', 'Invalid amount.'));
       return;
     }
+    if ((form.scheduled_date && form.scheduled_date < todayIso()) || (form.expiry_date && form.expiry_date < todayIso())) {
+      setError(adminCopy(lang, 'Seleziona una data di oggi o futura.', 'Select today or a future date.'));
+      return;
+    }
     setSaving(true);
     try {
       const selectedFixed = fixedExcursions.find((item) => item.id === form.fixed_excursion_id);
@@ -13172,21 +13232,21 @@ function AdminBookingCodeModal({ lang, session, onClose, onSaved }) {
             </div>
           </div>
         ) : (
-          <form className="admin-form-grid" onSubmit={submit}>
+          <form className="admin-form-grid booking-code-generator-form" onSubmit={submit}>
             <AdminInput label={adminCopy(lang, 'Nome cliente', 'Customer name')} value={form.customer_name} onChange={(value) => update('customer_name', value)} />
             <AdminInput label="Email" type="email" value={form.customer_email} onChange={(value) => update('customer_email', value)} />
-            <AdminInput label="Phone / WhatsApp" value={form.customer_phone} onChange={(value) => update('customer_phone', value)} />
+            <AdminInput label="Phone / WhatsApp" type="tel" inputMode="tel" pattern="[0-9+\s().-]*" value={form.customer_phone} onChange={(value) => update('customer_phone', value.replace(/[^\d+\s().-]/g, ''))} />
             <label className="admin-field"><span>{adminCopy(lang, 'Escursione disponibile', 'Available excursion')}</span><select value={form.fixed_excursion_id} onChange={(event) => applyFixedExcursion(event.target.value)} disabled={loadingOptions}><option value="">{loadingOptions ? adminCopy(lang, 'Caricamento...', 'Loading...') : adminCopy(lang, 'Nessuna / esperienza manuale', 'None / manual experience')}</option>{fixedOptions.map((id) => <option key={id} value={id}>{fixedExcursionLabel(fixedExcursions.find((item) => item.id === id), lang)}</option>)}</select></label>
             {!form.fixed_excursion_id && <AdminSelect label={adminCopy(lang, 'Esperienza', 'Experience')} value={form.experience_id} onChange={(value) => update('experience_id', value)} options={ADMIN_EXPERIENCE_OPTIONS.filter((item) => item !== 'unsure')} formatter={(value) => adminExperienceLabel(value, lang)} />}
             <AdminInput label={adminCopy(lang, 'Titolo esperienza IT', 'Experience title IT')} value={form.experience_name_it} onChange={(value) => update('experience_name_it', value)} />
             <AdminInput label={adminCopy(lang, 'Titolo esperienza EN', 'Experience title EN')} value={form.experience_name_en} onChange={(value) => update('experience_name_en', value)} />
-            <AdminInput label={adminCopy(lang, 'Data prevista', 'Expected date')} type="date" value={form.scheduled_date} onChange={(value) => update('scheduled_date', value)} />
+            <AdminInput label={adminCopy(lang, 'Data prevista', 'Expected date')} type="date" min={todayIso()} value={form.scheduled_date} onChange={(value) => update('scheduled_date', value)} />
             <AdminInput label={adminCopy(lang, 'Ora prevista', 'Expected time')} type="time" value={form.scheduled_time} onChange={(value) => update('scheduled_time', value)} />
             <AdminInput label={adminCopy(lang, 'Punto d’incontro', 'Meeting point')} value={form.meeting_point_name} onChange={(value) => update('meeting_point_name', value)} />
             <AdminInput label="Google Maps URL" value={form.meeting_point_maps_url} onChange={(value) => update('meeting_point_maps_url', value)} />
             <AdminInput label={adminCopy(lang, 'Importo previsto', 'Expected amount')} type="number" value={form.expected_amount} onChange={(value) => update('expected_amount', value)} />
             <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => update('currency', normalizeCurrency(value))} />
-            <AdminInput label={adminCopy(lang, 'Scadenza opzionale', 'Optional expiry')} type="date" value={form.expiry_date} onChange={(value) => update('expiry_date', value)} />
+            <AdminInput label={adminCopy(lang, 'Scadenza opzionale', 'Optional expiry')} type="date" min={todayIso()} value={form.expiry_date} onChange={(value) => update('expiry_date', value)} />
             <label className="admin-field full"><span>{adminCopy(lang, 'Nota interna opzionale', 'Optional internal note')}</span><textarea value={form.admin_note} onChange={(event) => update('admin_note', event.target.value)} rows={4} /></label>
             {error && <div className="admin-alert error full" role="alert">{error}</div>}
             <div className="modal-actions full">
@@ -13201,9 +13261,10 @@ function AdminBookingCodeModal({ lang, session, onClose, onSaved }) {
 }
 
 
-function AdminInput({ label, value, onChange, type = 'text', placeholder = '' }) {
+function AdminInput({ label, value, onChange, type = 'text', placeholder = '', min, inputMode, pattern }) {
   const id = useMemo(() => `field-${Math.random().toString(36).slice(2)}`, []);
-  return <label className="admin-field" htmlFor={id}><span>{label}</span><input id={id} type={type} value={value || ''} placeholder={placeholder} min={type === 'number' ? '0' : undefined} onChange={(event) => onChange(event.target.value)} /></label>;
+  const resolvedMin = min !== undefined ? min : (type === 'number' ? '0' : undefined);
+  return <label className="admin-field" htmlFor={id}><span>{label}</span><input id={id} type={type} value={value || ''} placeholder={placeholder} min={resolvedMin} inputMode={inputMode} pattern={pattern} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
 function AdminSelect({ label, value, onChange, options, formatter = (item) => item }) {
@@ -14179,7 +14240,7 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
           <section className="admin-panel">
             <AdminEditableText as="h2" itemKey="admin.availability.addBlock.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Aggiungi blocco disponibilità', 'Add availability block')} />
             <form className="admin-form-grid" onSubmit={submit}>
-              <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.date} onChange={(value) => update('date', value)} />
+              <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" min={todayIso()} value={form.date} onChange={(value) => update('date', value)} />
               <AdminSelect label={adminCopy(lang, 'Ambito', 'Scope')} value={form.experience_id} onChange={(value) => update('experience_id', value)} options={['', 'etna-premium', 'etna-learning', 'etna-live', 'etna-stories']} formatter={(value) => value ? adminExperienceLabel(value, lang) : adminCopy(lang, 'Tutte le esperienze', 'All experiences')} />
               <AdminSelect label={adminCopy(lang, 'Stato', 'Status')} value={form.status} onChange={(value) => update('status', value)} options={AVAILABILITY_STATUSES} formatter={(value) => adminAvailabilityStatusLabels[value][lang]} />
               <AdminInput label="Reason IT" value={form.reason_it || defaultReason(form.status, 'it')} onChange={(value) => update('reason_it', value)} />
@@ -14242,7 +14303,7 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
             <h2>{adminCopy(lang, 'Crea escursione fissa', 'Create fixed excursion')}</h2>
             <p className="small-note">{adminCopy(lang, 'Capienza predefinita 12. Per gruppi oltre 12 persone: contatto diretto con la guida.', 'Default capacity is 12. Groups over 12 should contact the guide directly.')}</p>
             <form className="admin-form-grid" onSubmit={submitFixed}>
-              <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={fixedForm.date} onChange={(value) => updateFixed('date', value)} />
+              <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" min={todayIso()} value={fixedForm.date} onChange={(value) => updateFixed('date', value)} />
               <AdminInput label={adminCopy(lang, 'Ora inizio', 'Start time')} type="time" value={fixedForm.start_time} onChange={(value) => updateFixed('start_time', value)} />
               <AdminInput label={adminCopy(lang, 'Ora fine opzionale', 'Optional end time')} type="time" value={fixedForm.end_time} onChange={(value) => updateFixed('end_time', value)} />
               <AdminSelect label={adminCopy(lang, 'Esperienza', 'Experience')} value={fixedForm.experience_id} onChange={(value) => updateFixed('experience_id', value)} options={['etna-premium', 'etna-learning', 'etna-live', 'etna-stories']} formatter={(value) => adminExperienceLabel(value, lang)} />
@@ -14529,7 +14590,7 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
       </div>
       {editing ? (
         <div className="admin-form-grid single-card-form">
-          <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.date} onChange={(value) => setForm((current) => ({ ...current, date: value }))} />
+          <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" min={todayIso()} value={form.date} onChange={(value) => setForm((current) => ({ ...current, date: value }))} />
           <AdminInput label={adminCopy(lang, 'Ora inizio', 'Start time')} type="time" value={form.start_time} onChange={(value) => setForm((current) => ({ ...current, start_time: value }))} />
           <AdminInput label={adminCopy(lang, 'Ora fine opzionale', 'Optional end time')} type="time" value={form.end_time} onChange={(value) => setForm((current) => ({ ...current, end_time: value }))} />
           <AdminSelect label={adminCopy(lang, 'Esperienza', 'Experience')} value={form.experience_id} onChange={(value) => setForm((current) => ({ ...current, experience_id: value }))} options={['etna-premium', 'etna-learning', 'etna-live', 'etna-stories']} formatter={(value) => adminExperienceLabel(value, lang)} />

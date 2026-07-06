@@ -1,10 +1,11 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
+import { createBookingCode, generateBookingCode } from './bookingCodes.js';
 
 const GIFT_CARD_FIELDS = `
   id, buyer_name, buyer_email, buyer_phone, buyer_preferred_language,
   recipient_name, experience_type, budget, currency, message, preferred_delivery_date,
-  status, admin_note, finance_entry_id, created_at, updated_at, created_by, updated_by
+  status, admin_note, finance_entry_id, booking_code_id, booking_code, created_at, updated_at, created_by, updated_by
 `;
 
 const TERMINAL_REVENUE_STATUSES = new Set(['paid', 'issued']);
@@ -76,6 +77,63 @@ export async function listGiftCardRequests(filters = {}) {
   return (data || []).map(normalize);
 }
 
+
+export async function ensureGiftCardReviewCode(requestInput, userId = null) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const request = normalize(requestInput);
+  if (!request?.id) return null;
+
+  if (request.booking_code_id || request.booking_code) {
+    return { id: request.booking_code_id || null, code: request.booking_code || null, existing: true };
+  }
+
+  const existing = await supabase
+    .from('booking_codes')
+    .select('id, code, status, review_enabled')
+    .eq('gift_card_request_id', request.id)
+    .limit(1);
+  if (existing.error) throw existing.error;
+  const existingCode = existing.data?.[0] || null;
+  if (existingCode?.id) {
+    await supabase
+      .from('gift_card_requests')
+      .update({ booking_code_id: existingCode.id, booking_code: existingCode.code, updated_by: userId || null })
+      .eq('id', request.id);
+    return { ...existingCode, existing: true };
+  }
+
+  const code = await createBookingCode({
+    code: generateBookingCode('GIFT'),
+    customer_name: request.recipient_name || request.buyer_name || 'Gift Card recipient',
+    customer_email: request.buyer_email || null,
+    customer_phone: request.buyer_phone || null,
+    experience_id: 'gift-card',
+    experience_name_it: request.experience_type || 'Gift Card vulcanIQ',
+    experience_name_en: request.experience_type || 'vulcanIQ Gift Card',
+    experience_type: 'gift_card',
+    scheduled_date: request.preferred_delivery_date || null,
+    expected_amount: 0,
+    currency: request.currency || 'EUR',
+    source: 'gift_card',
+    admin_note: `Gift Card request ${request.id}`,
+    customer_note: request.message || null,
+    status: 'redeemed',
+    review_enabled: true,
+    completion_status: 'completed',
+    payment_status: 'paid',
+    income_status: 'none',
+    admin_confirmed_income: false,
+    gift_card_request_id: request.id
+  }, userId);
+
+  const update = await supabase
+    .from('gift_card_requests')
+    .update({ booking_code_id: code.id, booking_code: code.code, updated_by: userId || null })
+    .eq('id', request.id);
+  if (update.error) throw update.error;
+  return code;
+}
+
 export async function updateGiftCardRequest(id, input = {}, userId = null) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
   const payload = { updated_by: userId || null, updated_at: new Date().toISOString() };
@@ -92,7 +150,10 @@ export async function updateGiftCardRequest(id, input = {}, userId = null) {
     .select(GIFT_CARD_FIELDS)
     .single();
   if (error) throw error;
-  if (TERMINAL_REVENUE_STATUSES.has(payload.status)) await ensureGiftCardFinance(normalize(data), userId);
+  if (TERMINAL_REVENUE_STATUSES.has(payload.status)) {
+    await ensureGiftCardFinance(normalize(data), userId);
+    await ensureGiftCardReviewCode(normalize(data), userId);
+  }
   if (payload.status === 'cancelled') await cancelGiftCardFinance(normalize(data), userId, 'gift card request cancelled');
   return normalize(data);
 }

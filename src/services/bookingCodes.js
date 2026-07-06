@@ -7,6 +7,7 @@ const BOOKING_CODE_FIELDS = `
   experience_id, fixed_excursion_id, experience_name_it, experience_name_en, experience_type,
   scheduled_date, scheduled_time, meeting_point_name, meeting_point_maps_url,
   expected_amount, currency, source, admin_note, customer_note, status,
+  review_enabled, review_submitted_at, review_id, gift_card_request_id,
   completion_status, payment_status, income_status, admin_confirmed_income,
   completed_at, income_confirmed_at, income_confirmed_by, cancelled_at, no_show_at,
   review_requested_at, review_received_at, review_request_channel, review_link_copied_at,
@@ -26,6 +27,26 @@ function nullableText(value) {
 function cleanAmount(value) {
   const parsed = parseMoneyAmount(value);
   return Number.isFinite(parsed) && parsed >= 0 ? Number(parsed.toFixed(2)) : 0;
+}
+
+function normalizeCodeStatus(value) {
+  const clean = cleanText(value).toLowerCase();
+  return ['unused', 'redeemed', 'expired', 'cancelled'].includes(clean) ? clean : 'unused';
+}
+
+function normalizeCompletionStatus(value) {
+  const clean = cleanText(value).toLowerCase();
+  return ['not_completed', 'completed', 'cancelled', 'no_show'].includes(clean) ? clean : 'not_completed';
+}
+
+function normalizePaymentStatus(value) {
+  const clean = cleanText(value).toLowerCase();
+  return ['pending', 'deposit_paid', 'paid', 'refunded', 'waived'].includes(clean) ? clean : 'pending';
+}
+
+function normalizeIncomeStatus(value) {
+  const clean = cleanText(value).toLowerCase();
+  return ['none', 'expected', 'pending', 'confirmed', 'cancelled', 'reversed'].includes(clean) ? clean : 'expected';
 }
 
 export function normalizeBookingCode(value) {
@@ -135,11 +156,16 @@ export async function createBookingCode(input = {}, userId = null) {
       source: nullableText(input.source) || 'manual',
       admin_note: nullableText(input.admin_note),
       customer_note: nullableText(input.customer_note),
-      status: 'unused',
-      completion_status: 'not_completed',
-      payment_status: 'pending',
-      income_status: 'expected',
-      admin_confirmed_income: false,
+      status: normalizeCodeStatus(input.status),
+      review_enabled: input.review_enabled === true,
+      gift_card_request_id: nullableText(input.gift_card_request_id),
+      completion_status: normalizeCompletionStatus(input.completion_status),
+      payment_status: normalizePaymentStatus(input.payment_status),
+      income_status: normalizeIncomeStatus(input.income_status),
+      admin_confirmed_income: input.admin_confirmed_income === true,
+      completed_at: input.completed_at || (normalizeCompletionStatus(input.completion_status) === 'completed' ? new Date().toISOString() : null),
+      income_confirmed_at: input.income_confirmed_at || (input.admin_confirmed_income === true ? new Date().toISOString() : null),
+      income_confirmed_by: input.income_confirmed_by || (input.admin_confirmed_income === true ? userId || null : null),
       created_by: userId || null,
       expires_at: expiresDate ? (expiresDate.length === 10 ? `${expiresDate}T23:59:59+00:00` : expiresDate) : null
     };
