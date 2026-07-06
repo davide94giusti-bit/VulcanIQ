@@ -345,7 +345,7 @@ function normalizeTrafficSourceValue(source, medium = '') {
   if (value.includes('instagram') || value === 'ig') return 'instagram';
   if (value.includes('facebook') || value === 'fb') return 'facebook';
   if (value.includes('whatsapp') || value === 'wa') return 'whatsapp';
-  if (value.includes('google_business_profile') || value.includes('google_my_business') || value.includes('gbp') {
+  if (value.includes('google_business_profile') || value.includes('google_my_business') || value.includes('gbp')) {
     return 'google_business_profile';
   }
   if (value.includes('google')) return 'google';
