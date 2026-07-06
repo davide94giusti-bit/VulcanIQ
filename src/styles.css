@@ -12858,3 +12858,74 @@ body.modal-scroll-lock {
 .footer .footer-phone-choice-menu a:focus-visible {
   color: #fff;
 }
+/* FINAL PATCH 2026-07-06 — hard-fill bottom footer contact CTA */
+.final-panel .contact-actions,
+.footer .contact-actions,
+.footer-contact-actions,
+.final-contact-actions,
+.bottom-contact-actions {
+  width: 100% !important;
+  max-width: 100% !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+  justify-items: stretch !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.final-panel .contact-actions .pill-action,
+.footer .contact-actions .pill-action,
+.footer-contact-actions .pill-action,
+.final-contact-actions .pill-action,
+.bottom-contact-actions .pill-action,
+.final-panel .contact-actions a,
+.footer .contact-actions a,
+.footer-contact-actions a,
+.final-contact-actions a,
+.bottom-contact-actions a {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  flex: 1 1 0 !important;
+  justify-content: center !important;
+  padding-inline: 8px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.final-panel .contact-actions {
+  align-self: stretch !important;
+}
+
+.final-panel {
+  width: 100% !important;
+}
+
+@media (max-width: 680px) {
+  .final-panel .contact-actions,
+  .footer .contact-actions,
+  .footer-contact-actions,
+  .final-contact-actions,
+  .bottom-contact-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .final-panel .contact-actions .pill-action,
+  .footer .contact-actions .pill-action,
+  .footer-contact-actions .pill-action,
+  .final-contact-actions .pill-action,
+  .bottom-contact-actions .pill-action,
+  .final-panel .contact-actions a,
+  .footer .contact-actions a,
+  .footer-contact-actions a,
+  .final-contact-actions a,
+  .bottom-contact-actions a {
+    min-height: 44px !important;
+    padding-inline: 6px !important;
+    font-size: 0.82rem !important;
+  }
+}
