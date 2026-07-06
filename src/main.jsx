@@ -11410,11 +11410,25 @@ function AdminAnalyticsPreview({ lang, adminContent, editor }) {
 }
 
 function FinanceAdminPage({ lang, session, adminContent = {} }) {
-  const [entries, setEntries] = useState([]);
-  const [requests, setRequests] = useState([]);
-  const [fixedExcursions, setFixedExcursions] = useState([]);
-  const [leaflets, setLeaflets] = useState([]);
-  const [filters, setFilters] = useState({
+const [entries, setEntries] = useState([]);
+const [requests, setRequests] = useState([]);
+const [fixedExcursions, setFixedExcursions] = useState([]);
+const [leaflets, setLeaflets] = useState([]);
+const [partnerCommissions, setPartnerCommissions] = useState([]);
+const [partnerCommissionSummary, setPartnerCommissionSummary] = useState({
+  commissions: [],
+  pendingAmount: 0,
+  approvedUnpaidAmount: 0,
+  paidAmount: 0,
+  cancelledAmount: 0,
+  unpaidLiability: 0,
+  pendingCount: 0,
+  approvedCount: 0,
+  paidCount: 0,
+  cancelledCount: 0,
+  byPartner: []
+});
+const [filters, setFilters] = useState({
     type: 'all',
     dateMode: 'all',
     specificDate: todayIso(),
