@@ -90,18 +90,56 @@ const EVENT_NAMES = new Set([
 ]);
 
 const UNSAFE_METADATA_KEYS = new Set([
-  'name', 'customer_name', 'guest_name', 'reviewer_name', 'email', 'customer_email',
-  'phone', 'customer_phone', 'message', 'booking_message', 'notes', 'address',
-  'coordinates', 'lat', 'lng', 'latitude', 'longitude', 'payment', 'card',
-  'buyer_name', 'buyer_email', 'buyer_phone', 'recipient_name',
-  'customer_note', 'booking_message', 'reviewer_name'
+  'name',
+  'customer_name',
+  'guest_name',
+  'reviewer_name',
+  'email',
+  'customer_email',
+  'phone',
+  'customer_phone',
+  'message',
+  'booking_message',
+  'customer_note',
+  'notes',
+  'address',
+  'coordinates',
+  'lat',
+  'lng',
+  'latitude',
+  'longitude',
+  'payment',
+  'card',
+  'buyer_name',
+  'buyer_email',
+  'buyer_phone',
+  'recipient_name',
+  'partner_bank_details',
+  'payment_details'
 ]);
 
 function json(status, body = {}) {
-  if (status === 204) return new Response(null, { status, headers: { 'Cache-Control': 'no-store' } });
+  if (status === 204) {
+    return new Response(null, {
+      status,
+      headers: {
+        'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      }
+    });
+  }
+
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    }
   });
 }
 
@@ -118,13 +156,21 @@ function cleanPath(value) {
 
 function cleanMetadata(metadata = {}) {
   const safe = {};
+
   Object.entries(metadata && typeof metadata === 'object' ? metadata : {}).forEach(([key, value]) => {
     const cleanKey = cleanText(key, 48);
     if (!cleanKey || UNSAFE_METADATA_KEYS.has(cleanKey.toLowerCase())) return;
     if (Array.isArray(value) || (value && typeof value === 'object')) return;
-    const cleanValue = typeof value === 'number' || typeof value === 'boolean' ? value : cleanText(value, 220);
-    if (cleanValue !== null && cleanValue !== undefined) safe[cleanKey] = cleanValue;
+
+    const cleanValue = typeof value === 'number' || typeof value === 'boolean'
+      ? value
+      : cleanText(value, 220);
+
+    if (cleanValue !== null && cleanValue !== undefined) {
+      safe[cleanKey] = cleanValue;
+    }
   });
+
   return safe;
 }
 
@@ -135,11 +181,25 @@ function validIso(value) {
 
 function normalizedTrafficSource(raw) {
   const value = (cleanText(raw, 40) || 'direct').toLowerCase();
-  return ['direct', 'google', 'google_business_profile', 'instagram', 'facebook', 'tiktok', 'whatsapp', 'partner', 'qr', 'business_card', 'other'].includes(value) ? value : 'other';
+
+  return [
+    'direct',
+    'google',
+    'google_business_profile',
+    'instagram',
+    'facebook',
+    'tiktok',
+    'whatsapp',
+    'partner',
+    'qr',
+    'business_card',
+    'other'
+  ].includes(value) ? value : 'other';
 }
 
 function cfGeo(request) {
   const cf = request.cf || {};
+
   return {
     country_code: cleanText(cf.country, 8),
     country_name: cleanText(cf.country, 80),
@@ -150,7 +210,11 @@ function cfGeo(request) {
 async function supabaseRequest(env, path, options) {
   const supabaseUrl = env.SUPABASE_URL;
   const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) throw new Error('Missing Supabase analytics environment variables.');
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('Missing Supabase analytics environment variables.');
+  }
+
   const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/${path}`, {
     ...options,
     headers: {
@@ -160,12 +224,17 @@ async function supabaseRequest(env, path, options) {
       ...(options.headers || {})
     }
   });
-  if (!response.ok) throw new Error(`Supabase analytics write failed: ${response.status}`);
+
+  if (!response.ok) {
+    throw new Error(`Supabase analytics write failed: ${response.status}`);
+  }
+
   return response;
 }
 
 function sessionRow(payload, geo) {
   const duration = Math.max(0, Math.min(1800, Number.parseInt(payload.duration_seconds || 0, 10) || 0));
+
   return {
     session_id: cleanText(payload.session_id, 140),
     visitor_id: cleanText(payload.visitor_id, 140),
@@ -210,32 +279,44 @@ function eventRow(payload, geo) {
 }
 
 export async function onRequestOptions() {
-  return new Response(null, { status: 204 });
+  return json(204);
 }
 
 export async function onRequestPost(context) {
   try {
     const payload = await context.request.json();
-    if (!EVENT_NAMES.has(payload?.event_name)) return json(400, { error: 'invalid_event_name' });
+
+    // Analytics is diagnostic. Invalid analytics payloads should not create production noise.
+    if (!EVENT_NAMES.has(payload?.event_name)) return json(204);
+
     const geo = cfGeo(context.request);
     const event = eventRow(payload, geo);
-    if (!event.session_id || !event.visitor_id) return json(400, { error: 'missing_session' });
+
+    // Missing identity should silently drop the analytics event.
+    if (!event.session_id || !event.visitor_id) return json(204);
+
     const session = sessionRow(payload, geo);
 
-    await supabaseRequest(context.env, 'analytics_sessions?on_conflict=session_id', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify([session])
-    });
+    try {
+      await supabaseRequest(context.env, 'analytics_sessions?on_conflict=session_id', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify([session])
+      });
 
-    await supabaseRequest(context.env, 'analytics_events', {
-      method: 'POST',
-      headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify([event])
-    });
+      await supabaseRequest(context.env, 'analytics_events', {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify([event])
+      });
+    } catch {
+      // Analytics write failures must never surface to the public website.
+      return json(204);
+    }
 
     return json(204);
-  } catch (error) {
-    return json(500, { error: 'analytics_write_failed' });
+  } catch {
+    // Analytics parsing/runtime failures must never surface to the public website.
+    return json(204);
   }
 }
