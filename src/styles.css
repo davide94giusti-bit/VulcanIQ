@@ -12054,3 +12054,392 @@ body.modal-scroll-lock {
     grid-template-columns: 1fr;
   }
 }
+
+/* Revenue OS Patch 3.1: production stabilization for gift-card, hero CTAs, contact buttons, and editor contrast */
+.hero-action-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.hero-action-main,
+.hero-action-code {
+  width: 100%;
+}
+
+.hero-action-gift,
+.hero-action-guide {
+  grid-column: 1 / -1 !important;
+  width: 100%;
+}
+
+.hero-action-grid .button,
+.hero-action-grid .button .controlled-text,
+.hero-action-guide,
+.hero-action-guide .controlled-text {
+  text-align: center;
+}
+
+.contact-questionnaire-entry-clean {
+  width: min(100%, 980px);
+}
+
+.contact-questionnaire-entry-clean .questionnaire-start-card {
+  min-height: 0;
+  justify-content: start;
+  gap: 16px;
+}
+
+.questionnaire-start-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.questionnaire-start-top-row h3 {
+  min-width: 0;
+}
+
+.questionnaire-start-top-row .questionnaire-start-button {
+  flex: 0 0 auto;
+  align-self: center !important;
+  margin: 0 !important;
+}
+
+.questionnaire-card-contact-actions {
+  margin-top: 10px;
+}
+
+.questionnaire-card-contact-actions .contact-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+.questionnaire-card-contact-actions .email-action-wrap,
+.questionnaire-card-contact-actions .email-action-wrap .pill-action,
+.questionnaire-card-contact-actions .contact-actions .pill-action {
+  width: 100%;
+  min-width: 0;
+}
+
+.contact-form .pill-action,
+.contact-form .pill-action *,
+.questionnaire-card-contact-actions .pill-action,
+.questionnaire-card-contact-actions .pill-action * {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+
+.contact-form .pill-action {
+  background: var(--night) !important;
+  border-color: rgba(13, 22, 38, 0.20) !important;
+}
+
+.mobile-sticky-bar {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+.mobile-sticky-bar a,
+.mobile-sticky-bar a *,
+.mobile-sticky-bar svg {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+
+.mobile-sticky-bar a:nth-child(1),
+.mobile-sticky-bar a:nth-child(3) {
+  background: rgba(13, 22, 38, 0.92) !important;
+  border: 1px solid rgba(255,255,255,0.14);
+}
+
+.mobile-sticky-bar a:nth-child(2) {
+  background: var(--lava, #f2674f) !important;
+  border: 1px solid rgba(255,255,255,0.18);
+}
+
+.gift-card-flow-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10020;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: rgba(8, 16, 31, 0.78);
+  backdrop-filter: blur(18px);
+  overflow-y: auto;
+}
+
+.gift-card-flow-modal {
+  width: min(1080px, 100%);
+  min-height: min(860px, calc(100svh - 24px));
+  display: grid;
+  grid-template-rows: auto 1fr;
+  border: 1px solid rgba(255,255,255,0.62);
+  border-radius: clamp(22px, 3vw, 34px);
+  background:
+    radial-gradient(circle at 80% 0%, rgba(240, 107, 79, 0.10), transparent 34%),
+    var(--paper);
+  box-shadow: var(--shadow-strong);
+  overflow: hidden;
+}
+
+.gift-card-flow-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: clamp(22px, 4vw, 42px) clamp(22px, 5vw, 54px) 18px;
+  border-bottom: 1px solid rgba(10, 20, 34, 0.08);
+}
+
+.gift-card-flow-header h1 {
+  max-width: 760px;
+  margin: 6px 0 0;
+  color: var(--night);
+  font-size: clamp(2.6rem, 7vw, 5.4rem);
+  line-height: 0.92;
+  letter-spacing: -0.075em;
+}
+
+.gift-card-intro-screen,
+.gift-card-questionnaire-screen {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  padding: clamp(22px, 4vw, 46px) clamp(22px, 5vw, 54px) clamp(24px, 5vw, 54px);
+}
+
+.gift-card-intro-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.gift-card-intro-grid .info-card,
+.gift-card-review-card {
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: rgba(255,255,255,0.82);
+  padding: clamp(18px, 3vw, 28px);
+  box-shadow: var(--shadow-soft);
+}
+
+.gift-card-intro-grid h2,
+.gift-card-question-card h2 {
+  margin: 0 0 10px;
+  color: var(--night);
+}
+
+.gift-card-intro-grid p {
+  margin: 0;
+  color: var(--basalt);
+  line-height: 1.45;
+}
+
+.gift-card-intro-actions {
+  justify-content: flex-start;
+}
+
+.gift-card-question-card {
+  display: grid;
+  gap: 18px;
+  min-height: 260px;
+  padding: clamp(18px, 3vw, 30px);
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  background: rgba(255,255,255,0.88);
+  box-shadow: var(--shadow-soft);
+}
+
+.gift-card-step-grid {
+  width: 100%;
+}
+
+.gift-card-progress {
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(13, 22, 38, 0.10);
+  overflow: hidden;
+}
+
+.gift-card-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--lava), #ff9d76);
+}
+
+.gift-card-progress-label {
+  margin: -6px 0 0;
+  color: var(--ash);
+  font-weight: 850;
+  font-size: 0.92rem;
+}
+
+.gift-card-review-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.gift-card-review-card dt {
+  color: var(--ash);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gift-card-review-card dd {
+  color: var(--night);
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.gift-card-flow-footer,
+.gift-card-final-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.gift-card-final-actions .button {
+  min-width: min(100%, 280px);
+}
+
+.gift-card-whatsapp-action {
+  background: var(--night) !important;
+  border-color: rgba(13, 22, 38, 0.18) !important;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+
+.gift-card-flow-modal .button.primary,
+.gift-card-flow-modal .button.primary *,
+.gift-card-flow-modal .gift-card-whatsapp-action,
+.gift-card-flow-modal .gift-card-whatsapp-action * {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+
+.gift-card-flow-modal .button.secondary:not(.gift-card-whatsapp-action) {
+  color: var(--night) !important;
+  -webkit-text-fill-color: var(--night) !important;
+}
+
+.visual-editor-toolbar,
+.admin-edit-page .visual-editor-toolbar {
+  color: #fff !important;
+}
+
+.visual-editor-toolbar h1,
+.visual-editor-toolbar h2,
+.visual-editor-toolbar h3,
+.visual-editor-toolbar p,
+.visual-editor-toolbar label,
+.visual-editor-toolbar label > span,
+.visual-editor-toolbar .kicker {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+
+.visual-editor-toolbar select,
+.visual-editor-toolbar input,
+.visual-editor-toolbar textarea {
+  background: #fff !important;
+  color: var(--night, #0b1528) !important;
+  -webkit-text-fill-color: var(--night, #0b1528) !important;
+  border-color: rgba(255,255,255,0.66) !important;
+}
+
+.visual-editor-toolbar select option {
+  color: var(--night, #0b1528) !important;
+  background: #fff !important;
+}
+
+.visual-editor-toolbar .button,
+.visual-editor-toolbar button {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+
+.visual-editor-toolbar .button.secondary,
+.visual-editor-toolbar button.secondary {
+  color: var(--night, #0b1528) !important;
+  -webkit-text-fill-color: var(--night, #0b1528) !important;
+}
+
+.editor-badge,
+.editor-selectable .editor-badge,
+.admin-editable-text .editor-badge {
+  background: #ffd5c9 !important;
+  color: #8d321f !important;
+  -webkit-text-fill-color: #8d321f !important;
+  border-color: rgba(141, 50, 31, 0.18) !important;
+}
+
+@media (max-width: 860px) {
+  .hero-action-grid {
+    grid-template-columns: 1fr !important;
+    width: 100%;
+  }
+
+  .hero-action-gift,
+  .hero-action-guide {
+    grid-column: auto !important;
+  }
+
+  .questionnaire-start-top-row {
+    display: grid;
+    gap: 14px;
+  }
+
+  .questionnaire-start-top-row .questionnaire-start-button,
+  .questionnaire-card-contact-actions .contact-actions .pill-action,
+  .questionnaire-card-contact-actions .email-action-wrap,
+  .questionnaire-card-contact-actions .email-action-wrap .pill-action {
+    width: 100%;
+  }
+
+  .questionnaire-card-contact-actions .contact-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .gift-card-flow-backdrop {
+    padding: 0;
+  }
+
+  .gift-card-flow-modal {
+    width: 100vw;
+    min-height: 100svh;
+    border-radius: 0;
+  }
+
+  .gift-card-flow-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: rgba(251,247,239,0.96);
+    backdrop-filter: blur(14px);
+  }
+
+  .gift-card-intro-grid,
+  .gift-card-review-card dl {
+    grid-template-columns: 1fr;
+  }
+
+  .gift-card-flow-footer,
+  .gift-card-final-actions,
+  .gift-card-flow-footer .button,
+  .gift-card-final-actions .button {
+    width: 100%;
+  }
+
+  .gift-card-flow-footer,
+  .gift-card-final-actions {
+    display: grid;
+  }
+}

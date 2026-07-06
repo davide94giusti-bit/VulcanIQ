@@ -2649,105 +2649,355 @@ function SupportContactModal({ lang, onClose, siteContent }) {
 }
 
 
-function GiftCardPage({ lang, siteContent }) {
+function GiftCardPage({ lang, siteContent, onClose }) {
   const contact = resolvePublicContactDetails(siteContent);
   const journeyRef = useRef(null);
+  const abandonedRef = useRef(false);
+  const modalRef = useRef(null);
+  useBodyScrollLock(true);
+  const [started, setStarted] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
   const [form, setForm] = useState({
-    buyer_name: '', buyer_email: '', buyer_phone: '', recipient_name: '',
-    experience_type: 'Etna Premium', budget: '', preferred_delivery_date: '', message: ''
+    buyer_name: '',
+    buyer_email: '',
+    buyer_phone: '',
+    recipient_name: '',
+    experience_type: 'Etna Premium',
+    budget: '',
+    currency: 'EUR',
+    preferred_delivery_date: '',
+    message: ''
   });
   const [state, setState] = useState({ loading: false, error: '', success: '' });
 
+  const sourceMetadata = { language: lang, source_section: 'gift_card_page', source_cta: 'gift_card_form', form_type: 'gift_card_request' };
+  const stepDefinitions = [
+    { key: 'buyer', title: lang === 'it' ? 'Chi acquista la Gift Card?' : 'Who is buying the Gift Card?' },
+    { key: 'recipient', title: lang === 'it' ? 'A chi vuoi regalarla?' : 'Who is it for?' },
+    { key: 'experience', title: lang === 'it' ? 'Che esperienza ti interessa?' : 'Which experience are you interested in?' },
+    { key: 'budget', title: lang === 'it' ? 'Hai un budget indicativo?' : 'Do you have an indicative budget?' },
+    { key: 'delivery', title: lang === 'it' ? 'Quando vorresti consegnarla?' : 'When would you like to deliver it?' },
+    { key: 'message', title: lang === 'it' ? 'Vuoi aggiungere un messaggio?' : 'Would you like to add a message?' },
+    { key: 'review', title: lang === 'it' ? 'Controlla e invia' : 'Review and send' }
+  ];
+  const currentStep = stepDefinitions[stepIndex] || stepDefinitions[0];
+  const progressText = lang === 'it'
+    ? `Passaggio ${stepIndex + 1} di ${stepDefinitions.length}`
+    : `Step ${stepIndex + 1} of ${stepDefinitions.length}`;
+  const progressPercent = Math.round(((stepIndex + 1) / stepDefinitions.length) * 100);
+  const hasEnteredData = Boolean(
+    String(form.buyer_name || '').trim() ||
+    String(form.buyer_email || '').trim() ||
+    String(form.buyer_phone || '').trim() ||
+    String(form.recipient_name || '').trim() ||
+    String(form.budget || '').trim() ||
+    String(form.preferred_delivery_date || '').trim() ||
+    String(form.message || '').trim()
+  );
+
   useEffect(() => {
     trackEvent('gift_card_view', { language: lang, source_section: 'gift_card_page' }, { dedupe: false });
-    journeyRef.current = createFormJourney('gift_card_request', { language: lang, source_section: 'gift_card_page', source_cta: 'gift_card_form' });
+    journeyRef.current = createFormJourney('gift_card_request', sourceMetadata);
   }, [lang]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => modalRef.current?.focus?.(), 0);
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') attemptClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  });
+
+  useEffect(() => {
     function handlePageHide() {
-      markFormAbandoned(journeyRef.current?.journey_id, {
-        language: lang,
-        form_type: 'gift_card_request',
-        source_section: 'gift_card_page',
-        has_selected_experience: Boolean(form.experience_type),
-        has_selected_date: Boolean(form.preferred_delivery_date)
-      });
+      abandonOnce({ transport: 'pagehide' });
     }
     window.addEventListener('pagehide', handlePageHide);
     return () => window.removeEventListener('pagehide', handlePageHide);
-  }, [lang, form.experience_type, form.preferred_delivery_date]);
+  }, [lang, form.budget, form.experience_type, form.preferred_delivery_date, hasEnteredData]);
+
+  function abandonOnce(extra = {}) {
+    if (abandonedRef.current || !hasEnteredData) return;
+    abandonedRef.current = true;
+    markFormAbandoned(journeyRef.current?.journey_id, {
+      ...sourceMetadata,
+      ...extra,
+      step_index: started ? stepIndex + 1 : 0,
+      step_key: started ? currentStep.key : 'intro',
+      has_selected_experience: Boolean(form.experience_type),
+      has_selected_date: Boolean(form.preferred_delivery_date),
+      has_budget: Boolean(String(form.budget || '').trim())
+    });
+  }
+
+  function attemptClose() {
+    if (hasEnteredData) {
+      const confirmed = window.confirm(lang === 'it'
+        ? 'Vuoi chiudere la richiesta Gift Card? I dati inseriti potrebbero andare persi.'
+        : 'Close the Gift Card request? The details entered may be lost.');
+      if (!confirmed) return;
+    }
+    abandonOnce({ close_action: 'manual_close' });
+    if (typeof onClose === 'function') onClose();
+  }
+
+  function startQuestionnaire() {
+    setStarted(true);
+    setState({ loading: false, error: '', success: '' });
+    trackEvent('gift_card_questionnaire_started', { ...sourceMetadata, step_index: 1, step_key: 'buyer' }, { dedupe: false });
+  }
 
   function update(field, value) {
     setState((current) => ({ ...current, error: '' }));
     setForm((current) => ({ ...current, [field]: value }));
-    markFormFieldStarted(journeyRef.current?.journey_id, field, { language: lang, form_type: 'gift_card_request', source_section: 'gift_card_page' });
-    markFormActivity(journeyRef.current?.journey_id, { has_selected_experience: Boolean(field === 'experience_type' ? value : form.experience_type), has_selected_date: Boolean(field === 'preferred_delivery_date' ? value : form.preferred_delivery_date) });
+    markFormFieldStarted(journeyRef.current?.journey_id, field, {
+      ...sourceMetadata,
+      step_index: started ? stepIndex + 1 : 0,
+      step_key: field
+    });
+    markFormActivity(journeyRef.current?.journey_id, {
+      has_selected_experience: field === 'experience_type' ? Boolean(value) : Boolean(form.experience_type),
+      has_selected_date: field === 'preferred_delivery_date' ? Boolean(value) : Boolean(form.preferred_delivery_date),
+      has_budget: field === 'budget' ? Boolean(value) : Boolean(form.budget)
+    });
+  }
+
+  function validateStep(index = stepIndex) {
+    const key = stepDefinitions[index]?.key;
+    if (key === 'buyer') {
+      const hasContact = String(form.buyer_email || '').trim() || String(form.buyer_phone || '').trim();
+      if (!String(form.buyer_name || '').trim()) return lang === 'it' ? 'Inserisci il nome di chi acquista.' : 'Enter the buyer name.';
+      if (!hasContact) return lang === 'it' ? 'Inserisci almeno email o telefono/WhatsApp.' : 'Enter at least an email or phone/WhatsApp.';
+    }
+    if (key === 'recipient' && !String(form.recipient_name || '').trim()) {
+      return lang === 'it' ? 'Inserisci il nome del destinatario.' : 'Enter the recipient name.';
+    }
+    if (key === 'experience' && !String(form.experience_type || '').trim()) {
+      return lang === 'it' ? 'Seleziona un interesse o esperienza.' : 'Select an experience or interest.';
+    }
+    if (key === 'budget' && String(form.budget || '').trim() && parseMoneyAmount(form.budget) <= 0) {
+      return lang === 'it' ? 'Inserisci un budget valido oppure lascia il campo vuoto.' : 'Enter a valid budget or leave the field empty.';
+    }
+    return '';
+  }
+
+  function validateAll() {
+    for (let index = 0; index < stepDefinitions.length - 1; index += 1) {
+      const error = validateStep(index);
+      if (error) return error;
+    }
+    return '';
+  }
+
+  function goNext() {
+    const error = validateStep();
+    if (error) {
+      setState({ loading: false, error, success: '' });
+      return;
+    }
+    trackEvent('gift_card_questionnaire_step_completed', {
+      ...sourceMetadata,
+      step_index: stepIndex + 1,
+      step_key: currentStep.key,
+      has_budget: Boolean(String(form.budget || '').trim()),
+      has_preferred_delivery_date: Boolean(form.preferred_delivery_date)
+    }, { dedupe: false });
+    setStepIndex((current) => Math.min(current + 1, stepDefinitions.length - 1));
+  }
+
+  function goBack() {
+    setState((current) => ({ ...current, error: '' }));
+    setStepIndex((current) => Math.max(current - 1, 0));
+  }
+
+  function budgetLabel() {
+    return String(form.budget || '').trim()
+      ? formatMoney(parseMoneyAmount(form.budget), form.currency || 'EUR', lang)
+      : (lang === 'it' ? 'Da definire' : 'To define');
   }
 
   function buildGiftCardMessage() {
-    const budget = form.budget ? formatMoney(parseMoneyAmount(form.budget), 'EUR', lang) : (lang === 'it' ? 'da definire' : 'to define');
+    const budget = budgetLabel();
     return lang === 'it'
-      ? `Ciao Leonardo,\n\nvorrei informazioni per regalare una gift card vulcanIQ.\n\nNome: ${form.buyer_name || '-'}\nContatto: ${form.buyer_phone || form.buyer_email || '-'}\nGift Card per: ${form.recipient_name || '-'}\nEsperienza/interesse: ${form.experience_type || '-'}\nBudget indicativo: ${budget}\nData consegna preferita: ${form.preferred_delivery_date || '-'}\n\n${form.message || ''}\n\nGrazie!`
-      : `Hi Leonardo,\n\nI would like information about gifting a vulcanIQ gift card.\n\nName: ${form.buyer_name || '-'}\nContact: ${form.buyer_phone || form.buyer_email || '-'}\nGift Card for: ${form.recipient_name || '-'}\nExperience/interest: ${form.experience_type || '-'}\nIndicative budget: ${budget}\nPreferred delivery date: ${form.preferred_delivery_date || '-'}\n\n${form.message || ''}\n\nThank you!`;
+      ? `Ciao Leonardo,\n\nvorrei informazioni per regalare una Gift Card vulcanIQ.\n\nNome: ${form.buyer_name || '-'}\nContatto: ${form.buyer_phone || form.buyer_email || '-'}\nGift Card per: ${form.recipient_name || '-'}\nEsperienza/interesse: ${form.experience_type || '-'}\nBudget indicativo: ${budget}\nData consegna preferita: ${form.preferred_delivery_date || '-'}\n\n${form.message || ''}\n\nGrazie!`
+      : `Hi Leonardo,\n\nI would like information about gifting a vulcanIQ Gift Card.\n\nName: ${form.buyer_name || '-'}\nContact: ${form.buyer_phone || form.buyer_email || '-'}\nGift Card for: ${form.recipient_name || '-'}\nExperience/interest: ${form.experience_type || '-'}\nIndicative budget: ${budget}\nPreferred delivery date: ${form.preferred_delivery_date || '-'}\n\n${form.message || ''}\n\nThank you!`;
   }
 
-  async function submit(event) {
-    event.preventDefault();
-    setState({ loading: false, error: '', success: '' });
-    const hasContact = String(form.buyer_email || '').trim() || String(form.buyer_phone || '').trim();
-    if (!String(form.buyer_name || '').trim() || !hasContact) {
-      setState({ loading: false, error: lang === 'it' ? 'Inserisci nome e almeno un contatto.' : 'Enter a name and at least one contact.', success: '' });
+  async function submitWebsiteRequest() {
+    const error = validateAll();
+    if (error) {
+      setState({ loading: false, error, success: '' });
       return;
     }
     setState({ loading: true, error: '', success: '' });
     try {
-      const created = await createGiftCardRequest({ ...form, buyer_preferred_language: lang, language: lang, currency: 'EUR' });
-      trackEvent('gift_card_request_created', { request_id: created?.id || '', language: lang, source_section: 'gift_card_page', has_budget: Boolean(form.budget), has_preferred_delivery_date: Boolean(form.preferred_delivery_date) }, { dedupe: false });
-      markFormSubmitted(journeyRef.current?.journey_id, { language: lang, form_type: 'gift_card_request', has_selected_experience: Boolean(form.experience_type), has_selected_date: Boolean(form.preferred_delivery_date) });
+      const created = await createGiftCardRequest({ ...form, buyer_preferred_language: lang, language: lang, currency: form.currency || 'EUR' });
+      trackEvent('gift_card_request_created', {
+        request_id: created?.id || '',
+        language: lang,
+        source_section: 'gift_card_page',
+        source_cta: 'website_submit',
+        has_budget: Boolean(String(form.budget || '').trim()),
+        has_preferred_delivery_date: Boolean(form.preferred_delivery_date)
+      }, { dedupe: false });
+      markFormSubmitted(journeyRef.current?.journey_id, {
+        ...sourceMetadata,
+        channel: 'website',
+        step_index: stepDefinitions.length,
+        step_key: 'review',
+        has_selected_experience: Boolean(form.experience_type),
+        has_selected_date: Boolean(form.preferred_delivery_date),
+        has_budget: Boolean(String(form.budget || '').trim())
+      });
       setState({ loading: false, error: '', success: lang === 'it' ? 'Richiesta Gift Card inviata. Ti contatteremo manualmente per conferma e pagamento esterno.' : 'Gift Card request sent. We will contact you manually for confirmation and external payment.' });
-      setForm({ buyer_name: '', buyer_email: '', buyer_phone: '', recipient_name: '', experience_type: 'Etna Premium', budget: '', preferred_delivery_date: '', message: '' });
-      journeyRef.current = createFormJourney('gift_card_request', { language: lang, source_section: 'gift_card_page', source_cta: 'gift_card_form' });
+      setForm({ buyer_name: '', buyer_email: '', buyer_phone: '', recipient_name: '', experience_type: 'Etna Premium', budget: '', currency: 'EUR', preferred_delivery_date: '', message: '' });
+      setStarted(false);
+      setStepIndex(0);
+      abandonedRef.current = false;
+      journeyRef.current = createFormJourney('gift_card_request', sourceMetadata);
     } catch (error) {
       setState({ loading: false, error: lang === 'it' ? 'Richiesta non inviata. Puoi usare WhatsApp.' : 'Request not sent. You can use WhatsApp.', success: '' });
     }
   }
 
-  function openWhatsapp() {
-    markFormAbandoned(journeyRef.current?.journey_id, { language: lang, form_type: 'gift_card_request', source_section: 'gift_card_page', recovery_channel: 'whatsapp' });
-    markFormRecoveredViaWhatsApp(journeyRef.current?.journey_id, { language: lang, form_type: 'gift_card_request', source_section: 'gift_card_page' });
+  function handleWhatsappClick(event) {
+    const error = validateAll();
+    if (error) {
+      event.preventDefault();
+      setState({ loading: false, error, success: '' });
+      return;
+    }
+    abandonOnce({ recovery_channel: 'whatsapp' });
+    markFormRecoveredViaWhatsApp(journeyRef.current?.journey_id, {
+      ...sourceMetadata,
+      step_index: stepDefinitions.length,
+      step_key: 'review',
+      has_selected_experience: Boolean(form.experience_type),
+      has_selected_date: Boolean(form.preferred_delivery_date),
+      has_budget: Boolean(String(form.budget || '').trim())
+    });
+    trackEvent('gift_card_whatsapp_request_clicked', {
+      language: lang,
+      source_section: 'gift_card_page',
+      source_cta: 'whatsapp_submit',
+      has_budget: Boolean(String(form.budget || '').trim()),
+      has_preferred_delivery_date: Boolean(form.preferred_delivery_date)
+    }, { dedupe: false });
     trackEvent('gift_card_request_click', { language: lang, source_section: 'gift_card_page', source_cta: 'whatsapp' }, { dedupe: false });
   }
 
   const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(buildGiftCardMessage())}`;
-  return (
-    <section className="page-section gift-card-page">
-      <div className="container narrow-copy">
-        <span className="kicker">Gift card</span>
-        <h1>{lang === 'it' ? 'Regala un’esperienza sull’Etna' : 'Gift a Mount Etna experience'}</h1>
-        <p className="lead">{lang === 'it' ? 'Una richiesta Gift Card vulcanIQ: nessun pagamento viene raccolto dal sito. Il team conferma proposta, validità e consegna manualmente.' : 'A vulcanIQ Gift Card request: no payment is collected on the website. The team confirms proposal, validity and delivery manually.'}</p>
-        <div className="gift-card-option-grid">
-          <article className="info-card"><h2>{lang === 'it' ? 'Come funziona' : 'How it works'}</h2><p>{lang === 'it' ? 'Invia i dettagli, ricevi conferma manuale e paghi esternamente solo dopo il contatto del team.' : 'Send the details, receive manual confirmation and pay externally only after the team contacts you.'}</p></article>
-          <article className="info-card"><h2>{lang === 'it' ? 'Ideale per' : 'Best for'}</h2><p>{lang === 'it' ? 'Coppie, famiglie, compleanni, anniversari, lauree e regali aziendali.' : 'Couples, families, birthdays, anniversaries, graduations and company gifts.'}</p></article>
-        </div>
-        <form className="gift-card-request-form admin-form-grid" onSubmit={submit}>
-          <label className="admin-field"><span>{lang === 'it' ? 'Nome acquirente' : 'Buyer name'}</span><input value={form.buyer_name} onChange={(event) => update('buyer_name', event.target.value)} /></label>
-          <label className="admin-field"><span>Email</span><input type="email" value={form.buyer_email} onChange={(event) => update('buyer_email', event.target.value)} /></label>
-          <label className="admin-field"><span>WhatsApp / Phone</span><input value={form.buyer_phone} onChange={(event) => update('buyer_phone', event.target.value)} /></label>
-          <label className="admin-field"><span>{lang === 'it' ? 'Nome destinatario' : 'Recipient name'}</span><input value={form.recipient_name} onChange={(event) => update('recipient_name', event.target.value)} /></label>
-          <label className="admin-field"><span>{lang === 'it' ? 'Esperienza/interesse' : 'Experience/interest'}</span><select value={form.experience_type} onChange={(event) => update('experience_type', event.target.value)}><option>Etna Premium</option><option>Etna Live</option><option>Etna Stories</option><option>{lang === 'it' ? 'Non so ancora' : 'Not sure yet'}</option></select></label>
-          <label className="admin-field"><span>{lang === 'it' ? 'Budget indicativo' : 'Indicative budget'}</span><input inputMode="decimal" value={form.budget} onChange={(event) => update('budget', event.target.value)} placeholder="EUR" /></label>
-          <label className="admin-field"><span>{lang === 'it' ? 'Data consegna preferita' : 'Preferred delivery date'}</span><input type="date" value={form.preferred_delivery_date} onChange={(event) => update('preferred_delivery_date', event.target.value)} /></label>
-          <label className="admin-field full"><span>{lang === 'it' ? 'Messaggio opzionale' : 'Optional message'}</span><textarea rows={4} value={form.message} onChange={(event) => update('message', event.target.value)} /></label>
-          {state.error && <p className="form-status error full" role="alert">{state.error}</p>}
-          {state.success && <p className="form-status success full" role="status">{state.success}</p>}
-          <div className="modal-actions full">
-            <button className="button primary" type="submit" disabled={state.loading}>{state.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : (lang === 'it' ? 'Invia richiesta Gift Card' : 'Send Gift Card request')}</button>
-            <a className="button secondary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={openWhatsapp}>WhatsApp</a>
+
+  function renderQuestion() {
+    switch (currentStep.key) {
+      case 'buyer':
+        return (
+          <div className="admin-form-grid gift-card-step-grid">
+            <label className="admin-field full"><span>{lang === 'it' ? 'Nome di chi acquista' : 'Buyer name'}</span><input value={form.buyer_name} onChange={(event) => update('buyer_name', event.target.value)} autoComplete="name" /></label>
+            <label className="admin-field"><span>Email</span><input type="email" value={form.buyer_email} onChange={(event) => update('buyer_email', event.target.value)} autoComplete="email" /></label>
+            <label className="admin-field"><span>WhatsApp / Phone</span><input value={form.buyer_phone} onChange={(event) => update('buyer_phone', event.target.value)} autoComplete="tel" /></label>
           </div>
-        </form>
-      </div>
-    </section>
-  );
+        );
+      case 'recipient':
+        return <label className="admin-field full"><span>{lang === 'it' ? 'Nome destinatario' : 'Recipient name'}</span><input value={form.recipient_name} onChange={(event) => update('recipient_name', event.target.value)} /></label>;
+      case 'experience':
+        return (
+          <label className="admin-field full"><span>{lang === 'it' ? 'Esperienza/interesse' : 'Experience/interest'}</span>
+            <select value={form.experience_type} onChange={(event) => update('experience_type', event.target.value)}>
+              {experiences.map((item) => <option key={item.id} value={item.title}>{item.title}</option>)}
+              <option value={lang === 'it' ? 'Non so ancora' : 'Not sure yet'}>{lang === 'it' ? 'Non so ancora' : 'Not sure yet'}</option>
+            </select>
+          </label>
+        );
+      case 'budget':
+        return (
+          <div className="admin-form-grid gift-card-step-grid">
+            <label className="admin-field"><span>{lang === 'it' ? 'Budget indicativo' : 'Indicative budget'}</span><input inputMode="decimal" value={form.budget} onChange={(event) => update('budget', event.target.value)} placeholder="150" /></label>
+            <label className="admin-field"><span>{lang === 'it' ? 'Valuta' : 'Currency'}</span><select value={form.currency} onChange={(event) => update('currency', event.target.value)}><option value="EUR">EUR</option><option value="CHF">CHF</option><option value="USD">USD</option><option value="GBP">GBP</option></select></label>
+          </div>
+        );
+      case 'delivery':
+        return <label className="admin-field full"><span>{lang === 'it' ? 'Data consegna preferita' : 'Preferred delivery date'}</span><input type="date" value={form.preferred_delivery_date} onChange={(event) => update('preferred_delivery_date', event.target.value)} /></label>;
+      case 'message':
+        return <label className="admin-field full"><span>{lang === 'it' ? 'Messaggio opzionale' : 'Optional message'}</span><textarea rows={6} value={form.message} onChange={(event) => update('message', event.target.value)} /></label>;
+      case 'review':
+      default:
+        return (
+          <div className="gift-card-review-card">
+            <dl>
+              <div><dt>{lang === 'it' ? 'Nome' : 'Name'}</dt><dd>{form.buyer_name || '-'}</dd></div>
+              <div><dt>{lang === 'it' ? 'Contatto' : 'Contact'}</dt><dd>{form.buyer_phone || form.buyer_email || '-'}</dd></div>
+              <div><dt>{lang === 'it' ? 'Destinatario' : 'Recipient'}</dt><dd>{form.recipient_name || '-'}</dd></div>
+              <div><dt>{lang === 'it' ? 'Esperienza' : 'Experience'}</dt><dd>{form.experience_type || '-'}</dd></div>
+              <div><dt>{lang === 'it' ? 'Budget' : 'Budget'}</dt><dd>{budgetLabel()}</dd></div>
+              <div><dt>{lang === 'it' ? 'Consegna' : 'Delivery'}</dt><dd>{form.preferred_delivery_date || '-'}</dd></div>
+            </dl>
+            {form.message && <p className="small-note"><strong>{lang === 'it' ? 'Messaggio' : 'Message'}:</strong> {form.message}</p>}
+          </div>
+        );
+    }
+  }
+
+  return createPortal((
+    <div className="gift-card-flow-backdrop motion-backdrop" role="presentation" onClick={attemptClose}>
+      <section className="gift-card-flow-modal motion-panel" role="dialog" aria-modal="true" aria-labelledby="giftCardFlowTitle" ref={modalRef} tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+        <header className="gift-card-flow-header">
+          <div>
+            <span className="kicker">Gift Card</span>
+            <h1 id="giftCardFlowTitle">{lang === 'it' ? 'Regala un’esperienza sull’Etna' : 'Gift a Mount Etna experience'}</h1>
+          </div>
+          <button className="modal-close-button" type="button" onClick={attemptClose}>{text(lang, 'close')}</button>
+        </header>
+
+        {!started ? (
+          <main className="gift-card-intro-screen">
+            <div className="gift-card-intro-grid">
+              <article className="info-card">
+                <h2>{lang === 'it' ? 'Come funziona' : 'How it works'}</h2>
+                <p>{lang === 'it' ? 'Invia i dettagli, ricevi una conferma manuale e paga esternamente solo dopo essere stato contattato dal team.' : 'Send the details, receive manual confirmation and pay externally only after the team contacts you.'}</p>
+              </article>
+              <article className="info-card">
+                <h2>{lang === 'it' ? 'Ideale per' : 'Best for'}</h2>
+                <p>{lang === 'it' ? 'Coppie, famiglie, compleanni, anniversari, lauree e regali aziendali.' : 'Couples, families, birthdays, anniversaries, graduations and company gifts.'}</p>
+              </article>
+            </div>
+            {state.success && <p className="form-status success" role="status">{state.success}</p>}
+            <div className="modal-actions gift-card-intro-actions">
+              <button className="button primary" type="button" onClick={startQuestionnaire}>{lang === 'it' ? 'Inizia il questionario' : 'Start the questionnaire'}</button>
+            </div>
+          </main>
+        ) : (
+          <main className="gift-card-questionnaire-screen">
+            <div className="questionnaire-progress gift-card-progress" aria-label={progressText} role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={progressPercent}>
+              <span style={{ width: `${progressPercent}%` }} />
+            </div>
+            <p className="gift-card-progress-label">{progressText}</p>
+            <section className="gift-card-question-card" aria-live="polite">
+              <h2>{currentStep.title}</h2>
+              {renderQuestion()}
+              {state.error && <p className="form-status error" role="alert">{state.error}</p>}
+              {state.success && <p className="form-status success" role="status">{state.success}</p>}
+            </section>
+            <footer className="gift-card-flow-footer">
+              <button className="button secondary" type="button" onClick={goBack} disabled={stepIndex === 0 || state.loading}>{lang === 'it' ? 'Indietro' : 'Back'}</button>
+              {currentStep.key !== 'review' ? (
+                <button className="button primary" type="button" onClick={goNext} disabled={state.loading}>{lang === 'it' ? 'Avanti' : 'Next'}</button>
+              ) : (
+                <div className="gift-card-final-actions">
+                  <button className="button primary" type="button" onClick={submitWebsiteRequest} disabled={state.loading}>{state.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : (lang === 'it' ? 'Invia richiesta Gift Card dal sito' : 'Send Gift Card request via website')}</button>
+                  <a className="button secondary gift-card-whatsapp-action" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsappClick}>{lang === 'it' ? 'Invia richiesta Gift Card via WhatsApp' : 'Send Gift Card request via WhatsApp'}</a>
+                </div>
+              )}
+            </footer>
+          </main>
+        )}
+      </section>
+    </div>
+  ), document.body);
 }
 
 function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_mobile_bar', sourceCta = 'fast_request', ctaLocation = 'sticky_contact_bar', flowType = 'fast_request' }) {
@@ -2930,8 +3180,8 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
           <EditableText as="p" className="lead" itemKey="home.hero.subtitle" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroLead')} />
           <div className="hero-action-grid">
             <button className="button primary hero-action-main" type="button" onClick={handleBookNow}><EditableText itemKey="home.hero.secondary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'viewAvailability')} /></button>
-            <button className="button secondary dark hero-action-code" type="button" onClick={() => setBookingCodeOpen(true)}>{text(lang, 'bookWithCode')}</button>
-            <a className="button secondary dark hero-action-gift" href={`/gift-card?lang=${lang}`} onClick={(event) => { event.preventDefault(); trackEvent('gift_card_request_click', { language: lang, source_section: 'home_hero', source_cta: 'gift_card' }, { dedupe: false }); setActivePage('giftCard'); navigatePublicRoute('/gift-card', lang); }}>{lang === 'it' ? 'Gift card' : 'Gift card'}</a>
+            <button className="button secondary dark hero-action-code" type="button" onClick={() => setBookingCodeOpen(true)}><EditableText itemKey="home.hero.cta.book_with_code" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'bookWithCode')} /></button>
+            <a className="button secondary dark hero-action-gift" href={`/gift-card?lang=${lang}`} onClick={(event) => { event.preventDefault(); trackEvent('gift_card_request_click', { language: lang, source_section: 'home_hero', source_cta: 'gift_card' }, { dedupe: false }); setActivePage('giftCard'); navigatePublicRoute('/gift-card', lang); }}><EditableText itemKey="home.hero.cta.gift_card" lang={lang} siteContent={siteContent} editor={editor} fallback="Gift Card" /></a>
             <a
               className="trust-card guide-license-card hero-action-guide"
               href="https://www.guidealpinevulcanologichesicilia.it/tutte-le-guide/chiavetta-leonardo/"
@@ -4964,9 +5214,14 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       <div className="container contact-questionnaire-entry contact-questionnaire-entry-clean">
         <article className="contact-form questionnaire-start-card">
           <span className="kicker">{text(lang, 'formKicker')}</span>
-          <h3>{text(lang, 'prepareYourRequest')}</h3>
+          <div className="questionnaire-start-top-row">
+            <h3>{text(lang, 'prepareYourRequest')}</h3>
+            <button className="request-action-button request-action-button-primary questionnaire-start-button" type="button" onClick={openQuestionnaire}>{text(lang, 'startQuestionnaire')}</button>
+          </div>
           <p>{text(lang, 'contactQuestionnaireIntro')}</p>
-          <button className="request-action-button request-action-button-primary questionnaire-start-button" type="button" onClick={openQuestionnaire}>{text(lang, 'startQuestionnaire')}</button>
+          <div className="questionnaire-card-contact-actions">
+            <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={openQuestionnaire} siteContent={siteContent} contactDetails={contact} location="contact_page_card_actions" />
+          </div>
           {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
         </article>
         <div className="desktop-contact-actions-below-card">
@@ -7588,6 +7843,8 @@ const SITE_CONTENT_DEFINITIONS = [
   { key: 'home.hero.subtitle', section: 'Homepage', label_it: 'Homepage hero subtitle', label_en: 'Homepage hero subtitle', type: 'textarea', default_it: i18n.it.heroLead, default_en: i18n.en.heroLead, text_size: 'large', style_variant: 'body' },
   { key: 'home.hero.primary_cta', section: 'Homepage', label_it: 'CTA principale', label_en: 'Primary CTA', type: 'text', default_it: i18n.it.findExperience, default_en: i18n.en.findExperience, style_variant: 'label' },
   { key: 'home.hero.secondary_cta', section: 'Homepage', label_it: 'CTA secondaria', label_en: 'Secondary CTA', type: 'text', default_it: i18n.it.viewAvailability, default_en: i18n.en.viewAvailability, style_variant: 'label' },
+  { key: 'home.hero.cta.book_with_code', section: 'Homepage', label_it: 'CTA prenota con codice', label_en: 'Book with code CTA', type: 'text', default_it: i18n.it.bookWithCode, default_en: i18n.en.bookWithCode, style_variant: 'label' },
+  { key: 'home.hero.cta.gift_card', section: 'Homepage', label_it: 'CTA Gift Card', label_en: 'Gift Card CTA', type: 'text', default_it: 'Gift Card', default_en: 'Gift Card', style_variant: 'label' },
   { key: 'home.hero.contact_cta', section: 'Homepage', label_it: 'CTA contatto', label_en: 'Contact CTA', type: 'text', default_it: i18n.it.contact, default_en: i18n.en.contact, style_variant: 'label' },
   { key: 'home.hero.guide_badge', section: 'Homepage', label_it: 'Badge guida', label_en: 'Guide badge', type: 'text', default_it: i18n.it.trust[0], default_en: i18n.en.trust[0], style_variant: 'label' },
   { key: 'experiences.page.title', section: 'Esperienze', label_it: 'Titolo pagina esperienze', label_en: 'Experiences page title', type: 'textarea', default_it: i18n.it.experiencesTitle, default_en: i18n.en.experiencesTitle, text_size: 'hero', style_variant: 'display', text_align: 'center' },
@@ -14267,7 +14524,7 @@ function App() {
       case 'contact':
         return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'giftCard':
-        return <GiftCardPage lang={lang} siteContent={siteContent} />;
+        return <GiftCardPage lang={lang} siteContent={siteContent} onClose={() => { setActivePage('home'); navigatePublicRoute('/', lang); }} />;
       case 'home':
       default:
         return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} />;
