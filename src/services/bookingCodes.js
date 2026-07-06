@@ -9,10 +9,7 @@ const BOOKING_CODE_FIELDS = `
   expected_amount, currency, source, admin_note, customer_note, status,
   completion_status, payment_status, income_status, admin_confirmed_income,
   completed_at, income_confirmed_at, income_confirmed_by, cancelled_at, no_show_at,
-<<<<<<< HEAD
-=======
   review_requested_at, review_received_at, review_request_channel, review_link_copied_at,
->>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
   created_by, created_at, expires_at, redeemed_at, redeemed_booking_request_id, redeemed_finance_entry_id
 `;
 
@@ -337,8 +334,6 @@ export async function redeemBookingCode(code, { language = 'it' } = {}) {
 
   throw first.error;
 }
-<<<<<<< HEAD
-=======
 
 
 export async function markBookingCodeReviewLinkCopied(id, userId = null) {
@@ -376,4 +371,3 @@ export async function markBookingCodeReviewReceived(id, userId = null) {
   if (error) throw error;
   return normalizeBookingCodeRow(data);
 }
->>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)

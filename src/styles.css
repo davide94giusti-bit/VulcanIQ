@@ -11965,8 +11965,6 @@ body.modal-scroll-lock {
     grid-template-columns: 1fr;
   }
 }
-<<<<<<< HEAD
-=======
 
 /* Revenue OS Patch 3: gift cards, reviews, referrals, abandoned journeys */
 .gift-cards-admin-page .gift-card-admin-list,
@@ -12056,4 +12054,3 @@ body.modal-scroll-lock {
     grid-template-columns: 1fr;
   }
 }
->>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)

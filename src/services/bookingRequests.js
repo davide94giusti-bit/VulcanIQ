@@ -14,12 +14,8 @@ const requestFields = `
   analytics_session_id, analytics_visitor_id, analytics_journey_id, booking_journey_version,
   device_type, browser, operating_system,
   admin_note, decision_note, decided_at, decided_by,
-<<<<<<< HEAD
-  lead_status, lead_priority, lead_owner_id, next_follow_up_at, contacted_at, quoted_at, deposit_sent_at, deposit_paid_at, confirmed_at, completed_at, review_requested_at, review_received_at, lost_at, lost_reason, expected_value, quoted_amount, internal_notes,
-=======
   lead_status, lead_priority, lead_owner_id, next_follow_up_at, contacted_at, quoted_at, deposit_sent_at, deposit_paid_at, confirmed_at, completed_at, review_requested_at, review_received_at, review_request_channel, review_link_copied_at, review_code, lost_at, lost_reason, expected_value, quoted_amount, internal_notes,
   referral_code, referral_source, referral_landing_at,
->>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
   created_by_admin, availability_block_id
 `;
 
@@ -422,8 +418,6 @@ export async function cancelBookingRequest({ request, userId, decisionNote = '' 
   });
   await reverseOrVoidFinanceForRequest(updated, userId, note || 'Booking request cancelled');
   return updated;
-<<<<<<< HEAD
-=======
 }
 
 
@@ -453,5 +447,4 @@ export async function markBookingRequestReviewReceived(id, userId = null) {
     lead_status: 'review_received',
     updated_by: userId || null
   });
->>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
 }

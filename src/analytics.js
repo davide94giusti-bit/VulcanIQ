@@ -63,12 +63,6 @@ const EVENT_NAMES = new Set([
   'booking_code_review_duplicate',
   'review_request_sent',
   'google_review_request_click',
-<<<<<<< HEAD
-  'referral_code_created',
-  'referral_link_click',
-  'abandoned_form_detected',
-  'abandoned_form_recovered_whatsapp'
-=======
   'gift_card_request_created',
   'gift_card_status_changed',
   'gift_card_paid',
@@ -91,7 +85,6 @@ const EVENT_NAMES = new Set([
   'abandoned_form_detected',
   'abandoned_form_recovered_whatsapp',
   'form_submit_success'
->>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
 ]);
 
 const VISITOR_KEY = 'vulcaniq_analytics_visitor_id';
