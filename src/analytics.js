@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient.js';
 
+// Keep this analytics allowlist synchronized with functions/api/analytics/event.js.
 const EVENT_NAMES = new Set([
   'page_view',
   'language_switch',
@@ -465,6 +466,9 @@ async function sendPayload(payload, options = {}) {
     const sent = EVENT_ENDPOINTS.some((endpoint) => sendWithBeacon(endpoint, payload));
     if (sent) return;
   }
+
+  let shouldTryDirectFallback = false;
+
   for (const endpoint of EVENT_ENDPOINTS) {
     try {
       const response = await fetch(endpoint, {
@@ -473,12 +477,24 @@ async function sendPayload(payload, options = {}) {
         body: JSON.stringify(payload),
         keepalive: Boolean(options.keepalive || payload.event_name.startsWith('session_'))
       });
+
       if (response.ok || response.status === 204) return;
+
+      if ([400, 401, 403, 404].includes(response.status)) {
+        return;
+      }
+
+      if (response.status >= 500) {
+        shouldTryDirectFallback = true;
+      }
     } catch {
-      // Try the next endpoint, then direct Supabase fallback.
+      shouldTryDirectFallback = true;
     }
   }
-  await directSupabaseFallback(payload);
+
+  if (shouldTryDirectFallback) {
+    await directSupabaseFallback(payload);
+  }
 }
 
 export async function trackEvent(eventName, metadata = {}, options = {}) {

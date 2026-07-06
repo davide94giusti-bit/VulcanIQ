@@ -12443,3 +12443,80 @@ body.modal-scroll-lock {
     display: grid;
   }
 }
+
+/* Patch 3.1.1 hotfix: desktop/mobile CTA parity, contact dedupe, fast request layout, editor contrast */
+.desktop-contact-actions-below-card {
+  display: none !important;
+}
+
+.fast-request-inline-close {
+  display: none !important;
+}
+
+.visual-editor-toolbar > div > .kicker,
+.admin-visual-editor-toolbar > div > .kicker,
+.visual-editor-page .visual-editor-toolbar > div > .kicker,
+.admin-visual-editor-page .admin-visual-editor-toolbar > div > .kicker {
+  background: #fff0ea !important;
+  border-color: rgba(240, 107, 79, 0.26) !important;
+  color: #b64c38 !important;
+  -webkit-text-fill-color: #b64c38 !important;
+  text-shadow: none !important;
+}
+
+.visual-editor-toolbar .button.secondary,
+.visual-editor-toolbar button.secondary,
+.admin-visual-editor-toolbar .button.secondary,
+.admin-visual-editor-toolbar button.secondary {
+  background: #fff !important;
+  color: var(--night, #0b1528) !important;
+  -webkit-text-fill-color: var(--night, #0b1528) !important;
+}
+
+.visual-editor-toolbar .button.primary,
+.visual-editor-toolbar button.primary,
+.admin-visual-editor-toolbar .button.primary,
+.admin-visual-editor-toolbar button.primary {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+
+.visual-editor-toolbar select,
+.visual-editor-toolbar input,
+.admin-visual-editor-toolbar select,
+.admin-visual-editor-toolbar input {
+  background: #fff !important;
+  color: var(--night, #0b1528) !important;
+  -webkit-text-fill-color: var(--night, #0b1528) !important;
+}
+
+@media (max-width: 860px) {
+  .fast-request-modal .admin-modal-header {
+    display: block !important;
+  }
+
+  .fast-request-modal .admin-modal-header .modal-close-button {
+    display: none !important;
+  }
+
+  .fast-request-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    width: 100%;
+  }
+
+  .fast-request-actions .button,
+  .fast-request-actions a.button {
+    width: 100%;
+  }
+
+  .fast-request-inline-close {
+    display: inline-flex !important;
+    order: 99;
+    background: #fff !important;
+    color: var(--night, #0b1528) !important;
+    -webkit-text-fill-color: var(--night, #0b1528) !important;
+    border-color: var(--line, rgba(24, 33, 43, 0.11)) !important;
+  }
+}

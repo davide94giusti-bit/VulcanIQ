@@ -3072,27 +3072,27 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
         {step === 1 && (
           <div className="admin-form-grid">
             <label className="admin-field full"><span>{lang === 'it' ? 'Esperienza' : 'Experience'}</span><select value={form.experienceId} onChange={(event) => update('experienceId', event.target.value)}>{experiences.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
-            <div className="modal-actions full"><button className="button primary" type="button" onClick={() => completeStep(2)}>{lang === 'it' ? 'Continua' : 'Continue'}</button></div>
+            <div className="modal-actions full fast-request-actions"><button className="button primary" type="button" onClick={() => completeStep(2)}>{lang === 'it' ? 'Continua' : 'Continue'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
           </div>
         )}
         {step === 2 && (
           <div className="admin-form-grid">
             <label className="admin-field"><span>{lang === 'it' ? 'Data' : 'Date'}</span><select value={form.dateMode} onChange={(event) => update('dateMode', event.target.value)}><option value="flexible">{lang === 'it' ? 'Sono flessibile' : "I'm flexible"}</option><option value="custom">{lang === 'it' ? 'Data specifica' : 'Specific date'}</option></select></label>
             {form.dateMode === 'custom' && <label className="admin-field"><span>{lang === 'it' ? 'Data preferita' : 'Preferred date'}</span><input type="date" value={form.customDate} onChange={(event) => update('customDate', event.target.value)} /></label>}
-            <div className="modal-actions full"><button className="button secondary" type="button" onClick={() => setStep(1)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(3)}>{lang === 'it' ? 'Continua' : 'Continue'}</button></div>
+            <div className="modal-actions full fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(1)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(3)}>{lang === 'it' ? 'Continua' : 'Continue'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
           </div>
         )}
         {step === 3 && (
           <div className="admin-form-grid">
             <label className="admin-field"><span>{lang === 'it' ? 'Adulti' : 'Adults'}</span><input type="number" min="0" value={form.adults} onChange={(event) => update('adults', event.target.value)} /></label>
             <label className="admin-field"><span>{lang === 'it' ? 'Bambini' : 'Children'}</span><input type="number" min="0" value={form.children} onChange={(event) => update('children', event.target.value)} /></label>
-            <div className="modal-actions full"><button className="button secondary" type="button" onClick={() => setStep(2)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(4)}>{lang === 'it' ? 'Rivedi messaggio' : 'Review message'}</button></div>
+            <div className="modal-actions full fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(2)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(4)}>{lang === 'it' ? 'Rivedi messaggio' : 'Review message'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
           </div>
         )}
         {step === 4 && (
           <div className="fast-request-review">
             <textarea readOnly value={message} rows={10} />
-            <div className="modal-actions"><button className="button secondary" type="button" onClick={() => setStep(3)}>{lang === 'it' ? 'Modifica' : 'Edit'}</button><a className="button primary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>WhatsApp</a></div>
+            <div className="modal-actions fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(3)}>{lang === 'it' ? 'Modifica' : 'Edit'}</button><a className="button primary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>WhatsApp</a><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
           </div>
         )}
       </section>
@@ -3112,15 +3112,7 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
   const [fastRequestOpen, setFastRequestOpen] = useState(false);
 
   function handleBookNow() {
-    const metadata = { language: lang, source_section: 'hero', source_cta: 'book_now' };
-    trackEvent('book_now_clicked', metadata, { dedupe: false });
-    const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches;
-    if (isMobile) {
-      setFastRequestOpen(true);
-      return;
-    }
-    setActivePage('experiences');
-    window.setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
+    setFastRequestOpen(true);
   }
 
   function handleContact() {
@@ -3212,7 +3204,7 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
         </div>
       </div>
       {bookingCodeOpen && <BookingCodeModal lang={lang} onClose={() => setBookingCodeOpen(false)} siteContent={siteContent} />}
-      {fastRequestOpen && <FastRequestModal lang={lang} siteContent={siteContent} sourceSection="hero" sourceCta="book_now" ctaLocation="mobile_book_now" flowType="fast_request" onClose={() => setFastRequestOpen(false)} />}
+      {fastRequestOpen && <FastRequestModal lang={lang} siteContent={siteContent} sourceSection="hero" sourceCta="book_now" ctaLocation="hero_book_now" flowType="fast_request" onClose={() => setFastRequestOpen(false)} />}
       {supportContactOpen && <SupportContactModal lang={lang} onClose={closeSupportContact} siteContent={siteContent} />}
     </section>
   );
@@ -5224,9 +5216,6 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
           </div>
           {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
         </article>
-        <div className="desktop-contact-actions-below-card">
-          <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={openQuestionnaire} siteContent={siteContent} contactDetails={contact} location="contact_page_desktop_actions" />
-        </div>
       </div>
 
       {questionnaireTransition.shouldRender && (
