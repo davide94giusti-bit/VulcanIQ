@@ -5577,7 +5577,7 @@ body.modal-scroll-lock {
 }
 
 .footer-whatsapp-link {
-  color: var(--night);
+  color: #fff;
   font-weight: 850;
   text-decoration: none;
 }
@@ -5799,7 +5799,7 @@ body.modal-scroll-lock {
   border: 0;
   padding: 0;
   background: transparent;
-  color: var(--night);
+  color: #fff;
   cursor: pointer;
   font: inherit;
   font-weight: 850;
@@ -5839,7 +5839,7 @@ body.modal-scroll-lock {
   padding: 0 14px;
   border-radius: 999px;
   background: rgba(255,255,255,0.08);
-  color: var(--night);
+  color: #fff;
   font-weight: 900;
   text-decoration: none;
 }
@@ -12840,4 +12840,21 @@ body.modal-scroll-lock {
   .analytics-details-header h2 {
     font-size: clamp(2.1rem, 11vw, 3.6rem) !important;
   }
+}
+
+
+/* Footer phone visibility fix */
+.footer .footer-phone-choice-trigger,
+.footer .footer-whatsapp-link,
+.footer .footer-phone-choice-menu a {
+  color: #fff;
+}
+
+.footer .footer-phone-choice-trigger:hover,
+.footer .footer-phone-choice-trigger:focus-visible,
+.footer .footer-whatsapp-link:hover,
+.footer .footer-whatsapp-link:focus-visible,
+.footer .footer-phone-choice-menu a:hover,
+.footer .footer-phone-choice-menu a:focus-visible {
+  color: #fff;
 }
