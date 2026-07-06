@@ -9,6 +9,10 @@ const BOOKING_CODE_FIELDS = `
   expected_amount, currency, source, admin_note, customer_note, status,
   completion_status, payment_status, income_status, admin_confirmed_income,
   completed_at, income_confirmed_at, income_confirmed_by, cancelled_at, no_show_at,
+<<<<<<< HEAD
+=======
+  review_requested_at, review_received_at, review_request_channel, review_link_copied_at,
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
   created_by, created_at, expires_at, redeemed_at, redeemed_booking_request_id, redeemed_finance_entry_id
 `;
 
@@ -333,3 +337,43 @@ export async function redeemBookingCode(code, { language = 'it' } = {}) {
 
   throw first.error;
 }
+<<<<<<< HEAD
+=======
+
+
+export async function markBookingCodeReviewLinkCopied(id, userId = null) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase
+    .from('booking_codes')
+    .update({ review_link_copied_at: new Date().toISOString(), updated_by: userId || null })
+    .eq('id', id)
+    .select(BOOKING_CODE_FIELDS)
+    .single();
+  if (error) throw error;
+  return normalizeBookingCodeRow(data);
+}
+
+export async function markBookingCodeReviewRequested(id, channel = 'whatsapp', userId = null) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase
+    .from('booking_codes')
+    .update({ review_requested_at: new Date().toISOString(), review_request_channel: channel || 'whatsapp', updated_by: userId || null })
+    .eq('id', id)
+    .select(BOOKING_CODE_FIELDS)
+    .single();
+  if (error) throw error;
+  return normalizeBookingCodeRow(data);
+}
+
+export async function markBookingCodeReviewReceived(id, userId = null) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase
+    .from('booking_codes')
+    .update({ review_received_at: new Date().toISOString(), updated_by: userId || null })
+    .eq('id', id)
+    .select(BOOKING_CODE_FIELDS)
+    .single();
+  if (error) throw error;
+  return normalizeBookingCodeRow(data);
+}
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)

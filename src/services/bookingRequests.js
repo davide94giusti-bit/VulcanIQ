@@ -14,7 +14,12 @@ const requestFields = `
   analytics_session_id, analytics_visitor_id, analytics_journey_id, booking_journey_version,
   device_type, browser, operating_system,
   admin_note, decision_note, decided_at, decided_by,
+<<<<<<< HEAD
   lead_status, lead_priority, lead_owner_id, next_follow_up_at, contacted_at, quoted_at, deposit_sent_at, deposit_paid_at, confirmed_at, completed_at, review_requested_at, review_received_at, lost_at, lost_reason, expected_value, quoted_amount, internal_notes,
+=======
+  lead_status, lead_priority, lead_owner_id, next_follow_up_at, contacted_at, quoted_at, deposit_sent_at, deposit_paid_at, confirmed_at, completed_at, review_requested_at, review_received_at, review_request_channel, review_link_copied_at, review_code, lost_at, lost_reason, expected_value, quoted_amount, internal_notes,
+  referral_code, referral_source, referral_landing_at,
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
   created_by_admin, availability_block_id
 `;
 
@@ -198,6 +203,9 @@ export function normalizeRequestInput(input, defaults = {}) {
     utm_campaign: textOrNull(input.utm_campaign),
     utm_content: textOrNull(input.utm_content),
     utm_term: textOrNull(input.utm_term),
+    referral_code: textOrNull(input.referral_code),
+    referral_source: textOrNull(input.referral_source),
+    referral_landing_at: textOrNull(input.referral_landing_at),
     analytics_session_id: textOrNull(input.analytics_session_id || input.session_id),
     analytics_visitor_id: textOrNull(input.analytics_visitor_id || input.visitor_id),
     analytics_journey_id: textOrNull(input.analytics_journey_id || input.booking_journey_id),
@@ -414,4 +422,36 @@ export async function cancelBookingRequest({ request, userId, decisionNote = '' 
   });
   await reverseOrVoidFinanceForRequest(updated, userId, note || 'Booking request cancelled');
   return updated;
+<<<<<<< HEAD
+=======
+}
+
+
+export async function markBookingRequestReviewLinkCopied(id, userId = null) {
+  return updateBookingRequest(id, {
+    review_link_copied_at: new Date().toISOString(),
+    updated_by: userId || null
+  });
+}
+
+export async function markBookingRequestReviewRequested(id, channel = 'whatsapp', userId = null) {
+  const now = new Date().toISOString();
+  return updateBookingRequest(id, {
+    review_requested_at: now,
+    review_request_channel: channel || 'whatsapp',
+    lead_status: 'review_requested',
+    updated_by: userId || null
+  });
+}
+
+export async function markBookingRequestReviewReceived(id, userId = null) {
+  const now = new Date().toISOString();
+  return updateBookingRequest(id, {
+    review_received_at: now,
+    review_submitted: true,
+    review_submitted_at: now,
+    lead_status: 'review_received',
+    updated_by: userId || null
+  });
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
 }

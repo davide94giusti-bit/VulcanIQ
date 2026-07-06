@@ -63,10 +63,35 @@ const EVENT_NAMES = new Set([
   'booking_code_review_duplicate',
   'review_request_sent',
   'google_review_request_click',
+<<<<<<< HEAD
   'referral_code_created',
   'referral_link_click',
   'abandoned_form_detected',
   'abandoned_form_recovered_whatsapp'
+=======
+  'gift_card_request_created',
+  'gift_card_status_changed',
+  'gift_card_paid',
+  'gift_card_issued',
+  'gift_card_cancelled',
+  'gift_card_whatsapp_reply_copied',
+  'gift_card_email_reply_copied',
+  'review_link_copied',
+  'review_request_whatsapp_click',
+  'review_requested_marked',
+  'review_received_marked',
+  'referral_code_created',
+  'referral_link_copied',
+  'referral_link_click',
+  'referral_invalid_link_click',
+  'referral_booking_request_created',
+  'referral_code_disabled',
+  'form_journey_started',
+  'form_field_started',
+  'abandoned_form_detected',
+  'abandoned_form_recovered_whatsapp',
+  'form_submit_success'
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
 ]);
 
 const VISITOR_KEY = 'vulcaniq_analytics_visitor_id';
@@ -79,7 +104,8 @@ const EVENT_ENDPOINTS = ['/api/analytics/event'];
 const UNSAFE_METADATA_KEYS = new Set([
   'name', 'customer_name', 'guest_name', 'reviewer_name',
   'email', 'customer_email', 'phone', 'customer_phone',
-  'message', 'booking_message', 'notes', 'address', 'coordinates',
+  'message', 'booking_message', 'customer_note', 'notes', 'address', 'coordinates',
+  'buyer_name', 'buyer_email', 'buyer_phone', 'recipient_name',
   'lat', 'lng', 'latitude', 'longitude', 'payment', 'card'
 ]);
 
@@ -637,6 +663,143 @@ export function trackMapsClick(location, metadata = {}) {
 
 export function trackReviewView() {
   trackEvent('review_view', { section: 'reviews' });
+}
+
+
+
+const FORM_JOURNEY_STORAGE_KEY = 'vulcaniq_form_journeys';
+const FORM_JOURNEY_TTL_MS = 24 * 60 * 60 * 1000;
+
+function readFormJourneyStore() {
+  const storage = browserStorage('local');
+  if (!storage) return {};
+  try {
+    const parsed = JSON.parse(storage.getItem(FORM_JOURNEY_STORAGE_KEY) || '{}');
+    const now = Date.now();
+    const output = {};
+    Object.entries(parsed || {}).forEach(([key, value]) => {
+      if (value?.opened_at_ms && now - Number(value.opened_at_ms) <= FORM_JOURNEY_TTL_MS) output[key] = value;
+    });
+    if (Object.keys(output).length !== Object.keys(parsed || {}).length) storage.setItem(FORM_JOURNEY_STORAGE_KEY, JSON.stringify(output));
+    return output;
+  } catch {
+    return {};
+  }
+}
+
+function writeFormJourneyStore(store) {
+  const storage = browserStorage('local');
+  if (!storage) return;
+  try { storage.setItem(FORM_JOURNEY_STORAGE_KEY, JSON.stringify(store || {})); } catch {}
+}
+
+function saveFormJourney(journey) {
+  if (!journey?.journey_id) return journey;
+  const store = readFormJourneyStore();
+  store[journey.journey_id] = journey;
+  writeFormJourneyStore(store);
+  return journey;
+}
+
+function getFormJourney(journeyId) {
+  if (!journeyId) return null;
+  return readFormJourneyStore()[journeyId] || null;
+}
+
+function journeyMetadata(journey = {}, metadata = {}) {
+  return {
+    journey_id: journey.journey_id || metadata.journey_id || '',
+    form_type: journey.form_type || metadata.form_type || 'unknown',
+    source_cta: journey.source_cta || metadata.source_cta || '',
+    source_section: journey.source_section || metadata.source_section || '',
+    language: journey.language || metadata.language || '',
+    has_selected_experience: Boolean(metadata.has_selected_experience ?? journey.has_selected_experience),
+    has_selected_date: Boolean(metadata.has_selected_date ?? journey.has_selected_date),
+    has_people_count: Boolean(metadata.has_people_count ?? journey.has_people_count),
+    ...(metadata.step_index !== undefined ? { step_index: metadata.step_index } : {}),
+    ...(metadata.step_key ? { step_key: metadata.step_key } : {}),
+    ...(metadata.is_mobile !== undefined ? { is_mobile: Boolean(metadata.is_mobile) } : {}),
+    ...(metadata.flow_type ? { flow_type: metadata.flow_type } : {})
+  };
+}
+
+export function createFormJourney(formType, metadata = {}) {
+  const now = Date.now();
+  const journey = {
+    journey_id: metadata.journey_id || randomId('journey'),
+    form_type: formType || metadata.form_type || 'unknown',
+    opened_at: new Date(now).toISOString(),
+    opened_at_ms: now,
+    field_started_at: '',
+    last_activity_at: new Date(now).toISOString(),
+    abandoned_at: '',
+    recovered_via_whatsapp_at: '',
+    submitted_at: '',
+    source_cta: metadata.source_cta || '',
+    source_section: metadata.source_section || '',
+    language: metadata.language || '',
+    has_selected_experience: Boolean(metadata.has_selected_experience),
+    has_selected_date: Boolean(metadata.has_selected_date),
+    has_people_count: Boolean(metadata.has_people_count)
+  };
+  saveFormJourney(journey);
+  trackEvent('form_journey_started', journeyMetadata(journey, metadata), { dedupe: false });
+  return journey;
+}
+
+export function markFormFieldStarted(journeyId, fieldKey = 'unknown', metadata = {}) {
+  const journey = getFormJourney(journeyId);
+  if (!journey || journey.submitted_at) return null;
+  const now = new Date().toISOString();
+  const firstField = !journey.field_started_at;
+  journey.field_started_at = journey.field_started_at || now;
+  journey.last_activity_at = now;
+  saveFormJourney(journey);
+  if (firstField) {
+    trackEvent('form_field_started', journeyMetadata(journey, { ...metadata, step_key: fieldKey || metadata.step_key || 'unknown' }), { dedupe: false });
+  }
+  return journey;
+}
+
+export function markFormActivity(journeyId, metadata = {}) {
+  const journey = getFormJourney(journeyId);
+  if (!journey || journey.submitted_at) return null;
+  journey.last_activity_at = new Date().toISOString();
+  if (metadata.has_selected_experience !== undefined) journey.has_selected_experience = Boolean(metadata.has_selected_experience);
+  if (metadata.has_selected_date !== undefined) journey.has_selected_date = Boolean(metadata.has_selected_date);
+  if (metadata.has_people_count !== undefined) journey.has_people_count = Boolean(metadata.has_people_count);
+  saveFormJourney(journey);
+  return journey;
+}
+
+export function markFormSubmitted(journeyId, metadata = {}) {
+  const journey = getFormJourney(journeyId);
+  if (!journey) return null;
+  journey.submitted_at = new Date().toISOString();
+  journey.last_activity_at = journey.submitted_at;
+  saveFormJourney(journey);
+  trackEvent('form_submit_success', journeyMetadata(journey, metadata), { dedupe: false });
+  return journey;
+}
+
+export function markFormAbandoned(journeyId, metadata = {}) {
+  const journey = getFormJourney(journeyId);
+  if (!journey || journey.submitted_at || journey.abandoned_at || !journey.field_started_at) return null;
+  journey.abandoned_at = new Date().toISOString();
+  journey.last_activity_at = journey.abandoned_at;
+  saveFormJourney(journey);
+  trackEvent('abandoned_form_detected', journeyMetadata(journey, metadata), { dedupe: false, transport: 'beacon' });
+  return journey;
+}
+
+export function markFormRecoveredViaWhatsApp(journeyId, metadata = {}) {
+  const journey = getFormJourney(journeyId);
+  if (!journey || journey.submitted_at || !journey.abandoned_at || journey.recovered_via_whatsapp_at) return null;
+  journey.recovered_via_whatsapp_at = new Date().toISOString();
+  journey.last_activity_at = journey.recovered_via_whatsapp_at;
+  saveFormJourney(journey);
+  trackEvent('abandoned_form_recovered_whatsapp', journeyMetadata(journey, metadata), { dedupe: false, transport: 'beacon' });
+  return journey;
 }
 
 export function startAnalyticsHeartbeat(getContext = () => ({})) {

@@ -4,8 +4,13 @@ import { createRoot } from 'react-dom/client';
 import { blockedDates, defaultExperienceAvailability } from './data/availability.js';
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
+<<<<<<< HEAD
 import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
 import { listBookingCodes, createBookingCode, cancelBookingCode, redeemBookingCode, markBookingCodeCompleted, confirmBookingCodeIncome, markBookingCodeNoShow } from './services/bookingCodes.js';
+=======
+import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest, markBookingRequestReviewRequested, markBookingRequestReviewReceived, markBookingRequestReviewLinkCopied } from './services/bookingRequests.js';
+import { listBookingCodes, createBookingCode, cancelBookingCode, redeemBookingCode, markBookingCodeCompleted, confirmBookingCodeIncome, markBookingCodeNoShow, markBookingCodeReviewRequested, markBookingCodeReviewReceived, markBookingCodeReviewLinkCopied } from './services/bookingCodes.js';
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
 import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadFixedExcursionLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
 import { loadPublicReviews, submitPublicReview, listReviews, createManualReview, updateReviewDetails, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply, deleteReview } from './services/reviewsService.js';
@@ -14,7 +19,13 @@ import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './ser
 import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
 import { listAnalyticsEvents, listAnalyticsSessions } from './services/analyticsService.js';
 import { createDatabaseBackup, downloadLatestDatabaseBackup, getBackupSchedule, getBackupStatus, saveBackupSchedule } from './services/backupService.js';
+<<<<<<< HEAD
 import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot } from './analytics.js';
+=======
+import { createGiftCardRequest, listGiftCardRequests, updateGiftCardRequest } from './services/giftCards.js';
+import { createCustomerReferralCode, disableCustomerReferralCode, listCustomerReferralCodes, referralAttributionPayload, referralLink, storeReferralJourney, validateAndRecordReferralClick } from './services/referrals.js';
+import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot, createFormJourney, markFormFieldStarted, markFormActivity, markFormSubmitted, markFormAbandoned, markFormRecoveredViaWhatsApp } from './analytics.js';
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import { submitPublicBookingRequestWithTracking } from './services/publicBookingSubmit.js';
 import { formatCurrencyAmount, normalizeCurrency, parseMoneyAmount } from './utils/money.js';
@@ -39,6 +50,10 @@ const ADMIN_NAV_SECTIONS = [
   { key: 'upcoming', path: '/admin/upcoming', labelIt: 'Prossime', labelEn: 'Upcoming', editable: true },
   { key: 'requests', path: '/admin/requests', labelIt: 'Richieste prenotazione', labelEn: 'Booking requests', editable: true },
   { key: 'bookingCodes', path: '/admin/booking-codes', labelIt: 'Codici prenotazione', labelEn: 'Booking codes', editable: true },
+<<<<<<< HEAD
+=======
+  { key: 'giftCards', path: '/admin/gift-cards', labelIt: 'Gift Card', labelEn: 'Gift Cards', editable: true },
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
   { key: 'availability', path: '/admin/availability', labelIt: 'Disponibilità', labelEn: 'Availability', editable: true },
   { key: 'partnerships', path: '/admin/partnerships', labelIt: 'Collaborazioni', labelEn: 'Collaborations', editable: true },
   { key: 'edit', path: '/admin/edit', labelIt: 'Modifica sito e recensioni', labelEn: 'Edit website & reviews', editable: true },
@@ -51,7 +66,11 @@ const ADMIN_NAV_SECTIONS = [
 
 const ADMIN_NAV_GROUPS = [
   { key: 'operations', labelIt: 'Operazioni', labelEn: 'Operations', items: ['today', 'upcoming', 'calendar'] },
+<<<<<<< HEAD
   { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'bookingCodes', 'availability'] },
+=======
+  { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'bookingCodes', 'giftCards', 'availability'] },
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
   { key: 'website', labelIt: 'Gestione sito', labelEn: 'Website management', items: ['edit', 'publicSite'] },
   { key: 'business', labelIt: 'Business', labelEn: 'Business', items: ['partnerships', 'finance', 'analytics'] },
   { key: 'system', labelIt: 'Sistema', labelEn: 'System', items: ['backup', 'users'] }
@@ -65,6 +84,10 @@ function isAdminNavSectionActive(normalizedPath, section) {
   if (!section || section.external) return false;
   if (section.key === 'analytics') return normalizedPath.includes('/analytics') || normalizedPath.includes('/data');
   if (section.key === 'bookingCodes') return normalizedPath.includes('/booking-codes');
+<<<<<<< HEAD
+=======
+  if (section.key === 'giftCards') return normalizedPath.includes('/gift-cards');
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
   if (section.key === 'backup') return normalizedPath.includes('/system') || normalizedPath.includes('/backup');
   if (section.key === 'users') return normalizedPath.includes('/users');
   if (section.key === 'edit') return normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media');
@@ -2647,6 +2670,7 @@ function SupportContactModal({ lang, onClose, siteContent }) {
 
 function GiftCardPage({ lang, siteContent }) {
   const contact = resolvePublicContactDetails(siteContent);
+<<<<<<< HEAD
   useEffect(() => {
     trackEvent('gift_card_view', { language: lang, source_section: 'gift_card_page' }, { dedupe: false });
   }, [lang]);
@@ -2674,6 +2698,102 @@ function GiftCardPage({ lang, siteContent }) {
           <a className="button primary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent('gift_card_request_click', { language: lang, source_section: 'gift_card_page', source_cta: 'whatsapp' }, { dedupe: false })}>{lang === 'it' ? 'Richiedi gift card' : 'Request gift card'}</a>
           <a className="button secondary" href="/experiences">{lang === 'it' ? 'Vedi esperienze' : 'View experiences'}</a>
         </div>
+=======
+  const journeyRef = useRef(null);
+  const [form, setForm] = useState({
+    buyer_name: '', buyer_email: '', buyer_phone: '', recipient_name: '',
+    experience_type: 'Etna Premium', budget: '', preferred_delivery_date: '', message: ''
+  });
+  const [state, setState] = useState({ loading: false, error: '', success: '' });
+
+  useEffect(() => {
+    trackEvent('gift_card_view', { language: lang, source_section: 'gift_card_page' }, { dedupe: false });
+    journeyRef.current = createFormJourney('gift_card_request', { language: lang, source_section: 'gift_card_page', source_cta: 'gift_card_form' });
+  }, [lang]);
+
+  useEffect(() => {
+    function handlePageHide() {
+      markFormAbandoned(journeyRef.current?.journey_id, {
+        language: lang,
+        form_type: 'gift_card_request',
+        source_section: 'gift_card_page',
+        has_selected_experience: Boolean(form.experience_type),
+        has_selected_date: Boolean(form.preferred_delivery_date)
+      });
+    }
+    window.addEventListener('pagehide', handlePageHide);
+    return () => window.removeEventListener('pagehide', handlePageHide);
+  }, [lang, form.experience_type, form.preferred_delivery_date]);
+
+  function update(field, value) {
+    setState((current) => ({ ...current, error: '' }));
+    setForm((current) => ({ ...current, [field]: value }));
+    markFormFieldStarted(journeyRef.current?.journey_id, field, { language: lang, form_type: 'gift_card_request', source_section: 'gift_card_page' });
+    markFormActivity(journeyRef.current?.journey_id, { has_selected_experience: Boolean(field === 'experience_type' ? value : form.experience_type), has_selected_date: Boolean(field === 'preferred_delivery_date' ? value : form.preferred_delivery_date) });
+  }
+
+  function buildGiftCardMessage() {
+    const budget = form.budget ? formatMoney(parseMoneyAmount(form.budget), 'EUR', lang) : (lang === 'it' ? 'da definire' : 'to define');
+    return lang === 'it'
+      ? `Ciao Leonardo,\n\nvorrei informazioni per regalare una gift card vulcanIQ.\n\nNome: ${form.buyer_name || '-'}\nContatto: ${form.buyer_phone || form.buyer_email || '-'}\nGift Card per: ${form.recipient_name || '-'}\nEsperienza/interesse: ${form.experience_type || '-'}\nBudget indicativo: ${budget}\nData consegna preferita: ${form.preferred_delivery_date || '-'}\n\n${form.message || ''}\n\nGrazie!`
+      : `Hi Leonardo,\n\nI would like information about gifting a vulcanIQ gift card.\n\nName: ${form.buyer_name || '-'}\nContact: ${form.buyer_phone || form.buyer_email || '-'}\nGift Card for: ${form.recipient_name || '-'}\nExperience/interest: ${form.experience_type || '-'}\nIndicative budget: ${budget}\nPreferred delivery date: ${form.preferred_delivery_date || '-'}\n\n${form.message || ''}\n\nThank you!`;
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setState({ loading: false, error: '', success: '' });
+    const hasContact = String(form.buyer_email || '').trim() || String(form.buyer_phone || '').trim();
+    if (!String(form.buyer_name || '').trim() || !hasContact) {
+      setState({ loading: false, error: lang === 'it' ? 'Inserisci nome e almeno un contatto.' : 'Enter a name and at least one contact.', success: '' });
+      return;
+    }
+    setState({ loading: true, error: '', success: '' });
+    try {
+      const created = await createGiftCardRequest({ ...form, buyer_preferred_language: lang, language: lang, currency: 'EUR' });
+      trackEvent('gift_card_request_created', { request_id: created?.id || '', language: lang, source_section: 'gift_card_page', has_budget: Boolean(form.budget), has_preferred_delivery_date: Boolean(form.preferred_delivery_date) }, { dedupe: false });
+      markFormSubmitted(journeyRef.current?.journey_id, { language: lang, form_type: 'gift_card_request', has_selected_experience: Boolean(form.experience_type), has_selected_date: Boolean(form.preferred_delivery_date) });
+      setState({ loading: false, error: '', success: lang === 'it' ? 'Richiesta Gift Card inviata. Ti contatteremo manualmente per conferma e pagamento esterno.' : 'Gift Card request sent. We will contact you manually for confirmation and external payment.' });
+      setForm({ buyer_name: '', buyer_email: '', buyer_phone: '', recipient_name: '', experience_type: 'Etna Premium', budget: '', preferred_delivery_date: '', message: '' });
+      journeyRef.current = createFormJourney('gift_card_request', { language: lang, source_section: 'gift_card_page', source_cta: 'gift_card_form' });
+    } catch (error) {
+      setState({ loading: false, error: lang === 'it' ? 'Richiesta non inviata. Puoi usare WhatsApp.' : 'Request not sent. You can use WhatsApp.', success: '' });
+    }
+  }
+
+  function openWhatsapp() {
+    markFormAbandoned(journeyRef.current?.journey_id, { language: lang, form_type: 'gift_card_request', source_section: 'gift_card_page', recovery_channel: 'whatsapp' });
+    markFormRecoveredViaWhatsApp(journeyRef.current?.journey_id, { language: lang, form_type: 'gift_card_request', source_section: 'gift_card_page' });
+    trackEvent('gift_card_request_click', { language: lang, source_section: 'gift_card_page', source_cta: 'whatsapp' }, { dedupe: false });
+  }
+
+  const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(buildGiftCardMessage())}`;
+  return (
+    <section className="page-section gift-card-page">
+      <div className="container narrow-copy">
+        <span className="kicker">Gift card</span>
+        <h1>{lang === 'it' ? 'Regala un’esperienza sull’Etna' : 'Gift a Mount Etna experience'}</h1>
+        <p className="lead">{lang === 'it' ? 'Una richiesta Gift Card vulcanIQ: nessun pagamento viene raccolto dal sito. Il team conferma proposta, validità e consegna manualmente.' : 'A vulcanIQ Gift Card request: no payment is collected on the website. The team confirms proposal, validity and delivery manually.'}</p>
+        <div className="gift-card-option-grid">
+          <article className="info-card"><h2>{lang === 'it' ? 'Come funziona' : 'How it works'}</h2><p>{lang === 'it' ? 'Invia i dettagli, ricevi conferma manuale e paghi esternamente solo dopo il contatto del team.' : 'Send the details, receive manual confirmation and pay externally only after the team contacts you.'}</p></article>
+          <article className="info-card"><h2>{lang === 'it' ? 'Ideale per' : 'Best for'}</h2><p>{lang === 'it' ? 'Coppie, famiglie, compleanni, anniversari, lauree e regali aziendali.' : 'Couples, families, birthdays, anniversaries, graduations and company gifts.'}</p></article>
+        </div>
+        <form className="gift-card-request-form admin-form-grid" onSubmit={submit}>
+          <label className="admin-field"><span>{lang === 'it' ? 'Nome acquirente' : 'Buyer name'}</span><input value={form.buyer_name} onChange={(event) => update('buyer_name', event.target.value)} /></label>
+          <label className="admin-field"><span>Email</span><input type="email" value={form.buyer_email} onChange={(event) => update('buyer_email', event.target.value)} /></label>
+          <label className="admin-field"><span>WhatsApp / Phone</span><input value={form.buyer_phone} onChange={(event) => update('buyer_phone', event.target.value)} /></label>
+          <label className="admin-field"><span>{lang === 'it' ? 'Nome destinatario' : 'Recipient name'}</span><input value={form.recipient_name} onChange={(event) => update('recipient_name', event.target.value)} /></label>
+          <label className="admin-field"><span>{lang === 'it' ? 'Esperienza/interesse' : 'Experience/interest'}</span><select value={form.experience_type} onChange={(event) => update('experience_type', event.target.value)}><option>Etna Premium</option><option>Etna Live</option><option>Etna Stories</option><option>{lang === 'it' ? 'Non so ancora' : 'Not sure yet'}</option></select></label>
+          <label className="admin-field"><span>{lang === 'it' ? 'Budget indicativo' : 'Indicative budget'}</span><input inputMode="decimal" value={form.budget} onChange={(event) => update('budget', event.target.value)} placeholder="EUR" /></label>
+          <label className="admin-field"><span>{lang === 'it' ? 'Data consegna preferita' : 'Preferred delivery date'}</span><input type="date" value={form.preferred_delivery_date} onChange={(event) => update('preferred_delivery_date', event.target.value)} /></label>
+          <label className="admin-field full"><span>{lang === 'it' ? 'Messaggio opzionale' : 'Optional message'}</span><textarea rows={4} value={form.message} onChange={(event) => update('message', event.target.value)} /></label>
+          {state.error && <p className="form-status error full" role="alert">{state.error}</p>}
+          {state.success && <p className="form-status success full" role="status">{state.success}</p>}
+          <div className="modal-actions full">
+            <button className="button primary" type="submit" disabled={state.loading}>{state.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : (lang === 'it' ? 'Invia richiesta Gift Card' : 'Send Gift Card request')}</button>
+            <a className="button secondary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={openWhatsapp}>WhatsApp</a>
+          </div>
+        </form>
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
       </div>
     </section>
   );
@@ -2683,6 +2803,10 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   const contact = resolvePublicContactDetails(siteContent);
   useBodyScrollLock(true);
   const sourceMetadata = { language: lang, source_section: sourceSection, source_cta: sourceCta, cta_location: ctaLocation, flow_type: flowType };
+<<<<<<< HEAD
+=======
+  const formJourneyRef = useRef(null);
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
   const [step, setStep] = useState(1);
   const [form, setForm] = useState(() => {
     try {
@@ -2694,6 +2818,10 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
 
   useEffect(() => {
     trackEvent('fast_request_start', sourceMetadata, { dedupe: false });
+<<<<<<< HEAD
+=======
+    formJourneyRef.current = createFormJourney('fast_request', { ...sourceMetadata, has_selected_experience: true, has_people_count: true });
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
     return () => {
       try {
         window.localStorage.setItem('vulcaniq_fast_request', JSON.stringify({ ...form, expires_at: Date.now() + 24 * 60 * 60 * 1000 }));
@@ -2702,10 +2830,19 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   }, []);
 
   function update(key, value) {
+<<<<<<< HEAD
+=======
+    markFormFieldStarted(formJourneyRef.current?.journey_id, key, { ...sourceMetadata, step_index: step, step_key: key });
+    markFormActivity(formJourneyRef.current?.journey_id, { has_selected_experience: key === 'experienceId' ? Boolean(value) : Boolean(form.experienceId), has_selected_date: key === 'customDate' ? Boolean(value) : Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true });
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
     setForm((current) => ({ ...current, [key]: value }));
   }
 
   function completeStep(nextStep) {
+<<<<<<< HEAD
+=======
+    markFormFieldStarted(formJourneyRef.current?.journey_id, `step_${step}`, { ...sourceMetadata, step_index: step, step_key: `step_${step}` });
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
     trackEvent('fast_request_step_complete', { ...sourceMetadata, step, next_step: nextStep }, { dedupe: false });
     setStep(nextStep);
   }
@@ -2723,11 +2860,20 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(message)}`;
 
   function handleClose() {
+<<<<<<< HEAD
+=======
+    markFormAbandoned(formJourneyRef.current?.journey_id, { ...sourceMetadata, step_index: step, step_key: `step_${step}`, has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true });
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
     trackEvent('fast_request_abandon', { ...sourceMetadata, step, experience_id: form.experienceId }, { dedupe: true });
     onClose();
   }
 
   function handleWhatsApp() {
+<<<<<<< HEAD
+=======
+    markFormRecoveredViaWhatsApp(formJourneyRef.current?.journey_id, { ...sourceMetadata, has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true });
+    markFormSubmitted(formJourneyRef.current?.journey_id, { ...sourceMetadata, channel: 'whatsapp', has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true });
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
     trackEvent('fast_request_whatsapp_click', { ...sourceMetadata, experience_id: form.experienceId, date_mode: form.dateMode }, { dedupe: false });
     trackEvent('fast_request_submit_success', { ...sourceMetadata, experience_id: form.experienceId, channel: 'whatsapp' }, { dedupe: false });
     try { window.localStorage.removeItem('vulcaniq_fast_request'); } catch {}
@@ -4200,6 +4346,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const selectedHeardAboutUsMetadata = heardAboutUsMetadata(selectedHeardAboutUs, lang, selectedHeardAboutUsDetail);
   const trackedFormOpenRef = useRef(new Set());
   const bookingJourneyIdRef = useRef(formState.trackingContext?.booking_journey_id || '');
+  const formJourneyRef = useRef(null);
   const modalRef = useRef(null);
   const previousFocusRef = useRef(null);
   const [leaflets, setLeaflets] = useState([]);
@@ -4312,6 +4459,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     if (!bookingJourneyIdRef.current && currentTrackingMetadata.booking_journey_id) bookingJourneyIdRef.current = currentTrackingMetadata.booking_journey_id;
     if (trackedFormOpenRef.current.has('field_start')) return;
     trackedFormOpenRef.current.add('field_start');
+    markFormFieldStarted(formJourneyRef.current?.journey_id, fieldName || 'unknown', { ...currentTrackingMetadata, ...extraMetadata, form_type: 'booking_form', step_index: stepIndex + 1, step_key: currentStep.key });
     trackBookingFormFieldStart(effectiveExperienceId || requestType || 'private', {
       ...currentTrackingMetadata,
       ...extraMetadata,
@@ -4462,6 +4610,9 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   }
 
   function attemptCloseQuestionnaire() {
+    if (hasMeaningfulQuestionnaireData()) {
+      markFormAbandoned(formJourneyRef.current?.journey_id, { ...currentTrackingMetadata, form_type: 'booking_form', step_index: stepIndex + 1, step_key: currentStep.key, has_selected_experience: Boolean(effectiveExperienceId), has_selected_date: Boolean(selectedFixed?.date || formState.requestedDate), has_people_count: totalPeople > 0 });
+    }
     if (!hasMeaningfulQuestionnaireData() || window.confirm(text(lang, 'contactQuestionnaireCloseConfirm'))) {
       setQuestionnaireOpen(false);
       setStepError('');
@@ -4480,6 +4631,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       language: lang
     }), formState.trackingContext), formState.trackingContext, { forceNew: !formState.trackingContext?.booking_journey_id });
     bookingJourneyIdRef.current = trackingContext.booking_journey_id || createBookingJourneyId();
+    formJourneyRef.current = createFormJourney('booking_form', { ...trackingContext, journey_id: bookingJourneyIdRef.current, language: lang, source_section: 'contact', source_cta: 'start_questionnaire', has_selected_experience: Boolean(effectiveExperienceId), has_selected_date: Boolean(selectedFixed?.date || formState.requestedDate), has_people_count: totalPeople > 0 });
     trackedFormOpenRef.current.delete('field_start');
     const journeyTrackingContext = withBookingJourneyId(trackingContext, { booking_journey_id: bookingJourneyIdRef.current });
     trackBookingFormOpen(effectiveExperienceId || requestType || 'private', { ...journeyTrackingContext, questionnaire_version: 'contact_request_v1' });
@@ -4635,7 +4787,8 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     setSubmitState({ loading: true, error: '', success: '' });
 
     try {
-      await submitPublicBookingRequestWithTracking({
+      const referralPayload = referralAttributionPayload();
+      const createdRequest = await submitPublicBookingRequestWithTracking({
         experience: trackedExperience,
         adults,
         children,
@@ -4681,9 +4834,12 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
           selected_month: trackingMetadata.selected_month || isoMonthKey(trackingMetadata.selected_date || selectedFixed?.date || formState.requestedDate),
           device_type: trackingMetadata.device_type,
           browser: trackingMetadata.browser,
-          operating_system: trackingMetadata.operating_system
+          operating_system: trackingMetadata.operating_system,
+          ...referralPayload
         }
       });
+      if (referralPayload.referral_code) trackEvent('referral_booking_request_created', { referral_code: referralPayload.referral_code, source_type: 'booking_form', source_id: createdRequest?.id || '', language: lang }, { dedupe: false });
+      markFormSubmitted(formJourneyRef.current?.journey_id, { ...trackingMetadata, form_type: 'booking_form', has_selected_experience: Boolean(effectiveExperienceId), has_selected_date: Boolean(selectedFixed?.date || formState.requestedDate), has_people_count: totalPeople > 0 });
       setSubmitState({ loading: false, error: '', success: text(lang, 'requestSent') });
       setQuestionnaireOpen(false);
       trackedFormOpenRef.current.delete('field_start');
@@ -4703,6 +4859,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       setSubmitState({ loading: false, error, success: '' });
       return;
     }
+    markFormRecoveredViaWhatsApp(formJourneyRef.current?.journey_id, { ...currentTrackingMetadata, form_type: 'booking_form', has_selected_experience: Boolean(effectiveExperienceId), has_selected_date: Boolean(selectedFixed?.date || formState.requestedDate), has_people_count: totalPeople > 0 });
     trackContactClick('whatsapp', 'questionnaire_modal', { ...currentTrackingMetadata, source_cta: 'whatsapp_direct', questionnaire_completed: true });
     if (typeof window !== 'undefined') {
       window.open(`https://wa.me/${contact.phoneWa}?text=${encode(fullMessage)}`, '_blank', 'noopener,noreferrer');
@@ -5464,7 +5621,17 @@ function isRequestConfirmedRevenue(request) {
   return ['accepted', 'confirmed', 'completed'].includes(request.status) || ['confirmed', 'completed', 'deposit_paid', 'review_requested', 'review_received'].includes(request.lead_status);
 }
 function isRequestLost(request) { return ['declined', 'cancelled', 'archived'].includes(request.status) || ['lost', 'cancelled'].includes(request.lead_status); }
+<<<<<<< HEAD
 function requestSourceKey(request) { return request.source || request.utm_source || request.heard_about_us || 'unknown'; }
+=======
+function requestSourceKey(request) {
+  if (request.referral_code || request.referral_source === 'customer_referral') return 'customer_referral';
+  if (request.source === 'booking_code') return 'booking_code';
+  if (request.source) return request.source;
+  if (request.utm_source === 'referral') return 'referral';
+  return request.utm_source || request.heard_about_us || 'unknown';
+}
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
 function requestExperienceKey(request, lang) { return adminExperienceLabel(request.experience_id, lang) || request.experience_id || 'unknown'; }
 function buildRequestsCrmSummary(requests, lang) {
   const now = new Date();
@@ -5496,7 +5663,11 @@ function buildRequestsCrmSummary(requests, lang) {
     generatedAt: now.toISOString()
   };
 }
+<<<<<<< HEAD
 const REQUEST_SOURCES = ['website', 'whatsapp', 'phone', 'email', 'manual', 'booking_code'];
+=======
+const REQUEST_SOURCES = ['website', 'whatsapp', 'phone', 'email', 'manual', 'booking_code', 'referral', 'customer_referral'];
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
 const ADMIN_EXPERIENCE_OPTIONS = ['etna-premium', 'etna-learning', 'etna-live', 'etna-stories', 'unsure'];
 const AVAILABILITY_STATUSES = ['closed', 'limited', 'on-request'];
 
@@ -6289,6 +6460,11 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           <UpcomingPage lang={lang} session={session} navigate={navigate} adminContent={adminContent} />
         ) : normalizedPath.includes('/booking-codes') ? (
           <BookingCodesPage lang={lang} session={session} adminContent={adminContent} />
+<<<<<<< HEAD
+=======
+        ) : normalizedPath.includes('/gift-cards') ? (
+          <GiftCardsAdminPage lang={lang} session={session} adminContent={adminContent} />
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
         ) : normalizedPath.includes('/requests') ? (
           <RequestsPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/availability') ? (
@@ -8058,6 +8234,8 @@ function AdminContentEditorModal({ lang, item, onClose, onSave, saving }) {
   }, [onClose]);
 
   function update(key, value) {
+    markFormFieldStarted(formJourneyRef.current?.journey_id, key, { ...sourceMetadata, step_index: step, step_key: key });
+    markFormActivity(formJourneyRef.current?.journey_id, { has_selected_experience: key === 'experienceId' ? Boolean(value) : Boolean(form.experienceId), has_selected_date: key === 'customDate' ? Boolean(value) : Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true });
     setForm((current) => ({ ...current, [key]: value }));
   }
 
@@ -8217,6 +8395,8 @@ const FINANCE_CATEGORIES = {
     ['balance_payment', 'Saldo', 'Balance payment'],
     ['private_experience', 'Esperienza privata', 'Private experience'],
     ['fixed_excursion', 'Escursione fissa', 'Fixed excursion'],
+    ['booking_code_expected', 'Codice prenotazione atteso', 'Expected booking-code income'],
+    ['gift_card', 'Gift Card', 'Gift Card'],
     ['other_income', 'Altra entrata', 'Other income']
   ],
   expense: [
@@ -8518,6 +8698,7 @@ function normalizedTrafficSourceForAnalytics(row = {}) {
   const metadata = row.metadata || {};
   const raw = String(metadata.utm_source || row.traffic_source || row.referrer_domain || '').toLowerCase().replace(/[-\s]+/g, '_');
   const medium = String(metadata.utm_medium || '').toLowerCase().replace(/[-\s]+/g, '_');
+  if (raw.includes('referral') || medium === 'customer') return 'customer_referral';
   if (raw.includes('instagram') || raw === 'ig') return 'instagram';
   if (raw.includes('whatsapp') || raw === 'wa') return 'whatsapp';
   if (raw.includes('facebook') || raw === 'fb') return 'facebook';
@@ -8536,6 +8717,7 @@ function trafficSourceLabel(source, lang) {
   if (source === 'google_business_profile') return 'Google Business Profile';
   if (source === 'partner') return adminCopy(lang, 'Partner', 'Partner');
   if (source === 'tiktok') return 'TikTok';
+  if (source === 'customer_referral' || source === 'referral') return adminCopy(lang, 'Referral cliente', 'Customer referral');
   if (source === 'other') return adminCopy(lang, 'Altri referrer', 'Other referrers');
   return source[0].toUpperCase() + source.slice(1);
 }
@@ -9008,6 +9190,12 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   const directTrafficShare = sourceTotal ? directTrafficCount / sourceTotal : 0;
   const mobileCount = events.filter((event) => event.device_type === 'mobile').length;
   const mobileShare = events.length ? mobileCount / events.length : 0;
+  const formJourneysStarted = eventCount(events, 'form_journey_started');
+  const abandonedForms = eventCount(events, 'abandoned_form_detected');
+  const recoveredByWhatsapp = eventCount(events, 'abandoned_form_recovered_whatsapp');
+  const journeySubmitSuccesses = eventCount(events, 'form_submit_success');
+  const abandonmentRate = percent(abandonedForms, formJourneysStarted || formOpens || fieldStarts);
+  const recoveryRate = percent(recoveredByWhatsapp, abandonedForms);
 
   function isSubmitAttemptEvent(event) { return event.event_name === 'booking_form_submit_attempt' || (!hasNewSubmitAttempts && event.event_name === 'booking_submit_attempt'); }
   function isValidationErrorEvent(event) { return event.event_name === 'booking_form_validation_error' || (!hasNewValidationErrors && event.event_name === 'booking_submit_validation_error'); }
@@ -9017,7 +9205,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   function isBookingCodeRedeemSuccessEvent(event) { return BOOKING_CODE_REDEEM_SUCCESS_EVENTS.includes(event.event_name); }
   function isMapClickEvent(event) { return event.event_name === 'google_maps_click' || (!hasNewMapClicks && event.event_name === 'maps_click'); }
 
-  const sourceRows = ['direct', 'instagram', 'facebook', 'whatsapp', 'google_business_profile', 'google', 'partner', 'tiktok', 'other'].map((source) => ({
+  const sourceRows = ['direct', 'customer_referral', 'instagram', 'facebook', 'whatsapp', 'google_business_profile', 'google', 'partner', 'tiktok', 'other'].map((source) => ({
     label: trafficSourceLabel(source, lang),
     count: pageViewEvents.filter((event) => normalizedTrafficSourceForAnalytics(event) === source).length
   }));
@@ -9038,6 +9226,9 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     { label: adminCopy(lang, 'Visualizzazioni esperienze', 'Experience views'), count: experienceViews },
     { label: adminCopy(lang, 'Aperture modulo prenotazione', 'Booking form starts'), count: formOpens },
     { label: adminCopy(lang, 'Avvii compilazione modulo', 'Booking form field starts'), count: fieldStarts },
+    { label: adminCopy(lang, 'Journey form avviati', 'Form journeys started'), count: formJourneysStarted },
+    { label: adminCopy(lang, 'Form abbandonati', 'Abandoned forms'), count: abandonedForms },
+    { label: adminCopy(lang, 'Recuperi WhatsApp', 'WhatsApp recoveries'), count: recoveredByWhatsapp },
     { label: adminCopy(lang, 'Tentativi invio modulo', 'Booking form submit attempts'), count: submitAttempts },
     { label: adminCopy(lang, 'Invii riusciti tracciati', 'Tracked successful submissions'), count: submitSuccesses },
     { label: adminCopy(lang, 'Richieste modulo sito create', 'Created website form requests'), count: websiteRequests },
@@ -9275,6 +9466,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     { check: adminCopy(lang, 'Tracciamento legacy incompleto', 'Incomplete legacy tracking'), count: legacyIncompleteRequests, detail: legacyIncompleteRequests ? adminCopy(lang, 'Dati precedenti alla correzione: non vengono ricostruiti artificialmente.', 'Pre-fix data: not backfilled artificially.') : '—' },
     { check: adminCopy(lang, 'Richieste sito senza apertura modulo tracciata', 'Website requests without tracked form open'), count: requestsWithoutTrackedFormOpen.reduce((sum, row) => sum + row.booking_requests, 0), detail: requestsWithoutTrackedFormOpen.map((row) => `${row.experience}: ${row.booking_requests}`).join(', ') || '—' },
     { check: adminCopy(lang, 'Aperture modulo senza posizione CTA', 'Form opens without CTA location'), count: formOpenMissingCtaCount, detail: formOpenMissingCtaCount ? adminCopy(lang, 'Aggiornare i CTA che non inviano cta_location.', 'Update CTAs that do not send cta_location.') : '—' },
+    { check: adminCopy(lang, 'Form abbandonati', 'Abandoned forms'), count: abandonedForms, detail: `${abandonmentRate} · ${adminCopy(lang, 'recupero WhatsApp', 'WhatsApp recovery')}: ${recoveryRate}` },
     { check: adminCopy(lang, 'Traffico interno escluso', 'Internal traffic excluded'), count: internalEventsExcluded + internalSessionsExcluded, detail: adminCopy(lang, 'Admin, API, CMS/editor, finanze e dashboard analytics esclusi dalle metriche pubbliche.', 'Admin, API, CMS/editor, finance, and analytics dashboard rows excluded from public metrics.') },
     { check: adminCopy(lang, 'Campione insufficiente per conclusioni marketing', 'Sample too small for marketing conclusions'), count: visitors < 50 ? visitors : 0, detail: visitors < 50 ? adminCopy(lang, 'Usare come diagnostica, non come prova marketing.', 'Use as diagnostics, not as marketing proof.') : '—' }
   ];
@@ -9345,6 +9537,12 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     experienceViews,
     formOpens,
     fieldStarts,
+    formJourneysStarted,
+    abandonedForms,
+    recoveredByWhatsapp,
+    journeySubmitSuccesses,
+    abandonmentRate,
+    recoveryRate,
     submitAttempts,
     submitSuccesses,
     submitErrors,
@@ -10716,6 +10914,8 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
               <SummaryCard label={adminCopy(lang, 'Visitatori', 'Visitors')} value={model.visitors || '—'} />
               <SummaryCard label={adminCopy(lang, 'Visualizzazioni pagina', 'Page views')} value={model.pageViews} />
               <SummaryCard label={adminCopy(lang, 'Aperture modulo', 'Form opens')} value={model.formOpens} />
+              <SummaryCard label={adminCopy(lang, 'Form abbandonati', 'Abandoned forms')} value={model.abandonedForms} helper={model.abandonmentRate} />
+              <SummaryCard label={adminCopy(lang, 'Recuperi WhatsApp', 'WhatsApp recoveries')} value={model.recoveredByWhatsapp} helper={model.recoveryRate} />
               <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} />
               <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model.websiteRequests} />
               <SummaryCard label={adminCopy(lang, 'Richieste con codice', 'Booking-code requests')} value={model.bookingCodeRequests} />
@@ -11532,7 +11732,7 @@ function TodayDashboard({ lang, session, navigate, adminContent = {} }) {
               </div>
               {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : todayRequests.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta con data oggi.', 'No requests dated today.')}</p> : (
                 <div className="request-card-list">
-                  {todayRequests.map((request) => <RequestCard key={request.id} request={request} lang={lang} onApprove={() => setDecision({ type: 'approve', request })} onDecline={() => setDecision({ type: 'decline', request })} />)}
+                  {todayRequests.map((request) => <RequestCard key={request.id} request={request} lang={lang} session={session} onApprove={() => setDecision({ type: 'approve', request })} onDecline={() => setDecision({ type: 'decline', request })} />)}
                 </div>
               )}
             </div>
@@ -11545,7 +11745,7 @@ function TodayDashboard({ lang, session, navigate, adminContent = {} }) {
             </div>
             {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : pending.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta in attesa.', 'No pending requests.')}</p> : (
               <div className="request-card-list">
-                {pending.map((request) => <RequestCard key={request.id} request={request} lang={lang} onApprove={() => setDecision({ type: 'approve', request })} onDecline={() => setDecision({ type: 'decline', request })} />)}
+                {pending.map((request) => <RequestCard key={request.id} request={request} lang={lang} session={session} onApprove={() => setDecision({ type: 'approve', request })} onDecline={() => setDecision({ type: 'decline', request })} />)}
               </div>
             )}
           </div>
@@ -11680,7 +11880,7 @@ function UpcomingPage({ lang, session, navigate, adminContent = {} }) {
                   <details className="admin-archive-details nested-upcoming-group" key={group.key}>
                     <summary><span>{group.title[lang]}</span><strong>{group.items.length}</strong></summary>
                     <div className="request-card-list compact-list">
-                      {group.items.map((request) => <RequestCard key={request.id} request={request} lang={lang} compact />)}
+                      {group.items.map((request) => <RequestCard key={request.id} request={request} lang={lang} session={session} compact />)}
                     </div>
                   </details>
                 ))}
@@ -11691,7 +11891,7 @@ function UpcomingPage({ lang, session, navigate, adminContent = {} }) {
             <summary><AdminEditableText itemKey="admin.upcoming.past.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Esperienze passate', 'Past experiences')} /><strong>{pastAccepted.length}</strong></summary>
             {pastAccepted.length === 0 ? <p className="small-note">{adminCopy(lang, 'Nessuna esperienza passata.', 'No past experiences.')}</p> : (
               <div className="request-card-list compact-list">
-                {pastAccepted.map((request) => <RequestCard key={request.id} request={request} lang={lang} compact />)}
+                {pastAccepted.map((request) => <RequestCard key={request.id} request={request} lang={lang} session={session} compact />)}
               </div>
             )}
           </details>
@@ -11842,7 +12042,335 @@ function RequestsCrmDashboard({ requests, lang }) {
   );
 }
 
+<<<<<<< HEAD
 function RequestCard({ request, lang, onApprove, onDecline, onRemove, onUpdated, compact = false }) {
+=======
+function reviewStatusLabelForRecord(record, lang) {
+  if (record?.review_received_at || record?.review_submitted) return adminCopy(lang, 'Recensione ricevuta', 'Review received');
+  if (record?.review_requested_at) return adminCopy(lang, 'Recensione richiesta', 'Review requested');
+  return adminCopy(lang, 'Recensione non richiesta', 'Review not requested');
+}
+
+function reviewCodeForRecord(record, type = 'request') {
+  return type === 'booking_code' ? record?.code : (record?.review_code || record?.booking_code || '');
+}
+
+function buildReviewRequestMessage({ record, type, lang }) {
+  const name = type === 'booking_code' ? record.customer_name : record.customer_name;
+  const code = reviewCodeForRecord(record, type);
+  const link = `/reviews?code=${encodeURIComponent(code)}`;
+  return lang === 'it'
+    ? `Ciao ${name || ''}, grazie per aver vissuto l’Etna con vulcanIQ.\n\nSe ti va, puoi lasciare una recensione usando questo link:\n${link}\n\nGrazie ancora,\nTeam vulcanIQ`
+    : `Hi ${name || ''}, thank you for experiencing Mount Etna with vulcanIQ.\n\nIf you’d like, you can leave a review using this link:\n${link}\n\nThank you again,\nvulcanIQ team`;
+}
+
+function ReviewRequestActions({ record, type = 'request', lang, session, onUpdated }) {
+  const [busy, setBusy] = useState('');
+  const [copied, setCopied] = useState('');
+  const [error, setError] = useState('');
+  const code = reviewCodeForRecord(record, type);
+  const link = code ? `/reviews?code=${encodeURIComponent(code)}` : '';
+  const phone = normalizePhoneForWhatsApp(record.customer_phone);
+  const whatsappMessage = buildReviewRequestMessage({ record, type, lang });
+  const eligible = type === 'booking_code'
+    ? record.status === 'redeemed' && record.completion_status === 'completed'
+    : isRequestConfirmedRevenue(record) || record.lead_status === 'completed' || record.status === 'accepted';
+
+  async function run(action) {
+    if (!eligible || !code) return;
+    setBusy(action);
+    setError('');
+    try {
+      if (action === 'copy') {
+        await copyText(link);
+        if (type === 'booking_code') await markBookingCodeReviewLinkCopied(record.id, session.user.id);
+        else await markBookingRequestReviewLinkCopied(record.id, session.user.id);
+        trackEvent('review_link_copied', { record_type: type, record_id: record.id, language: lang, has_booking_code: Boolean(code), source_type: type }, { dedupe: false });
+        setCopied('link');
+      }
+      if (action === 'requested') {
+        if (type === 'booking_code') await markBookingCodeReviewRequested(record.id, 'manual', session.user.id);
+        else await markBookingRequestReviewRequested(record.id, 'manual', session.user.id);
+        trackEvent('review_requested_marked', { record_type: type, record_id: record.id, language: lang, has_booking_code: Boolean(code), source_type: type }, { dedupe: false });
+      }
+      if (action === 'received') {
+        if (type === 'booking_code') await markBookingCodeReviewReceived(record.id, session.user.id);
+        else await markBookingRequestReviewReceived(record.id, session.user.id);
+        trackEvent('review_received_marked', { record_type: type, record_id: record.id, language: lang, has_booking_code: Boolean(code), source_type: type }, { dedupe: false });
+      }
+      onUpdated?.(adminCopy(lang, 'Workflow recensione aggiornato.', 'Review workflow updated.'));
+      window.setTimeout(() => setCopied(''), 1400);
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Azione recensione non completata.', 'Review action failed.'));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function openWhatsapp() {
+    if (!eligible || !code) return;
+    setError('');
+    try {
+      if (type === 'booking_code') await markBookingCodeReviewRequested(record.id, 'whatsapp', session.user.id);
+      else await markBookingRequestReviewRequested(record.id, 'whatsapp', session.user.id);
+      trackEvent('review_request_whatsapp_click', { record_type: type, record_id: record.id, language: lang, has_booking_code: Boolean(code), source_type: type }, { dedupe: false });
+      const target = phone ? `https://wa.me/${phone}?text=${encode(whatsappMessage)}` : `https://wa.me/?text=${encode(whatsappMessage)}`;
+      window.open(target, '_blank', 'noopener,noreferrer');
+      onUpdated?.(adminCopy(lang, 'Richiesta recensione segnata.', 'Review request marked.'));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'WhatsApp non aperto.', 'WhatsApp not opened.'));
+    }
+  }
+
+  if (!eligible) return null;
+  return (
+    <div className="review-request-actions admin-inline-workflow">
+      <p className="small-note"><strong>{reviewStatusLabelForRecord(record, lang)}</strong>{record.review_requested_at ? ` · ${formatLocalDateTime(record.review_requested_at, lang, '')}` : ''}</p>
+      {!code && <p className="small-note warning-text">{adminCopy(lang, 'Nessun codice recensione disponibile.', 'No review code available.')}</p>}
+      <div className="request-actions-row">
+        <button className="button secondary" type="button" disabled={!code || Boolean(busy)} onClick={() => run('copy')}>{adminCopy(lang, 'Copia link recensione', 'Copy review link')} {copied === 'link' ? '· ✓' : ''}</button>
+        <button className="button secondary" type="button" disabled={!code || Boolean(busy)} onClick={openWhatsapp}>{adminCopy(lang, 'Apri richiesta WhatsApp', 'Open WhatsApp request')}</button>
+        <button className="button secondary" type="button" disabled={!code || Boolean(busy)} onClick={() => run('requested')}>{adminCopy(lang, 'Segna recensione richiesta', 'Mark review requested')}</button>
+        <button className="button secondary" type="button" disabled={!code || Boolean(busy)} onClick={() => run('received')}>{adminCopy(lang, 'Segna recensione ricevuta', 'Mark review received')}</button>
+      </div>
+      {error && <p className="form-status error">{error}</p>}
+    </div>
+  );
+}
+
+function ReferralActions({ record, type = 'request', lang, session, onUpdated }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [code, setCode] = useState(record?.referral_code || '');
+  const eligible = type === 'booking_code'
+    ? record.status === 'redeemed' && record.completion_status === 'completed'
+    : isRequestConfirmedRevenue(record) || ['completed', 'review_requested', 'review_received'].includes(record.lead_status);
+
+  async function createOrCopy() {
+    if (!eligible) return;
+    setBusy(true);
+    setError('');
+    try {
+      const created = await createCustomerReferralCode({
+        customer_name: record.customer_name,
+        customer_email: record.customer_email,
+        customer_phone: record.customer_phone,
+        source_booking_request_id: type === 'request' ? record.id : null,
+        source_booking_code_id: type === 'booking_code' ? record.id : null,
+        source_type: type
+      }, session.user.id);
+      setCode(created.code);
+      const link = referralLink(created.code, requestLang(record, lang));
+      await copyText(link);
+      trackEvent('referral_code_created', { referral_code: created.code, source_type: type, source_id: record.id, language: lang }, { dedupe: false });
+      trackEvent('referral_link_copied', { referral_code: created.code, source_type: type, source_id: record.id, language: lang }, { dedupe: false });
+      onUpdated?.(adminCopy(lang, `Codice referral copiato: ${created.code}`, `Referral code copied: ${created.code}`));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Codice referral non creato.', 'Referral code not created.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!eligible) return null;
+  return (
+    <div className="referral-actions admin-inline-workflow">
+      <p className="small-note"><strong>{adminCopy(lang, 'Referral cliente', 'Customer referral')}</strong>{code ? ` · ${code}` : ''}</p>
+      <div className="request-actions-row">
+        <button className="button secondary" type="button" disabled={busy} onClick={createOrCopy}>{code ? adminCopy(lang, 'Copia link referral', 'Copy referral link') : adminCopy(lang, 'Genera referral', 'Generate referral')}</button>
+      </div>
+      {error && <p className="form-status error">{error}</p>}
+    </div>
+  );
+}
+
+
+function ReferralCodesPanel({ lang, session }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    try { setItems(await listCustomerReferralCodes({ limit: 100 })); }
+    catch (err) { setError(err?.message || adminCopy(lang, 'Referral non caricati.', 'Could not load referrals.')); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  async function copyReferral(item) {
+    const link = referralLink(item.code, lang);
+    await copyText(link);
+    trackEvent('referral_link_copied', { referral_code: item.code, source_type: item.source_type || 'unknown', source_id: item.source_booking_request_id || item.source_booking_code_id || '', language: lang }, { dedupe: false });
+    setFeedback(adminCopy(lang, `Link referral copiato: ${item.code}`, `Referral link copied: ${item.code}`));
+  }
+
+  async function disableReferral(item) {
+    if (!window.confirm(adminCopy(lang, `Disattivare ${item.code}?`, `Disable ${item.code}?`))) return;
+    try {
+      await disableCustomerReferralCode(item.id, session.user.id);
+      trackEvent('referral_code_disabled', { referral_code: item.code, source_type: item.source_type || 'unknown', source_id: item.source_booking_request_id || item.source_booking_code_id || '', language: lang }, { dedupe: false });
+      await refresh();
+      setFeedback(adminCopy(lang, 'Referral disattivato.', 'Referral disabled.'));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Referral non disattivato.', 'Referral not disabled.'));
+    }
+  }
+
+  return (
+    <section className="admin-panel referral-codes-panel">
+      <div className="admin-panel-header">
+        <h2>{adminCopy(lang, 'Referral clienti', 'Customer referrals')} · {items.length}</h2>
+        <button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+      </div>
+      {feedback && <div className="admin-alert success compact-alert">{feedback}</div>}
+      {error && <div className="admin-alert error compact-alert">{error}</div>}
+      {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : items.length === 0 ? <p className="small-note">{adminCopy(lang, 'Nessun referral generato.', 'No referrals generated.')}</p> : (
+        <div className="referral-code-list">
+          {items.map((item) => (
+            <article className="referral-code-card" key={item.id}>
+              <div>
+                <strong>{item.code}</strong>
+                <p className="small-note">{item.customer_name || '-'} · {item.source_type || '-'} · {adminCopy(lang, 'Usi', 'Uses')} {item.used_count || 0}{item.last_used_at ? ` · ${formatLocalDateTime(item.last_used_at, lang, '')}` : ''}</p>
+              </div>
+              <span className={`status-pill ${item.active ? 'accepted' : 'cancelled'}`}>{item.active ? adminCopy(lang, 'Attiva', 'Active') : adminCopy(lang, 'Inattiva', 'Inactive')}</span>
+              <div className="request-actions-row">
+                <button className="button secondary" type="button" onClick={() => copyReferral(item)}>{adminCopy(lang, 'Copia link', 'Copy link')}</button>
+                {item.active && <button className="button secondary danger" type="button" onClick={() => disableReferral(item)}>{adminCopy(lang, 'Disattiva', 'Disable')}</button>}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const GIFT_CARD_STATUSES = ['new', 'contacted', 'quoted', 'paid', 'issued', 'cancelled'];
+function giftCardStatusLabel(status, lang) {
+  const labels = {
+    new: { it: 'Nuova richiesta', en: 'New request' },
+    contacted: { it: 'Contattato', en: 'Contacted' },
+    quoted: { it: 'Preventivo inviato', en: 'Quote sent' },
+    paid: { it: 'Pagato', en: 'Paid' },
+    issued: { it: 'Emesso', en: 'Issued' },
+    cancelled: { it: 'Annullato', en: 'Cancelled' }
+  };
+  return labels[status]?.[lang] || status || '-';
+}
+
+function buildGiftCardAdminReply(request, lang) {
+  const budget = request.budget ? formatMoney(request.budget, request.currency || 'EUR', lang) : (lang === 'it' ? 'da definire' : 'to define');
+  return lang === 'it'
+    ? `Ciao ${request.buyer_name || ''},\n\ngrazie per la richiesta Gift Card vulcanIQ.\n\nGift Card per: ${request.recipient_name || '-'}\nEsperienza/interesse: ${request.experience_type || '-'}\nBudget indicativo: ${budget}\n\nTi confermiamo disponibilità e proposta il prima possibile.\n\nTeam vulcanIQ`
+    : `Hi ${request.buyer_name || ''},\n\nthank you for your vulcanIQ Gift Card request.\n\nGift Card for: ${request.recipient_name || '-'}\nExperience/interest: ${request.experience_type || '-'}\nIndicative budget: ${budget}\n\nWe will confirm availability and proposal as soon as possible.\n\nvulcanIQ team`;
+}
+
+function useAdminGiftCards(filters = {}) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    try { setItems(await listGiftCardRequests(filters)); }
+    catch (err) { setError(err?.message || 'Could not load gift cards.'); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { refresh(); }, [JSON.stringify(filters)]);
+  return { items, loading, error, refresh };
+}
+
+function GiftCardsAdminPage({ lang, session, adminContent = {} }) {
+  const [filters, setFilters] = useState({ status: 'all', search: '', limit: 250 });
+  const { items, loading, error, refresh } = useAdminGiftCards(filters);
+  const [feedback, setFeedback] = useState('');
+  const [actionError, setActionError] = useState('');
+
+  async function updateItem(item, patch, message = '') {
+    setActionError('');
+    setFeedback('');
+    try {
+      const previousStatus = item.status;
+      const updated = await updateGiftCardRequest(item.id, patch, session.user.id);
+      if (patch.status && patch.status !== previousStatus) {
+        trackEvent('gift_card_status_changed', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
+        if (patch.status === 'paid') trackEvent('gift_card_paid', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
+        if (patch.status === 'issued') trackEvent('gift_card_issued', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
+        if (patch.status === 'cancelled') trackEvent('gift_card_cancelled', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
+      }
+      await refresh();
+      setFeedback(message || adminCopy(lang, 'Gift Card aggiornata.', 'Gift Card updated.'));
+      return updated;
+    } catch (err) {
+      setActionError(err?.message || adminCopy(lang, 'Gift Card non aggiornata.', 'Gift Card not updated.'));
+      return null;
+    }
+  }
+
+  async function copyReply(item, channel) {
+    const replyLang = item.buyer_preferred_language || lang;
+    const body = buildGiftCardAdminReply(item, replyLang);
+    await copyText(body);
+    trackEvent(channel === 'email' ? 'gift_card_email_reply_copied' : 'gift_card_whatsapp_reply_copied', { request_id: item.id, language: replyLang }, { dedupe: false });
+    setFeedback(channel === 'email' ? adminCopy(lang, 'Risposta email copiata.', 'Email reply copied.') : adminCopy(lang, 'Risposta WhatsApp copiata.', 'WhatsApp reply copied.'));
+  }
+
+  return (
+    <section className="admin-page gift-cards-admin-page">
+      <div className="admin-page-header">
+        <div>
+          <span className="kicker">Revenue OS</span>
+          <AdminEditableText as="h1" itemKey="admin.giftCards.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Richieste Gift Card', 'Gift Card requests')} />
+          <AdminEditableText as="p" itemKey="admin.giftCards.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestisci richieste, stato, note interne e revenue Gift Card separata dalle escursioni.', 'Manage requests, status, internal notes, and Gift Card revenue separately from excursions.')} />
+        </div>
+      </div>
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {(error || actionError) && <div className="admin-alert error" role="alert">{error || actionError}</div>}
+      <div className="admin-filter-bar">
+        <input aria-label="Search" placeholder={adminCopy(lang, 'Cerca Gift Card', 'Search Gift Cards')} value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} />
+        <select aria-label="Status" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">{adminCopy(lang, 'Tutti gli stati', 'All statuses')}</option>{GIFT_CARD_STATUSES.map((status) => <option key={status} value={status}>{giftCardStatusLabel(status, lang)}</option>)}</select>
+        <button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+      </div>
+      <section className="admin-panel">
+        <div className="admin-panel-header"><h2>{adminCopy(lang, 'Richieste Gift Card', 'Gift Card requests')} · {items.length}</h2></div>
+        {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : items.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta Gift Card.', 'No Gift Card requests.')}</p> : (
+          <div className="request-card-list gift-card-admin-list">
+            {items.map((item) => (
+              <article className="request-card gift-card-admin-card" key={item.id}>
+                <div className="request-card-head"><div><h3>{item.buyer_name || adminCopy(lang, 'Acquirente senza nome', 'Unnamed buyer')}</h3><p>{item.buyer_phone || '—'} · {item.buyer_email || '—'}</p></div><span className={`status-pill ${item.status}`}>{giftCardStatusLabel(item.status, lang)}</span></div>
+                <dl className="request-details-grid">
+                  <div><dt>{adminCopy(lang, 'Destinatario', 'Recipient')}</dt><dd>{item.recipient_name || '-'}</dd></div>
+                  <div><dt>{adminCopy(lang, 'Esperienza', 'Experience')}</dt><dd>{item.experience_type || '-'}</dd></div>
+                  <div><dt>{adminCopy(lang, 'Budget', 'Budget')}</dt><dd>{item.budget ? formatMoney(item.budget, item.currency, lang) : '-'}</dd></div>
+                  <div><dt>{adminCopy(lang, 'Consegna preferita', 'Preferred delivery')}</dt><dd>{formatDateForMessage(item.preferred_delivery_date, lang) || '-'}</dd></div>
+                  <div><dt>{adminCopy(lang, 'Lingua', 'Language')}</dt><dd>{item.buyer_preferred_language || '-'}</dd></div>
+                  <div><dt>{adminCopy(lang, 'Finance', 'Finance')}</dt><dd>{item.finance_entry_id ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Not linked')}</dd></div>
+                </dl>
+                {item.message && <p className="request-message">{item.message}</p>}
+                <label className="admin-field full"><span>{adminCopy(lang, 'Nota interna', 'Internal note')}</span><textarea rows={3} defaultValue={item.admin_note || ''} onBlur={(event) => { if (event.target.value !== (item.admin_note || '')) updateItem(item, { admin_note: event.target.value }, adminCopy(lang, 'Nota interna aggiornata.', 'Internal note updated.')); }} /></label>
+                <div className="request-actions-row">
+                  <select value={item.status} onChange={(event) => updateItem(item, { status: event.target.value })}>{GIFT_CARD_STATUSES.map((status) => <option key={status} value={status}>{giftCardStatusLabel(status, lang)}</option>)}</select>
+                  <button className="button secondary" type="button" onClick={() => copyReply(item, 'whatsapp')}>{adminCopy(lang, 'Copia risposta WhatsApp', 'Copy WhatsApp reply')}</button>
+                  <button className="button secondary" type="button" onClick={() => copyReply(item, 'email')}>{adminCopy(lang, 'Copia risposta email', 'Copy email reply')}</button>
+                  <button className="button secondary" type="button" onClick={() => updateItem(item, { status: 'paid' })}>{adminCopy(lang, 'Segna come pagato', 'Mark as paid')}</button>
+                  <button className="button secondary" type="button" onClick={() => updateItem(item, { status: 'issued' })}>{adminCopy(lang, 'Segna come emesso', 'Mark as issued')}</button>
+                  <button className="button secondary danger" type="button" onClick={() => updateItem(item, { status: 'cancelled' })}>{adminCopy(lang, 'Annulla richiesta', 'Cancel request')}</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </section>
+  );
+}
+
+function RequestCard({ request, lang, session = null, onApprove, onDecline, onRemove, onUpdated, compact = false }) {
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
   return (
     <article className={`request-card ${compact ? 'compact' : ''}`}>
       <div className="request-card-head">
@@ -11875,6 +12403,11 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, onUpdated,
         <p className="small-note decision-note"><strong>{adminCopy(lang, 'Decisione', 'Decision')}:</strong> {request.decision_note || '-'} · {request.decided_at ? formatDateForMessage(String(request.decided_at).slice(0, 10), lang) : '-'}{request.decided_by ? ` · ${request.decided_by}` : ''}</p>
       )}
       <RequestCrmControls request={request} lang={lang} onUpdated={onUpdated} />
+<<<<<<< HEAD
+=======
+      {session && <ReviewRequestActions record={request} type="request" lang={lang} session={session} onUpdated={onUpdated} />}
+      {session && <ReferralActions record={request} type="request" lang={lang} session={session} onUpdated={onUpdated} />}
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
       <ReplyTools request={request} lang={lang}>
         {request.status === 'pending' && (
           <>
@@ -12264,7 +12797,11 @@ function AdminSelect({ label, value, onChange, options, formatter = (item) => it
 }
 
 
+<<<<<<< HEAD
 function RequestStatusAccordions({ requests, lang, onApprove, onDecline, onRemove, onUpdated }) {
+=======
+function RequestStatusAccordions({ requests, lang, session = null, onApprove, onDecline, onRemove, onUpdated }) {
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
   const groups = [
     { status: 'pending', label: adminCopy(lang, 'In attesa', 'Pending'), defaultOpen: true },
     { status: 'accepted', label: adminCopy(lang, 'Approvate / accettate', 'Approved / accepted'), defaultOpen: false },
@@ -12286,6 +12823,7 @@ function RequestStatusAccordions({ requests, lang, onApprove, onDecline, onRemov
                   key={request.id}
                   request={request}
                   lang={lang}
+                  session={session}
                   compact
                   onApprove={() => onApprove(request)}
                   onDecline={() => onDecline(request)}
@@ -12749,6 +13287,11 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
                   </dl>
                   {item.status === 'redeemed' && item.income_status !== 'confirmed' && <div className="admin-alert warning compact-alert">{adminCopy(lang, 'Codice usato: entrata non ancora confermata. Conferma solo dopo completamento/pagamento.', 'Code redeemed: income not confirmed. Confirm only after completion/payment.')}</div>}
                   {item.admin_note && <p className="request-message"><strong>{adminCopy(lang, 'Nota interna', 'Internal note')}:</strong> {item.admin_note}</p>}
+<<<<<<< HEAD
+=======
+                  <ReviewRequestActions record={item} type="booking_code" lang={lang} session={session} onUpdated={(message) => refreshWithFeedback(message)} />
+                  <ReferralActions record={item} type="booking_code" lang={lang} session={session} onUpdated={(message) => refreshWithFeedback(message)} />
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
                   <div className="admin-quick-actions">
                     <button type="button" onClick={() => copyCode(item.code)}>{adminCopy(lang, 'Copia codice', 'Copy code')}</button>
                     {item.status === 'unused' && <button type="button" onClick={() => cancelCode(item)}>{adminCopy(lang, 'Annulla codice', 'Cancel code')}</button>}
@@ -12764,6 +13307,11 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
         )}
       </section>
 
+<<<<<<< HEAD
+=======
+      <ReferralCodesPanel lang={lang} session={session} />
+
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
       {bookingCodeOpen && <AdminBookingCodeModal lang={lang} session={session} onClose={() => setBookingCodeOpen(false)} onSaved={(code) => { setBookingCodeOpen(false); refreshWithFeedback(adminCopy(lang, `Codice creato: ${code}`, `Code created: ${code}`)); }} />}
     </section>
   );
@@ -12820,6 +13368,10 @@ function RequestsPage({ lang, session, adminContent = {} }) {
             onDecline={(request) => setDecision({ type: 'decline', request })}
             onRemove={(request) => setDecision({ type: 'remove', request })}
             onUpdated={(message) => refreshWithFeedback(message)}
+<<<<<<< HEAD
+=======
+            session={session}
+>>>>>>> c869c6b (Implement Revenue OS Patch 3 workflows)
           />
         )}
       </section>
@@ -13654,6 +14206,37 @@ function App() {
   const [siteContent, setSiteContent] = useState({});
   const contactRef = useRef(null);
   const analyticsContextRef = useRef({ section: 'home', language: 'it' });
+
+  useEffect(() => {
+    const match = pathname.match(/^\/r\/ref\/([^/?#]+)/);
+    if (!match) return;
+    const code = match[1];
+    const params = new URLSearchParams(window.location.search || '');
+    const routeLang = params.get('lang') === 'en' ? 'en' : params.get('lang') === 'it' ? 'it' : lang;
+    let cancelled = false;
+    async function resolveReferral() {
+      const result = await validateAndRecordReferralClick(code);
+      if (cancelled) return;
+      if (result.valid) {
+        storeReferralJourney(result.code, { language: routeLang });
+        trackEvent('referral_link_click', { referral_code: result.code, source_type: 'customer_referral', language: routeLang }, { dedupe: false });
+      } else {
+        trackEvent('referral_invalid_link_click', { referral_code: code, source_type: 'customer_referral', language: routeLang }, { dedupe: false });
+      }
+      const query = new URLSearchParams();
+      if (routeLang === 'en' || routeLang === 'it') query.set('lang', routeLang);
+      if (result.valid) {
+        query.set('utm_source', 'referral');
+        query.set('utm_medium', 'customer');
+        query.set('utm_campaign', `referral_${result.code}`);
+      }
+      window.history.replaceState({}, '', `/${query.toString() ? `?${query.toString()}` : ''}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      setActivePage('home');
+    }
+    resolveReferral();
+    return () => { cancelled = true; };
+  }, [pathname]);
 
   useEffect(() => {
     analyticsContextRef.current = { section: activePage, language: lang };
