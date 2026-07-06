@@ -12,6 +12,7 @@ import { loadPublicReviews, submitPublicReview, listReviews, createManualReview,
 import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFile } from './services/siteMediaService.js';
 import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
 import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
+import { assignPartnerToBookingRequest, calculatePartnerCommission, listPartnerCommissions, listPartnerCommissionSummary, updatePartnerCommissionStatus, upsertPartnerCommissionForSource } from './services/partnerCommissions.js';
 import { listAnalyticsEvents, listAnalyticsSessions } from './services/analyticsService.js';
 import { createDatabaseBackup, downloadLatestDatabaseBackup, getBackupSchedule, getBackupStatus, saveBackupSchedule } from './services/backupService.js';
 import { createGiftCardRequest, listGiftCardRequests, updateGiftCardRequest } from './services/giftCards.js';
@@ -3214,6 +3215,8 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
   const contact = resolvePublicContactDetails(siteContent);
   const [items, setItems] = useState([]);
   const [leaflets, setLeaflets] = useState([]);
+  const [partnerCommissions, setPartnerCommissions] = useState([]);
+  const [partnerCommissionSummary, setPartnerCommissionSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [monthDate, setMonthDate] = useState(startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState(todayIso());
@@ -5798,6 +5801,47 @@ function isRequestConfirmedRevenue(request) {
   return ['accepted', 'confirmed', 'completed'].includes(request.status) || ['confirmed', 'completed', 'deposit_paid', 'review_requested', 'review_received'].includes(request.lead_status);
 }
 function isRequestLost(request) { return ['declined', 'cancelled', 'archived'].includes(request.status) || ['lost', 'cancelled'].includes(request.lead_status); }
+
+const PARTNER_COMMISSION_STATUSES = ['pending', 'approved', 'paid', 'cancelled'];
+const PARTNER_COMMISSION_STATUS_LABELS = {
+  pending: { it: 'In attesa', en: 'Pending' },
+  approved: { it: 'Approvata non pagata', en: 'Approved unpaid' },
+  paid: { it: 'Pagata', en: 'Paid' },
+  cancelled: { it: 'Annullata', en: 'Cancelled' }
+};
+const PARTNER_COMMISSION_TYPE_LABELS = {
+  none: { it: 'Nessuna', en: 'None' },
+  fixed_amount: { it: 'Importo fisso', en: 'Fixed amount' },
+  percentage: { it: 'Percentuale', en: 'Percentage' }
+};
+const PARTNER_COMMISSION_APPLIES_TO_LABELS = {
+  request_created: { it: 'Richiesta creata', en: 'Request created' },
+  booking_confirmed: { it: 'Prenotazione confermata', en: 'Booking confirmed' },
+  revenue_confirmed: { it: 'Revenue confermata', en: 'Revenue confirmed' }
+};
+function partnerCommissionStatusLabel(status, lang) { return PARTNER_COMMISSION_STATUS_LABELS[status]?.[lang] || status || '-'; }
+function partnerCommissionTypeLabel(type, lang) { return PARTNER_COMMISSION_TYPE_LABELS[type]?.[lang] || type || '-'; }
+function partnerCommissionAppliesToLabel(value, lang) { return PARTNER_COMMISSION_APPLIES_TO_LABELS[value]?.[lang] || value || '-'; }
+function partnerCommissionRuleLabel(item, lang) {
+  if (!item || item.commission_enabled === false || item.commission_type === 'none') return adminCopy(lang, 'Nessuna commissione', 'No commission');
+  if (item.commission_type === 'percentage') return `${parseMoneyAmount(item.commission_value)}%`;
+  if (item.commission_type === 'fixed_amount') return formatMoney(item.commission_value, item.commission_currency || item.currency || 'EUR', lang);
+  return partnerCommissionTypeLabel(item.commission_type, lang);
+}
+function partnerCommissionEligibleForRequest(request = {}, partner = {}) {
+  const appliesTo = partner?.commission_applies_to || 'revenue_confirmed';
+  if (appliesTo === 'request_created') return true;
+  if (appliesTo === 'booking_confirmed') return isRequestConfirmedRevenue(request);
+  return isRequestConfirmedRevenue(request) && requestMoneyValue(request) > 0;
+}
+function partnerCommissionGrossAmountForRequest(request = {}) { return requestMoneyValue(request); }
+function partnerCommissionSourceLabel(item = {}, lang) {
+  if (item.source_type === 'booking_request') return adminCopy(lang, 'Richiesta', 'Request');
+  if (item.source_type === 'booking_code') return adminCopy(lang, 'Codice prenotazione', 'Booking code');
+  if (item.source_type === 'manual_booking') return adminCopy(lang, 'Prenotazione manuale', 'Manual booking');
+  if (item.source_type === 'gift_card') return 'Gift Card';
+  return item.source_type || '-';
+}
 function requestSourceKey(request) {
   if (request.referral_code || request.referral_source === 'customer_referral') return 'customer_referral';
   if (request.source === 'booking_code') return 'booking_code';
@@ -11395,16 +11439,19 @@ function FinanceAdminPage({ lang, session, adminContent = {} }) {
     setError('');
     const dateRange = resolveFinanceDateRange(filters, lang);
     try {
-      const [entryData, requestData, fixedData, leafletData] = await Promise.all([
+      const [entryData, requestData, fixedData, leafletData, commissionSummaryData] = await Promise.all([
         listFinanceEntries({ ...filters, fromDate: dateRange.startDate, toDate: dateRange.endDate }),
         listBookingRequests({ limit: 250 }),
         listFixedExcursions({ activeOnly: false }),
-        listMonthlyLeaflets({ activeOnly: false })
+        listMonthlyLeaflets({ activeOnly: false }),
+        listPartnerCommissionSummary({ limit: 1000 }).catch(() => ({ commissions: [], pendingAmount: 0, approvedUnpaidAmount: 0, paidAmount: 0, cancelledAmount: 0, unpaidLiability: 0, pendingCount: 0, approvedCount: 0, paidCount: 0, cancelledCount: 0, byPartner: [] }))
       ]);
       setEntries(entryData);
       setRequests(requestData);
       setFixedExcursions(fixedData);
       setLeaflets(leafletData);
+      setPartnerCommissions(commissionSummaryData.commissions || []);
+      setPartnerCommissionSummary(commissionSummaryData);
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Finanze non caricate.', 'Finance data not loaded.'));
     } finally {
@@ -11510,6 +11557,8 @@ function FinanceAdminPage({ lang, session, adminContent = {} }) {
         <SummaryCard label={adminCopy(lang, 'Utile netto', 'Net profit')} value={formatMoney(financeSummary.net)} onClick={() => setActiveFinanceDetail({ key: 'net', title: adminCopy(lang, 'Utile netto', 'Net profit'), entries: reportEntries, total: financeSummary.net })} helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
         <SummaryCard label={adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings')} value={linkedEntries.length} onClick={() => setActiveFinanceDetail({ key: 'linked', title: adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings'), entries: linkedEntries, total: linkedEntries.length })} helper={adminCopy(lang, 'Vedi movimenti', 'View entries')} />
         <SummaryCard label={adminCopy(lang, 'Spese non collegate', 'Unlinked expenses')} value={unlinkedExpenseEntries.length} onClick={() => setActiveFinanceDetail({ key: 'unlinked-expenses', title: adminCopy(lang, 'Spese non collegate', 'Unlinked expenses'), entries: unlinkedExpenseEntries, total: unlinkedExpenseEntries.length })} helper={adminCopy(lang, 'Vedi spese', 'View expenses')} />
+        <SummaryCard label={adminCopy(lang, 'Liabilità commissioni partner', 'Partner commission liabilities')} value={formatMoney(partnerCommissionSummary?.unpaidLiability || 0, 'EUR', lang)} helper={adminCopy(lang, 'In attesa + approvate non pagate', 'Pending + approved unpaid')} />
+        <SummaryCard label={adminCopy(lang, 'Commissioni pagate', 'Paid commissions')} value={formatMoney(partnerCommissionSummary?.paidAmount || 0, 'EUR', lang)} helper={`${partnerCommissionSummary?.paidCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
       </div>
       <div className="admin-filter-bar finance-filter-bar">
         <select value={filters.dateMode} onChange={(event) => updateFilter('dateMode', event.target.value)} aria-label={adminCopy(lang, 'Filtro date', 'Date filter')}>
@@ -11527,6 +11576,7 @@ function FinanceAdminPage({ lang, session, adminContent = {} }) {
       </div>
       <FinanceOverview lang={lang} summary={financeSummary} rangeLabel={resolvedDateRange.label} onOpen={setActiveFinanceDetail} />
       <FinanceProfitLoss lang={lang} summary={financeSummary} adminContent={adminContent} />
+      <PartnerCommissionsFinancePanel lang={lang} session={session} commissions={partnerCommissions} summary={partnerCommissionSummary} onChanged={async (message) => { setFeedback(message); await refresh(); }} />
       <div className="admin-two-column finance-layout">
         <details className="admin-panel finance-collapsible-panel finance-form-panel" open={Boolean(editing)}>
           <summary className="finance-collapsible-summary">
@@ -11565,6 +11615,90 @@ function FinanceAdminPage({ lang, session, adminContent = {} }) {
       </div>
       {activeFinanceDetail && <FinanceDetailModal detail={activeFinanceDetail} lang={lang} onClose={() => setActiveFinanceDetail(null)} />}
     </section>
+  );
+}
+
+
+function PartnerCommissionsFinancePanel({ lang, session, commissions = [], summary = null, onChanged }) {
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [busyId, setBusyId] = useState('');
+  const [error, setError] = useState('');
+  const data = summary || { pendingAmount: 0, approvedUnpaidAmount: 0, paidAmount: 0, cancelledAmount: 0, unpaidLiability: 0, pendingCount: 0, approvedCount: 0, paidCount: 0, cancelledCount: 0, byPartner: [] };
+  const visible = statusFilter === 'all' ? commissions : commissions.filter((item) => item.status === statusFilter);
+
+  async function setStatus(item, status) {
+    setBusyId(item.id);
+    setError('');
+    try {
+      await updatePartnerCommissionStatus(item.id, status, item.status_notes || '', session.user.id);
+      trackEvent(status === 'paid' ? 'partner_commission_marked_paid' : 'partner_commission_status_changed', { partner_id: item.partner_id || '', source_type: item.source_type || '', commission_status: status, currency: item.currency || 'EUR', has_commission_amount: Boolean(item.commission_amount), commission_type: item.commission_type || '', source_section: 'admin_finance', admin_action: `set_${status}` }, { dedupe: false });
+      onChanged?.(status === 'paid' ? adminCopy(lang, 'Commissione segnata come pagata.', 'Commission marked as paid.') : adminCopy(lang, 'Commissione aggiornata.', 'Commission updated.'));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Commissione non aggiornata.', 'Commission not updated.'));
+    } finally {
+      setBusyId('');
+    }
+  }
+
+  return (
+    <details className="admin-panel finance-collapsible-panel partner-commissions-panel" open>
+      <summary className="finance-collapsible-summary">
+        <strong>{adminCopy(lang, 'Commissioni partner', 'Partner commissions')}</strong>
+        <em>{formatMoney(data.unpaidLiability || 0, 'EUR', lang)} {adminCopy(lang, 'non pagate', 'unpaid')}</em>
+      </summary>
+      <div className="finance-collapsible-body">
+        <p className="small-note">{adminCopy(lang, 'Le commissioni sono interne, non pubbliche, e vengono conteggiate come liabilità fino al pagamento manuale.', 'Commissions are internal, non-public, and counted as liabilities until manually paid.')}</p>
+        {error && <div className="admin-alert error compact-alert">{error}</div>}
+        <div className="admin-summary-grid partner-commission-summary-grid">
+          <SummaryCard label={adminCopy(lang, 'In attesa', 'Pending')} value={formatMoney(data.pendingAmount || 0, 'EUR', lang)} helper={`${data.pendingCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+          <SummaryCard label={adminCopy(lang, 'Approvate non pagate', 'Approved unpaid')} value={formatMoney(data.approvedUnpaidAmount || 0, 'EUR', lang)} helper={`${data.approvedCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+          <SummaryCard label={adminCopy(lang, 'Totale non pagato', 'Total unpaid')} value={formatMoney(data.unpaidLiability || 0, 'EUR', lang)} helper={adminCopy(lang, 'Liabilità finance', 'Finance liability')} />
+          <SummaryCard label={adminCopy(lang, 'Pagate', 'Paid')} value={formatMoney(data.paidAmount || 0, 'EUR', lang)} helper={`${data.paidCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+          <SummaryCard label={adminCopy(lang, 'Annullate', 'Cancelled')} value={formatMoney(data.cancelledAmount || 0, 'EUR', lang)} helper={`${data.cancelledCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+        </div>
+        <div className="admin-two-column partner-commission-layout">
+          <section className="partner-settlement-section">
+            <h3>{adminCopy(lang, 'Riepilogo settlement per partner', 'Partner settlement summary')}</h3>
+            {!data.byPartner?.length ? <p className="small-note">{adminCopy(lang, 'Nessuna commissione partner presente.', 'No partner commissions yet.')}</p> : (
+              <div className="admin-table-wrap">
+                <table className="admin-table compact-table">
+                  <thead><tr><th>Partner</th><th>{adminCopy(lang, 'In attesa', 'Pending')}</th><th>{adminCopy(lang, 'Approvate', 'Approved')}</th><th>{adminCopy(lang, 'Pagate', 'Paid')}</th><th>{adminCopy(lang, 'Record', 'Records')}</th><th>{adminCopy(lang, 'Ultima', 'Last')}</th></tr></thead>
+                  <tbody>{data.byPartner.map((row) => <tr key={row.partner_id || row.partner_name}><td>{row.partner_name || '—'}</td><td>{formatMoney(row.pendingAmount || 0, 'EUR', lang)}</td><td>{formatMoney(row.approvedUnpaidAmount || 0, 'EUR', lang)}</td><td>{formatMoney(row.paidAmount || 0, 'EUR', lang)}</td><td>{row.count}</td><td>{row.lastCommissionDate ? formatLocalDateTime(row.lastCommissionDate, lang, '') : '—'}</td></tr>)}</tbody>
+                </table>
+              </div>
+            )}
+          </section>
+          <section className="partner-commission-list-section">
+            <div className="admin-panel-header compact-header"><h3>{adminCopy(lang, 'Dettaglio commissioni', 'Commission details')}</h3><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">{adminCopy(lang, 'Tutti gli stati', 'All statuses')}</option>{PARTNER_COMMISSION_STATUSES.map((status) => <option value={status} key={status}>{partnerCommissionStatusLabel(status, lang)}</option>)}</select></div>
+            {!visible.length ? <p className="small-note">{adminCopy(lang, 'Nessuna commissione per questo filtro.', 'No commissions for this filter.')}</p> : (
+              <div className="partner-commission-card-list">
+                {visible.map((item) => (
+                  <article className="partner-commission-card" key={item.id}>
+                    <div className="request-card-head">
+                      <div><h4>{item.partner_name || '—'}</h4><p>{partnerCommissionSourceLabel(item, lang)} · {item.experience_title || adminExperienceLabel(item.experience_id, lang) || '—'} · {item.experience_date ? formatDateForMessage(item.experience_date, lang) : '—'}</p></div>
+                      <span className={`status-pill ${item.status}`}>{partnerCommissionStatusLabel(item.status, lang)}</span>
+                    </div>
+                    <dl className="request-details-grid compact-details-grid">
+                      <div><dt>{adminCopy(lang, 'Lordo', 'Gross')}</dt><dd>{formatMoney(item.gross_amount, item.currency, lang)}</dd></div>
+                      <div><dt>{adminCopy(lang, 'Regola', 'Rule')}</dt><dd>{item.commission_type === 'percentage' ? `${item.commission_value}%` : formatMoney(item.commission_value, item.currency, lang)}</dd></div>
+                      <div><dt>{adminCopy(lang, 'Commissione', 'Commission')}</dt><dd>{formatMoney(item.commission_amount, item.currency, lang)}</dd></div>
+                      <div><dt>{adminCopy(lang, 'Cliente', 'Customer')}</dt><dd>{item.customer_display_name || '—'}</dd></div>
+                    </dl>
+                    {item.status_notes && <p className="small-note">{item.status_notes}</p>}
+                    <div className="request-actions-row">
+                      {item.status === 'pending' && <button className="button secondary" type="button" disabled={busyId === item.id} onClick={() => setStatus(item, 'approved')}>{adminCopy(lang, 'Approva', 'Approve')}</button>}
+                      {['pending', 'approved'].includes(item.status) && <button className="button secondary danger" type="button" disabled={busyId === item.id} onClick={() => setStatus(item, 'cancelled')}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>}
+                      {item.status === 'approved' && <button className="button primary" type="button" disabled={busyId === item.id} onClick={() => setStatus(item, 'paid')}>{adminCopy(lang, 'Segna pagata', 'Mark paid')}</button>}
+                      {['paid', 'cancelled'].includes(item.status) && <span className="small-note">{adminCopy(lang, 'Solo consultazione', 'View only')}</span>}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -12534,6 +12668,111 @@ function GiftCardsAdminPage({ lang, session, adminContent = {} }) {
   );
 }
 
+
+function PartnerSourceControl({ request, lang, session, onUpdated }) {
+  const [open, setOpen] = useState(false);
+  const [partners, setPartners] = useState([]);
+  const [commissions, setCommissions] = useState([]);
+  const [partnerId, setPartnerId] = useState(request.partner_id || '');
+  const [grossAmount, setGrossAmount] = useState(String(partnerCommissionGrossAmountForRequest(request) || ''));
+  const [notes, setNotes] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setPartnerId(request.partner_id || '');
+    setGrossAmount(String(partnerCommissionGrossAmountForRequest(request) || ''));
+  }, [request.id, request.partner_id, request.expected_value, request.quoted_amount]);
+
+  async function refresh() {
+    if (!open || !session) return;
+    setLoading(true);
+    setError('');
+    try {
+      const [partnerRows, commissionRows] = await Promise.all([
+        listPartnerships({ activeOnly: true }),
+        listPartnerCommissions({ bookingRequestId: request.id, limit: 20 }).catch(() => [])
+      ]);
+      setPartners(partnerRows || []);
+      setCommissions(commissionRows || []);
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Partner non caricati.', 'Partners not loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, [open, request.id]);
+
+  const selectedPartner = partners.find((item) => item.id === partnerId) || null;
+  const preview = selectedPartner?.commission_enabled ? calculatePartnerCommission({
+    grossAmount,
+    commissionType: selectedPartner.commission_type,
+    commissionValue: selectedPartner.commission_value,
+    currency: selectedPartner.commission_currency || 'EUR'
+  }) : null;
+  const eligible = selectedPartner ? partnerCommissionEligibleForRequest(request, selectedPartner) : false;
+  const latestCommission = commissions[0] || null;
+
+  async function save() {
+    setSaving(true);
+    setError('');
+    try {
+      const updatedRequest = await assignPartnerToBookingRequest(request.id, partnerId || null, session.user.id);
+      trackEvent('partner_source_assigned', { partner_id: partnerId || '', source_type: 'booking_request', source_section: 'admin_requests', admin_action: 'assign_partner' }, { dedupe: false });
+      let commissionResult = null;
+      if (partnerId && selectedPartner?.commission_enabled) {
+        commissionResult = await upsertPartnerCommissionForSource({
+          sourceType: 'booking_request',
+          source: { ...request, ...updatedRequest, partner_id: partnerId },
+          partnerId,
+          grossAmount,
+          userId: session.user.id,
+          statusNotes: notes
+        });
+        if (commissionResult?.created) trackEvent('partner_commission_created', { partner_id: partnerId, source_type: 'booking_request', commission_status: 'pending', currency: preview?.currency || 'EUR', has_commission_amount: Boolean(preview?.commissionAmount), commission_type: selectedPartner.commission_type, source_section: 'admin_requests', admin_action: 'upsert_commission' }, { dedupe: false });
+      }
+      await refresh();
+      const skipped = commissionResult?.skipped ? ` · ${commissionResult.reason}` : '';
+      onUpdated?.(adminCopy(lang, `Fonte partner salvata${skipped}.`, `Partner source saved${skipped}.`));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Fonte partner non salvata.', 'Partner source not saved.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!session) return null;
+
+  return (
+    <div className="partner-source-box admin-inline-workflow">
+      <button className="request-crm-toggle" type="button" onClick={() => setOpen((value) => !value)}>
+        <span>{adminCopy(lang, 'Fonte partner', 'Partner source')}</span>
+        <strong>{request.partner_id ? (partners.find((item) => item.id === request.partner_id)?.name || adminCopy(lang, 'Partner assegnato', 'Partner assigned')) : adminCopy(lang, 'Nessun partner', 'No partner')}</strong>
+        <small>{latestCommission ? `${partnerCommissionStatusLabel(latestCommission.status, lang)} · ${formatMoney(latestCommission.commission_amount, latestCommission.currency, lang)}` : adminCopy(lang, 'Commissioni interne non pubbliche', 'Internal commissions only')}</small>
+      </button>
+      {open && (
+        <div className="admin-form-grid request-crm-grid partner-source-grid">
+          {loading ? <p className="small-note full">{adminCopy(lang, 'Caricamento partner...', 'Loading partners...')}</p> : null}
+          <label className="admin-field"><span>{adminCopy(lang, 'Partner', 'Partner')}</span><select value={partnerId} onChange={(event) => setPartnerId(event.target.value)}><option value="">{adminCopy(lang, 'Nessun partner', 'No partner')}</option>{partners.map((partner) => <option key={partner.id} value={partner.id}>{partner.name}</option>)}</select></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Importo lordo', 'Gross amount')}</span><input inputMode="decimal" value={grossAmount} onChange={(event) => setGrossAmount(event.target.value)} placeholder="125.00" /></label>
+          <label className="admin-field full"><span>{adminCopy(lang, 'Note commissione', 'Commission notes')}</span><textarea rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
+          {selectedPartner && <div className="admin-alert compact-alert full">
+            <strong>{selectedPartner.name}</strong><br />
+            {adminCopy(lang, 'Regola', 'Rule')}: {partnerCommissionRuleLabel(selectedPartner, lang)} · {partnerCommissionAppliesToLabel(selectedPartner.commission_applies_to, lang)}<br />
+            {preview && <span>{adminCopy(lang, 'Commissione stimata', 'Estimated commission')}: {formatMoney(preview.commissionAmount, preview.currency, lang)} — {selectedPartner.commission_type === 'percentage' ? `${preview.commissionValue}% ${adminCopy(lang, 'su', 'of')} ${formatMoney(preview.grossAmount, preview.currency, lang)}` : partnerCommissionTypeLabel(selectedPartner.commission_type, lang)}</span>}
+            {!eligible && <p className="small-note">{adminCopy(lang, 'La commissione verrà creata solo quando la richiesta raggiunge lo stato configurato e l’importo è noto.', 'The commission is created only when the request reaches the configured state and the amount is known.')}</p>}
+          </div>}
+          {commissions.length > 0 && <div className="full partner-source-commission-list"><strong>{adminCopy(lang, 'Commissioni esistenti', 'Existing commissions')}</strong>{commissions.map((item) => <p className="small-note" key={item.id}>{partnerCommissionStatusLabel(item.status, lang)} · {formatMoney(item.commission_amount, item.currency, lang)} · {item.created_at ? formatLocalDateTime(item.created_at, lang, '') : ''}</p>)}</div>}
+          {error && <div className="admin-alert error full">{error}</div>}
+          <div className="modal-actions full"><button className="button primary" type="button" onClick={save} disabled={saving || loading}>{saving ? adminCopy(lang, 'Salvataggio...', 'Saving...') : adminCopy(lang, 'Salva fonte partner', 'Save partner source')}</button></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RequestCard({ request, lang, session = null, onApprove, onDecline, onRemove, onUpdated, compact = false }) {
   return (
     <article className={`request-card ${compact ? 'compact' : ''}`}>
@@ -12566,6 +12805,7 @@ function RequestCard({ request, lang, session = null, onApprove, onDecline, onRe
       {request.status !== 'pending' && (
         <p className="small-note decision-note"><strong>{adminCopy(lang, 'Decisione', 'Decision')}:</strong> {request.decision_note || '-'} · {request.decided_at ? formatDateForMessage(String(request.decided_at).slice(0, 10), lang) : '-'}{request.decided_by ? ` · ${request.decided_by}` : ''}</p>
       )}
+      <PartnerSourceControl request={request} lang={lang} session={session} onUpdated={onUpdated} />
       <RequestCrmControls request={request} lang={lang} onUpdated={onUpdated} />
       {session && <ReviewRequestActions record={request} type="request" lang={lang} session={session} onUpdated={onUpdated} />}
       {session && <ReferralActions record={request} type="request" lang={lang} session={session} onUpdated={onUpdated} />}
@@ -13545,7 +13785,7 @@ function PartnershipsAdminPage({ lang, session, adminContent = {} }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
-  const emptyForm = { name: '', category_key: 'other', category_it: 'Altro', category_en: 'Other', description_it: '', description_en: '', website_url: '', google_maps_url: '', social_url: '', image_url: '', image_path: '', image_name: '', image_type: '', imageFile: null, display_order: '0', active: true };
+  const emptyForm = { name: '', category_key: 'other', category_it: 'Altro', category_en: 'Other', description_it: '', description_en: '', website_url: '', google_maps_url: '', social_url: '', image_url: '', image_path: '', image_name: '', image_type: '', imageFile: null, display_order: '0', active: true, commission_enabled: false, commission_type: 'none', commission_value: '', commission_currency: 'EUR', commission_applies_to: 'revenue_confirmed', commission_notes: '', commission_status: 'inactive' };
   const [form, setForm] = useState(emptyForm);
 
   async function refresh() {
@@ -13577,6 +13817,10 @@ function PartnershipsAdminPage({ lang, session, adminContent = {} }) {
     }
     if (!isValidOptionalUrl(form.website_url) || !isValidOptionalUrl(form.google_maps_url) || !isValidOptionalUrl(form.social_url) || (!form.imageFile && !isValidOptionalUrl(form.image_url))) {
       setError(adminCopy(lang, 'Inserisci URL validi che iniziano con http o https.', 'Enter valid URLs starting with http or https.'));
+      return;
+    }
+    if (form.commission_enabled && (form.commission_type === 'none' || parseMoneyAmount(form.commission_value) <= 0 || (form.commission_type === 'percentage' && parseMoneyAmount(form.commission_value) > 100))) {
+      setError(adminCopy(lang, 'Configura una commissione valida: tipo, valore positivo e percentuale massimo 100%.', 'Configure a valid commission: type, positive value, and percentage max 100%.'));
       return;
     }
     try {
@@ -13618,6 +13862,15 @@ function PartnershipsAdminPage({ lang, session, adminContent = {} }) {
             {form.imageFile && <p className="small-note full">{adminCopy(lang, 'File selezionato', 'Selected file')}: {form.imageFile.name}</p>}
             <AdminInput label={adminCopy(lang, 'Ordine', 'Display order')} type="number" value={form.display_order} onChange={(value) => update('display_order', value)} />
             <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => update('active', event.target.checked)} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
+            <label className="check-field full"><input type="checkbox" checked={form.commission_enabled} onChange={(event) => { update('commission_enabled', event.target.checked); update('commission_status', event.target.checked ? 'active' : 'inactive'); update('commission_type', event.target.checked && form.commission_type === 'none' ? 'percentage' : form.commission_type); }} /> {adminCopy(lang, 'Abilita commissioni partner', 'Enable partner commissions')}</label>
+            {form.commission_enabled && <>
+              <AdminSelect label={adminCopy(lang, 'Tipo commissione', 'Commission type')} value={form.commission_type} onChange={(value) => update('commission_type', value)} options={['fixed_amount', 'percentage']} formatter={(value) => partnerCommissionTypeLabel(value, lang)} />
+              <AdminInput label={adminCopy(lang, 'Valore commissione', 'Commission value')} type="number" value={form.commission_value} onChange={(value) => update('commission_value', value)} />
+              <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.commission_currency} onChange={(value) => update('commission_currency', normalizeCurrency(value))} />
+              <AdminSelect label={adminCopy(lang, 'Si applica a', 'Applies to')} value={form.commission_applies_to} onChange={(value) => update('commission_applies_to', value)} options={['request_created', 'booking_confirmed', 'revenue_confirmed']} formatter={(value) => partnerCommissionAppliesToLabel(value, lang)} />
+              <label className="admin-field full"><span>{adminCopy(lang, 'Note interne commissione', 'Internal commission notes')}</span><textarea rows={2} value={form.commission_notes} onChange={(event) => update('commission_notes', event.target.value)} /></label>
+              <p className="small-note full">{adminCopy(lang, 'Le commissioni sono interne e non vengono mostrate sul sito pubblico.', 'Commissions are internal and are not shown on the public website.')}</p>
+            </>}
             <div className="modal-actions full"><button className="button primary" type="submit">{adminCopy(lang, 'Salva collaborazione', 'Save partnership')}</button></div>
           </form>
         </section>
@@ -13653,7 +13906,14 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
     imageFile: null,
     removeImage: false,
     display_order: String(item.display_order || 0),
-    active: item.active !== false
+    active: item.active !== false,
+    commission_enabled: item.commission_enabled === true,
+    commission_type: item.commission_type || 'none',
+    commission_value: item.commission_value ?? '',
+    commission_currency: item.commission_currency || 'EUR',
+    commission_applies_to: item.commission_applies_to || 'revenue_confirmed',
+    commission_notes: item.commission_notes || '',
+    commission_status: item.commission_status || (item.commission_enabled ? 'active' : 'inactive')
   });
   const [error, setError] = useState('');
 
@@ -13665,6 +13925,10 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
     }
     if (!isValidOptionalUrl(form.website_url) || !isValidOptionalUrl(form.google_maps_url) || !isValidOptionalUrl(form.social_url) || (!form.imageFile && !form.removeImage && !isValidOptionalUrl(form.image_url))) {
       setError(adminCopy(lang, 'URL non valido.', 'Invalid URL.'));
+      return;
+    }
+    if (form.commission_enabled && (form.commission_type === 'none' || parseMoneyAmount(form.commission_value) <= 0 || (form.commission_type === 'percentage' && parseMoneyAmount(form.commission_value) > 100))) {
+      setError(adminCopy(lang, 'Configura una commissione valida: tipo, valore positivo e percentuale massimo 100%.', 'Configure a valid commission: type, positive value, and percentage max 100%.'));
       return;
     }
     try {
@@ -13716,6 +13980,15 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
           {form.imageFile && <p className="small-note full">{adminCopy(lang, 'Nuovo file', 'New file')}: {form.imageFile.name}</p>}
           <AdminInput label={adminCopy(lang, 'Ordine', 'Display order')} type="number" value={form.display_order} onChange={(value) => setForm((current) => ({ ...current, display_order: value }))} />
           <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
+          <label className="check-field full"><input type="checkbox" checked={form.commission_enabled} onChange={(event) => setForm((current) => ({ ...current, commission_enabled: event.target.checked, commission_status: event.target.checked ? 'active' : 'inactive', commission_type: event.target.checked && current.commission_type === 'none' ? 'percentage' : current.commission_type }))} /> {adminCopy(lang, 'Abilita commissioni partner', 'Enable partner commissions')}</label>
+          {form.commission_enabled && <>
+            <AdminSelect label={adminCopy(lang, 'Tipo commissione', 'Commission type')} value={form.commission_type} onChange={(value) => setForm((current) => ({ ...current, commission_type: value }))} options={['fixed_amount', 'percentage']} formatter={(value) => partnerCommissionTypeLabel(value, lang)} />
+            <AdminInput label={adminCopy(lang, 'Valore commissione', 'Commission value')} type="number" value={form.commission_value} onChange={(value) => setForm((current) => ({ ...current, commission_value: value }))} />
+            <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.commission_currency} onChange={(value) => setForm((current) => ({ ...current, commission_currency: normalizeCurrency(value) }))} />
+            <AdminSelect label={adminCopy(lang, 'Si applica a', 'Applies to')} value={form.commission_applies_to} onChange={(value) => setForm((current) => ({ ...current, commission_applies_to: value }))} options={['request_created', 'booking_confirmed', 'revenue_confirmed']} formatter={(value) => partnerCommissionAppliesToLabel(value, lang)} />
+            <label className="admin-field full"><span>{adminCopy(lang, 'Note interne commissione', 'Internal commission notes')}</span><textarea rows={2} value={form.commission_notes} onChange={(event) => setForm((current) => ({ ...current, commission_notes: event.target.value }))} /></label>
+            <p className="small-note full">{adminCopy(lang, 'Le commissioni sono interne e non vengono mostrate sul sito pubblico.', 'Commissions are internal and are not shown on the public website.')}</p>
+          </>}
           {error && <div className="admin-alert error full">{error}</div>}
           <div className="modal-actions full"><button className="button primary" type="button" onClick={save}>{adminCopy(lang, 'Salva', 'Save')}</button><button className="button secondary" type="button" onClick={() => setEditing(false)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
         </div>
@@ -13724,6 +13997,7 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
           {item.image_url && <img className="admin-card-preview-image" src={item.image_url} alt={item.name} />}
           {(item.description_it || item.description_en) && <FormattedText textValue={lang === 'it' ? item.description_it || item.description_en : item.description_en || item.description_it} className="formatted-text admin-partnership-preview-text" />}
           <p className="small-note">{item.website_url || '-'} · {item.google_maps_url ? 'Google Maps' : adminCopy(lang, 'Nessuna mappa', 'No map')} · {item.social_url ? 'Social' : adminCopy(lang, 'Nessun social', 'No social')} · {item.image_name || adminCopy(lang, 'Nessuna immagine', 'No image')} · {adminCopy(lang, 'Ordine', 'Order')} {item.display_order}</p>
+          <p className="small-note"><strong>{adminCopy(lang, 'Commissioni', 'Commissions')}:</strong> {item.commission_enabled ? `${partnerCommissionRuleLabel(item, lang)} · ${partnerCommissionAppliesToLabel(item.commission_applies_to, lang)}` : adminCopy(lang, 'Disabilitate', 'Disabled')}</p>
           {error && <div className="admin-alert error">{error}</div>}
           <div className="request-actions"><button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>{item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}</div>
         </>

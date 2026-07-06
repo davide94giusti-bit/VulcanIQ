@@ -12520,3 +12520,84 @@ body.modal-scroll-lock {
     border-color: var(--line, rgba(24, 33, 43, 0.11)) !important;
   }
 }
+
+/* Patch 4: partner commissions/admin liability layer */
+.partner-commissions-panel {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.partner-commission-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.35fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.partner-commission-card-list,
+.partner-source-commission-list {
+  display: grid;
+  gap: 10px;
+}
+
+.partner-commission-card,
+.partner-source-box {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(24, 33, 43, 0.1);
+  border-radius: 18px;
+  padding: 14px;
+  box-shadow: 0 12px 30px rgba(12, 27, 42, 0.08);
+}
+
+.partner-source-box {
+  margin: 12px 0;
+}
+
+.partner-source-box .form-row,
+.partner-commission-card .form-row {
+  align-items: end;
+}
+
+.compact-table {
+  display: grid;
+  gap: 8px;
+}
+
+.compact-header,
+.compact-details-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.8fr 0.8fr 0.8fr 0.8fr 0.8fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.compact-header {
+  color: var(--muted, #6a7484);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.compact-details-grid {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(24, 33, 43, 0.08);
+  border-radius: 14px;
+  padding: 10px;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 920px) {
+  .partner-commission-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-header {
+    display: none;
+  }
+
+  .compact-details-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

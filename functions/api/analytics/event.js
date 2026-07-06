@@ -86,7 +86,11 @@ const EVENT_NAMES = new Set([
   'form_field_started',
   'abandoned_form_detected',
   'abandoned_form_recovered_whatsapp',
-  'form_submit_success'
+  'form_submit_success',
+  'partner_source_assigned',
+  'partner_commission_created',
+  'partner_commission_status_changed',
+  'partner_commission_marked_paid'
 ]);
 
 const UNSAFE_METADATA_KEYS = new Set([

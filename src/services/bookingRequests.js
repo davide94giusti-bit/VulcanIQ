@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 import { createAvailabilityBlock } from './availabilityService.js';
+import { cancelUnpaidPartnerCommissionsForSource } from './partnerCommissions.js';
 import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
 
 const requestFields = `
@@ -16,6 +17,7 @@ const requestFields = `
   admin_note, decision_note, decided_at, decided_by,
   lead_status, lead_priority, lead_owner_id, next_follow_up_at, contacted_at, quoted_at, deposit_sent_at, deposit_paid_at, confirmed_at, completed_at, review_requested_at, review_received_at, review_request_channel, review_link_copied_at, review_code, lost_at, lost_reason, expected_value, quoted_amount, internal_notes,
   referral_code, referral_source, referral_landing_at,
+  partner_id, partner_source_assigned_at, partner_source_assigned_by,
   created_by_admin, availability_block_id
 `;
 
@@ -202,6 +204,9 @@ export function normalizeRequestInput(input, defaults = {}) {
     referral_code: textOrNull(input.referral_code),
     referral_source: textOrNull(input.referral_source),
     referral_landing_at: textOrNull(input.referral_landing_at),
+    partner_id: textOrNull(input.partner_id),
+    partner_source_assigned_at: textOrNull(input.partner_source_assigned_at),
+    partner_source_assigned_by: textOrNull(input.partner_source_assigned_by),
     analytics_session_id: textOrNull(input.analytics_session_id || input.session_id),
     analytics_visitor_id: textOrNull(input.analytics_visitor_id || input.visitor_id),
     analytics_journey_id: textOrNull(input.analytics_journey_id || input.booking_journey_id),
@@ -402,6 +407,7 @@ export async function declineBookingRequest({ request, userId, decisionNote = ''
     decided_by: userId
   });
   await reverseOrVoidFinanceForRequest(updated, userId, note || 'Booking request declined');
+  await cancelUnpaidPartnerCommissionsForSource({ sourceType: 'booking_request', sourceId: updated.id, userId, reason: note || 'Booking request declined' });
   return updated;
 }
 
@@ -417,6 +423,7 @@ export async function cancelBookingRequest({ request, userId, decisionNote = '' 
     removed_by: userId
   });
   await reverseOrVoidFinanceForRequest(updated, userId, note || 'Booking request cancelled');
+  await cancelUnpaidPartnerCommissionsForSource({ sourceType: 'booking_request', sourceId: updated.id, userId, reason: note || 'Booking request cancelled' });
   return updated;
 }
 
