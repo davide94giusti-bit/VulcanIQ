@@ -7,6 +7,8 @@ const BOOKING_CODE_FIELDS = `
   experience_id, fixed_excursion_id, experience_name_it, experience_name_en, experience_type,
   scheduled_date, scheduled_time, meeting_point_name, meeting_point_maps_url,
   expected_amount, currency, source, admin_note, customer_note, status,
+  completion_status, payment_status, income_status, admin_confirmed_income,
+  completed_at, income_confirmed_at, income_confirmed_by, cancelled_at, no_show_at,
   created_by, created_at, expires_at, redeemed_at, redeemed_booking_request_id, redeemed_finance_entry_id
 `;
 
@@ -64,7 +66,11 @@ function normalizeBookingCodeRow(row) {
     ...row,
     expected_amount: Number(row.expected_amount || 0),
     currency: normalizeCurrency(row.currency),
-    status: row.status || 'unused'
+    status: row.status || 'unused',
+    completion_status: row.completion_status || 'not_completed',
+    payment_status: row.payment_status || 'pending',
+    income_status: row.income_status || 'expected',
+    admin_confirmed_income: row.admin_confirmed_income === true
   };
 }
 
@@ -129,6 +135,10 @@ export async function createBookingCode(input = {}, userId = null) {
       admin_note: nullableText(input.admin_note),
       customer_note: nullableText(input.customer_note),
       status: 'unused',
+      completion_status: 'not_completed',
+      payment_status: 'pending',
+      income_status: 'expected',
+      admin_confirmed_income: false,
       created_by: userId || null,
       expires_at: expiresDate ? (expiresDate.length === 10 ? `${expiresDate}T23:59:59+00:00` : expiresDate) : null
     };
@@ -147,16 +157,144 @@ export async function createBookingCode(input = {}, userId = null) {
   throw new Error('Could not generate a unique booking code.');
 }
 
-export async function cancelBookingCode(id) {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+async function fetchBookingCode(id) {
   const { data, error } = await supabase
     .from('booking_codes')
-    .update({ status: 'cancelled' })
+    .select(BOOKING_CODE_FIELDS)
     .eq('id', id)
-    .eq('status', 'unused')
+    .single();
+  if (error) throw error;
+  return normalizeBookingCodeRow(data);
+}
+
+export async function cancelBookingCode(id, userId = null) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('booking_codes')
+    .update({ status: 'cancelled', completion_status: 'cancelled', income_status: 'cancelled', cancelled_at: now, income_confirmed_by: userId || null })
+    .eq('id', id)
+    .in('status', ['unused', 'redeemed'])
     .select(BOOKING_CODE_FIELDS)
     .single();
   if (error) throw error;
+  await cancelLinkedExpectedFinance(data, userId, 'booking code cancelled');
+  return normalizeBookingCodeRow(data);
+}
+
+async function cancelLinkedExpectedFinance(code, userId = null, reason = '') {
+  if (!code?.id) return;
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('finance_entries')
+    .select('id, status, active')
+    .or(`booking_code_id.eq.${code.id},source_id.eq.${code.id}`);
+  if (error) return;
+  await Promise.all((data || []).map((entry) => {
+    if (['cancelled', 'void', 'voided', 'reversed', 'reversal'].includes(entry.status)) return null;
+    return supabase
+      .from('finance_entries')
+      .update({ status: 'cancelled', active: false, cancelled_at: now, updated_by: userId || null, archive_reason: reason || null })
+      .eq('id', entry.id);
+  }).filter(Boolean));
+}
+
+async function ensureConfirmedFinanceForCode(code, userId = null) {
+  if (!code?.id || !Number(code.expected_amount || 0)) return null;
+  const now = new Date().toISOString();
+  if (code.redeemed_finance_entry_id) {
+    const { data, error } = await supabase
+      .from('finance_entries')
+      .update({
+        status: 'confirmed',
+        active: true,
+        admin_confirmed_at: now,
+        admin_confirmed_by: userId || null,
+        recognized_at: now,
+        updated_by: userId || null
+      })
+      .eq('id', code.redeemed_finance_entry_id)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return data;
+  }
+  const title = code.experience_name_it || code.experience_name_en || code.code || 'Booking code income';
+  const { data, error } = await supabase
+    .from('finance_entries')
+    .insert({
+      entry_date: new Date().toISOString().slice(0, 10),
+      type: 'income',
+      amount: cleanAmount(code.expected_amount),
+      currency: normalizeCurrency(code.currency),
+      title,
+      description: `Confirmed income from booking code ${code.code}`,
+      category: 'booking_code_confirmed',
+      payment_method: 'external',
+      booking_request_id: code.redeemed_booking_request_id || null,
+      booking_code_id: code.id,
+      source_type: 'booking_code',
+      source_id: code.id,
+      status: 'confirmed',
+      active: true,
+      recognized_at: now,
+      admin_confirmed_at: now,
+      admin_confirmed_by: userId || null,
+      created_by: userId || null,
+      updated_by: userId || null
+    })
+    .select('*')
+    .single();
+  if (error) throw error;
+  await supabase.from('booking_codes').update({ redeemed_finance_entry_id: data.id }).eq('id', code.id);
+  return data;
+}
+
+export async function markBookingCodeCompleted(id, userId = null) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('booking_codes')
+    .update({ completion_status: 'completed', completed_at: now })
+    .eq('id', id)
+    .select(BOOKING_CODE_FIELDS)
+    .single();
+  if (error) throw error;
+  return normalizeBookingCodeRow(data);
+}
+
+export async function confirmBookingCodeIncome(id, userId = null) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const code = await fetchBookingCode(id);
+  const now = new Date().toISOString();
+  await ensureConfirmedFinanceForCode(code, userId);
+  const { data, error } = await supabase
+    .from('booking_codes')
+    .update({
+      income_status: 'confirmed',
+      payment_status: 'paid',
+      admin_confirmed_income: true,
+      income_confirmed_at: now,
+      income_confirmed_by: userId || null
+    })
+    .eq('id', id)
+    .select(BOOKING_CODE_FIELDS)
+    .single();
+  if (error) throw error;
+  return normalizeBookingCodeRow(data);
+}
+
+export async function markBookingCodeNoShow(id, userId = null) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('booking_codes')
+    .update({ completion_status: 'no_show', income_status: 'cancelled', no_show_at: now })
+    .eq('id', id)
+    .select(BOOKING_CODE_FIELDS)
+    .single();
+  if (error) throw error;
+  await cancelLinkedExpectedFinance(data, userId, 'booking code no-show');
   return normalizeBookingCodeRow(data);
 }
 

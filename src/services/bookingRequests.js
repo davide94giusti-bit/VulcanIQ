@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 import { createAvailabilityBlock } from './availabilityService.js';
+import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
 
 const requestFields = `
   id, created_at, updated_at, status, request_type, fixed_excursion_id,
@@ -92,6 +93,65 @@ function intOrNull(value) {
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? null : parsed;
 }
+
+async function reverseOrVoidFinanceForRequest(request, userId = null, reason = '') {
+  if (!request?.id || !isSupabaseConfigured) return;
+  const now = new Date().toISOString();
+  const { data: entries, error } = await supabase
+    .from('finance_entries')
+    .select('id, entry_date, type, amount, currency, title, description, category, payment_method, status, active, reversal_of, booking_request_id, booking_code_id, source_type, source_id')
+    .eq('booking_request_id', request.id);
+  if (error) throw error;
+
+  for (const entry of entries || []) {
+    const status = String(entry.status || 'confirmed');
+    if (entry.reversal_of || ['cancelled', 'void', 'voided', 'reversed', 'reversal'].includes(status)) continue;
+    if (status === 'confirmed') {
+      const { data: existingReversal, error: existingError } = await supabase
+        .from('finance_entries')
+        .select('id')
+        .eq('reversal_of', entry.id)
+        .limit(1);
+      if (existingError) throw existingError;
+      if (!existingReversal?.length && Number(entry.amount || 0) !== 0) {
+        const reversalPayload = {
+          entry_date: new Date().toISOString().slice(0, 10),
+          type: entry.type || 'income',
+          amount: -Math.abs(parseMoneyAmount(entry.amount)),
+          currency: normalizeCurrency(entry.currency),
+          title: `Reversal - ${entry.title || request.booking_code || request.customer_name || 'booking request'}`,
+          description: reason || 'Booking request declined/cancelled',
+          category: entry.category || 'booking_reversal',
+          payment_method: entry.payment_method || null,
+          booking_request_id: request.id,
+          booking_code_id: entry.booking_code_id || null,
+          source_type: entry.source_type || 'booking_request',
+          source_id: entry.source_id || request.id,
+          status: 'reversal',
+          reversal_of: entry.id,
+          active: true,
+          recognized_at: now,
+          created_by: userId || null,
+          updated_by: userId || null
+        };
+        const { error: insertError } = await supabase.from('finance_entries').insert(reversalPayload);
+        if (insertError) throw insertError;
+      }
+      const { error: updateError } = await supabase
+        .from('finance_entries')
+        .update({ status: 'reversed', reversed_at: now, updated_by: userId || null })
+        .eq('id', entry.id);
+      if (updateError) throw updateError;
+    } else {
+      const { error: updateError } = await supabase
+        .from('finance_entries')
+        .update({ status: 'cancelled', active: false, cancelled_at: now, updated_by: userId || null, archive_reason: reason || 'Booking request declined/cancelled' })
+        .eq('id', entry.id);
+      if (updateError) throw updateError;
+    }
+  }
+}
+
 
 export function normalizeRequestInput(input, defaults = {}) {
   const requestedDate = textOrNull(input.requested_date);
@@ -331,18 +391,20 @@ export async function approveBookingRequest({ request, userId, mode = 'accept-on
 
 export async function declineBookingRequest({ request, userId, decisionNote = '', reasonCategory = '' }) {
   const note = [reasonCategory, decisionNote].filter(Boolean).join(' · ');
-  return updateBookingRequest(request.id, {
+  const updated = await updateBookingRequest(request.id, {
     status: 'declined',
     decision_note: note || null,
     decided_at: new Date().toISOString(),
     decided_by: userId
   });
+  await reverseOrVoidFinanceForRequest(updated, userId, note || 'Booking request declined');
+  return updated;
 }
 
 
 export async function cancelBookingRequest({ request, userId, decisionNote = '' }) {
   const note = ['removed/cancelled', decisionNote].filter(Boolean).join(' · ');
-  return updateBookingRequest(request.id, {
+  const updated = await updateBookingRequest(request.id, {
     status: 'cancelled',
     decision_note: note || null,
     decided_at: new Date().toISOString(),
@@ -350,4 +412,6 @@ export async function cancelBookingRequest({ request, userId, decisionNote = '' 
     removed_at: new Date().toISOString(),
     removed_by: userId
   });
+  await reverseOrVoidFinanceForRequest(updated, userId, note || 'Booking request cancelled');
+  return updated;
 }

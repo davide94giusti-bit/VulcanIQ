@@ -5,7 +5,7 @@ import { blockedDates, defaultExperienceAvailability } from './data/availability
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
 import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
-import { listBookingCodes, createBookingCode, cancelBookingCode, redeemBookingCode } from './services/bookingCodes.js';
+import { listBookingCodes, createBookingCode, cancelBookingCode, redeemBookingCode, markBookingCodeCompleted, confirmBookingCodeIncome, markBookingCodeNoShow } from './services/bookingCodes.js';
 import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadFixedExcursionLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
 import { loadPublicReviews, submitPublicReview, listReviews, createManualReview, updateReviewDetails, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply, deleteReview } from './services/reviewsService.js';
@@ -73,8 +73,8 @@ function isAdminNavSectionActive(normalizedPath, section) {
 }
 
 function adminPathFromLocation(pathname) {
-  const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
-  return ADMIN_NAV_SECTIONS.find((section) => !section.external && isAdminNavSectionActive(normalizedPath, section))?.path || '/admin/today';
+  const normalizedPath = pathname === '/admin' ? '/admin/requests' : pathname;
+  return ADMIN_NAV_SECTIONS.find((section) => !section.external && isAdminNavSectionActive(normalizedPath, section))?.path || '/admin/requests';
 }
 
 function visibleAdminNavSections(profile) {
@@ -1091,6 +1091,34 @@ function publicPageFromPathname(pathname = '/') {
   if (clean === '/contact') return 'contact';
   if (clean === '/gift-card') return 'giftCard';
   return '';
+}
+
+
+function readInitialPublicLanguage() {
+  if (typeof window === 'undefined') return 'it';
+  try {
+    const queryLang = new URLSearchParams(window.location.search).get('lang');
+    if (queryLang === 'en' || queryLang === 'it') return queryLang;
+    const stored = window.localStorage.getItem('vulcaniq_public_language');
+    if (stored === 'en' || stored === 'it') return stored;
+  } catch {}
+  return 'it';
+}
+
+function storePublicLanguage(lang) {
+  if (typeof window === 'undefined') return;
+  if (lang !== 'en' && lang !== 'it') return;
+  try { window.localStorage.setItem('vulcaniq_public_language', lang); } catch {}
+}
+
+function navigatePublicRoute(path, lang) {
+  if (typeof window === 'undefined') return;
+  const cleanLang = lang === 'en' ? 'en' : 'it';
+  const separator = path.includes('?') ? '&' : '?';
+  const nextPath = `${path}${separator}lang=${cleanLang}`;
+  storePublicLanguage(cleanLang);
+  window.history.pushState({}, '', nextPath);
+  window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
 function legalPageFromPathname(pathname = '') {
@@ -2651,8 +2679,10 @@ function GiftCardPage({ lang, siteContent }) {
   );
 }
 
-function FastRequestModal({ lang, siteContent, onClose }) {
+function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_mobile_bar', sourceCta = 'fast_request', ctaLocation = 'sticky_contact_bar', flowType = 'fast_request' }) {
   const contact = resolvePublicContactDetails(siteContent);
+  useBodyScrollLock(true);
+  const sourceMetadata = { language: lang, source_section: sourceSection, source_cta: sourceCta, cta_location: ctaLocation, flow_type: flowType };
   const [step, setStep] = useState(1);
   const [form, setForm] = useState(() => {
     try {
@@ -2663,7 +2693,7 @@ function FastRequestModal({ lang, siteContent, onClose }) {
   });
 
   useEffect(() => {
-    trackEvent('fast_request_start', { language: lang, source_section: 'sticky_mobile_bar' }, { dedupe: false });
+    trackEvent('fast_request_start', sourceMetadata, { dedupe: false });
     return () => {
       try {
         window.localStorage.setItem('vulcaniq_fast_request', JSON.stringify({ ...form, expires_at: Date.now() + 24 * 60 * 60 * 1000 }));
@@ -2676,7 +2706,7 @@ function FastRequestModal({ lang, siteContent, onClose }) {
   }
 
   function completeStep(nextStep) {
-    trackEvent('fast_request_step_complete', { language: lang, step, next_step: nextStep }, { dedupe: false });
+    trackEvent('fast_request_step_complete', { ...sourceMetadata, step, next_step: nextStep }, { dedupe: false });
     setStep(nextStep);
   }
 
@@ -2693,18 +2723,18 @@ function FastRequestModal({ lang, siteContent, onClose }) {
   const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(message)}`;
 
   function handleClose() {
-    trackEvent('fast_request_abandon', { language: lang, step, experience_id: form.experienceId }, { dedupe: true });
+    trackEvent('fast_request_abandon', { ...sourceMetadata, step, experience_id: form.experienceId }, { dedupe: true });
     onClose();
   }
 
   function handleWhatsApp() {
-    trackEvent('fast_request_whatsapp_click', { language: lang, experience_id: form.experienceId, date_mode: form.dateMode }, { dedupe: false });
-    trackEvent('fast_request_submit_success', { language: lang, experience_id: form.experienceId, channel: 'whatsapp' }, { dedupe: false });
+    trackEvent('fast_request_whatsapp_click', { ...sourceMetadata, experience_id: form.experienceId, date_mode: form.dateMode }, { dedupe: false });
+    trackEvent('fast_request_submit_success', { ...sourceMetadata, experience_id: form.experienceId, channel: 'whatsapp' }, { dedupe: false });
     try { window.localStorage.removeItem('vulcaniq_fast_request'); } catch {}
   }
 
   return createPortal((
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="fastRequestTitle">
+    <div className="modal-backdrop fast-request-backdrop" role="dialog" aria-modal="true" aria-labelledby="fastRequestTitle">
       <section className="admin-modal fast-request-modal">
         <header className="admin-modal-header">
           <div><span className="kicker">{lang === 'it' ? 'Richiesta rapida' : 'Fast request'}</span><h2 id="fastRequestTitle">{lang === 'it' ? 'Verifica disponibilità in pochi passaggi' : 'Check availability in a few steps'}</h2></div>
@@ -2750,9 +2780,16 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
   const [findExperienceOpen, setFindExperienceOpen] = useState(false);
   const [bookingCodeOpen, setBookingCodeOpen] = useState(false);
   const [supportContactOpen, setSupportContactOpen] = useState(false);
+  const [fastRequestOpen, setFastRequestOpen] = useState(false);
 
   function handleBookNow() {
-    trackEvent('book_now_clicked', { language: lang, source_section: 'hero', source_cta: 'book_now' }, { dedupe: false });
+    const metadata = { language: lang, source_section: 'hero', source_cta: 'book_now' };
+    trackEvent('book_now_clicked', metadata, { dedupe: false });
+    const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches;
+    if (isMobile) {
+      setFastRequestOpen(true);
+      return;
+    }
     setActivePage('experiences');
     window.setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
   }
@@ -2815,7 +2852,7 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
           <div className="hero-action-grid">
             <button className="button primary hero-action-main" type="button" onClick={handleBookNow}><EditableText itemKey="home.hero.secondary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'viewAvailability')} /></button>
             <button className="button secondary dark hero-action-code" type="button" onClick={() => setBookingCodeOpen(true)}>{text(lang, 'bookWithCode')}</button>
-            <a className="button secondary dark hero-action-gift" href="/gift-card" onClick={() => trackEvent('gift_card_request_click', { language: lang, source_section: 'home_hero', source_cta: 'gift_card' }, { dedupe: false })}>{lang === 'it' ? 'Gift card' : 'Gift card'}</a>
+            <a className="button secondary dark hero-action-gift" href={`/gift-card?lang=${lang}`} onClick={(event) => { event.preventDefault(); trackEvent('gift_card_request_click', { language: lang, source_section: 'home_hero', source_cta: 'gift_card' }, { dedupe: false }); setActivePage('giftCard'); navigatePublicRoute('/gift-card', lang); }}>{lang === 'it' ? 'Gift card' : 'Gift card'}</a>
             <a
               className="trust-card guide-license-card hero-action-guide"
               href="https://www.guidealpinevulcanologichesicilia.it/tutte-le-guide/chiavetta-leonardo/"
@@ -2846,6 +2883,7 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
         </div>
       </div>
       {bookingCodeOpen && <BookingCodeModal lang={lang} onClose={() => setBookingCodeOpen(false)} siteContent={siteContent} />}
+      {fastRequestOpen && <FastRequestModal lang={lang} siteContent={siteContent} sourceSection="hero" sourceCta="book_now" ctaLocation="mobile_book_now" flowType="fast_request" onClose={() => setFastRequestOpen(false)} />}
       {supportContactOpen && <SupportContactModal lang={lang} onClose={closeSupportContact} siteContent={siteContent} />}
     </section>
   );
@@ -5355,7 +5393,6 @@ function Footer({ lang, siteContent, editor }) {
 
 function StickyMobileBar({ lang, siteContent }) {
   const contact = resolvePublicContactDetails(siteContent);
-  const [fastRequestOpen, setFastRequestOpen] = useState(false);
   const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
   const metadata = buildBookingTrackingContext({ requestType: 'contact', sourceSection: 'sticky_contact_bar', sourceCta: 'contact_direct', ctaLocation: 'sticky_contact_bar', language: lang });
   const subject = text(lang, 'emailSubject');
@@ -5365,7 +5402,6 @@ function StickyMobileBar({ lang, siteContent }) {
   return (
     <>
       <div className="mobile-sticky-bar" aria-label="Mobile contact actions">
-        <button type="button" onClick={() => setFastRequestOpen(true)}><Icon name="calendar" />{lang === 'it' ? 'Rapida' : 'Fast'}</button>
         <a href={`tel:${contact.phoneTel}`} onClick={() => trackContactClick('phone', 'sticky_contact_bar', { ...metadata, source_cta: 'phone_direct' })}><Icon name="phone" />{lang === 'it' ? 'Chiama' : 'Call'}</a>
         <a
           href={whatsappUrl}
@@ -5392,13 +5428,74 @@ function StickyMobileBar({ lang, siteContent }) {
         ><Icon name="mail" />Email</a>
       </div>
       {contactAttributionModal}
-      {fastRequestOpen && <FastRequestModal lang={lang} siteContent={siteContent} onClose={() => setFastRequestOpen(false)} />}
     </>
   );
 }
 
 
 const REQUEST_STATUSES = ['pending', 'accepted', 'declined', 'cancelled', 'archived'];
+const LEAD_STATUSES = ['new_lead', 'contacted', 'waiting_customer', 'quoted', 'deposit_sent', 'deposit_paid', 'confirmed', 'completed', 'review_requested', 'review_received', 'lost', 'cancelled'];
+const LEAD_PRIORITIES = ['low', 'normal', 'high', 'urgent'];
+const LEAD_STATUS_LABELS = {
+  new_lead: { it: 'Nuovo lead', en: 'New lead' },
+  contacted: { it: 'Contattato', en: 'Contacted' },
+  waiting_customer: { it: 'In attesa cliente', en: 'Waiting customer' },
+  quoted: { it: 'Preventivo inviato', en: 'Quoted' },
+  deposit_sent: { it: 'Acconto richiesto', en: 'Deposit sent' },
+  deposit_paid: { it: 'Acconto pagato', en: 'Deposit paid' },
+  confirmed: { it: 'Confermato', en: 'Confirmed' },
+  completed: { it: 'Completato', en: 'Completed' },
+  review_requested: { it: 'Recensione richiesta', en: 'Review requested' },
+  review_received: { it: 'Recensione ricevuta', en: 'Review received' },
+  lost: { it: 'Perso', en: 'Lost' },
+  cancelled: { it: 'Annullato', en: 'Cancelled' }
+};
+const LEAD_PRIORITY_LABELS = {
+  low: { it: 'Bassa', en: 'Low' },
+  normal: { it: 'Normale', en: 'Normal' },
+  high: { it: 'Alta', en: 'High' },
+  urgent: { it: 'Urgente', en: 'Urgent' }
+};
+function leadStatusLabel(status, lang) { return LEAD_STATUS_LABELS[status]?.[lang] || status || '-'; }
+function leadPriorityLabel(priority, lang) { return LEAD_PRIORITY_LABELS[priority]?.[lang] || priority || '-'; }
+function requestMoneyValue(request) { return parseMoneyAmount(request.quoted_amount ?? request.expected_value ?? 0); }
+function isRequestConfirmedRevenue(request) {
+  if (request.source === 'booking_code') return false;
+  return ['accepted', 'confirmed', 'completed'].includes(request.status) || ['confirmed', 'completed', 'deposit_paid', 'review_requested', 'review_received'].includes(request.lead_status);
+}
+function isRequestLost(request) { return ['declined', 'cancelled', 'archived'].includes(request.status) || ['lost', 'cancelled'].includes(request.lead_status); }
+function requestSourceKey(request) { return request.source || request.utm_source || request.heard_about_us || 'unknown'; }
+function requestExperienceKey(request, lang) { return adminExperienceLabel(request.experience_id, lang) || request.experience_id || 'unknown'; }
+function buildRequestsCrmSummary(requests, lang) {
+  const now = new Date();
+  const today = todayIso();
+  const due = requests.filter((request) => request.next_follow_up_at && String(request.next_follow_up_at).slice(0, 10) <= today && !isRequestLost(request));
+  const overdue = due.filter((request) => new Date(request.next_follow_up_at) < new Date(`${today}T00:00:00`));
+  const confirmed = requests.filter((request) => isRequestConfirmedRevenue(request) && !isRequestLost(request));
+  const pipeline = requests.filter((request) => !isRequestLost(request) && !isRequestConfirmedRevenue(request));
+  const confirmedRevenue = confirmed.reduce((sum, request) => sum + requestMoneyValue(request), 0);
+  const expectedPipeline = pipeline.reduce((sum, request) => sum + requestMoneyValue(request), 0);
+  const sourceMap = new Map();
+  const experienceMap = new Map();
+  confirmed.forEach((request) => {
+    sourceMap.set(requestSourceKey(request), (sourceMap.get(requestSourceKey(request)) || 0) + requestMoneyValue(request));
+    experienceMap.set(requestExperienceKey(request, lang), (experienceMap.get(requestExperienceKey(request, lang)) || 0) + requestMoneyValue(request));
+  });
+  return {
+    total: requests.length,
+    due: due.length,
+    overdue: overdue.length,
+    confirmedRevenue,
+    expectedPipeline,
+    averageBookingValue: confirmed.length ? confirmedRevenue / confirmed.length : 0,
+    leadToConfirmedRate: requests.length ? (confirmed.length / requests.length) * 100 : 0,
+    highPriority: requests.filter((request) => ['high', 'urgent'].includes(request.lead_priority)).length,
+    lost: requests.filter(isRequestLost).length,
+    sourceBreakdown: [...sourceMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5),
+    experienceBreakdown: [...experienceMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5),
+    generatedAt: now.toISOString()
+  };
+}
 const REQUEST_SOURCES = ['website', 'whatsapp', 'phone', 'email', 'manual', 'booking_code'];
 const ADMIN_EXPERIENCE_OPTIONS = ['etna-premium', 'etna-learning', 'etna-live', 'etna-stories', 'unsure'];
 const AVAILABILITY_STATUSES = ['closed', 'limited', 'on-request'];
@@ -5736,7 +5833,7 @@ function AdminLogin({ lang, setLang, navigate }) {
         setError(adminCopy(lang, 'Accesso negato: questo utente non è un owner attivo.', 'Access denied: this user is not an active owner.'));
         return;
       }
-      navigate('/admin/today');
+      navigate('/admin/requests');
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Login non riuscito.', 'Login failed.'));
     } finally {
@@ -5940,6 +6037,7 @@ function AdminUsersPage({ lang }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -5978,8 +6076,15 @@ function AdminUsersPage({ lang }) {
       </div>
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
-      <div className="admin-alert warning">
-        {adminCopy(lang, 'Per aggiungere un nuovo utente: crea prima l’utente in Supabase Auth, poi inserisci o aggiorna il profilo in admin_profiles con ruolo e active=true. Non usare mai service-role key nel frontend.', 'To add a new user: first create the user in Supabase Auth, then insert or update the profile in admin_profiles with role and active=true. Never use a service-role key in the frontend.')}
+      <div className="admin-users-help">
+        <button className="button secondary admin-users-details-button" type="button" onClick={() => setDetailsOpen((open) => !open)}>
+          {detailsOpen ? adminCopy(lang, 'Nascondi dettagli', 'Hide details') : adminCopy(lang, 'Dettagli aggiunta utente', 'User creation details')}
+        </button>
+        {detailsOpen && (
+          <div className="admin-alert warning admin-users-details-panel">
+            {adminCopy(lang, 'Per aggiungere un nuovo utente: crea prima l’utente in Supabase Auth, poi inserisci o aggiorna il profilo in admin_profiles con ruolo e active=true. Non usare mai service-role key nel frontend.', 'To add a new user: first create the user in Supabase Auth, then insert or update the profile in admin_profiles with role and active=true. Never use a service-role key in the frontend.')}
+          </div>
+        )}
       </div>
       {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : (
         <div className="admin-table-wrap admin-users-table">
@@ -5988,12 +6093,12 @@ function AdminUsersPage({ lang }) {
             <tbody>
               {users.map((user) => (
                 <tr key={user.user_id}>
-                  <td>{user.full_name || '-'}</td>
-                  <td>{user.email || '-'}</td>
-                  <td><select value={user.role || 'manager'} onChange={(event) => save(user, { role: event.target.value })}>{ADMIN_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}</select></td>
-                  <td>{user.active === false ? adminCopy(lang, 'No', 'No') : adminCopy(lang, 'Sì', 'Yes')}</td>
-                  <td>{user.last_seen_at ? new Date(user.last_seen_at).toLocaleString(lang === 'it' ? 'it-IT' : 'en-GB') : '-'}</td>
-                  <td><button className="button secondary" type="button" onClick={() => save(user, { active: user.active === false })}>{user.active === false ? adminCopy(lang, 'Riattiva', 'Reactivate') : adminCopy(lang, 'Disattiva', 'Deactivate')}</button></td>
+                  <td data-label={adminCopy(lang, 'Nome', 'Name')}>{user.full_name || '-'}</td>
+                  <td data-label="Email">{user.email || '-'}</td>
+                  <td data-label={adminCopy(lang, 'Ruolo', 'Role')}><select value={user.role || 'manager'} onChange={(event) => save(user, { role: event.target.value })}>{ADMIN_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}</select></td>
+                  <td data-label={adminCopy(lang, 'Attivo', 'Active')}>{user.active === false ? adminCopy(lang, 'No', 'No') : adminCopy(lang, 'Sì', 'Yes')}</td>
+                  <td data-label={adminCopy(lang, 'Ultimo accesso', 'Last seen')}>{user.last_seen_at ? new Date(user.last_seen_at).toLocaleString(lang === 'it' ? 'it-IT' : 'en-GB') : '-'}</td>
+                  <td data-label={adminCopy(lang, 'Azioni', 'Actions')}><button className="button secondary" type="button" onClick={() => save(user, { active: user.active === false })}>{user.active === false ? adminCopy(lang, 'Riattiva', 'Reactivate') : adminCopy(lang, 'Disattiva', 'Deactivate')}</button></td>
                 </tr>
               ))}
             </tbody>
@@ -6006,10 +6111,10 @@ function AdminUsersPage({ lang }) {
 
 
 function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
-  const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
+  const normalizedPath = pathname === '/admin' ? '/admin/requests' : pathname;
   const currentAdminPath = adminPathFromLocation(pathname);
   const visibleSections = visibleAdminNavSections(profile);
-  const currentNavValue = visibleSections.some((section) => section.path === currentAdminPath) ? currentAdminPath : '/admin/today';
+  const currentNavValue = visibleSections.some((section) => section.path === currentAdminPath) ? currentAdminPath : '/admin/requests';
   const isOwner = profile?.role === 'owner' && profile?.active !== false;
   const isBackupPage = normalizedPath.includes('/system') || normalizedPath.includes('/backup');
   const isUsersPage = normalizedPath.includes('/users');
@@ -6105,7 +6210,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
 
 
   useEffect(() => {
-    if (pathname === '/admin') navigate('/admin/today');
+    if (pathname === '/admin') navigate('/admin/requests');
   }, [pathname, navigate]);
 
   useEffect(() => {
@@ -8301,25 +8406,39 @@ function groupFinanceEntriesByCategory(entries, type) {
     .map((item) => ({ ...item, percentage: total > 0 ? Math.round((item.total / total) * 100) : 0 }));
 }
 
+function isVoidedFinanceEntry(entry) {
+  return ['cancelled', 'void', 'voided'].includes(String(entry.status || '').toLowerCase()) || entry.active === false;
+}
+
+function isExpectedFinanceEntry(entry) {
+  return ['pending', 'expected'].includes(String(entry.status || '').toLowerCase());
+}
+
 function calculateFinanceSummary(entries) {
-  const incomeEntries = entries.filter((entry) => entry.type === 'income');
-  const expenseEntries = entries.filter((entry) => entry.type === 'expense');
-  const linkedBookingEntries = entries.filter((entry) => entry.booking_request_id || entry.linkedBooking);
-  const linkedFixedEntries = entries.filter((entry) => entry.fixed_excursion_id || entry.linkedFixedExcursion);
-  const unlinkedEntries = entries.filter((entry) => !financeEntryIsLinked(entry));
+  const activeEntries = entries.filter((entry) => !isVoidedFinanceEntry(entry));
+  const expectedEntries = activeEntries.filter((entry) => entry.type === 'income' && isExpectedFinanceEntry(entry));
+  const confirmedEntries = activeEntries.filter((entry) => !isExpectedFinanceEntry(entry));
+  const incomeEntries = confirmedEntries.filter((entry) => entry.type === 'income' || String(entry.status || '').toLowerCase() === 'reversal');
+  const expenseEntries = confirmedEntries.filter((entry) => entry.type === 'expense');
+  const linkedBookingEntries = activeEntries.filter((entry) => entry.booking_request_id || entry.linkedBooking);
+  const linkedFixedEntries = activeEntries.filter((entry) => entry.fixed_excursion_id || entry.linkedFixedExcursion);
+  const unlinkedEntries = activeEntries.filter((entry) => !financeEntryIsLinked(entry));
   const income = incomeEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const expenses = expenseEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const expectedIncome = expectedEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   return {
     income,
     expenses,
+    expectedIncome,
     net: income - expenses,
     incomeEntries,
+    expectedEntries,
     expenseEntries,
     linkedBookingEntries,
     linkedFixedEntries,
     unlinkedEntries,
-    incomeCategories: groupFinanceEntriesByCategory(entries, 'income'),
-    expenseCategories: groupFinanceEntriesByCategory(entries, 'expense')
+    incomeCategories: groupFinanceEntriesByCategory(incomeEntries, 'income'),
+    expenseCategories: groupFinanceEntriesByCategory(expenseEntries, 'expense')
   };
 }
 
@@ -11017,7 +11136,8 @@ function FinanceAdminPage({ lang, session, adminContent = {} }) {
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       <div className="admin-summary-grid finance-summary-grid">
-        <SummaryCard label={adminCopy(lang, 'Entrate totali', 'Total earnings')} value={formatMoney(financeSummary.income)} onClick={() => setActiveFinanceDetail({ key: 'income', title: adminCopy(lang, 'Entrate', 'Income'), entries: financeSummary.incomeEntries, total: financeSummary.income })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Entrate confermate', 'Confirmed earnings')} value={formatMoney(financeSummary.income)} onClick={() => setActiveFinanceDetail({ key: 'income', title: adminCopy(lang, 'Entrate', 'Income'), entries: financeSummary.incomeEntries, total: financeSummary.income })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Entrate attese', 'Expected income')} value={formatMoney(financeSummary.expectedIncome)} onClick={() => setActiveFinanceDetail({ key: 'expected-income', title: adminCopy(lang, 'Entrate attese', 'Expected income'), entries: financeSummary.expectedEntries, total: financeSummary.expectedIncome })} helper={adminCopy(lang, 'Non confermate', 'Not confirmed')} />
         <SummaryCard label={adminCopy(lang, 'Uscite totali', 'Total expenses')} value={formatMoney(financeSummary.expenses)} onClick={() => setActiveFinanceDetail({ key: 'expenses', title: adminCopy(lang, 'Uscite', 'Expenses'), entries: financeSummary.expenseEntries, total: financeSummary.expenses })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
         <SummaryCard label={adminCopy(lang, 'Utile netto', 'Net profit')} value={formatMoney(financeSummary.net)} onClick={() => setActiveFinanceDetail({ key: 'net', title: adminCopy(lang, 'Utile netto', 'Net profit'), entries: reportEntries, total: financeSummary.net })} helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
         <SummaryCard label={adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings')} value={linkedEntries.length} onClick={() => setActiveFinanceDetail({ key: 'linked', title: adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings'), entries: linkedEntries, total: linkedEntries.length })} helper={adminCopy(lang, 'Vedi movimenti', 'View entries')} />
@@ -11616,7 +11736,113 @@ function AdminMiniList({ items, empty, render }) {
   return <ul className="admin-mini-list">{items.map((item) => <li key={item.id}>{render(item)}</li>)}</ul>;
 }
 
-function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = false }) {
+
+function RequestCrmControls({ request, lang, onUpdated }) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState(() => ({
+    lead_status: request.lead_status || 'new_lead',
+    lead_priority: request.lead_priority || 'normal',
+    next_follow_up_at: request.next_follow_up_at ? String(request.next_follow_up_at).slice(0, 10) : '',
+    expected_value: request.expected_value ?? '',
+    quoted_amount: request.quoted_amount ?? '',
+    lost_reason: request.lost_reason || '',
+    internal_notes: request.internal_notes || ''
+  }));
+
+  useEffect(() => {
+    setForm({
+      lead_status: request.lead_status || 'new_lead',
+      lead_priority: request.lead_priority || 'normal',
+      next_follow_up_at: request.next_follow_up_at ? String(request.next_follow_up_at).slice(0, 10) : '',
+      expected_value: request.expected_value ?? '',
+      quoted_amount: request.quoted_amount ?? '',
+      lost_reason: request.lost_reason || '',
+      internal_notes: request.internal_notes || ''
+    });
+  }, [request.id, request.lead_status, request.lead_priority, request.next_follow_up_at, request.expected_value, request.quoted_amount, request.lost_reason, request.internal_notes]);
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function save() {
+    setSaving(true);
+    setError('');
+    try {
+      const payload = {
+        lead_status: form.lead_status || null,
+        lead_priority: form.lead_priority || null,
+        next_follow_up_at: form.next_follow_up_at || null,
+        expected_value: form.expected_value === '' ? null : parseMoneyAmount(form.expected_value),
+        quoted_amount: form.quoted_amount === '' ? null : parseMoneyAmount(form.quoted_amount),
+        lost_reason: form.lost_reason || null,
+        internal_notes: form.internal_notes || null
+      };
+      await updateBookingRequest(request.id, payload);
+      if (payload.lead_status !== request.lead_status) trackEvent('lead_status_changed', { request_id: request.id, from_status: request.lead_status || '', to_status: payload.lead_status || '' }, { dedupe: false });
+      if (payload.next_follow_up_at !== request.next_follow_up_at) trackEvent('lead_follow_up_set', { request_id: request.id, next_follow_up_at: payload.next_follow_up_at || '' }, { dedupe: false });
+      if (payload.expected_value !== request.expected_value || payload.quoted_amount !== request.quoted_amount) trackEvent('lead_value_updated', { request_id: request.id }, { dedupe: false });
+      onUpdated?.(adminCopy(lang, 'CRM aggiornata.', 'CRM updated.'));
+      setOpen(false);
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'CRM non aggiornata.', 'CRM not updated.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const dueLabel = request.next_follow_up_at
+    ? formatDateForMessage(String(request.next_follow_up_at).slice(0, 10), lang)
+    : adminCopy(lang, 'Nessun follow-up', 'No follow-up');
+
+  return (
+    <div className="request-crm-box">
+      <button className="request-crm-toggle" type="button" onClick={() => setOpen((value) => !value)}>
+        <span>{adminCopy(lang, 'CRM', 'CRM')}</span>
+        <strong>{leadStatusLabel(request.lead_status || 'new_lead', lang)} · {leadPriorityLabel(request.lead_priority || 'normal', lang)}</strong>
+        <small>{dueLabel}</small>
+      </button>
+      {open && (
+        <div className="admin-form-grid request-crm-grid">
+          <label className="admin-field"><span>{adminCopy(lang, 'Stato lead', 'Lead status')}</span><select value={form.lead_status} onChange={(event) => update('lead_status', event.target.value)}>{LEAD_STATUSES.map((status) => <option key={status} value={status}>{leadStatusLabel(status, lang)}</option>)}</select></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Priorità', 'Priority')}</span><select value={form.lead_priority} onChange={(event) => update('lead_priority', event.target.value)}>{LEAD_PRIORITIES.map((priority) => <option key={priority} value={priority}>{leadPriorityLabel(priority, lang)}</option>)}</select></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Prossimo follow-up', 'Next follow-up')}</span><input type="date" value={form.next_follow_up_at} onChange={(event) => update('next_follow_up_at', event.target.value)} /></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Valore atteso', 'Expected value')}</span><input inputMode="decimal" value={form.expected_value} onChange={(event) => update('expected_value', event.target.value)} /></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Importo preventivato', 'Quoted amount')}</span><input inputMode="decimal" value={form.quoted_amount} onChange={(event) => update('quoted_amount', event.target.value)} /></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Motivo perso', 'Lost reason')}</span><input value={form.lost_reason} onChange={(event) => update('lost_reason', event.target.value)} /></label>
+          <label className="admin-field full"><span>{adminCopy(lang, 'Note interne', 'Internal notes')}</span><textarea rows={3} value={form.internal_notes} onChange={(event) => update('internal_notes', event.target.value)} /></label>
+          {error && <div className="admin-alert error full">{error}</div>}
+          <div className="modal-actions full"><button className="button primary" type="button" onClick={save} disabled={saving}>{saving ? adminCopy(lang, 'Salvataggio...', 'Saving...') : adminCopy(lang, 'Salva CRM', 'Save CRM')}</button></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RequestsCrmDashboard({ requests, lang }) {
+  const summary = useMemo(() => buildRequestsCrmSummary(requests, lang), [requests, lang]);
+  return (
+    <section className="admin-panel requests-crm-dashboard">
+      <div className="admin-panel-header"><h2>{adminCopy(lang, 'CRM e revenue', 'CRM and revenue')}</h2><small>{formatLocalDateTime(summary.generatedAt, lang, '')}</small></div>
+      <div className="admin-summary-grid crm-summary-grid">
+        <SummaryCard label={adminCopy(lang, 'Revenue confermata', 'Confirmed revenue')} value={formatMoney(summary.confirmedRevenue, 'EUR', lang)} />
+        <SummaryCard label={adminCopy(lang, 'Pipeline attesa', 'Expected pipeline')} value={formatMoney(summary.expectedPipeline, 'EUR', lang)} />
+        <SummaryCard label={adminCopy(lang, 'Valore medio', 'Average booking value')} value={formatMoney(summary.averageBookingValue, 'EUR', lang)} />
+        <SummaryCard label={adminCopy(lang, 'Conversione lead', 'Lead conversion')} value={`${summary.leadToConfirmedRate.toFixed(1)}%`} />
+        <SummaryCard label={adminCopy(lang, 'Follow-up oggi/scaduti', 'Due/overdue follow-ups')} value={`${summary.due}/${summary.overdue}`} />
+        <SummaryCard label={adminCopy(lang, 'Alta priorità', 'High priority')} value={summary.highPriority} />
+      </div>
+      <div className="crm-breakdown-grid">
+        <div><h3>{adminCopy(lang, 'Revenue per fonte', 'Revenue by source')}</h3>{summary.sourceBreakdown.length ? <ul className="admin-mini-list">{summary.sourceBreakdown.map(([key, value]) => <li key={key}><strong>{key}</strong> · {formatMoney(value, 'EUR', lang)}</li>)}</ul> : <p className="small-note">{adminCopy(lang, 'Nessun dato confermato.', 'No confirmed data.')}</p>}</div>
+        <div><h3>{adminCopy(lang, 'Revenue per esperienza', 'Revenue by experience')}</h3>{summary.experienceBreakdown.length ? <ul className="admin-mini-list">{summary.experienceBreakdown.map(([key, value]) => <li key={key}><strong>{key}</strong> · {formatMoney(value, 'EUR', lang)}</li>)}</ul> : <p className="small-note">{adminCopy(lang, 'Nessun dato confermato.', 'No confirmed data.')}</p>}</div>
+      </div>
+    </section>
+  );
+}
+
+function RequestCard({ request, lang, onApprove, onDecline, onRemove, onUpdated, compact = false }) {
   return (
     <article className={`request-card ${compact ? 'compact' : ''}`}>
       <div className="request-card-head">
@@ -11648,6 +11874,7 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
       {request.status !== 'pending' && (
         <p className="small-note decision-note"><strong>{adminCopy(lang, 'Decisione', 'Decision')}:</strong> {request.decision_note || '-'} · {request.decided_at ? formatDateForMessage(String(request.decided_at).slice(0, 10), lang) : '-'}{request.decided_by ? ` · ${request.decided_by}` : ''}</p>
       )}
+      <RequestCrmControls request={request} lang={lang} onUpdated={onUpdated} />
       <ReplyTools request={request} lang={lang}>
         {request.status === 'pending' && (
           <>
@@ -12037,7 +12264,7 @@ function AdminSelect({ label, value, onChange, options, formatter = (item) => it
 }
 
 
-function RequestStatusAccordions({ requests, lang, onApprove, onDecline, onRemove }) {
+function RequestStatusAccordions({ requests, lang, onApprove, onDecline, onRemove, onUpdated }) {
   const groups = [
     { status: 'pending', label: adminCopy(lang, 'In attesa', 'Pending'), defaultOpen: true },
     { status: 'accepted', label: adminCopy(lang, 'Approvate / accettate', 'Approved / accepted'), defaultOpen: false },
@@ -12063,6 +12290,7 @@ function RequestStatusAccordions({ requests, lang, onApprove, onDecline, onRemov
                   onApprove={() => onApprove(request)}
                   onDecline={() => onDecline(request)}
                   onRemove={() => onRemove(request)}
+                  onUpdated={onUpdated}
                 />
               ))}
             </div>
@@ -12355,9 +12583,24 @@ function useAdminBookingCodes(filters = {}) {
 function bookingCodeStatusLabel(status, lang) {
   const labels = {
     unused: { it: 'Non usato', en: 'Unused' },
+    not_completed: { it: 'Non completato', en: 'Not completed' },
     redeemed: { it: 'Usato', en: 'Redeemed' },
     expired: { it: 'Scaduto', en: 'Expired' },
-    cancelled: { it: 'Annullato', en: 'Cancelled' }
+    cancelled: { it: 'Annullato', en: 'Cancelled' },
+    completed: { it: 'Completato', en: 'Completed' },
+    no_show: { it: 'No-show', en: 'No-show' }
+  };
+  return labels[status]?.[lang] || status || '-';
+}
+
+function bookingCodeIncomeStatusLabel(status, lang) {
+  const labels = {
+    expected: { it: 'Entrata attesa', en: 'Expected income' },
+    pending: { it: 'In attesa', en: 'Pending' },
+    confirmed: { it: 'Entrata confermata', en: 'Confirmed income' },
+    cancelled: { it: 'Entrata annullata', en: 'Income cancelled' },
+    reversed: { it: 'Entrata stornata', en: 'Income reversed' },
+    none: { it: 'Nessuna entrata', en: 'No income' }
   };
   return labels[status]?.[lang] || status || '-';
 }
@@ -12398,17 +12641,46 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
     setActionError('');
     setFeedback('');
     try {
-      await cancelBookingCode(item.id);
+      await cancelBookingCode(item.id, session.user.id);
+      trackEvent('booking_code_cancelled', { booking_code_id: item.id, code: item.code }, { dedupe: false });
       await refreshWithFeedback(adminCopy(lang, 'Codice annullato.', 'Code cancelled.'));
     } catch (err) {
       setActionError(err?.message || adminCopy(lang, 'Codice non annullato.', 'Code not cancelled.'));
     }
   }
 
+  async function runCodeAction(item, action) {
+    setActionError('');
+    setFeedback('');
+    try {
+      if (action === 'completed') {
+        await markBookingCodeCompleted(item.id, session.user.id);
+        trackEvent('booking_code_completed', { booking_code_id: item.id, code: item.code }, { dedupe: false });
+        await refreshWithFeedback(adminCopy(lang, 'Esperienza segnata come completata.', 'Experience marked completed.'));
+      }
+      if (action === 'confirm-income') {
+        await confirmBookingCodeIncome(item.id, session.user.id);
+        trackEvent('booking_code_income_confirmed', { booking_code_id: item.id, code: item.code }, { dedupe: false });
+        await refreshWithFeedback(adminCopy(lang, 'Entrata confermata.', 'Income confirmed.'));
+      }
+      if (action === 'no-show') {
+        if (!window.confirm(adminCopy(lang, `Segnare ${item.code} come no-show?`, `Mark ${item.code} as no-show?`))) return;
+        await markBookingCodeNoShow(item.id, session.user.id);
+        trackEvent('booking_code_no_show', { booking_code_id: item.id, code: item.code }, { dedupe: false });
+        await refreshWithFeedback(adminCopy(lang, 'Codice segnato come no-show.', 'Code marked as no-show.'));
+      }
+    } catch (err) {
+      setActionError(err?.message || adminCopy(lang, 'Azione non completata.', 'Action failed.'));
+    }
+  }
+
   const unusedCount = codes.filter((item) => item.status === 'unused').length;
   const redeemedCount = codes.filter((item) => item.status === 'redeemed').length;
   const totalExpected = codes
-    .filter((item) => item.status !== 'cancelled')
+    .filter((item) => item.status !== 'cancelled' && item.income_status !== 'confirmed')
+    .reduce((sum, item) => sum + Number(item.expected_amount || 0), 0);
+  const confirmedIncome = codes
+    .filter((item) => item.income_status === 'confirmed' || item.admin_confirmed_income)
     .reduce((sum, item) => sum + Number(item.expected_amount || 0), 0);
 
   return (
@@ -12433,6 +12705,7 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
         <SummaryCard label={adminCopy(lang, 'Non usati', 'Unused')} value={unusedCount} />
         <SummaryCard label={adminCopy(lang, 'Usati', 'Redeemed')} value={redeemedCount} />
         <SummaryCard label={adminCopy(lang, 'Importo previsto', 'Expected amount')} value={adminMoney(totalExpected, 'EUR', lang)} />
+        <SummaryCard label={adminCopy(lang, 'Entrata confermata', 'Confirmed income')} value={adminMoney(confirmedIncome, 'EUR', lang)} />
       </div>
 
       <div className="admin-filter-bar booking-code-filter-bar">
@@ -12470,12 +12743,19 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
                     <div><dt>{adminCopy(lang, 'Scadenza', 'Expiry')}</dt><dd>{formatLocalDateTime(item.expires_at, lang, item.expires_at || '-')}</dd></div>
                     <div><dt>{adminCopy(lang, 'Usato il', 'Redeemed at')}</dt><dd>{formatLocalDateTime(item.redeemed_at, lang, '-')}</dd></div>
                     <div><dt>{adminCopy(lang, 'Punto d’incontro', 'Meeting point')}</dt><dd>{mapsUrl ? <a className="inline-link" href={mapsUrl} target="_blank" rel="noopener noreferrer">{item.meeting_point_name || adminCopy(lang, 'Apri Maps', 'Open Maps')}</a> : (item.meeting_point_name || '-')}</dd></div>
-                    <div><dt>{adminCopy(lang, 'Collegamenti', 'Links')}</dt><dd>{item.redeemed_booking_request_id ? adminCopy(lang, 'Richiesta creata', 'Request created') : '-'}{item.redeemed_finance_entry_id ? ` · ${adminCopy(lang, 'Finanza creata', 'Finance created')}` : ''}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Collegamenti', 'Links')}</dt><dd>{item.redeemed_booking_request_id ? adminCopy(lang, 'Richiesta creata', 'Request created') : '-'}{item.redeemed_finance_entry_id ? ` · ${adminCopy(lang, 'Finanza attesa', 'Expected finance')}` : ''}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Completamento', 'Completion')}</dt><dd>{bookingCodeStatusLabel(item.completion_status || 'not_completed', lang)}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Entrata', 'Income')}</dt><dd>{bookingCodeIncomeStatusLabel(item.income_status || 'expected', lang)}</dd></div>
                   </dl>
+                  {item.status === 'redeemed' && item.income_status !== 'confirmed' && <div className="admin-alert warning compact-alert">{adminCopy(lang, 'Codice usato: entrata non ancora confermata. Conferma solo dopo completamento/pagamento.', 'Code redeemed: income not confirmed. Confirm only after completion/payment.')}</div>}
                   {item.admin_note && <p className="request-message"><strong>{adminCopy(lang, 'Nota interna', 'Internal note')}:</strong> {item.admin_note}</p>}
                   <div className="admin-quick-actions">
                     <button type="button" onClick={() => copyCode(item.code)}>{adminCopy(lang, 'Copia codice', 'Copy code')}</button>
                     {item.status === 'unused' && <button type="button" onClick={() => cancelCode(item)}>{adminCopy(lang, 'Annulla codice', 'Cancel code')}</button>}
+                    {item.status === 'redeemed' && item.completion_status !== 'completed' && <button type="button" onClick={() => runCodeAction(item, 'completed')}>{adminCopy(lang, 'Segna completato', 'Mark completed')}</button>}
+                    {item.status === 'redeemed' && item.income_status !== 'confirmed' && <button type="button" onClick={() => runCodeAction(item, 'confirm-income')}>{adminCopy(lang, 'Conferma entrata', 'Confirm income')}</button>}
+                    {item.status === 'redeemed' && item.income_status !== 'confirmed' && <button type="button" onClick={() => runCodeAction(item, 'no-show')}>{adminCopy(lang, 'No-show', 'No-show')}</button>}
+                    {item.status === 'redeemed' && <button type="button" onClick={() => cancelCode(item)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>}
                   </div>
                 </article>
               );
@@ -12490,7 +12770,7 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
 }
 
 function RequestsPage({ lang, session, adminContent = {} }) {
-  const [filters, setFilters] = useState({ status: 'all', experience_id: 'all', source: 'all', search: '', fromDate: '', toDate: '', limit: 250 });
+  const [filters, setFilters] = useState({ status: 'pending', experience_id: 'all', source: 'all', search: '', fromDate: '', toDate: '', limit: 250 });
   const { requests, loading, error, refresh } = useAdminRequests(filters);
   const [manualOpen, setManualOpen] = useState(false);
   const [bookingCodeOpen, setBookingCodeOpen] = useState(false);
@@ -12529,6 +12809,7 @@ function RequestsPage({ lang, session, adminContent = {} }) {
         <input aria-label="From date" type="date" value={filters.fromDate} onChange={(event) => updateFilter('fromDate', event.target.value)} />
         <input aria-label="To date" type="date" value={filters.toDate} onChange={(event) => updateFilter('toDate', event.target.value)} />
       </div>
+      <RequestsCrmDashboard requests={requests} lang={lang} />
       <section className="admin-panel">
         <div className="admin-panel-header"><h2><AdminEditableText itemKey="admin.requests.results.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Risultati', 'Results')} /> · {requests.length}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
         {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : requests.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta trovata.', 'No requests found.')}</p> : (
@@ -12538,6 +12819,7 @@ function RequestsPage({ lang, session, adminContent = {} }) {
             onApprove={(request) => setDecision({ type: 'approve', request })}
             onDecline={(request) => setDecision({ type: 'decline', request })}
             onRemove={(request) => setDecision({ type: 'remove', request })}
+            onUpdated={(message) => refreshWithFeedback(message)}
           />
         )}
       </section>
@@ -13365,8 +13647,8 @@ function AvailabilityBlockCard({ block, lang, userId, onChanged }) {
 
 function App() {
   const [pathname, navigate] = usePathname();
-  const [lang, setLang] = useState('it');
-  const [formState, setFormState] = useState({ language: 'it', requestType: 'private', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', heardAboutUs: '', heardAboutUsDetail: '', message: i18n.it.defaultMessage });
+  const [lang, setLang] = useState(() => readInitialPublicLanguage());
+  const [formState, setFormState] = useState(() => ({ language: lang, requestType: 'private', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', heardAboutUs: '', heardAboutUsDetail: '', message: text(lang, 'defaultMessage') }));
   const [activePage, setActivePage] = useState(() => publicPageFromPathname(window.location.pathname) || 'home');
   const [siteMedia, setSiteMedia] = useState({});
   const [siteContent, setSiteContent] = useState({});
@@ -13437,6 +13719,7 @@ function App() {
     setLang((current) => {
       const resolved = typeof nextLang === 'function' ? nextLang(current) : nextLang;
       if (resolved && resolved !== current) trackLanguageSwitch(current, resolved);
+      if (resolved) storePublicLanguage(resolved);
       return resolved || current;
     });
   }
