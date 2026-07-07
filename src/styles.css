@@ -12858,3 +12858,510 @@ body.modal-scroll-lock {
 .footer .footer-phone-choice-menu a:focus-visible {
   color: #fff;
 }
+/* FINAL PATCH 2026-07-06 — hard-fill bottom footer contact CTA */
+.final-panel .contact-actions,
+.footer .contact-actions,
+.footer-contact-actions,
+.final-contact-actions,
+.bottom-contact-actions {
+  width: 100% !important;
+  max-width: 100% !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+  justify-items: stretch !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.final-panel .contact-actions .pill-action,
+.footer .contact-actions .pill-action,
+.footer-contact-actions .pill-action,
+.final-contact-actions .pill-action,
+.bottom-contact-actions .pill-action,
+.final-panel .contact-actions a,
+.footer .contact-actions a,
+.footer-contact-actions a,
+.final-contact-actions a,
+.bottom-contact-actions a {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  flex: 1 1 0 !important;
+  justify-content: center !important;
+  padding-inline: 8px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.final-panel .contact-actions {
+  align-self: stretch !important;
+}
+
+.final-panel {
+  width: 100% !important;
+}
+
+@media (max-width: 680px) {
+  .final-panel .contact-actions,
+  .footer .contact-actions,
+  .footer-contact-actions,
+  .final-contact-actions,
+  .bottom-contact-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .final-panel .contact-actions .pill-action,
+  .footer .contact-actions .pill-action,
+  .footer-contact-actions .pill-action,
+  .final-contact-actions .pill-action,
+  .bottom-contact-actions .pill-action,
+  .final-panel .contact-actions a,
+  .footer .contact-actions a,
+  .footer-contact-actions a,
+  .final-contact-actions a,
+  .bottom-contact-actions a {
+    min-height: 44px !important;
+    padding-inline: 6px !important;
+    font-size: 0.82rem !important;
+  }
+}
+
+/* FINAL PATCH 2026-07-07 — flush mobile sticky footer CTA bar */
+.mobile-sticky-bar {
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  max-width: none !important;
+  transform: none !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 0 !important;
+  padding: 0 max(0px, env(safe-area-inset-right)) max(0px, env(safe-area-inset-bottom)) max(0px, env(safe-area-inset-left)) !important;
+  border-right: 0 !important;
+  border-bottom: 0 !important;
+  border-left: 0 !important;
+  border-radius: 0 !important;
+  background: rgba(13, 22, 38, 0.98) !important;
+  box-shadow: 0 -16px 34px rgba(0, 0, 0, 0.22) !important;
+}
+
+.mobile-sticky-bar a {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 56px !important;
+  border-radius: 0 !important;
+  justify-content: center !important;
+  padding: 0 8px !important;
+  color: #fff !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.mobile-sticky-bar a:first-child,
+.mobile-sticky-bar a:nth-child(3) {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.mobile-sticky-bar a:nth-child(2) {
+  background: linear-gradient(135deg, var(--lava), #ff8a65) !important;
+}
+
+@media (max-width: 760px) {
+  .mobile-sticky-bar {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    max-width: none !important;
+    transform: none !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 0 !important;
+    padding: 0 max(0px, env(safe-area-inset-right)) max(0px, env(safe-area-inset-bottom)) max(0px, env(safe-area-inset-left)) !important;
+    border-right: 0 !important;
+    border-bottom: 0 !important;
+    border-left: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  .mobile-sticky-bar a {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 58px !important;
+    border-radius: 0 !important;
+    padding: 0 6px !important;
+    font-size: 0.84rem !important;
+  }
+
+  .public-page-shell,
+  main.public-page-shell {
+    padding-bottom: calc(92px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .footer {
+    padding-bottom: calc(108px + env(safe-area-inset-bottom)) !important;
+  }
+}
+
+/* FINAL PATCH 2026-07-07 — gift-card final buttons, delivery date overflow, raised mobile CTA, book-now attribution */
+.gift-card-flow-modal,
+.gift-card-flow-modal * {
+  box-sizing: border-box;
+}
+
+.gift-card-question-card,
+.gift-card-step-grid,
+.gift-card-step-grid > *,
+.gift-card-step-grid .admin-field,
+.gift-card-step-grid input,
+.gift-card-step-grid select,
+.gift-card-step-grid textarea {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+.gift-card-question-card {
+  overflow: hidden !important;
+}
+
+.gift-card-step-grid input[type="date"],
+.gift-card-step-grid input[type="text"],
+.gift-card-step-grid input[type="email"],
+.gift-card-step-grid input[type="tel"],
+.gift-card-step-grid input[type="number"],
+.gift-card-step-grid select,
+.gift-card-step-grid textarea {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.gift-card-flow-footer.review-step {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  margin-top: 18px !important;
+}
+
+.gift-card-flow-footer.review-step > .button,
+.gift-card-flow-footer.review-step .gift-card-final-actions .button {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 58px !important;
+  height: auto !important;
+  aspect-ratio: auto !important;
+  border-radius: 999px !important;
+  padding: 0 16px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  line-height: 1.15 !important;
+  white-space: normal !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+.gift-card-flow-footer.review-step .gift-card-final-actions {
+  display: contents !important;
+}
+
+.gift-card-flow-footer.review-step > .button {
+  grid-column: 1 !important;
+}
+
+.gift-card-flow-footer.review-step .gift-card-final-actions .button:first-child {
+  grid-column: 2 !important;
+}
+
+.gift-card-flow-footer.review-step .gift-card-final-actions .button:nth-child(2) {
+  grid-column: 3 !important;
+}
+
+@media (max-width: 760px) {
+  .gift-card-questionnaire-screen {
+    padding-inline: 20px !important;
+    padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .gift-card-question-card {
+    width: 100% !important;
+    padding-inline: 18px !important;
+  }
+
+  .gift-card-step-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    width: 100% !important;
+  }
+
+  .gift-card-flow-footer.review-step {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+    align-items: stretch !important;
+  }
+
+  .gift-card-flow-footer.review-step > .button,
+  .gift-card-flow-footer.review-step .gift-card-final-actions .button {
+    min-height: 56px !important;
+    padding: 0 12px !important;
+    font-size: clamp(0.92rem, 4.2vw, 1.02rem) !important;
+    box-shadow: none !important;
+  }
+
+  .gift-card-flow-footer.review-step > .button {
+    grid-column: 1 !important;
+  }
+
+  .gift-card-flow-footer.review-step .gift-card-final-actions .button:first-child {
+    grid-column: 2 !important;
+  }
+
+  .gift-card-flow-footer.review-step .gift-card-final-actions .button:nth-child(2) {
+    grid-column: 1 / -1 !important;
+  }
+
+  .mobile-sticky-bar {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+    width: 100vw !important;
+    max-width: none !important;
+    transform: none !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    border-right: 0 !important;
+    border-left: 0 !important;
+    background: rgba(13, 22, 38, 0.98) !important;
+  }
+
+  .mobile-sticky-bar a {
+    min-height: 56px !important;
+    border-radius: 0 !important;
+    padding: 0 8px !important;
+  }
+
+  .public-page-shell,
+  main.public-page-shell {
+    padding-bottom: calc(124px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .footer {
+    padding-bottom: calc(138px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
+.fast-request-attribution-step,
+.fast-request-attribution-step .admin-field,
+.fast-request-attribution-step select,
+.fast-request-attribution-step textarea {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+.fast-request-attribution-detail {
+  min-height: 92px !important;
+}
+
+/* FINAL PATCH 2026-07-07 GIFT CARD SCROLL AND FOOTER SAFE AREA */
+
+/* Gift Card modal must allow the final review flow to scroll */
+.gift-card-flow-backdrop,
+.gift-card-flow-modal,
+.gift-card-questionnaire-screen {
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.gift-card-flow-backdrop {
+  overflow: hidden !important;
+}
+
+.gift-card-flow-modal {
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+}
+
+.gift-card-questionnaire-screen {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: calc(100dvh - 190px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding-bottom: calc(28px + env(safe-area-inset-bottom)) !important;
+  scroll-padding-bottom: calc(180px + env(safe-area-inset-bottom)) !important;
+}
+
+/* Review card must not trap or hide content */
+.gift-card-question-card,
+.gift-card-review-card {
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  overflow-x: hidden !important;
+}
+
+.gift-card-question-card:has(.gift-card-review-card),
+.gift-card-question-card.review-step,
+.gift-card-review-card {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.gift-card-review-card {
+  width: 100% !important;
+}
+
+.gift-card-review-card dl {
+  max-height: min(42dvh, 430px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding-right: 4px !important;
+}
+
+/* Final Gift Card actions: all buttons full-width, one column */
+.gift-card-flow-footer.review-step,
+.gift-card-flow-footer:has(.gift-card-final-actions) {
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 12px !important;
+  align-items: stretch !important;
+  justify-items: stretch !important;
+  padding-bottom: calc(18px + env(safe-area-inset-bottom)) !important;
+}
+
+.gift-card-flow-footer.review-step > .button,
+.gift-card-flow-footer:has(.gift-card-final-actions) > .button,
+.gift-card-final-actions,
+.gift-card-final-actions .button,
+.gift-card-final-actions a.button {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+.gift-card-final-actions {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 12px !important;
+  align-items: stretch !important;
+}
+
+.gift-card-flow-footer.review-step .button,
+.gift-card-flow-footer:has(.gift-card-final-actions) .button {
+  min-height: 58px !important;
+  border-radius: 999px !important;
+  justify-content: center !important;
+  text-align: center !important;
+  white-space: normal !important;
+  line-height: 1.15 !important;
+  padding: 12px 18px !important;
+}
+
+/* Preferred delivery date input overflow fix */
+.gift-card-question-card label,
+.gift-card-question-card .field-label,
+.gift-card-question-card div,
+.gift-card-question-card input,
+.gift-card-question-card select,
+.gift-card-question-card textarea {
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.gift-card-question-card input,
+.gift-card-question-card input[type="date"],
+.gift-card-question-card select,
+.gift-card-question-card textarea {
+  display: block !important;
+  width: 100% !important;
+  margin: 0 !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
+
+.gift-card-question-card input[type="date"] {
+  padding-inline: 14px !important;
+  text-align: center !important;
+}
+
+/* Fill the visual gap below the mobile Call / WhatsApp / Email bar without moving text */
+.mobile-sticky-bar {
+  bottom: calc(12px + env(safe-area-inset-bottom)) !important;
+  overflow: visible !important;
+}
+
+.mobile-sticky-bar::after {
+  content: "" !important;
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  height: calc(18px + env(safe-area-inset-bottom)) !important;
+  background: rgba(13, 22, 38, 0.98) !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+}
+
+@media (max-width: 760px) {
+  .gift-card-flow-modal {
+    width: 100vw !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+  }
+
+  .gift-card-questionnaire-screen {
+    max-height: calc(100dvh - 175px) !important;
+    padding-inline: clamp(20px, 5vw, 42px) !important;
+    padding-bottom: calc(34px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .gift-card-question-card {
+    padding-inline: clamp(18px, 5vw, 30px) !important;
+    overflow: hidden !important;
+  }
+
+  .gift-card-review-card dl {
+    max-height: 34dvh !important;
+  }
+
+  .gift-card-flow-footer.review-step,
+  .gift-card-flow-footer:has(.gift-card-final-actions) {
+    grid-template-columns: 1fr !important;
+  }
+
+  .mobile-sticky-bar {
+    bottom: calc(12px + env(safe-area-inset-bottom)) !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .gift-card-questionnaire-screen {
+    padding-inline: 18px !important;
+  }
+
+  .gift-card-question-card {
+    padding-inline: 18px !important;
+  }
+
+  .gift-card-flow-footer.review-step .button,
+  .gift-card-flow-footer:has(.gift-card-final-actions) .button {
+    min-height: 56px !important;
+    font-size: 0.94rem !important;
+  }
+}
+
