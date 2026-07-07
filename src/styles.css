@@ -14435,3 +14435,139 @@ section#reviews.compact-section,
 }
 
 /* Chrome extension message-channel warnings are unrelated to this UI flow unless they reproduce in a clean browser with extensions disabled. */
+
+/* FINAL PATCH 2026-07-07 INLINE GIFT CARD REVIEW FINAL SCREEN */
+
+/* The final Gift Card step now shows the full review directly instead of an intermediate launch button. */
+.gift-card-questionnaire-screen:has(.gift-card-question-card.review-step) {
+  grid-template-rows: auto auto minmax(0, 1fr) auto !important;
+  align-content: stretch !important;
+  overflow: hidden !important;
+}
+
+.gift-card-question-card.review-step {
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.gift-card-question-card.review-step h2 {
+  flex: 0 0 auto !important;
+  margin-bottom: clamp(16px, 2.4vw, 24px) !important;
+}
+
+.gift-card-question-card.review-step .gift-card-review-card {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.gift-card-question-card.review-step .gift-card-review-card dl {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+  margin: 0 !important;
+  padding: 0 4px 0 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+.gift-card-question-card.review-step .gift-card-review-card dl > div {
+  padding: clamp(16px, 2vw, 24px) !important;
+  border: 1px solid rgba(10, 20, 34, 0.10) !important;
+  border-radius: 22px !important;
+  background: rgba(255, 255, 255, 0.90) !important;
+}
+
+.gift-card-question-card.review-step .gift-card-review-card dt {
+  margin: 0 0 6px !important;
+  color: var(--ash) !important;
+  font-size: 0.72rem !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  font-weight: 900 !important;
+}
+
+.gift-card-question-card.review-step .gift-card-review-card dd {
+  margin: 0 !important;
+  color: var(--night) !important;
+  font-size: clamp(1.05rem, 2vw, 1.35rem) !important;
+  font-weight: 900 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.gift-card-question-card.review-step .gift-card-review-card .small-note {
+  flex: 0 0 auto !important;
+  margin-top: 12px !important;
+}
+
+.gift-card-flow-footer.review-step {
+  flex: 0 0 auto !important;
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding-top: clamp(14px, 2vw, 22px) !important;
+}
+
+.gift-card-flow-footer.review-step .gift-card-review-actions-stack {
+  width: min(100%, 620px) !important;
+  max-width: 620px !important;
+  margin-inline: auto !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 12px !important;
+  align-items: stretch !important;
+}
+
+.gift-card-flow-footer.review-step .gift-card-review-actions-stack .button,
+.gift-card-flow-footer.review-step .gift-card-review-actions-stack a.button {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: 58px !important;
+  border-radius: 999px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  white-space: normal !important;
+  line-height: 1.12 !important;
+  padding: 12px 20px !important;
+}
+
+@media (max-width: 760px) {
+  .gift-card-questionnaire-screen:has(.gift-card-question-card.review-step) {
+    padding-bottom: calc(18px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .gift-card-question-card.review-step .gift-card-review-card dl {
+    grid-template-columns: 1fr !important;
+  }
+
+  .gift-card-flow-footer.review-step .gift-card-review-actions-stack {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .gift-card-flow-footer.review-step .gift-card-review-actions-stack .button,
+  .gift-card-flow-footer.review-step .gift-card-review-actions-stack a.button {
+    min-height: 56px !important;
+    font-size: clamp(0.94rem, 4.2vw, 1.05rem) !important;
+  }
+}
