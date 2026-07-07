@@ -5302,9 +5302,6 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
             <button className="request-action-button request-action-button-primary questionnaire-start-button" type="button" onClick={openQuestionnaire}>{text(lang, 'startQuestionnaire')}</button>
           </div>
           <p>{text(lang, 'contactQuestionnaireIntro')}</p>
-          <div className="questionnaire-card-contact-actions">
-            <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={openQuestionnaire} siteContent={siteContent} contactDetails={contact} location="contact_page_card_actions" />
-          </div>
           {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
         </article>
       </div>
