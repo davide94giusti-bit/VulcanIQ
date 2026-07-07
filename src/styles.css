@@ -12929,3 +12929,80 @@ body.modal-scroll-lock {
     font-size: 0.82rem !important;
   }
 }
+
+/* FINAL PATCH 2026-07-07 — flush mobile sticky footer CTA bar */
+.mobile-sticky-bar {
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  max-width: none !important;
+  transform: none !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 0 !important;
+  padding: 0 max(0px, env(safe-area-inset-right)) max(0px, env(safe-area-inset-bottom)) max(0px, env(safe-area-inset-left)) !important;
+  border-right: 0 !important;
+  border-bottom: 0 !important;
+  border-left: 0 !important;
+  border-radius: 0 !important;
+  background: rgba(13, 22, 38, 0.98) !important;
+  box-shadow: 0 -16px 34px rgba(0, 0, 0, 0.22) !important;
+}
+
+.mobile-sticky-bar a {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 56px !important;
+  border-radius: 0 !important;
+  justify-content: center !important;
+  padding: 0 8px !important;
+  color: #fff !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.mobile-sticky-bar a:first-child,
+.mobile-sticky-bar a:nth-child(3) {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.mobile-sticky-bar a:nth-child(2) {
+  background: linear-gradient(135deg, var(--lava), #ff8a65) !important;
+}
+
+@media (max-width: 760px) {
+  .mobile-sticky-bar {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    max-width: none !important;
+    transform: none !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 0 !important;
+    padding: 0 max(0px, env(safe-area-inset-right)) max(0px, env(safe-area-inset-bottom)) max(0px, env(safe-area-inset-left)) !important;
+    border-right: 0 !important;
+    border-bottom: 0 !important;
+    border-left: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  .mobile-sticky-bar a {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 58px !important;
+    border-radius: 0 !important;
+    padding: 0 6px !important;
+    font-size: 0.84rem !important;
+  }
+
+  .public-page-shell,
+  main.public-page-shell {
+    padding-bottom: calc(92px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .footer {
+    padding-bottom: calc(108px + env(safe-area-inset-bottom)) !important;
+  }
+}
