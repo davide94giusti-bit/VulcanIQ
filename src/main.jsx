@@ -2670,6 +2670,7 @@ function GiftCardPage({ lang, siteContent, onClose }) {
     message: ''
   });
   const [state, setState] = useState({ loading: false, error: '', success: '' });
+  const [reviewPopupOpen, setReviewPopupOpen] = useState(false);
 
   const todayMinDate = todayIso();
 
@@ -2885,6 +2886,7 @@ function GiftCardPage({ lang, siteContent, onClose }) {
         has_budget: Boolean(String(form.budget || '').trim())
       });
       setState({ loading: false, error: '', success: lang === 'it' ? 'Richiesta Gift Card inviata. Ti contatteremo manualmente per conferma e pagamento esterno.' : 'Gift Card request sent. We will contact you manually for confirmation and external payment.' });
+      setReviewPopupOpen(false);
       setForm({ buyer_name: '', buyer_email: '', buyer_phone: '', recipient_name: '', experience_type: 'Etna Premium', budget: '', currency: 'EUR', preferred_delivery_date: '', message: '' });
       setStarted(false);
       setStepIndex(0);
@@ -2923,6 +2925,22 @@ function GiftCardPage({ lang, siteContent, onClose }) {
 
   const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(buildGiftCardMessage())}`;
 
+  function renderReviewDetails() {
+    return (
+      <div className="gift-card-review-card">
+        <dl>
+          <div><dt>{lang === 'it' ? 'Nome' : 'Name'}</dt><dd>{form.buyer_name || '-'}</dd></div>
+          <div><dt>{lang === 'it' ? 'Contatto' : 'Contact'}</dt><dd>{form.buyer_phone || form.buyer_email || '-'}</dd></div>
+          <div><dt>{lang === 'it' ? 'Destinatario' : 'Recipient'}</dt><dd>{form.recipient_name || '-'}</dd></div>
+          <div><dt>{lang === 'it' ? 'Esperienza' : 'Experience'}</dt><dd>{form.experience_type || '-'}</dd></div>
+          <div><dt>{lang === 'it' ? 'Budget' : 'Budget'}</dt><dd>{budgetLabel()}</dd></div>
+          <div><dt>{lang === 'it' ? 'Consegna' : 'Delivery'}</dt><dd>{form.preferred_delivery_date || '-'}</dd></div>
+        </dl>
+        {form.message && <p className="small-note"><strong>{lang === 'it' ? 'Messaggio' : 'Message'}:</strong> {form.message}</p>}
+      </div>
+    );
+  }
+
   function renderQuestion() {
     switch (currentStep.key) {
       case 'buyer':
@@ -2958,16 +2976,9 @@ function GiftCardPage({ lang, siteContent, onClose }) {
       case 'review':
       default:
         return (
-          <div className="gift-card-review-card">
-            <dl>
-              <div><dt>{lang === 'it' ? 'Nome' : 'Name'}</dt><dd>{form.buyer_name || '-'}</dd></div>
-              <div><dt>{lang === 'it' ? 'Contatto' : 'Contact'}</dt><dd>{form.buyer_phone || form.buyer_email || '-'}</dd></div>
-              <div><dt>{lang === 'it' ? 'Destinatario' : 'Recipient'}</dt><dd>{form.recipient_name || '-'}</dd></div>
-              <div><dt>{lang === 'it' ? 'Esperienza' : 'Experience'}</dt><dd>{form.experience_type || '-'}</dd></div>
-              <div><dt>{lang === 'it' ? 'Budget' : 'Budget'}</dt><dd>{budgetLabel()}</dd></div>
-              <div><dt>{lang === 'it' ? 'Consegna' : 'Delivery'}</dt><dd>{form.preferred_delivery_date || '-'}</dd></div>
-            </dl>
-            {form.message && <p className="small-note"><strong>{lang === 'it' ? 'Messaggio' : 'Message'}:</strong> {form.message}</p>}
+          <div className="gift-card-review-launch-card">
+            <p className="small-note">{lang === 'it' ? 'Apri il riepilogo completo in una schermata dedicata, controlla i dati e poi invia la richiesta.' : 'Open the full summary in a dedicated screen, check the details, then send the request.'}</p>
+            <button className="button primary gift-card-review-open-button" type="button" onClick={() => setReviewPopupOpen(true)}>{currentStep.title}</button>
           </div>
         );
     }
@@ -3020,14 +3031,36 @@ function GiftCardPage({ lang, siteContent, onClose }) {
                   <button className="button primary" type="button" onClick={goNext} disabled={state.loading}>{lang === 'it' ? 'Avanti' : 'Next'}</button>
                 </>
               ) : (
-                <div className="gift-card-review-actions-stack">
+                <div className="gift-card-review-actions-stack gift-card-review-back-stack">
                   <button className="button secondary" type="button" onClick={goBack} disabled={stepIndex === 0 || state.loading}>{lang === 'it' ? 'Indietro' : 'Back'}</button>
-                  <button className="button primary" type="button" onClick={submitWebsiteRequest} disabled={state.loading}>{state.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : (lang === 'it' ? 'Invia richiesta Gift Card dal sito' : 'Send Gift Card request via website')}</button>
-                  <a className="button secondary gift-card-whatsapp-action" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsappClick}>{lang === 'it' ? 'Invia richiesta Gift Card via WhatsApp' : 'Send Gift Card request via WhatsApp'}</a>
                 </div>
               )}
             </footer>
           </main>
+        )}
+
+        {reviewPopupOpen && (
+          <div className="gift-card-review-popup-backdrop" role="presentation" onClick={() => setReviewPopupOpen(false)}>
+            <section className="gift-card-review-popup" role="dialog" aria-modal="true" aria-labelledby="giftCardReviewPopupTitle" onClick={(event) => event.stopPropagation()}>
+              <header className="gift-card-review-popup-header">
+                <div>
+                  <span className="kicker">Gift Card</span>
+                  <h2 id="giftCardReviewPopupTitle">{currentStep.title}</h2>
+                </div>
+                <button className="modal-close-button" type="button" onClick={() => setReviewPopupOpen(false)}>{text(lang, 'close')}</button>
+              </header>
+              <div className="gift-card-review-popup-body">
+                {renderReviewDetails()}
+                {state.error && <p className="form-status error" role="alert">{state.error}</p>}
+                {state.success && <p className="form-status success" role="status">{state.success}</p>}
+              </div>
+              <footer className="gift-card-review-popup-actions">
+                <button className="button secondary" type="button" onClick={() => setReviewPopupOpen(false)}>{lang === 'it' ? 'Torna' : 'Back'}</button>
+                <button className="button primary" type="button" onClick={submitWebsiteRequest} disabled={state.loading}>{state.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : (lang === 'it' ? 'Invia richiesta Gift Card dal sito' : 'Send Gift Card request via website')}</button>
+                <a className="button secondary gift-card-whatsapp-action" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsappClick}>{lang === 'it' ? 'Invia richiesta Gift Card via WhatsApp' : 'Send Gift Card request via WhatsApp'}</a>
+              </footer>
+            </section>
+          </div>
         )}
       </section>
     </div>

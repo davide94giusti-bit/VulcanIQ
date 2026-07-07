@@ -14115,3 +14115,323 @@ section#reviews.compact-section,
     padding-right: 92px !important;
   }
 }
+
+/* FINAL PATCH 2026-07-07 GIFT CARD REVIEW POPUP AND FAST REQUEST CLOSE */
+
+/* Contact card remains questionnaire-only. The public bottom CTA already handles call / WhatsApp / email. */
+.questionnaire-card-contact-actions,
+.contact-questionnaire-entry-clean .questionnaire-card-contact-actions {
+  display: none !important;
+}
+
+.contact-questionnaire-entry-clean .questionnaire-start-card,
+.contact-questionnaire-entry-clean .questionnaire-start-top-row {
+  text-align: center !important;
+  align-items: center !important;
+  justify-items: center !important;
+}
+
+.contact-questionnaire-entry-clean .questionnaire-start-button,
+.questionnaire-start-card .questionnaire-start-button {
+  margin-inline: auto !important;
+}
+
+/* Gift Card intro CTA centered on desktop and mobile. */
+.gift-card-intro-actions,
+.gift-card-intro-screen .modal-actions,
+.gift-card-intro-screen .gift-card-intro-actions {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  width: 100% !important;
+}
+
+.gift-card-intro-actions .button,
+.gift-card-intro-screen .gift-card-intro-actions .button {
+  margin-inline: auto !important;
+}
+
+/* Final Gift Card step: no inline scroll trap; user opens the review in a dedicated screen. */
+.gift-card-questionnaire-screen:has(.gift-card-question-card.review-step) {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  align-content: start !important;
+}
+
+.gift-card-question-card.review-step {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+  display: block !important;
+}
+
+.gift-card-question-card.review-step h2 {
+  margin-bottom: clamp(16px, 2vw, 24px) !important;
+}
+
+.gift-card-review-launch-card {
+  width: 100% !important;
+  max-width: 760px !important;
+  margin-inline: auto !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 16px !important;
+  justify-items: center !important;
+  text-align: center !important;
+}
+
+.gift-card-review-launch-card .small-note {
+  max-width: 620px !important;
+  margin: 0 auto !important;
+  color: var(--ash) !important;
+  font-weight: 800 !important;
+}
+
+.gift-card-review-open-button {
+  width: min(100%, 520px) !important;
+  min-height: 64px !important;
+  justify-content: center !important;
+  text-align: center !important;
+  border-radius: 999px !important;
+  font-size: clamp(1rem, 1.6vw, 1.18rem) !important;
+}
+
+.gift-card-review-back-stack {
+  width: min(100%, 520px) !important;
+  max-width: 520px !important;
+}
+
+.gift-card-review-back-stack .button {
+  width: 100% !important;
+}
+
+.gift-card-review-popup-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 10050 !important;
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: center !important;
+  background: rgba(5, 10, 20, 0.82) !important;
+  backdrop-filter: blur(18px) !important;
+  padding: clamp(12px, 2vw, 28px) !important;
+}
+
+.gift-card-review-popup {
+  width: min(100%, 1120px) !important;
+  height: min(100%, 920px) !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+  background: linear-gradient(135deg, #fff, #fffaf5) !important;
+  color: var(--night) !important;
+  border: 1px solid rgba(10, 20, 34, 0.12) !important;
+  border-radius: clamp(24px, 3vw, 42px) !important;
+  box-shadow: 0 36px 110px rgba(5, 10, 20, 0.38) !important;
+}
+
+.gift-card-review-popup-header {
+  position: relative !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 24px !important;
+  padding: clamp(24px, 4vw, 54px) clamp(24px, 5vw, 64px) clamp(16px, 3vw, 28px) !important;
+  border-bottom: 1px solid rgba(10, 20, 34, 0.08) !important;
+}
+
+.gift-card-review-popup-header h2 {
+  margin: 0 !important;
+  font-size: clamp(2.4rem, 6vw, 5.3rem) !important;
+  line-height: 0.92 !important;
+  letter-spacing: -0.075em !important;
+  max-width: 780px !important;
+}
+
+.gift-card-review-popup-header .modal-close-button {
+  flex: 0 0 auto !important;
+  position: static !important;
+}
+
+.gift-card-review-popup-body {
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding: clamp(22px, 3vw, 42px) clamp(24px, 5vw, 64px) !important;
+}
+
+.gift-card-review-popup-body .gift-card-review-card {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  display: block !important;
+  overflow: visible !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.gift-card-review-popup-body .gift-card-review-card dl {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+.gift-card-review-popup-body .gift-card-review-card dl > div {
+  padding: clamp(16px, 2vw, 24px) !important;
+  border: 1px solid rgba(10, 20, 34, 0.10) !important;
+  border-radius: 22px !important;
+  background: rgba(255, 255, 255, 0.86) !important;
+}
+
+.gift-card-review-popup-body .gift-card-review-card dt {
+  margin: 0 0 6px !important;
+  color: var(--ash) !important;
+  font-size: 0.72rem !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  font-weight: 900 !important;
+}
+
+.gift-card-review-popup-body .gift-card-review-card dd {
+  margin: 0 !important;
+  color: var(--night) !important;
+  font-size: clamp(1.05rem, 2vw, 1.35rem) !important;
+  font-weight: 900 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.gift-card-review-popup-actions {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  padding: clamp(16px, 2.5vw, 28px) clamp(24px, 5vw, 64px) calc(clamp(16px, 2.5vw, 28px) + env(safe-area-inset-bottom)) !important;
+  border-top: 1px solid rgba(10, 20, 34, 0.08) !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+}
+
+.gift-card-review-popup-actions .button,
+.gift-card-review-popup-actions a.button {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 58px !important;
+  justify-content: center !important;
+  text-align: center !important;
+  white-space: normal !important;
+  line-height: 1.12 !important;
+  border-radius: 999px !important;
+}
+
+@media (max-width: 760px) {
+  .gift-card-review-popup-backdrop {
+    padding: 0 !important;
+  }
+
+  .gift-card-review-popup {
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    border: 0 !important;
+  }
+
+  .gift-card-review-popup-header {
+    padding: calc(18px + env(safe-area-inset-top)) 20px 18px !important;
+    align-items: flex-start !important;
+  }
+
+  .gift-card-review-popup-header h2 {
+    font-size: clamp(2.3rem, 12vw, 4rem) !important;
+    max-width: calc(100vw - 150px) !important;
+  }
+
+  .gift-card-review-popup-body {
+    padding: 22px 20px !important;
+  }
+
+  .gift-card-review-popup-body .gift-card-review-card dl {
+    grid-template-columns: 1fr !important;
+  }
+
+  .gift-card-review-popup-actions {
+    grid-template-columns: 1fr !important;
+    padding: 16px 20px calc(18px + env(safe-area-inset-bottom)) !important;
+  }
+}
+
+/* Book Now / Fast Request: close must be visible, especially on mobile. */
+.fast-request-modal {
+  position: relative !important;
+}
+
+.fast-request-modal .admin-modal-header {
+  position: relative !important;
+  display: block !important;
+  padding-right: clamp(96px, 16vw, 138px) !important;
+}
+
+.fast-request-modal .admin-modal-header .modal-close-button {
+  position: absolute !important;
+  top: clamp(16px, 3vw, 30px) !important;
+  right: clamp(16px, 3vw, 30px) !important;
+  z-index: 20 !important;
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.fast-request-actions {
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.fast-request-actions .button.primary,
+.fast-request-actions a.button.primary {
+  margin-inline: auto !important;
+  justify-content: center !important;
+  text-align: center !important;
+}
+
+.fast-request-actions .fast-request-inline-close {
+  display: none !important;
+}
+
+@media (max-width: 760px) {
+  .fast-request-backdrop {
+    align-items: stretch !important;
+    padding: 0 !important;
+  }
+
+  .fast-request-modal {
+    width: 100vw !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow-y: auto !important;
+    border-radius: 0 !important;
+    padding-top: calc(26px + env(safe-area-inset-top)) !important;
+  }
+
+  .fast-request-modal .admin-modal-header {
+    padding-right: 112px !important;
+  }
+
+  .fast-request-modal .admin-modal-header .modal-close-button {
+    top: calc(20px + env(safe-area-inset-top)) !important;
+    right: 20px !important;
+  }
+}
+
+/* Chrome extension message-channel warnings are unrelated to this UI flow unless they reproduce in a clean browser with extensions disabled. */
