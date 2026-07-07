@@ -13857,40 +13857,261 @@ body.modal-scroll-lock {
   }
 }
 
-/* FINAL PATCH 2026-07-07 QUESTIONNAIRE OPTION READABILITY */
-/* Prepare-your-request option buttons must keep readable text on dark backgrounds. */
-.contact-questionnaire-entry .questionnaire-option-actions .button.secondary,
+/* FINAL PATCH 2026-07-07 DESKTOP GIFT CARD FAST REQUEST REVIEWS TEAM LAYOUT */
+
+/* Prepare-your-request option buttons: keep readable white text on dark selected/secondary pills. */
 .questionnaire-option-actions .button.secondary,
-.questionnaire-option-actions .button.secondary:link,
-.questionnaire-option-actions .button.secondary:visited {
-  background: var(--night) !important;
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-  border-color: rgba(255, 255, 255, 0.16) !important;
+.contact-questionnaire-entry .questionnaire-option-actions .button.secondary,
+.questionnaire-step .questionnaire-option-actions .button.secondary,
+.questionnaire-step .button.secondary {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
 }
 
+.questionnaire-option-actions .button.secondary *,
 .contact-questionnaire-entry .questionnaire-option-actions .button.secondary *,
-.questionnaire-option-actions .button.secondary * {
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
+.questionnaire-step .questionnaire-option-actions .button.secondary *,
+.questionnaire-step .button.secondary * {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
 }
 
-.contact-questionnaire-entry .questionnaire-option-actions .button.secondary:hover,
-.contact-questionnaire-entry .questionnaire-option-actions .button.secondary:focus,
-.contact-questionnaire-entry .questionnaire-option-actions .button.secondary:focus-visible,
-.questionnaire-option-actions .button.secondary:hover,
-.questionnaire-option-actions .button.secondary:focus,
-.questionnaire-option-actions .button.secondary:focus-visible {
-  background: var(--night-2) !important;
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-  border-color: rgba(255, 255, 255, 0.24) !important;
+/* Gift Card intro: center the start button under the two desktop cards. */
+.gift-card-intro-actions {
+  width: 100% !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.gift-card-intro-actions .button,
+.gift-card-intro-actions button {
+  width: min(100%, 440px) !important;
+  justify-content: center !important;
+  text-align: center !important;
+}
+
+/* Gift Card final review: desktop review details must be visible and independently scrollable. */
+.gift-card-questionnaire-screen:has(.gift-card-question-card.review-step) {
+  display: grid !important;
+  grid-template-rows: auto auto minmax(260px, 1fr) auto !important;
+  align-content: stretch !important;
+  overflow: hidden !important;
+}
+
+.gift-card-question-card.review-step {
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(220px, 1fr) !important;
+  gap: clamp(18px, 2.2vw, 28px) !important;
+}
+
+.gift-card-question-card.review-step h2 {
+  margin: 0 !important;
+}
+
+.gift-card-question-card.review-step .gift-card-review-card {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 220px !important;
+  max-height: min(42vh, 430px) !important;
+  display: block !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding: clamp(18px, 2.4vw, 28px) !important;
+}
+
+.gift-card-question-card.review-step .gift-card-review-card dl {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+.gift-card-question-card.review-step .gift-card-review-card dl > div {
+  display: block !important;
+  min-width: 0 !important;
+  padding: 14px 16px !important;
+  border: 1px solid rgba(10, 20, 34, 0.08) !important;
+  border-radius: 18px !important;
+  background: rgba(255, 255, 255, 0.72) !important;
+}
+
+.gift-card-question-card.review-step .gift-card-review-card dt,
+.gift-card-question-card.review-step .gift-card-review-card dd {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.gift-card-question-card.review-step .gift-card-review-card dt {
+  margin-bottom: 4px !important;
+  color: var(--ash) !important;
+  font-size: 0.72rem !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+  font-weight: 900 !important;
+}
+
+.gift-card-question-card.review-step .gift-card-review-card dd {
+  color: var(--night) !important;
+  font-size: clamp(1rem, 1.8vw, 1.18rem) !important;
+  font-weight: 900 !important;
+  line-height: 1.2 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.gift-card-question-card.review-step .gift-card-review-card .small-note {
+  margin: 16px 0 0 !important;
+  color: var(--basalt) !important;
+}
+
+/* Fast Request desktop: close stays top-right; actions are centered and inline close buttons are hidden. */
+.fast-request-modal {
+  position: relative !important;
+}
+
+.fast-request-modal .admin-modal-header {
+  position: relative !important;
+  display: block !important;
+  padding-right: clamp(84px, 12vw, 130px) !important;
+}
+
+.fast-request-modal .admin-modal-header .modal-close-button {
+  position: absolute !important;
+  top: clamp(18px, 3vw, 30px) !important;
+  right: clamp(18px, 3vw, 30px) !important;
+  z-index: 3 !important;
+}
+
+.fast-request-modal .admin-modal-header h2 {
+  max-width: min(100%, 760px) !important;
+}
+
+.fast-request-actions {
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.fast-request-actions .button.primary,
+.fast-request-actions a.button.primary {
+  margin-inline: auto !important;
+  justify-content: center !important;
+  text-align: center !important;
+}
+
+.fast-request-actions .fast-request-inline-close {
+  display: none !important;
+}
+
+@media (min-width: 761px) {
+  .fast-request-actions .button.primary,
+  .fast-request-actions a.button.primary {
+    min-width: min(100%, 260px) !important;
+  }
+}
+
+/* Reviews: raise section slightly and put Filter on the right at Publish button height. */
+section#reviews.compact-section,
+.section.compact-section#reviews {
+  padding-top: clamp(28px, 4vw, 56px) !important;
+}
+
+.redesigned-reviews-panel {
+  padding-top: 0 !important;
+}
+
+.redesigned-reviews-panel .reviews-header-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: clamp(18px, 3vw, 28px) !important;
+  align-items: start !important;
+}
+
+.redesigned-reviews-panel .reviews-header-actions {
+  width: 100% !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  margin-top: 0 !important;
+}
+
+.redesigned-reviews-panel .reviews-header-actions .button.primary {
+  order: 1 !important;
+}
+
+.redesigned-reviews-panel .review-filter-dropdown {
+  order: 2 !important;
+  margin-left: auto !important;
+  position: relative !important;
+}
+
+.redesigned-reviews-panel .review-filter-trigger {
+  white-space: nowrap !important;
+}
+
+.redesigned-reviews-panel .review-filter-menu {
+  right: 0 !important;
+  left: auto !important;
 }
 
 @media (max-width: 760px) {
-  .contact-questionnaire-entry .questionnaire-option-actions .button.secondary,
-  .questionnaire-option-actions .button.secondary {
-    color: #ffffff !important;
-    -webkit-text-fill-color: #ffffff !important;
+  .redesigned-reviews-panel .reviews-header-actions {
+    align-items: stretch !important;
+  }
+
+  .redesigned-reviews-panel .reviews-header-actions .button.primary,
+  .redesigned-reviews-panel .review-filter-dropdown,
+  .redesigned-reviews-panel .review-filter-trigger {
+    width: 100% !important;
+  }
+}
+
+/* Team title: allow the heading to span the same width as the two team cards below. */
+.about-mission-section > .section-header,
+.about-mission-section .section-header {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.about-mission-section > .section-header h2,
+.about-mission-section .section-header h2 {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+@media (min-width: 900px) {
+  .about-mission-section > .section-header h2,
+  .about-mission-section .section-header h2 {
+    max-width: 100% !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .gift-card-question-card.review-step .gift-card-review-card {
+    min-height: 220px !important;
+    max-height: 34dvh !important;
+  }
+
+  .gift-card-question-card.review-step .gift-card-review-card dl {
+    grid-template-columns: 1fr !important;
+  }
+
+  .fast-request-modal .admin-modal-header {
+    padding-right: 92px !important;
   }
 }
