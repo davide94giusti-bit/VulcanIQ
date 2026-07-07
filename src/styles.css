@@ -13857,43 +13857,40 @@ body.modal-scroll-lock {
   }
 }
 
-
-/* FINAL PATCH 2026-07-07 CONTACT QUESTIONNAIRE ONLY */
-.contact-questionnaire-entry-clean .questionnaire-start-card {
-  align-items: center !important;
-  text-align: center !important;
+/* FINAL PATCH 2026-07-07 QUESTIONNAIRE OPTION READABILITY */
+/* Prepare-your-request option buttons must keep readable text on dark backgrounds. */
+.contact-questionnaire-entry .questionnaire-option-actions .button.secondary,
+.questionnaire-option-actions .button.secondary,
+.questionnaire-option-actions .button.secondary:link,
+.questionnaire-option-actions .button.secondary:visited {
+  background: var(--night) !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
 }
 
-.contact-questionnaire-entry-clean .questionnaire-start-card > p {
-  max-width: 680px !important;
-  margin-inline: auto !important;
-  text-align: center !important;
+.contact-questionnaire-entry .questionnaire-option-actions .button.secondary *,
+.questionnaire-option-actions .button.secondary * {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
 }
 
-.contact-questionnaire-entry-clean .questionnaire-start-top-row {
-  width: 100% !important;
-  display: grid !important;
-  grid-template-columns: 1fr !important;
-  gap: 14px !important;
-  justify-items: center !important;
-  align-items: center !important;
-  text-align: center !important;
+.contact-questionnaire-entry .questionnaire-option-actions .button.secondary:hover,
+.contact-questionnaire-entry .questionnaire-option-actions .button.secondary:focus,
+.contact-questionnaire-entry .questionnaire-option-actions .button.secondary:focus-visible,
+.questionnaire-option-actions .button.secondary:hover,
+.questionnaire-option-actions .button.secondary:focus,
+.questionnaire-option-actions .button.secondary:focus-visible {
+  background: var(--night-2) !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.24) !important;
 }
 
-.contact-questionnaire-entry-clean .questionnaire-start-top-row h3 {
-  width: 100% !important;
-  margin-inline: auto !important;
-  text-align: center !important;
-}
-
-.contact-questionnaire-entry-clean .questionnaire-start-top-row .questionnaire-start-button {
-  width: min(100%, 360px) !important;
-  margin-inline: auto !important;
-  justify-content: center !important;
-  justify-self: center !important;
-  text-align: center !important;
-}
-
-.questionnaire-card-contact-actions {
-  display: none !important;
+@media (max-width: 760px) {
+  .contact-questionnaire-entry .questionnaire-option-actions .button.secondary,
+  .questionnaire-option-actions .button.secondary {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+  }
 }
