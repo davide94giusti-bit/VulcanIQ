@@ -3007,7 +3007,7 @@ function GiftCardPage({ lang, siteContent, onClose }) {
               <span style={{ width: `${progressPercent}%` }} />
             </div>
             <p className="gift-card-progress-label">{progressText}</p>
-            <section className="gift-card-question-card" aria-live="polite">
+            <section className={`gift-card-question-card ${currentStep.key === 'review' ? 'review-step' : ''}`.trim()} aria-live="polite">
               <h2>{currentStep.title}</h2>
               {renderQuestion()}
               {state.error && <p className="form-status error" role="alert">{state.error}</p>}
