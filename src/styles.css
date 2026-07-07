@@ -13605,219 +13605,110 @@ body.modal-scroll-lock {
   }
 }
 
-/* FINAL PATCH 2026-07-07 GIFT CARD COMPACT INPUTS, STACKED REVIEW ACTIONS, FAST REQUEST HELP, FOOTER COLOR FILL */
 
-/* Normal gift-card steps: remove artificial vertical dead space between title and fields. */
-.gift-card-questionnaire-screen:not(:has(.gift-card-question-card.review-step)) {
-  grid-template-rows: auto auto auto auto !important;
-  align-content: start !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  -webkit-overflow-scrolling: touch !important;
+/* FINAL PATCH 2026-07-07 CONTACT CTA CLEANUP AND MOBILE FOOTER COLOR FILL */
+/* Contact form: only keep the questionnaire CTA, centered. */
+.contact-questionnaire-entry-clean .questionnaire-start-card {
+  align-items: center !important;
+  text-align: center !important;
 }
 
+.contact-questionnaire-entry-clean .questionnaire-start-card > .kicker {
+  align-self: flex-start !important;
+}
+
+.questionnaire-start-top-row {
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  justify-items: center !important;
+  align-items: center !important;
+  gap: 18px !important;
+}
+
+.questionnaire-start-top-row h3 {
+  width: 100% !important;
+  margin: 0 !important;
+  text-align: center !important;
+}
+
+.questionnaire-start-top-row .questionnaire-start-button,
+.contact-questionnaire-entry-clean .questionnaire-start-button {
+  width: min(100%, 620px) !important;
+  max-width: 620px !important;
+  margin-inline: auto !important;
+  justify-self: center !important;
+  align-self: center !important;
+}
+
+.contact-questionnaire-entry-clean .questionnaire-start-card > p {
+  max-width: 760px !important;
+  margin-inline: auto !important;
+  text-align: center !important;
+}
+
+/* If old markup is cached briefly, hide duplicate contact actions inside the contact-card start panel. */
+.contact-questionnaire-entry-clean .questionnaire-card-contact-actions {
+  display: none !important;
+}
+
+/* Gift Card: compact the excessive gap between title and fields on every question step. */
 .gift-card-question-card:not(.review-step) {
   min-height: 0 !important;
-  height: auto !important;
   align-content: start !important;
-  justify-content: stretch !important;
+  grid-auto-rows: max-content !important;
   gap: clamp(16px, 3vw, 24px) !important;
 }
 
 .gift-card-question-card:not(.review-step) h2 {
-  margin-bottom: clamp(10px, 2vw, 18px) !important;
+  margin: 0 !important;
 }
 
+.gift-card-question-card:not(.review-step) .admin-form-grid,
 .gift-card-question-card:not(.review-step) .gift-card-step-grid,
 .gift-card-question-card:not(.review-step) .admin-field.full,
-.gift-card-question-card:not(.review-step) > .admin-field.full {
+.gift-card-question-card:not(.review-step) > label.admin-field,
+.gift-card-question-card:not(.review-step) > .admin-field {
   margin-top: 0 !important;
-  align-self: start !important;
 }
 
-/* Gift-card input focus: keep the orange focus treatment inside the card bounds. */
+.gift-card-question-card .admin-field {
+  overflow: visible !important;
+}
+
+/* Keep the orange input focus halo inside the white card/input bounds. */
+.gift-card-question-card input,
+.gift-card-question-card select,
+.gift-card-question-card textarea {
+  outline-offset: -3px !important;
+  box-shadow: none !important;
+}
+
 .gift-card-question-card input:focus,
 .gift-card-question-card input:focus-visible,
 .gift-card-question-card select:focus,
 .gift-card-question-card select:focus-visible,
 .gift-card-question-card textarea:focus,
 .gift-card-question-card textarea:focus-visible {
-  outline: 0 !important;
-  border-color: rgba(240, 107, 79, 0.72) !important;
-  box-shadow: inset 0 0 0 3px rgba(240, 107, 79, 0.24) !important;
+  outline: 3px solid rgba(240, 107, 79, 0.72) !important;
+  outline-offset: -4px !important;
+  box-shadow: inset 0 0 0 1px rgba(240, 107, 79, 0.22) !important;
 }
 
-.gift-card-question-card .admin-field {
-  overflow: visible !important;
-  padding: 0 !important;
-}
-
-.gift-card-question-card input,
-.gift-card-question-card select,
-.gift-card-question-card textarea {
-  width: 100% !important;
-  max-width: 100% !important;
-  min-width: 0 !important;
-  margin: 0 !important;
-  box-sizing: border-box !important;
-}
-
-/* Review step: the review area scrolls; the footer actions remain visible below it. */
-.gift-card-questionnaire-screen:has(.gift-card-question-card.review-step) {
-  grid-template-rows: auto auto minmax(0, 1fr) auto !important;
-  align-content: stretch !important;
-  overflow: hidden !important;
-}
-
-.gift-card-question-card.review-step {
-  min-height: 0 !important;
-  height: 100% !important;
-  max-height: none !important;
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-}
-
-.gift-card-question-card.review-step h2 {
-  flex: 0 0 auto !important;
-  margin-bottom: clamp(14px, 2.5vw, 22px) !important;
-}
-
-.gift-card-review-card {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-}
-
-.gift-card-review-card dl {
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  -webkit-overflow-scrolling: touch !important;
-  padding-right: 4px !important;
-}
-
-.gift-card-review-card .small-note {
-  flex: 0 0 auto !important;
-}
-
-/* Dedicated JSX stack for final gift-card buttons. */
-.gift-card-flow-footer.review-step {
-  display: block !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  padding: 0 !important;
-  margin: 0 !important;
-}
-
-.gift-card-review-actions-stack {
-  width: min(100%, 620px) !important;
-  max-width: 620px !important;
-  margin-inline: auto !important;
-  display: grid !important;
-  grid-template-columns: 1fr !important;
-  gap: 12px !important;
-  align-items: stretch !important;
-  justify-items: stretch !important;
-}
-
-.gift-card-review-actions-stack .button,
-.gift-card-review-actions-stack a.button {
-  width: 100% !important;
-  max-width: 100% !important;
-  min-width: 0 !important;
-  min-height: 58px !important;
-  height: auto !important;
-  aspect-ratio: auto !important;
-  border-radius: 999px !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  text-align: center !important;
-  white-space: normal !important;
-  overflow: visible !important;
-  text-overflow: initial !important;
-  overflow-wrap: normal !important;
-  word-break: normal !important;
-  line-height: 1.15 !important;
-  padding: 12px 20px !important;
-}
-
-@media (max-width: 760px) {
-  .gift-card-questionnaire-screen:not(:has(.gift-card-question-card.review-step)) {
-    padding-bottom: calc(24px + env(safe-area-inset-bottom)) !important;
-  }
-
-  .gift-card-questionnaire-screen:has(.gift-card-question-card.review-step) {
-    padding-bottom: calc(20px + env(safe-area-inset-bottom)) !important;
-  }
-
-  .gift-card-review-actions-stack {
-    width: 100% !important;
-    max-width: 100% !important;
-  }
-
-  .gift-card-review-actions-stack .button,
-  .gift-card-review-actions-stack a.button {
-    min-height: 56px !important;
-    font-size: clamp(0.94rem, 4.2vw, 1.05rem) !important;
-    padding-inline: 16px !important;
-  }
-}
-
-/* Fast request: add the same need-help block as the booking-code modal. */
-.fast-request-support-card {
-  margin-top: 18px !important;
-}
-
-.fast-request-support-card .contact-actions {
-  display: grid !important;
-  grid-template-columns: 1fr !important;
-  gap: 12px !important;
-  width: 100% !important;
-}
-
-.fast-request-support-card .email-action-wrap,
-.fast-request-support-card .pill-action,
-.fast-request-support-card .contact-actions > a,
-.fast-request-support-card .contact-actions > button {
-  width: 100% !important;
-  max-width: 100% !important;
-  min-width: 0 !important;
-}
-
-.fast-request-support-card .pill-action {
-  min-height: 54px !important;
-  justify-content: center !important;
-  border-radius: 999px !important;
-  background: rgba(77, 87, 103, 0.96) !important;
-  color: #fff !important;
-  -webkit-text-fill-color: #fff !important;
-  box-shadow: none !important;
-}
-
-.fast-request-support-card .pill-action:hover,
-.fast-request-support-card .pill-action:focus-visible {
-  background: rgba(63, 72, 88, 0.98) !important;
-}
-
-@media (max-width: 760px) {
-  .fast-request-support-card {
-    margin-top: 20px !important;
-  }
-}
-
-/* Mobile footer CTA: each button continues its own color into the bottom safe area; no bottom outline. */
+/* Mobile sticky footer: remove bottom outline and extend each CTA color to the bottom safe area. */
 .mobile-sticky-bar {
   overflow: visible !important;
-  border-bottom: 0 !important;
-  box-shadow: 0 -16px 34px rgba(0, 0, 0, 0.22) !important;
   background: transparent !important;
+  box-shadow: 0 -16px 34px rgba(0, 0, 0, 0.22) !important;
+  border-bottom: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+.mobile-sticky-bar::before,
+.mobile-sticky-bar::after {
+  content: none !important;
+  display: none !important;
 }
 
 .mobile-sticky-bar a,
@@ -13825,7 +13716,7 @@ body.modal-scroll-lock {
   position: relative !important;
   overflow: visible !important;
   border-bottom: 0 !important;
-  z-index: 2 !important;
+  z-index: 1 !important;
 }
 
 .mobile-sticky-bar a::after,
@@ -13834,25 +13725,41 @@ body.modal-scroll-lock {
   position: absolute !important;
   left: -1px !important;
   right: -1px !important;
-  top: calc(100% - 1px) !important;
-  height: calc(34px + env(safe-area-inset-bottom)) !important;
-  background: inherit !important;
+  top: 100% !important;
+  height: calc(18px + env(safe-area-inset-bottom)) !important;
   pointer-events: none !important;
   z-index: -1 !important;
 }
 
-.mobile-sticky-bar a:first-child,
-.mobile-sticky-bar button:first-child,
-.mobile-sticky-bar a:nth-child(3) {
-  background: rgba(31, 42, 59, 0.99) !important;
+.mobile-sticky-bar a:nth-child(1)::after,
+.mobile-sticky-bar button:nth-child(1)::after,
+.mobile-sticky-bar a:nth-child(3)::after,
+.mobile-sticky-bar button:nth-child(3)::after {
+  background: rgba(13, 22, 38, 0.96) !important;
 }
 
-.mobile-sticky-bar a:nth-child(2) {
-  background: linear-gradient(135deg, var(--lava), #ff8a65) !important;
+.mobile-sticky-bar a:nth-child(2)::after,
+.mobile-sticky-bar button:nth-child(2)::after {
+  background: var(--lava, #f2674f) !important;
 }
 
 @media (max-width: 760px) {
   .mobile-sticky-bar {
     bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .mobile-sticky-bar a,
+  .mobile-sticky-bar button {
+    border-bottom: 0 !important;
+  }
+
+  .gift-card-question-card:not(.review-step) {
+    gap: clamp(14px, 3.5vw, 20px) !important;
+    padding-top: clamp(20px, 5vw, 28px) !important;
+    padding-bottom: clamp(20px, 5vw, 28px) !important;
+  }
+
+  .gift-card-question-card:not(.review-step) h2 {
+    margin-bottom: 0 !important;
   }
 }
