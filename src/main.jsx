@@ -3014,11 +3014,14 @@ function GiftCardPage({ lang, siteContent, onClose }) {
               {state.success && <p className="form-status success" role="status">{state.success}</p>}
             </section>
             <footer className={`gift-card-flow-footer ${currentStep.key === 'review' ? 'review-step' : ''}`.trim()}>
-              <button className="button secondary" type="button" onClick={goBack} disabled={stepIndex === 0 || state.loading}>{lang === 'it' ? 'Indietro' : 'Back'}</button>
               {currentStep.key !== 'review' ? (
-                <button className="button primary" type="button" onClick={goNext} disabled={state.loading}>{lang === 'it' ? 'Avanti' : 'Next'}</button>
+                <>
+                  <button className="button secondary" type="button" onClick={goBack} disabled={stepIndex === 0 || state.loading}>{lang === 'it' ? 'Indietro' : 'Back'}</button>
+                  <button className="button primary" type="button" onClick={goNext} disabled={state.loading}>{lang === 'it' ? 'Avanti' : 'Next'}</button>
+                </>
               ) : (
-                <div className="gift-card-final-actions">
+                <div className="gift-card-review-actions-stack">
+                  <button className="button secondary" type="button" onClick={goBack} disabled={stepIndex === 0 || state.loading}>{lang === 'it' ? 'Indietro' : 'Back'}</button>
                   <button className="button primary" type="button" onClick={submitWebsiteRequest} disabled={state.loading}>{state.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : (lang === 'it' ? 'Invia richiesta Gift Card dal sito' : 'Send Gift Card request via website')}</button>
                   <a className="button secondary gift-card-whatsapp-action" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsappClick}>{lang === 'it' ? 'Invia richiesta Gift Card via WhatsApp' : 'Send Gift Card request via WhatsApp'}</a>
                 </div>
@@ -3113,6 +3116,9 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
     ? `Ciao Leonardo,\n\nvorrei verificare disponibilità per una esperienza vulcanIQ.\n\nEsperienza: ${experience.title}\nData: ${dateLabel}\nPersone: ${peopleSummary}\nLingua: Italiano\nCome ho conosciuto vulcanIQ: ${attributionDisplay || '-'}\nFonte: richiesta rapida\n\nVorrei sapere disponibilità, prezzo, durata e abbigliamento consigliato.\n\nGrazie!`
     : `Hi Leonardo,\n\nI would like to check availability for a vulcanIQ experience.\n\nExperience: ${experience.title}\nDate: ${dateLabel}\nPeople: ${peopleSummary}\nLanguage: English\nHow I heard about vulcanIQ: ${attributionDisplay || '-'}\nSource: fast request\n\nI would like to know availability, price, duration and recommended clothing.\n\nThank you!`;
   const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(message)}`;
+  const supportMessage = lang === 'it'
+    ? 'Ciao Leonardo, ho bisogno di aiuto con una richiesta rapida vulcanIQ.'
+    : 'Hi Leonardo, I need help with a vulcanIQ fast request.';
 
   function handleClose() {
     markFormAbandoned(formJourneyRef.current?.journey_id, { ...sourceMetadata, step_index: step, step_key: `step_${step}`, has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true, has_attribution: Boolean(form.heardAboutUs), ...heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail) });
@@ -3174,6 +3180,10 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
             <div className="modal-actions fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(4)}>{lang === 'it' ? 'Modifica' : 'Edit'}</button><a className="button primary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>WhatsApp</a><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
           </div>
         )}
+        <aside className="booking-code-support-card fast-request-support-card">
+          <h3>{text(lang, 'bookingCodeNeedHelp')}</h3>
+          <ContactActions lang={lang} contextMessage={supportMessage} location="fast_request_screen" siteContent={siteContent} />
+        </aside>
       </section>
     </div>
   ), document.body);
