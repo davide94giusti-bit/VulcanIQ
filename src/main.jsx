@@ -3037,17 +3037,28 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   const sourceMetadata = { language: lang, source_section: sourceSection, source_cta: sourceCta, cta_location: ctaLocation, flow_type: flowType };
   const formJourneyRef = useRef(null);
   const [step, setStep] = useState(1);
+  const [error, setError] = useState('');
   const [form, setForm] = useState(() => {
     try {
       const stored = JSON.parse(window.localStorage.getItem('vulcaniq_fast_request') || '{}');
-      if (stored?.expires_at && Date.now() < stored.expires_at) return { experienceId: stored.experienceId || 'etna-premium', dateMode: stored.dateMode || 'flexible', customDate: stored.customDate || '', adults: stored.adults || '2', children: stored.children || '0' };
+      if (stored?.expires_at && Date.now() < stored.expires_at) {
+        return {
+          experienceId: stored.experienceId || 'etna-premium',
+          dateMode: stored.dateMode || 'flexible',
+          customDate: stored.customDate || '',
+          adults: stored.adults || '2',
+          children: stored.children || '0',
+          heardAboutUs: normalizeHeardAboutUs(stored.heardAboutUs) || '',
+          heardAboutUsDetail: cleanHeardAboutUsDetail(stored.heardAboutUsDetail)
+        };
+      }
     } catch {}
-    return { experienceId: 'etna-premium', dateMode: 'flexible', customDate: '', adults: '2', children: '0' };
+    return { experienceId: 'etna-premium', dateMode: 'flexible', customDate: '', adults: '2', children: '0', heardAboutUs: '', heardAboutUsDetail: '' };
   });
 
   useEffect(() => {
     trackEvent('fast_request_start', sourceMetadata, { dedupe: false });
-    formJourneyRef.current = createFormJourney('fast_request', { ...sourceMetadata, has_selected_experience: true, has_people_count: true });
+    formJourneyRef.current = createFormJourney('fast_request', { ...sourceMetadata, has_selected_experience: true, has_people_count: true, has_attribution: false });
     return () => {
       try {
         window.localStorage.setItem('vulcaniq_fast_request', JSON.stringify({ ...form, expires_at: Date.now() + 24 * 60 * 60 * 1000 }));
@@ -3056,14 +3067,37 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   }, []);
 
   function update(key, value) {
+    const nextValue = key === 'heardAboutUsDetail' ? cleanHeardAboutUsDetail(value) : value;
     markFormFieldStarted(formJourneyRef.current?.journey_id, key, { ...sourceMetadata, step_index: step, step_key: key });
-    markFormActivity(formJourneyRef.current?.journey_id, { has_selected_experience: key === 'experienceId' ? Boolean(value) : Boolean(form.experienceId), has_selected_date: key === 'customDate' ? Boolean(value) : Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true });
-    setForm((current) => ({ ...current, [key]: value }));
+    markFormActivity(formJourneyRef.current?.journey_id, {
+      has_selected_experience: key === 'experienceId' ? Boolean(nextValue) : Boolean(form.experienceId),
+      has_selected_date: key === 'customDate' ? Boolean(nextValue) : Boolean(form.customDate || form.dateMode === 'flexible'),
+      has_people_count: true,
+      has_attribution: key === 'heardAboutUs' ? Boolean(nextValue) : Boolean(form.heardAboutUs)
+    });
+    setError('');
+    setForm((current) => ({ ...current, [key]: nextValue }));
+  }
+
+  function validateAttributionStep() {
+    const cleanSource = normalizeHeardAboutUs(form.heardAboutUs);
+    const cleanDetail = cleanHeardAboutUsDetail(form.heardAboutUsDetail);
+    if (!cleanSource) {
+      setError(text(lang, 'heardAboutUsRequired'));
+      return false;
+    }
+    if (needsHeardAboutUsDetail(cleanSource) && !cleanDetail) {
+      setError(text(lang, 'heardAboutUsOtherRequired'));
+      return false;
+    }
+    return true;
   }
 
   function completeStep(nextStep) {
+    if (step === 4 && nextStep === 5 && !validateAttributionStep()) return;
+    setError('');
     markFormFieldStarted(formJourneyRef.current?.journey_id, `step_${step}`, { ...sourceMetadata, step_index: step, step_key: `step_${step}` });
-    trackEvent('fast_request_step_complete', { ...sourceMetadata, step, next_step: nextStep }, { dedupe: false });
+    trackEvent('fast_request_step_complete', { ...sourceMetadata, step, next_step: nextStep, ...heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail) }, { dedupe: false });
     setStep(nextStep);
   }
 
@@ -3074,22 +3108,28 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   const peopleSummary = lang === 'it'
     ? `${form.adults || 0} adulti, ${form.children || 0} bambini`
     : `${form.adults || 0} adults, ${form.children || 0} children`;
+  const attributionDisplay = heardAboutUsDisplay(form.heardAboutUs, form.heardAboutUsDetail, lang);
   const message = lang === 'it'
-    ? `Ciao Leonardo,\n\nvorrei verificare disponibilità per una esperienza vulcanIQ.\n\nEsperienza: ${experience.title}\nData: ${dateLabel}\nPersone: ${peopleSummary}\nLingua: Italiano\nFonte: richiesta rapida\n\nVorrei sapere disponibilità, prezzo, durata e abbigliamento consigliato.\n\nGrazie!`
-    : `Hi Leonardo,\n\nI would like to check availability for a vulcanIQ experience.\n\nExperience: ${experience.title}\nDate: ${dateLabel}\nPeople: ${peopleSummary}\nLanguage: English\nSource: fast request\n\nI would like to know availability, price, duration and recommended clothing.\n\nThank you!`;
+    ? `Ciao Leonardo,\n\nvorrei verificare disponibilità per una esperienza vulcanIQ.\n\nEsperienza: ${experience.title}\nData: ${dateLabel}\nPersone: ${peopleSummary}\nLingua: Italiano\nCome ho conosciuto vulcanIQ: ${attributionDisplay || '-'}\nFonte: richiesta rapida\n\nVorrei sapere disponibilità, prezzo, durata e abbigliamento consigliato.\n\nGrazie!`
+    : `Hi Leonardo,\n\nI would like to check availability for a vulcanIQ experience.\n\nExperience: ${experience.title}\nDate: ${dateLabel}\nPeople: ${peopleSummary}\nLanguage: English\nHow I heard about vulcanIQ: ${attributionDisplay || '-'}\nSource: fast request\n\nI would like to know availability, price, duration and recommended clothing.\n\nThank you!`;
   const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(message)}`;
 
   function handleClose() {
-    markFormAbandoned(formJourneyRef.current?.journey_id, { ...sourceMetadata, step_index: step, step_key: `step_${step}`, has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true });
-    trackEvent('fast_request_abandon', { ...sourceMetadata, step, experience_id: form.experienceId }, { dedupe: true });
+    markFormAbandoned(formJourneyRef.current?.journey_id, { ...sourceMetadata, step_index: step, step_key: `step_${step}`, has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true, has_attribution: Boolean(form.heardAboutUs), ...heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail) });
+    trackEvent('fast_request_abandon', { ...sourceMetadata, step, experience_id: form.experienceId, ...heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail) }, { dedupe: true });
     onClose();
   }
 
   function handleWhatsApp() {
-    markFormRecoveredViaWhatsApp(formJourneyRef.current?.journey_id, { ...sourceMetadata, has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true });
-    markFormSubmitted(formJourneyRef.current?.journey_id, { ...sourceMetadata, channel: 'whatsapp', has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true });
-    trackEvent('fast_request_whatsapp_click', { ...sourceMetadata, experience_id: form.experienceId, date_mode: form.dateMode }, { dedupe: false });
-    trackEvent('fast_request_submit_success', { ...sourceMetadata, experience_id: form.experienceId, channel: 'whatsapp' }, { dedupe: false });
+    if (!validateAttributionStep()) {
+      setStep(4);
+      return;
+    }
+    const attributionMetadata = heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail);
+    markFormRecoveredViaWhatsApp(formJourneyRef.current?.journey_id, { ...sourceMetadata, has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true, has_attribution: true, ...attributionMetadata });
+    markFormSubmitted(formJourneyRef.current?.journey_id, { ...sourceMetadata, channel: 'whatsapp', has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true, has_attribution: true, ...attributionMetadata });
+    trackEvent('fast_request_whatsapp_click', { ...sourceMetadata, experience_id: form.experienceId, date_mode: form.dateMode, ...attributionMetadata }, { dedupe: false });
+    trackEvent('fast_request_submit_success', { ...sourceMetadata, experience_id: form.experienceId, channel: 'whatsapp', ...attributionMetadata }, { dedupe: false });
     try { window.localStorage.removeItem('vulcaniq_fast_request'); } catch {}
   }
 
@@ -3117,13 +3157,21 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
           <div className="admin-form-grid">
             <label className="admin-field"><span>{lang === 'it' ? 'Adulti' : 'Adults'}</span><input type="number" min="0" value={form.adults} onChange={(event) => update('adults', event.target.value)} /></label>
             <label className="admin-field"><span>{lang === 'it' ? 'Bambini' : 'Children'}</span><input type="number" min="0" value={form.children} onChange={(event) => update('children', event.target.value)} /></label>
-            <div className="modal-actions full fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(2)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(4)}>{lang === 'it' ? 'Rivedi messaggio' : 'Review message'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
+            <div className="modal-actions full fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(2)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(4)}>{lang === 'it' ? 'Continua' : 'Continue'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
           </div>
         )}
         {step === 4 && (
+          <div className="admin-form-grid fast-request-attribution-step">
+            <label className="admin-field full" htmlFor="fastRequestHeardAboutUs"><span>{text(lang, 'heardAboutUs')}</span><ContactAttributionSelect id="fastRequestHeardAboutUs" lang={lang} value={form.heardAboutUs || ''} onChange={(value) => update('heardAboutUs', value)} /></label>
+            {needsHeardAboutUsDetail(form.heardAboutUs) && <label className="admin-field full" htmlFor="fastRequestHeardAboutUsDetail"><span>{text(lang, 'heardAboutUsOtherLabel')}</span><textarea id="fastRequestHeardAboutUsDetail" className="fast-request-attribution-detail" value={form.heardAboutUsDetail || ''} onChange={(event) => update('heardAboutUsDetail', event.target.value)} placeholder={text(lang, 'heardAboutUsOtherPlaceholder')} rows={3} maxLength={240} /></label>}
+            {error && <p className="form-status error full" role="alert">{error}</p>}
+            <div className="modal-actions full fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(3)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(5)}>{lang === 'it' ? 'Rivedi messaggio' : 'Review message'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
+          </div>
+        )}
+        {step === 5 && (
           <div className="fast-request-review">
             <textarea readOnly value={message} rows={10} />
-            <div className="modal-actions fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(3)}>{lang === 'it' ? 'Modifica' : 'Edit'}</button><a className="button primary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>WhatsApp</a><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
+            <div className="modal-actions fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(4)}>{lang === 'it' ? 'Modifica' : 'Edit'}</button><a className="button primary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>WhatsApp</a><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
           </div>
         )}
       </section>
