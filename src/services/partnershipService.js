@@ -4,7 +4,7 @@ const PUBLIC_ASSET_BUCKET = 'vulcaniq-public-assets';
 const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const PUBLIC_FIELDS = 'id, name, description_it, description_en, website_url, google_maps_url, social_url, image_url, category_key, category_it, category_en, active, display_order';
 const LEGACY_PUBLIC_FIELDS = 'id, name, description_it, description_en, website_url, image_url, category_it, category_en, active, display_order';
-const ADMIN_FIELDS = 'id, created_at, updated_at, name, description_it, description_en, website_url, google_maps_url, social_url, image_url, image_path, image_name, image_type, category_key, category_it, category_en, active, display_order, created_by, updated_by';
+const ADMIN_FIELDS = 'id, created_at, updated_at, name, description_it, description_en, website_url, google_maps_url, social_url, image_url, image_path, image_name, image_type, category_key, category_it, category_en, active, display_order, commission_enabled, commission_type, commission_value, commission_currency, commission_applies_to, commission_notes, commission_status, created_by, updated_by';
 const LEGACY_ADMIN_FIELDS = 'id, created_at, updated_at, name, description_it, description_en, website_url, image_url, image_path, image_name, image_type, category_it, category_en, active, display_order, created_by, updated_by';
 
 function normalizePartnership(row) {
@@ -27,6 +27,13 @@ function normalizePartnership(row) {
     category_en: row.category_en || '',
     active: row.active !== false,
     display_order: Number(row.display_order || 0),
+    commission_enabled: row.commission_enabled === true,
+    commission_type: row.commission_type || 'none',
+    commission_value: Number(row.commission_value || 0),
+    commission_currency: row.commission_currency || 'EUR',
+    commission_applies_to: row.commission_applies_to || 'revenue_confirmed',
+    commission_notes: row.commission_notes || '',
+    commission_status: row.commission_status || (row.commission_enabled ? 'active' : 'inactive'),
     created_by: row.created_by || null,
     updated_by: row.updated_by || null
   };
@@ -54,6 +61,13 @@ function cleanPayload(input) {
     category_en: input.category_en || null,
     display_order: Number.parseInt(input.display_order || 0, 10) || 0,
     active: input.active !== false,
+    commission_enabled: input.commission_enabled === true,
+    commission_type: input.commission_enabled === true ? (input.commission_type || 'fixed_amount') : (input.commission_type || 'none'),
+    commission_value: Number.parseFloat(String(input.commission_value || 0).replace(',', '.')) || 0,
+    commission_currency: String(input.commission_currency || 'EUR').trim().toUpperCase().match(/\b[A-Z]{3}\b/)?.[0] || 'EUR',
+    commission_applies_to: input.commission_applies_to || 'revenue_confirmed',
+    commission_notes: input.commission_notes || null,
+    commission_status: input.commission_enabled === true ? (input.commission_status || 'active') : (input.commission_status || 'inactive'),
     created_by: input.created_by || null,
     updated_by: input.updated_by || null
   };
@@ -66,12 +80,19 @@ function stripExtendedPayload(payload) {
   delete clone.google_maps_url;
   delete clone.social_url;
   delete clone.category_key;
+  delete clone.commission_enabled;
+  delete clone.commission_type;
+  delete clone.commission_value;
+  delete clone.commission_currency;
+  delete clone.commission_applies_to;
+  delete clone.commission_notes;
+  delete clone.commission_status;
   return clone;
 }
 
 function isExtendedPartnershipSchemaError(error) {
   const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
-  return message.includes('google_maps_url') || message.includes('social_url') || message.includes('category_key') || message.includes('schema cache') || message.includes('column');
+  return message.includes('google_maps_url') || message.includes('social_url') || message.includes('category_key') || message.includes('commission_') || message.includes('schema cache') || message.includes('column');
 }
 
 function safeFileName(file, fallback = 'partnership-image') {

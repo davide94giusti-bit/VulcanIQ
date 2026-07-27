@@ -1,20 +1,29 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { blockedDates, defaultExperienceAvailability } from './data/availability.js';
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
-import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest } from './services/bookingRequests.js';
+import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest, markBookingRequestReviewRequested, markBookingRequestReviewReceived, markBookingRequestReviewLinkCopied } from './services/bookingRequests.js';
+import { listBookingCodes, createBookingCode, cancelBookingCode, redeemBookingCode, markBookingCodeCompleted, confirmBookingCodeIncome, markBookingCodeNoShow, markBookingCodeReviewRequested, markBookingCodeReviewReceived, markBookingCodeReviewLinkCopied } from './services/bookingCodes.js';
 import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadFixedExcursionLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
 import { loadPublicReviews, submitPublicReview, listReviews, createManualReview, updateReviewDetails, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply, deleteReview } from './services/reviewsService.js';
 import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFile } from './services/siteMediaService.js';
 import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
 import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
+import { assignPartnerToBookingRequest, calculatePartnerCommission, listPartnerCommissions, listPartnerCommissionSummary, updatePartnerCommissionStatus, upsertPartnerCommissionForSource } from './services/partnerCommissions.js';
 import { listAnalyticsEvents, listAnalyticsSessions } from './services/analyticsService.js';
 import { createDatabaseBackup, downloadLatestDatabaseBackup, getBackupSchedule, getBackupStatus, saveBackupSchedule } from './services/backupService.js';
-import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormFieldStart, trackBookingSubmitAttempt, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot } from './analytics.js';
+import { createGiftCardRequest, listGiftCardRequests, updateGiftCardRequest } from './services/giftCards.js';
+import { getOperationalSafeguards, listWeeklyAdminReports, retryRequestNotification, sendWeeklyAdminRecap } from './services/operationsService.js';
+import { createCustomerReferralCode, disableCustomerReferralCode, listCustomerReferralCodes, referralAttributionPayload, referralLink, storeReferralJourney, validateAndRecordReferralClick } from './services/referrals.js';
+import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormStarted, trackBookingFormStepCompleted, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot, createFormJourney, markFormFieldStarted, markFormActivity, markFormSubmitted, markFormAbandoned, markFormRecoveredViaWhatsApp } from './analytics.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import { submitPublicBookingRequestWithTracking } from './services/publicBookingSubmit.js';
+import { formatCurrencyAmount, normalizeCurrency, parseMoneyAmount } from './utils/money.js';
+import { applySeo } from './seo.js';
+import { ADMIN_ROLES, listAdminUsers, updateAdminUser } from './services/adminUsers.js';
 import './styles.css';
 
 const PHONE_DISPLAY = '+39 334 929 8246';
@@ -33,21 +42,24 @@ const ADMIN_NAV_SECTIONS = [
   { key: 'calendar', path: '/admin/calendar', labelIt: 'Calendario', labelEn: 'Calendar', editable: true },
   { key: 'upcoming', path: '/admin/upcoming', labelIt: 'Prossime', labelEn: 'Upcoming', editable: true },
   { key: 'requests', path: '/admin/requests', labelIt: 'Richieste prenotazione', labelEn: 'Booking requests', editable: true },
+  { key: 'bookingCodes', path: '/admin/booking-codes', labelIt: 'Codici prenotazione', labelEn: 'Booking codes', editable: true },
+  { key: 'giftCards', path: '/admin/gift-cards', labelIt: 'Gift Card', labelEn: 'Gift Cards', editable: true },
   { key: 'availability', path: '/admin/availability', labelIt: 'Disponibilità', labelEn: 'Availability', editable: true },
   { key: 'partnerships', path: '/admin/partnerships', labelIt: 'Collaborazioni', labelEn: 'Collaborations', editable: true },
   { key: 'edit', path: '/admin/edit', labelIt: 'Modifica sito e recensioni', labelEn: 'Edit website & reviews', editable: true },
   { key: 'finance', path: '/admin/finance', labelIt: 'Finanze', labelEn: 'Finance', editable: true },
   { key: 'analytics', path: '/admin/analytics', labelIt: 'Analytics', labelEn: 'Analytics', editable: true },
   { key: 'backup', path: '/admin/system/backup', labelIt: 'Sistema e backup', labelEn: 'System & backup', editable: false, ownerOnly: true },
+  { key: 'users', path: '/admin/users', labelIt: 'Utenti admin', labelEn: 'Admin users', editable: false, ownerOnly: true },
   { key: 'publicSite', path: '/', labelIt: 'Visualizza sito pubblico', labelEn: 'View public site', editable: true, external: true }
 ];
 
 const ADMIN_NAV_GROUPS = [
   { key: 'operations', labelIt: 'Operazioni', labelEn: 'Operations', items: ['today', 'upcoming', 'calendar'] },
-  { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'availability'] },
+  { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'bookingCodes', 'giftCards', 'availability'] },
   { key: 'website', labelIt: 'Gestione sito', labelEn: 'Website management', items: ['edit', 'publicSite'] },
   { key: 'business', labelIt: 'Business', labelEn: 'Business', items: ['partnerships', 'finance', 'analytics'] },
-  { key: 'system', labelIt: 'Sistema', labelEn: 'System', items: ['backup'] }
+  { key: 'system', labelIt: 'Sistema', labelEn: 'System', items: ['backup', 'users'] }
 ];
 
 function adminNavLabel(section, lang) {
@@ -57,15 +69,18 @@ function adminNavLabel(section, lang) {
 function isAdminNavSectionActive(normalizedPath, section) {
   if (!section || section.external) return false;
   if (section.key === 'analytics') return normalizedPath.includes('/analytics') || normalizedPath.includes('/data');
+  if (section.key === 'bookingCodes') return normalizedPath.includes('/booking-codes');
+  if (section.key === 'giftCards') return normalizedPath.includes('/gift-cards');
   if (section.key === 'backup') return normalizedPath.includes('/system') || normalizedPath.includes('/backup');
+  if (section.key === 'users') return normalizedPath.includes('/users');
   if (section.key === 'edit') return normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media');
   if (section.key === 'partnerships') return normalizedPath.includes('/partnerships');
   return normalizedPath.includes(`/${section.key}`);
 }
 
 function adminPathFromLocation(pathname) {
-  const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
-  return ADMIN_NAV_SECTIONS.find((section) => !section.external && isAdminNavSectionActive(normalizedPath, section))?.path || '/admin/today';
+  const normalizedPath = pathname === '/admin' ? '/admin/requests' : pathname;
+  return ADMIN_NAV_SECTIONS.find((section) => !section.external && isAdminNavSectionActive(normalizedPath, section))?.path || '/admin/requests';
 }
 
 function visibleAdminNavSections(profile) {
@@ -231,8 +246,32 @@ const i18n = {
     heroKicker: '',
     heroTitle: "L'Etna non è solo uno scenario.",
     heroLead: 'Esperienze private e fisse sull’Etna per leggere il vulcano come territorio vivo: con conoscenza, sicurezza e relazione umana.',
-    findExperience: "Trova l'esperienza giusta",
+    findExperience: "Trova l'esperienza corretta",
     viewAvailability: 'Prenota ora',
+    bookWithCode: 'PRENOTA CON CODICE',
+    findExperienceModalIntro: "Rispondi a poche domande: ti suggeriremo l'esperienza migliore e le prossime date disponibili.",
+    findExperienceInterestQuestion: 'Cosa ti interessa di più?',
+    findExperienceGroupQuestion: 'Con chi viaggi?',
+    findExperienceResultTitle: 'Esperienza consigliata',
+    bookingCodeTitle: 'Codice prenotazione',
+    bookingCodeIntro: 'Inserisci il codice ricevuto dal team vulcanIQ.',
+    bookingCodePlaceholder: 'Inserisci codice prenotazione',
+    confirmBookingCode: 'Conferma codice',
+    bookingCodeNeedHelp: 'Hai bisogno di aiuto?',
+    bookingCodeHelpText: 'Se il codice non funziona, contatta direttamente il team.',
+    bookingCodeSuccessPrefix: 'Congratulazioni',
+    bookingCodeSuccessText: 'Hai prenotato con successo {experience}.',
+    bookingCodeCelebrationKicker: 'Prenotazione confermata',
+    bookingCodeCelebrationTitle: 'Fantastico, {name}!',
+    bookingCodeCelebrationSubtitle: 'La tua esperienza {experience} è confermata. Preparati a vivere l\u2019Etna con vulcanIQ.',
+    bookingCodeCelebrationDateLabel: 'Data esperienza',
+    bookingCodeCelebrationFooter: 'Ci vediamo sull\u2019Etna.',
+    bookingCodeRequired: 'Inserisci un codice prenotazione.',
+    bookingCodeNotFound: 'Codice non trovato.',
+    bookingCodeAlreadyUsed: 'Codice già utilizzato.',
+    bookingCodeExpired: 'Codice scaduto.',
+    bookingCodeCancelled: 'Codice annullato.',
+    bookingCodeGenericError: 'Controlla il codice e riprova.',
     call: 'Chiama Leonardo',
     whatsapp: 'Scrivici su WhatsApp',
     email: "Invia un'email",
@@ -491,6 +530,30 @@ Non più solo accompagnare, ma trasmettere. Non più mostrare, ma far comprender
     heroLead: 'Private and fixed Mount Etna experiences that help guests read the volcano as a living territory: with knowledge, safety, and human connection.',
     findExperience: 'Find the right experience',
     viewAvailability: 'Book now',
+    bookWithCode: 'BOOK WITH CODE',
+    findExperienceModalIntro: 'Answer a few questions: we will suggest the best experience and the next open dates.',
+    findExperienceInterestQuestion: 'What interests you most?',
+    findExperienceGroupQuestion: 'Who are you travelling with?',
+    findExperienceResultTitle: 'Recommended experience',
+    bookingCodeTitle: 'Booking code',
+    bookingCodeIntro: 'Enter the code received from the vulcanIQ team.',
+    bookingCodePlaceholder: 'Enter booking code',
+    confirmBookingCode: 'Confirm code',
+    bookingCodeNeedHelp: 'Need help?',
+    bookingCodeHelpText: 'If the code does not work, contact the team directly.',
+    bookingCodeSuccessPrefix: 'Congratulations',
+    bookingCodeSuccessText: 'You successfully booked {experience}.',
+    bookingCodeCelebrationKicker: 'Booking confirmed',
+    bookingCodeCelebrationTitle: 'Fantastic, {name}!',
+    bookingCodeCelebrationSubtitle: 'Your {experience} experience is confirmed. Get ready to experience Mount Etna with vulcanIQ.',
+    bookingCodeCelebrationDateLabel: 'Experience date',
+    bookingCodeCelebrationFooter: 'See you on Mount Etna.',
+    bookingCodeRequired: 'Enter a booking code.',
+    bookingCodeNotFound: 'Code not found.',
+    bookingCodeAlreadyUsed: 'Code already used.',
+    bookingCodeExpired: 'Code expired.',
+    bookingCodeCancelled: 'Code cancelled.',
+    bookingCodeGenericError: 'Check the code and try again.',
     call: 'Call Leonardo',
     whatsapp: 'Message on WhatsApp',
     email: 'Send an email',
@@ -1032,7 +1095,36 @@ function publicPageFromPathname(pathname = '/') {
   if (clean === '/social') return 'social';
   if (clean === '/latest-news' || clean === '/etna-live-news') return 'latestNews';
   if (clean === '/contact') return 'contact';
+  if (clean === '/gift-card') return 'giftCard';
   return '';
+}
+
+
+function readInitialPublicLanguage() {
+  if (typeof window === 'undefined') return 'it';
+  try {
+    const queryLang = new URLSearchParams(window.location.search).get('lang');
+    if (queryLang === 'en' || queryLang === 'it') return queryLang;
+    const stored = window.localStorage.getItem('vulcaniq_public_language');
+    if (stored === 'en' || stored === 'it') return stored;
+  } catch {}
+  return 'it';
+}
+
+function storePublicLanguage(lang) {
+  if (typeof window === 'undefined') return;
+  if (lang !== 'en' && lang !== 'it') return;
+  try { window.localStorage.setItem('vulcaniq_public_language', lang); } catch {}
+}
+
+function navigatePublicRoute(path, lang) {
+  if (typeof window === 'undefined') return;
+  const cleanLang = lang === 'en' ? 'en' : 'it';
+  const separator = path.includes('?') ? '&' : '?';
+  const nextPath = `${path}${separator}lang=${cleanLang}`;
+  storePublicLanguage(cleanLang);
+  window.history.pushState({}, '', nextPath);
+  window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
 function legalPageFromPathname(pathname = '') {
@@ -1118,8 +1210,8 @@ const SOCIAL_PLATFORM_OPTIONS = [
 const LATEST_NEWS_DEFAULTS = {
   title_it: 'Notizie live sull’Etna',
   title_en: 'Etna live news',
-  description_it: 'Segui gli aggiornamenti live sull’Etna da fonti esterne selezionate.',
-  description_en: 'Follow live Etna updates from selected external sources.',
+  description_it: '',
+  description_en: '',
   cta_it: 'Apri le notizie live',
   cta_en: 'Open live news'
 };
@@ -1621,7 +1713,12 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
   const experienceName = experienceId && experienceId !== 'unsure' ? adminExperienceLabel(experienceId, lang) : text(lang, 'notSure');
   const requestedDate = selectedFixed?.date || formState.requestedDate || '';
   const alternativeDate = formState.alternativeDate || '';
-  const fixedTitle = requestType === 'fixed' && selectedFixed ? fixedExcursionTitle(selectedFixed, lang) : '';
+  const fixedTitle = requestType === 'fixed' && selectedFixed ? (fixedExcursionTitle(selectedFixed, lang) || adminExperienceLabel(selectedFixed.experience_id || experienceId, lang)) : '';
+  const fixedDateText = cleanDateForMessage(requestedDate, lang);
+  const fixedStart = selectedFixed?.start_time ? String(selectedFixed.start_time).slice(0, 5) : '';
+  const fixedEnd = selectedFixed?.end_time ? String(selectedFixed.end_time).slice(0, 5) : '';
+  const fixedTime = fixedStart ? `${fixedStart}${fixedEnd ? `-${fixedEnd}` : ''}` : '';
+  const fixedMeetingPoint = selectedFixed ? fixedExcursionField(selectedFixed, 'meeting_point', lang) : '';
   const requestTypeText = requestType === 'fixed' && fixedTitle
     ? `${text(lang, 'fixedExcursion')} - "${fixedTitle}"`
     : requestChoiceLabel(requestChoice, lang);
@@ -1641,9 +1738,10 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
   if (lang === 'it') {
     const requestLines = joinMessageLines([
       messageLine('Tipo', requestTypeText),
-      messageLine('Esperienza', experienceName),
-      messageLine(requestType === 'fixed' ? 'Data' : 'Data preferita', cleanDateForMessage(requestedDate, lang)),
-      requestType === 'private' ? messageLine('Data alternativa', cleanDateForMessage(alternativeDate, lang)) : '',
+      messageLine('Esperienza', requestType === 'fixed' && fixedTitle ? fixedTitle : experienceName),
+      messageLine(requestType === 'fixed' ? 'Data' : 'Data preferita', fixedDateText),
+      requestType === 'fixed' ? messageLine('Orario', fixedTime) : messageLine('Data alternativa', cleanDateForMessage(alternativeDate, lang)),
+      requestType === 'fixed' ? messageLine('Punto d\u2019incontro', fixedMeetingPoint) : '',
       messageLine('Persone', people)
     ]);
     const contactLines = joinMessageLines([
@@ -1652,11 +1750,15 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
       messageLine('Email', email),
       messageLine('Contatto preferito', preferredContact, { trailingPeriod: true })
     ]);
-    const opening = heardDisplay
-      ? `Ho sentito parlare di vulcanIQ da ${heardDisplay} e vorrei informazioni per un’esperienza vulcanIQ sull’Etna.`
-      : 'Vorrei informazioni per un’esperienza vulcanIQ sull’Etna.';
+    const opening = requestType === 'fixed' && fixedTitle
+      ? `Vorrei informazioni circa l\u2019escursione fissa del ${fixedDateText || '-'}: ${fixedTitle}.`
+      : (heardDisplay
+        ? `Ho sentito parlare di vulcanIQ da ${heardDisplay} e vorrei informazioni per un\u2019esperienza vulcanIQ sull\u2019Etna.`
+        : 'Vorrei informazioni per un\u2019esperienza vulcanIQ sull\u2019Etna.');
+    const sourceLine = requestType === 'fixed' && heardDisplay ? `Come ho conosciuto vulcanIQ: ${heardDisplay}.` : '';
     const sections = [
       `Ciao Leonardo,\n\n${opening}`,
+      sourceLine,
       requestLines ? `Richiesta:\n${requestLines}` : '',
       contactLines ? `Contatti:\n${contactLines}` : '',
       'Vorrei sapere se la richiesta può essere confermata e ricevere dettagli su disponibilità, durata, prezzo e abbigliamento consigliato.',
@@ -1668,9 +1770,10 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
 
   const requestLines = joinMessageLines([
     messageLine('Type', requestTypeText),
-    messageLine('Experience', experienceName),
-    messageLine(requestType === 'fixed' ? 'Date' : 'Preferred date', cleanDateForMessage(requestedDate, lang)),
-    requestType === 'private' ? messageLine('Alternative date', cleanDateForMessage(alternativeDate, lang)) : '',
+    messageLine('Experience', requestType === 'fixed' && fixedTitle ? fixedTitle : experienceName),
+    messageLine(requestType === 'fixed' ? 'Date' : 'Preferred date', fixedDateText),
+    requestType === 'fixed' ? messageLine('Time', fixedTime) : messageLine('Alternative date', cleanDateForMessage(alternativeDate, lang)),
+    requestType === 'fixed' ? messageLine('Meeting point', fixedMeetingPoint) : '',
     messageLine('People', people)
   ]);
   const contactLines = joinMessageLines([
@@ -1679,11 +1782,15 @@ function buildContactQuestionnaireMessage({ formState, selectedFixed, lang }) {
     messageLine('Email', email),
     messageLine('Preferred contact', preferredContact, { trailingPeriod: true })
   ]);
-  const opening = heardDisplay
-    ? `I heard about vulcanIQ from ${heardDisplay} and I would like information about a vulcanIQ experience on Mount Etna.`
-    : 'I would like information about a vulcanIQ experience on Mount Etna.';
+  const opening = requestType === 'fixed' && fixedTitle
+    ? `I would like information about the fixed excursion on ${fixedDateText || '-'}: ${fixedTitle}.`
+    : (heardDisplay
+      ? `I heard about vulcanIQ from ${heardDisplay} and I would like information about a vulcanIQ experience on Mount Etna.`
+      : 'I would like information about a vulcanIQ experience on Mount Etna.');
+  const sourceLine = requestType === 'fixed' && heardDisplay ? `How I heard about vulcanIQ: ${heardDisplay}.` : '';
   const sections = [
     `Hi Leonardo,\n\n${opening}`,
+    sourceLine,
     requestLines ? `Request:\n${requestLines}` : '',
     contactLines ? `Contact:\n${contactLines}` : '',
     'I would like to know whether the request can be confirmed and receive details about availability, duration, price, and recommended clothing.',
@@ -1969,25 +2076,23 @@ function MeetingPointDetailCard({ item, lang }) {
 }
 
 function buildFixedExcursionMessage({ fixedExcursion, people }, lang) {
-  const title = fixedExcursionLabel(fixedExcursion, lang);
+  const title = fixedExcursionTitle(fixedExcursion, lang) || adminExperienceLabel(fixedExcursion?.experience_id, lang);
+  const dateText = formatDateForMessage(fixedExcursion?.date, lang) || '-';
+  const start = fixedExcursion?.start_time ? String(fixedExcursion.start_time).slice(0, 5) : '';
+  const end = fixedExcursion?.end_time ? String(fixedExcursion.end_time).slice(0, 5) : '';
+  const timeText = start ? `${start}${end ? `-${end}` : ''}` : '';
+  const meetingPoint = fixedExcursionField(fixedExcursion, 'meeting_point', lang);
+  const detailLines = joinMessageLines([
+    messageLine(lang === 'it' ? 'Data' : 'Date', dateText),
+    messageLine(lang === 'it' ? 'Orario' : 'Time', timeText),
+    messageLine(lang === 'it' ? 'Punto d\u2019incontro' : 'Meeting point', meetingPoint),
+    messageLine(lang === 'it' ? 'Persone' : 'People', people || '')
+  ]);
+
   if (lang === 'it') {
-    return `Ciao Leonardo,
-vorrei richiedere un posto per l’escursione fissa ${title}.
-
-Persone: ${people || '-'}
-
-Vorrei sapere se la richiesta può essere confermata e ricevere i dettagli pratici.
-
-Grazie.`;
+    return `Ciao Leonardo,\n\nVorrei informazioni circa l\u2019escursione fissa del ${dateText}: ${title}.\n\n${detailLines ? `Dettagli:\n${detailLines}\n\n` : ''}Vorrei sapere disponibilità, durata indicativa, prezzo e consigli sull\u2019abbigliamento.\n\nGrazie!`;
   }
-  return `Hi Leonardo,
-I would like to request a place for the fixed excursion ${title}.
-
-People: ${people || '-'}
-
-I would like to know whether the request can be confirmed and receive the practical details.
-
-Thank you.`;
+  return `Hi Leonardo,\n\nI would like information about the fixed excursion on ${dateText}: ${title}.\n\n${detailLines ? `Details:\n${detailLines}\n\n` : ''}I would like to know availability, approximate duration, price, and clothing recommendations.\n\nThank you!`;
 }
 
 function buildAvailableDateRequestMessage({ date, experienceId, adults, children, childrenUnder3Count }, lang) {
@@ -2110,7 +2215,7 @@ function ContactActions({ lang, contextMessage, compact = false, onUseForm, expe
   const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(message)}`;
   const className = compact ? 'contact-actions compact' : 'contact-actions';
   const metadata = buildBookingTrackingContext({ experienceId: experienceId || '', requestType: experienceId ? 'private' : 'contact', sourceSection: 'contact', sourceCta: 'contact_direct', ctaLocation: location, language: lang });
-  const emailMessage = buildAttributionContactMessage(emailAttributionSource, emailAttributionDetail, lang);
+  const emailMessage = buildContextualAttributionContactMessage(message, emailAttributionSource, emailAttributionDetail, lang);
 
   return (
     <div className={className} data-experience={experienceId || undefined}>
@@ -2130,7 +2235,7 @@ function ContactActions({ lang, contextMessage, compact = false, onUseForm, expe
           location,
           metadata: { ...metadata, source_cta: 'whatsapp_direct' },
           confirmLabel: contactActionConfirmLabel('whatsapp', lang),
-          buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}`
+          buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildContextualAttributionContactMessage(message, source, detail, lang))}`
         })}
       ><Icon name="chat" />{text(lang, 'whatsapp')}</a>
       <div className="email-action-wrap">
@@ -2238,12 +2343,919 @@ function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor })
   );
 }
 
-function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, editor }) {
+const FIND_EXPERIENCE_INTERESTS = [
+  { value: 'lava-activity', it: 'Lava / attività', en: 'Lava / activity', experienceId: 'etna-live' },
+  { value: 'geology', it: 'Geologia', en: 'Geology', experienceId: 'etna-learning' },
+  { value: 'local-culture', it: 'Cultura locale', en: 'Local culture', experienceId: 'etna-stories' },
+  { value: 'photography', it: 'Fotografia', en: 'Photography', experienceId: 'etna-live' },
+  { value: 'premium', it: 'Premium', en: 'Premium', experienceId: 'etna-premium' }
+];
+
+const FIND_EXPERIENCE_GROUPS = [
+  { value: 'solo-couple', it: 'Singolo / coppia', en: 'Solo / couple' },
+  { value: 'family', it: 'Famiglia', en: 'Family' },
+  { value: 'group', it: 'Gruppo', en: 'Group' },
+  { value: 'school-company', it: 'Scuola / azienda', en: 'School / company' }
+];
+
+function recommendationFromFindAnswers(interest, group) {
+  const selected = FIND_EXPERIENCE_INTERESTS.find((item) => item.value === interest) || FIND_EXPERIENCE_INTERESTS[0];
+  if (group === 'school-company' && interest !== 'premium') return experienceById('etna-learning');
+  if (group === 'family' && interest === 'lava-activity') return experienceById('etna-learning');
+  return experienceById(selected.experienceId);
+}
+
+function FindExperienceModal({ lang, onClose, onRequestExperience }) {
+  const [step, setStep] = useState(0);
+  const [interest, setInterest] = useState('');
+  const [group, setGroup] = useState('');
+  const modalRef = useRef(null);
+  useBodyScrollLock(true);
+
+  useEffect(() => {
+    trackEvent('find_experience_started', { language: lang }, { dedupe: false });
+    const timer = window.setTimeout(() => modalRef.current?.querySelector('button')?.focus?.(), 0);
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [lang, onClose]);
+
+  const selectedExperience = recommendationFromFindAnswers(interest, group);
+  const selectedInterest = FIND_EXPERIENCE_INTERESTS.find((item) => item.value === interest);
+  const selectedGroup = FIND_EXPERIENCE_GROUPS.find((item) => item.value === group);
+
+  function selectInterest(value) {
+    setInterest(value);
+    trackEvent('find_experience_interest_selected', { interest: value, language: lang }, { dedupe: false });
+  }
+
+  function selectGroup(value) {
+    setGroup(value);
+    trackEvent('find_experience_group_selected', { group: value, language: lang }, { dedupe: false });
+  }
+
+  function goNext() {
+    if (step === 0 && !interest) return;
+    if (step === 1 && !group) return;
+    if (step >= 1) {
+      trackEvent('find_experience_completed', { recommended_experience_id: selectedExperience.id, interest, group, language: lang }, { dedupe: false });
+    }
+    setStep((current) => Math.min(current + 1, 2));
+  }
+
+  function requestExperience() {
+    onRequestExperience?.(selectedExperience, {
+      interest: selectedInterest?.[lang === 'en' ? 'en' : 'it'] || interest,
+      group: selectedGroup?.[lang === 'en' ? 'en' : 'it'] || group
+    });
+  }
+
+  return createPortal((
+    <div className="find-experience-backdrop motion-backdrop" role="presentation" onClick={onClose}>
+      <section className="find-experience-modal motion-panel" role="dialog" aria-modal="true" aria-labelledby="findExperienceTitle" ref={modalRef} onClick={(event) => event.stopPropagation()}>
+        <header className="find-experience-header">
+          <div>
+            <h2 id="findExperienceTitle">{text(lang, 'findExperience')}</h2>
+            <p>{text(lang, 'findExperienceModalIntro')}</p>
+          </div>
+          <button className="date-modal-close" type="button" onClick={onClose} aria-label={text(lang, 'close')}>{text(lang, 'close')}</button>
+        </header>
+        <main className="find-experience-body">
+          {step === 0 && (
+            <section className="find-experience-step" aria-live="polite">
+              <h3>{text(lang, 'findExperienceInterestQuestion')}</h3>
+              <div className="find-experience-choice-grid">
+                {FIND_EXPERIENCE_INTERESTS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`find-experience-choice ${interest === option.value ? 'active' : ''}`}
+                    onClick={() => selectInterest(option.value)}
+                    aria-pressed={interest === option.value}
+                  >
+                    {option[lang === 'en' ? 'en' : 'it']}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+          {step === 1 && (
+            <section className="find-experience-step" aria-live="polite">
+              <h3>{text(lang, 'findExperienceGroupQuestion')}</h3>
+              <div className="find-experience-choice-grid compact">
+                {FIND_EXPERIENCE_GROUPS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`find-experience-choice ${group === option.value ? 'active' : ''}`}
+                    onClick={() => selectGroup(option.value)}
+                    aria-pressed={group === option.value}
+                  >
+                    {option[lang === 'en' ? 'en' : 'it']}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+          {step === 2 && (
+            <section className="find-experience-result" aria-live="polite">
+              <span className="kicker">{text(lang, 'findExperienceResultTitle')}</span>
+              <h3>{selectedExperience.title}</h3>
+              <p>{selectedExperience.summary[lang === 'en' ? 'en' : 'it']}</p>
+              <dl>
+                <div><dt>{text(lang, 'interest')}</dt><dd>{selectedInterest?.[lang === 'en' ? 'en' : 'it'] || '-'}</dd></div>
+                <div><dt>{text(lang, 'travelingWith')}</dt><dd>{selectedGroup?.[lang === 'en' ? 'en' : 'it'] || '-'}</dd></div>
+              </dl>
+              <button className="button primary" type="button" onClick={requestExperience}>{text(lang, 'requestThis')}</button>
+            </section>
+          )}
+        </main>
+        <footer className="find-experience-footer">
+          <button className="button secondary" type="button" onClick={() => step === 0 ? onClose() : setStep((current) => Math.max(current - 1, 0))}>{text(lang, 'back')}</button>
+          {step < 2 && <button className="button primary" type="button" onClick={goNext} disabled={(step === 0 && !interest) || (step === 1 && !group)}>{text(lang, 'next')}</button>}
+        </footer>
+      </section>
+    </div>
+  ), document.body);
+}
+
+function bookingCodeErrorMessage(error, lang) {
+  const raw = String(error?.code || error?.message || '');
+  const code = raw.toUpperCase();
+  if (code.includes('REQUIRED')) return text(lang, 'bookingCodeRequired');
+  if (code.includes('NOT_FOUND')) return text(lang, 'bookingCodeNotFound');
+  if (code.includes('ALREADY') || code.includes('REDEEMED')) return text(lang, 'bookingCodeAlreadyUsed');
+  if (code.includes('EXPIRED')) return text(lang, 'bookingCodeExpired');
+  if (code.includes('CANCELLED')) return text(lang, 'bookingCodeCancelled');
+  if (code.includes('RPC_MISSING') || code.includes('REDEEM_BOOKING_CODE') || code.includes('SCHEMA CACHE') || code.includes('FUNCTION')) {
+    return lang === 'it'
+      ? 'Il codice non può essere verificato al momento. Contatta direttamente il team.'
+      : 'The code cannot be verified right now. Contact the team directly.';
+  }
+  return error?.message && !code.includes('BOOKING_CODE') ? error.message : text(lang, 'bookingCodeGenericError');
+}
+
+function BookingCodeModal({ lang, onClose, siteContent }) {
+  const [code, setCode] = useState('');
+  const [state, setState] = useState({ loading: false, error: '', success: null });
+  const inputRef = useRef(null);
+  useBodyScrollLock(true);
+
+  useEffect(() => {
+    trackEvent('book_with_code_clicked', { language: lang, source: 'booking_code', source_section: 'hero', source_cta: 'book_with_code', cta_location: 'hero' }, { dedupe: false });
+    const timer = window.setTimeout(() => inputRef.current?.focus?.(), 0);
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [lang, onClose]);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (state.loading) return;
+    setState({ loading: true, error: '', success: null });
+    try {
+      await trackEvent('booking_code_redeem_attempt', {
+        language: lang,
+        source: 'booking_code',
+        source_section: 'booking_code_redemption',
+        source_cta: 'booking_code_confirm',
+        cta_location: 'booking_code_screen'
+      }, { dedupe: false });
+      const result = await redeemBookingCode(code, { language: lang });
+      const successMetadata = {
+        language: lang,
+        source: 'booking_code',
+        source_section: 'booking_code_redemption',
+        source_cta: 'booking_code_confirm',
+        cta_location: 'booking_code_screen',
+        booking_request_id: result.booking_request_id || result.redeemed_booking_request_id || '',
+        finance_entry_id: result.finance_entry_id || result.redeemed_finance_entry_id || '',
+        experience_id: result.experience_id || '',
+        request_type: result.fixed_excursion_id ? 'fixed' : result.experience_type || '',
+        has_scheduled_date: Boolean(result.scheduled_date),
+        selected_date: result.scheduled_date || '',
+        fixed_excursion_id: result.fixed_excursion_id || ''
+      };
+      await trackEvent('booking_code_redeem_success', successMetadata, { dedupe: false });
+      await trackEvent('booking_request_created', successMetadata, { dedupe: false });
+      setState({ loading: false, error: '', success: result });
+    } catch (error) {
+      await trackEvent('booking_code_redeem_error', {
+        language: lang,
+        source: 'booking_code',
+        source_section: 'booking_code_redemption',
+        source_cta: 'booking_code_confirm',
+        cta_location: 'booking_code_screen',
+        reason: String(error?.code || error?.message || 'invalid')
+      }, { dedupe: false });
+      setState({ loading: false, error: bookingCodeErrorMessage(error, lang), success: null });
+    }
+  }
+
+  const success = state.success;
+  const successExperience = success ? (lang === 'en' ? success.experience_name_en || success.experience_name_it : success.experience_name_it || success.experience_name_en) : '';
+  const supportMessage = lang === 'en'
+    ? 'Hi Leonardo, I need help with a vulcanIQ booking code.'
+    : 'Ciao Leonardo, ho bisogno di aiuto con un codice prenotazione vulcanIQ.';
+
+  return createPortal((
+    <div className="booking-code-backdrop motion-backdrop" role="presentation" onClick={onClose}>
+      <section className={`booking-code-modal motion-panel ${success ? 'has-booking-code-success' : ''}`.trim()} role="dialog" aria-modal="true" aria-labelledby="bookingCodeTitle" onClick={(event) => event.stopPropagation()}>
+        <header className="booking-code-header compact-only-close">
+          <h2 id="bookingCodeTitle" className="sr-only">{text(lang, 'bookingCodeTitle')}</h2>
+          <button className="date-modal-close" type="button" onClick={onClose} aria-label={text(lang, 'close')}>{text(lang, 'close')}</button>
+        </header>
+        {success ? (
+          <div className="booking-code-success-card celebration" role="status">
+            <div className="booking-code-celebration-mark" aria-hidden="true">✓</div>
+            <span className="booking-code-celebration-kicker">{text(lang, 'bookingCodeCelebrationKicker')}</span>
+            <h3>{text(lang, 'bookingCodeCelebrationTitle').replace('{name}', success.customer_name || 'vulcanIQ guest')}</h3>
+            <p>{text(lang, 'bookingCodeCelebrationSubtitle').replace('{experience}', successExperience || 'vulcanIQ')}</p>
+            {success.scheduled_date && (
+              <div className="booking-code-celebration-detail">
+                <span>{text(lang, 'bookingCodeCelebrationDateLabel')}</span>
+                <strong>{formatDateForMessage(success.scheduled_date, lang)}</strong>
+              </div>
+            )}
+            <small>{text(lang, 'bookingCodeCelebrationFooter')}</small>
+            <a className="button secondary booking-code-review-cta" href="/reviews" onClick={() => trackEvent('booking_code_review_open', { source: 'booking_code', source_section: 'booking_code_success', source_cta: 'leave_review_after_redeem', cta_location: 'booking_code_success_card', language: lang }, { dedupe: false })}>{lang === 'it' ? 'Usa questo codice per una recensione' : 'Use this code for a review'}</a>
+          </div>
+        ) : (
+          <form className="booking-code-form" onSubmit={submit}>
+            <input
+              id="publicBookingCodeInput"
+              ref={inputRef}
+              value={code}
+              onChange={(event) => setCode(event.target.value.toUpperCase())}
+              placeholder={text(lang, 'bookingCodePlaceholder')}
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck="false"
+            />
+            {state.error && <p className="form-status error" role="alert">{state.error}</p>}
+            <button className="button primary booking-code-submit" type="submit" disabled={state.loading}>{state.loading ? (lang === 'it' ? 'Verifica...' : 'Checking...') : text(lang, 'confirmBookingCode')}</button>
+          </form>
+        )}
+        {!success && (
+          <aside className="booking-code-support-card">
+            <h3>{text(lang, 'bookingCodeNeedHelp')}</h3>
+            <ContactActions lang={lang} contextMessage={supportMessage} location="booking_code_screen" siteContent={siteContent} />
+          </aside>
+        )}
+      </section>
+    </div>
+  ), document.body);
+}
+
+
+function SupportContactModal({ lang, onClose, siteContent }) {
+  useBodyScrollLock(true);
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  const supportMessage = lang === 'en'
+    ? 'Hi Leonardo, I need help with vulcanIQ.'
+    : 'Ciao Leonardo, ho bisogno di aiuto con vulcanIQ.';
+
+  return createPortal((
+    <div className="booking-code-backdrop support-contact-backdrop motion-backdrop" role="presentation" onClick={onClose}>
+      <section className="booking-code-modal support-contact-modal motion-panel" role="dialog" aria-modal="true" aria-labelledby="supportContactTitle" onClick={(event) => event.stopPropagation()}>
+        <header className="support-contact-header">
+          <div>
+            <h2 id="supportContactTitle">{text(lang, 'bookingCodeNeedHelp')}</h2>
+          </div>
+          <button className="date-modal-close support-contact-top-close" type="button" onClick={onClose} aria-label={text(lang, 'close')}>{text(lang, 'close')}</button>
+        </header>
+        <aside className="booking-code-support-card support-contact-card">
+          <ContactActions lang={lang} contextMessage={supportMessage} location="hero_contact_support" siteContent={siteContent} />
+        </aside>
+      </section>
+    </div>
+  ), document.body);
+}
+
+
+function GiftCardPage({ lang, siteContent, onClose }) {
+  const contact = resolvePublicContactDetails(siteContent);
+  const journeyRef = useRef(null);
+  const abandonedRef = useRef(false);
+  const modalRef = useRef(null);
+  useBodyScrollLock(true);
+  const [started, setStarted] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [form, setForm] = useState({
+    buyer_name: '',
+    buyer_email: '',
+    buyer_phone: '',
+    recipient_name: '',
+    experience_type: 'Etna Premium',
+    budget: '',
+    currency: 'EUR',
+    preferred_delivery_date: '',
+    message: ''
+  });
+  const [state, setState] = useState({ loading: false, error: '', success: '' });
+
+  const todayMinDate = todayIso();
+
+  function sanitizeGiftCardPhone(value) {
+    return String(value || '').replace(/[^\d+\s().-]/g, '');
+  }
+
+  function isValidGiftCardEmail(value) {
+    const clean = String(value || '').trim();
+    if (!clean) return true;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean);
+  }
+
+  function isValidGiftCardPhone(value) {
+    const clean = String(value || '').trim();
+    if (!clean) return true;
+    return clean.replace(/\D/g, '').length >= 7;
+  }
+
+  function isPastGiftCardDate(value) {
+    const clean = String(value || '').trim();
+    return Boolean(clean && clean < todayMinDate);
+  }
+
+  const sourceMetadata = { language: lang, source_section: 'gift_card_page', source_cta: 'gift_card_form', form_type: 'gift_card_request' };
+  const stepDefinitions = [
+    { key: 'buyer', title: lang === 'it' ? 'Chi acquista la Gift Card?' : 'Who is buying the Gift Card?' },
+    { key: 'recipient', title: lang === 'it' ? 'A chi vuoi regalarla?' : 'Who is it for?' },
+    { key: 'experience', title: lang === 'it' ? 'Che esperienza ti interessa?' : 'Which experience are you interested in?' },
+    { key: 'budget', title: lang === 'it' ? 'Hai un budget indicativo?' : 'Do you have an indicative budget?' },
+    { key: 'delivery', title: lang === 'it' ? 'Quando vorresti consegnarla?' : 'When would you like to deliver it?' },
+    { key: 'message', title: lang === 'it' ? 'Vuoi aggiungere un messaggio?' : 'Would you like to add a message?' },
+    { key: 'review', title: lang === 'it' ? 'Controlla e invia' : 'Review and send' }
+  ];
+  const currentStep = stepDefinitions[stepIndex] || stepDefinitions[0];
+  const progressText = lang === 'it'
+    ? `Passaggio ${stepIndex + 1} di ${stepDefinitions.length}`
+    : `Step ${stepIndex + 1} of ${stepDefinitions.length}`;
+  const progressPercent = Math.round(((stepIndex + 1) / stepDefinitions.length) * 100);
+  const hasEnteredData = Boolean(
+    String(form.buyer_name || '').trim() ||
+    String(form.buyer_email || '').trim() ||
+    String(form.buyer_phone || '').trim() ||
+    String(form.recipient_name || '').trim() ||
+    String(form.budget || '').trim() ||
+    String(form.preferred_delivery_date || '').trim() ||
+    String(form.message || '').trim()
+  );
+
+  useEffect(() => {
+    trackEvent('gift_card_view', { language: lang, source_section: 'gift_card_page' }, { dedupe: false });
+    journeyRef.current = createFormJourney('gift_card_request', sourceMetadata);
+  }, [lang]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => modalRef.current?.focus?.(), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') attemptClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  });
+
+  useEffect(() => {
+    function handlePageHide() {
+      abandonOnce({ transport: 'pagehide' });
+    }
+    window.addEventListener('pagehide', handlePageHide);
+    return () => window.removeEventListener('pagehide', handlePageHide);
+  }, [lang, form.budget, form.experience_type, form.preferred_delivery_date, hasEnteredData]);
+
+  function abandonOnce(extra = {}) {
+    if (abandonedRef.current || !hasEnteredData) return;
+    abandonedRef.current = true;
+    markFormAbandoned(journeyRef.current?.journey_id, {
+      ...sourceMetadata,
+      ...extra,
+      step_index: started ? stepIndex + 1 : 0,
+      step_key: started ? currentStep.key : 'intro',
+      has_selected_experience: Boolean(form.experience_type),
+      has_selected_date: Boolean(form.preferred_delivery_date),
+      has_budget: Boolean(String(form.budget || '').trim())
+    });
+  }
+
+  function attemptClose() {
+    if (hasEnteredData) {
+      const confirmed = window.confirm(lang === 'it'
+        ? 'Vuoi chiudere la richiesta Gift Card? I dati inseriti potrebbero andare persi.'
+        : 'Close the Gift Card request? The details entered may be lost.');
+      if (!confirmed) return;
+    }
+    abandonOnce({ close_action: 'manual_close' });
+    if (typeof onClose === 'function') onClose();
+  }
+
+  function startQuestionnaire() {
+    setStarted(true);
+    setState({ loading: false, error: '', success: '' });
+    trackEvent('gift_card_questionnaire_started', { ...sourceMetadata, step_index: 1, step_key: 'buyer' }, { dedupe: false });
+  }
+
+  function update(field, value) {
+    const nextValue = field === 'buyer_phone' ? sanitizeGiftCardPhone(value) : value;
+    setState((current) => ({ ...current, error: '' }));
+    setForm((current) => ({ ...current, [field]: nextValue }));
+    markFormFieldStarted(journeyRef.current?.journey_id, field, {
+      ...sourceMetadata,
+      step_index: started ? stepIndex + 1 : 0,
+      step_key: field
+    });
+    markFormActivity(journeyRef.current?.journey_id, {
+      has_selected_experience: field === 'experience_type' ? Boolean(nextValue) : Boolean(form.experience_type),
+      has_selected_date: field === 'preferred_delivery_date' ? Boolean(nextValue) : Boolean(form.preferred_delivery_date),
+      has_budget: field === 'budget' ? Boolean(nextValue) : Boolean(form.budget)
+    });
+  }
+
+  function validateStep(index = stepIndex) {
+    const key = stepDefinitions[index]?.key;
+    if (key === 'buyer') {
+      const hasContact = String(form.buyer_email || '').trim() || String(form.buyer_phone || '').trim();
+      if (!String(form.buyer_name || '').trim()) return lang === 'it' ? 'Inserisci il nome di chi acquista.' : 'Enter the buyer name.';
+      if (!hasContact) return lang === 'it' ? 'Inserisci almeno email o telefono/WhatsApp.' : 'Enter at least an email or phone/WhatsApp.';
+      if (!isValidGiftCardEmail(form.buyer_email)) return lang === 'it' ? 'Inserisci un indirizzo email valido.' : 'Enter a valid email address.';
+      if (!isValidGiftCardPhone(form.buyer_phone)) return lang === 'it' ? 'Inserisci un numero WhatsApp / telefono valido.' : 'Enter a valid WhatsApp / phone number.';
+    }
+    if (key === 'recipient' && !String(form.recipient_name || '').trim()) {
+      return lang === 'it' ? 'Inserisci il nome del destinatario.' : 'Enter the recipient name.';
+    }
+    if (key === 'experience' && !String(form.experience_type || '').trim()) {
+      return lang === 'it' ? 'Seleziona un interesse o esperienza.' : 'Select an experience or interest.';
+    }
+    if (key === 'budget' && String(form.budget || '').trim() && parseMoneyAmount(form.budget) <= 0) {
+      return lang === 'it' ? 'Inserisci un budget valido oppure lascia il campo vuoto.' : 'Enter a valid budget or leave the field empty.';
+    }
+    if (key === 'delivery' && isPastGiftCardDate(form.preferred_delivery_date)) {
+      return lang === 'it' ? 'Seleziona una data di oggi o futura.' : 'Select today or a future date.';
+    }
+    return '';
+  }
+
+  function validateAll() {
+    for (let index = 0; index < stepDefinitions.length - 1; index += 1) {
+      const error = validateStep(index);
+      if (error) return error;
+    }
+    return '';
+  }
+
+  function goNext() {
+    const error = validateStep();
+    if (error) {
+      setState({ loading: false, error, success: '' });
+      return;
+    }
+    trackEvent('gift_card_questionnaire_step_completed', {
+      ...sourceMetadata,
+      step_index: stepIndex + 1,
+      step_key: currentStep.key,
+      has_budget: Boolean(String(form.budget || '').trim()),
+      has_preferred_delivery_date: Boolean(form.preferred_delivery_date)
+    }, { dedupe: false });
+    setStepIndex((current) => Math.min(current + 1, stepDefinitions.length - 1));
+  }
+
+  function goBack() {
+    setState((current) => ({ ...current, error: '' }));
+    setStepIndex((current) => Math.max(current - 1, 0));
+  }
+
+  function budgetLabel() {
+    return String(form.budget || '').trim()
+      ? formatMoney(parseMoneyAmount(form.budget), form.currency || 'EUR', lang)
+      : (lang === 'it' ? 'Da definire' : 'To define');
+  }
+
+  function buildGiftCardMessage() {
+    const budget = budgetLabel();
+    return lang === 'it'
+      ? `Ciao Leonardo,\n\nvorrei informazioni per regalare una Gift Card vulcanIQ.\n\nNome: ${form.buyer_name || '-'}\nContatto: ${form.buyer_phone || form.buyer_email || '-'}\nGift Card per: ${form.recipient_name || '-'}\nEsperienza/interesse: ${form.experience_type || '-'}\nBudget indicativo: ${budget}\nData consegna preferita: ${form.preferred_delivery_date || '-'}\n\n${form.message || ''}\n\nGrazie!`
+      : `Hi Leonardo,\n\nI would like information about gifting a vulcanIQ Gift Card.\n\nName: ${form.buyer_name || '-'}\nContact: ${form.buyer_phone || form.buyer_email || '-'}\nGift Card for: ${form.recipient_name || '-'}\nExperience/interest: ${form.experience_type || '-'}\nIndicative budget: ${budget}\nPreferred delivery date: ${form.preferred_delivery_date || '-'}\n\n${form.message || ''}\n\nThank you!`;
+  }
+
+  async function submitWebsiteRequest() {
+    const error = validateAll();
+    if (error) {
+      setState({ loading: false, error, success: '' });
+      return;
+    }
+    setState({ loading: true, error: '', success: '' });
+    try {
+      const identity = getAnalyticsIdentitySnapshot('gift_card_page');
+      const created = await createGiftCardRequest({
+        ...form,
+        ...identity,
+        buyer_preferred_language: lang,
+        language: lang,
+        currency: form.currency || 'EUR',
+        analytics_journey_id: journeyRef.current?.journey_id,
+        form_started_at: journeyRef.current?.opened_at,
+        submission_idempotency_key: journeyRef.current?.journey_id,
+        submission_fingerprint: journeyRef.current?.journey_id,
+        website: ''
+      });
+      trackEvent('gift_card_request_created', {
+        request_id: created?.id || '',
+        language: lang,
+        source_section: 'gift_card_page',
+        source_cta: 'website_submit',
+        has_budget: Boolean(String(form.budget || '').trim()),
+        has_preferred_delivery_date: Boolean(form.preferred_delivery_date)
+      }, { dedupe: false });
+      markFormSubmitted(journeyRef.current?.journey_id, {
+        ...sourceMetadata,
+        channel: 'website',
+        step_index: stepDefinitions.length,
+        step_key: 'review',
+        has_selected_experience: Boolean(form.experience_type),
+        has_selected_date: Boolean(form.preferred_delivery_date),
+        has_budget: Boolean(String(form.budget || '').trim())
+      });
+      setState({ loading: false, error: '', success: lang === 'it' ? 'Richiesta Gift Card inviata. Ti contatteremo manualmente per conferma e pagamento esterno.' : 'Gift Card request sent. We will contact you manually for confirmation and external payment.' });
+      setForm({ buyer_name: '', buyer_email: '', buyer_phone: '', recipient_name: '', experience_type: 'Etna Premium', budget: '', currency: 'EUR', preferred_delivery_date: '', message: '' });
+      setStarted(false);
+      setStepIndex(0);
+      abandonedRef.current = false;
+      journeyRef.current = createFormJourney('gift_card_request', sourceMetadata);
+    } catch (error) {
+      setState({ loading: false, error: lang === 'it' ? 'Richiesta non inviata. Puoi usare WhatsApp.' : 'Request not sent. You can use WhatsApp.', success: '' });
+    }
+  }
+
+  function handleWhatsappClick(event) {
+    const error = validateAll();
+    if (error) {
+      event.preventDefault();
+      setState({ loading: false, error, success: '' });
+      return;
+    }
+    abandonOnce({ recovery_channel: 'whatsapp' });
+    markFormRecoveredViaWhatsApp(journeyRef.current?.journey_id, {
+      ...sourceMetadata,
+      step_index: stepDefinitions.length,
+      step_key: 'review',
+      has_selected_experience: Boolean(form.experience_type),
+      has_selected_date: Boolean(form.preferred_delivery_date),
+      has_budget: Boolean(String(form.budget || '').trim())
+    });
+    trackEvent('gift_card_whatsapp_request_clicked', {
+      language: lang,
+      source_section: 'gift_card_page',
+      source_cta: 'whatsapp_submit',
+      has_budget: Boolean(String(form.budget || '').trim()),
+      has_preferred_delivery_date: Boolean(form.preferred_delivery_date)
+    }, { dedupe: false });
+    trackEvent('gift_card_request_click', { language: lang, source_section: 'gift_card_page', source_cta: 'whatsapp' }, { dedupe: false });
+  }
+
+  const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(buildGiftCardMessage())}`;
+
+  function renderReviewDetails() {
+    return (
+      <div className="gift-card-review-card">
+        <dl>
+          <div><dt>{lang === 'it' ? 'Nome' : 'Name'}</dt><dd>{form.buyer_name || '-'}</dd></div>
+          <div><dt>{lang === 'it' ? 'Contatto' : 'Contact'}</dt><dd>{form.buyer_phone || form.buyer_email || '-'}</dd></div>
+          <div><dt>{lang === 'it' ? 'Destinatario' : 'Recipient'}</dt><dd>{form.recipient_name || '-'}</dd></div>
+          <div><dt>{lang === 'it' ? 'Esperienza' : 'Experience'}</dt><dd>{form.experience_type || '-'}</dd></div>
+          <div><dt>{lang === 'it' ? 'Budget' : 'Budget'}</dt><dd>{budgetLabel()}</dd></div>
+          <div><dt>{lang === 'it' ? 'Consegna' : 'Delivery'}</dt><dd>{form.preferred_delivery_date || '-'}</dd></div>
+        </dl>
+        {form.message && <p className="small-note"><strong>{lang === 'it' ? 'Messaggio' : 'Message'}:</strong> {form.message}</p>}
+      </div>
+    );
+  }
+
+  function renderQuestion() {
+    switch (currentStep.key) {
+      case 'buyer':
+        return (
+          <div className="admin-form-grid gift-card-step-grid">
+            <label className="admin-field full"><span>{lang === 'it' ? 'Nome di chi acquista' : 'Buyer name'}</span><input value={form.buyer_name} onChange={(event) => update('buyer_name', event.target.value)} autoComplete="name" /></label>
+            <label className="admin-field"><span>Email</span><input type="email" inputMode="email" value={form.buyer_email} onChange={(event) => update('buyer_email', event.target.value)} autoComplete="email" /></label>
+            <label className="admin-field"><span>WhatsApp / Phone</span><input type="tel" inputMode="tel" value={form.buyer_phone} onChange={(event) => update('buyer_phone', event.target.value)} autoComplete="tel" pattern="[0-9+\s().-]*" /></label>
+          </div>
+        );
+      case 'recipient':
+        return <label className="admin-field full"><span>{lang === 'it' ? 'Nome destinatario' : 'Recipient name'}</span><input value={form.recipient_name} onChange={(event) => update('recipient_name', event.target.value)} /></label>;
+      case 'experience':
+        return (
+          <label className="admin-field full"><span>{lang === 'it' ? 'Esperienza/interesse' : 'Experience/interest'}</span>
+            <select value={form.experience_type} onChange={(event) => update('experience_type', event.target.value)}>
+              {experiences.map((item) => <option key={item.id} value={item.title}>{item.title}</option>)}
+              <option value={lang === 'it' ? 'Non so ancora' : 'Not sure yet'}>{lang === 'it' ? 'Non so ancora' : 'Not sure yet'}</option>
+            </select>
+          </label>
+        );
+      case 'budget':
+        return (
+          <div className="admin-form-grid gift-card-step-grid">
+            <label className="admin-field"><span>{lang === 'it' ? 'Budget indicativo' : 'Indicative budget'}</span><input inputMode="decimal" value={form.budget} onChange={(event) => update('budget', event.target.value)} placeholder="150" /></label>
+            <label className="admin-field"><span>{lang === 'it' ? 'Valuta' : 'Currency'}</span><select value={form.currency} onChange={(event) => update('currency', event.target.value)}><option value="EUR">EUR</option><option value="CHF">CHF</option><option value="USD">USD</option><option value="GBP">GBP</option></select></label>
+          </div>
+        );
+      case 'delivery':
+        return <label className="admin-field full"><span>{lang === 'it' ? 'Data consegna preferita' : 'Preferred delivery date'}</span><input type="date" min={todayMinDate} value={form.preferred_delivery_date} onChange={(event) => update('preferred_delivery_date', event.target.value)} /></label>;
+      case 'message':
+        return <label className="admin-field full"><span>{lang === 'it' ? 'Messaggio opzionale' : 'Optional message'}</span><textarea rows={6} value={form.message} onChange={(event) => update('message', event.target.value)} /></label>;
+      case 'review':
+      default:
+        return renderReviewDetails();
+    }
+  }
+
+  return createPortal((
+    <div className="gift-card-flow-backdrop motion-backdrop" role="presentation" onClick={attemptClose}>
+      <section className="gift-card-flow-modal motion-panel" role="dialog" aria-modal="true" aria-labelledby="giftCardFlowTitle" ref={modalRef} tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+        <header className="gift-card-flow-header">
+          <div>
+            <span className="kicker">Gift Card</span>
+            <h1 id="giftCardFlowTitle">{lang === 'it' ? 'Regala un’esperienza sull’Etna' : 'Gift a Mount Etna experience'}</h1>
+          </div>
+          <button className="modal-close-button" type="button" onClick={attemptClose}>{text(lang, 'close')}</button>
+        </header>
+
+        {!started ? (
+          <main className="gift-card-intro-screen">
+            <div className="gift-card-intro-grid">
+              <article className="info-card">
+                <h2>{lang === 'it' ? 'Come funziona' : 'How it works'}</h2>
+                <p>{lang === 'it' ? 'Invia i dettagli, ricevi una conferma manuale e paga esternamente solo dopo essere stato contattato dal team.' : 'Send the details, receive manual confirmation and pay externally only after the team contacts you.'}</p>
+              </article>
+              <article className="info-card">
+                <h2>{lang === 'it' ? 'Ideale per' : 'Best for'}</h2>
+                <p>{lang === 'it' ? 'Coppie, famiglie, compleanni, anniversari, lauree e regali aziendali.' : 'Couples, families, birthdays, anniversaries, graduations and company gifts.'}</p>
+              </article>
+            </div>
+            {state.success && <p className="form-status success" role="status">{state.success}</p>}
+            <div className="modal-actions gift-card-intro-actions">
+              <button className="button primary" type="button" onClick={startQuestionnaire}>{lang === 'it' ? 'Inizia il questionario' : 'Start the questionnaire'}</button>
+            </div>
+          </main>
+        ) : (
+          <main className="gift-card-questionnaire-screen">
+            <div className="questionnaire-progress gift-card-progress" aria-label={progressText} role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={progressPercent}>
+              <span style={{ width: `${progressPercent}%` }} />
+            </div>
+            <p className="gift-card-progress-label">{progressText}</p>
+            <section className={`gift-card-question-card ${currentStep.key === 'review' ? 'review-step' : ''}`.trim()} aria-live="polite">
+              <h2>{currentStep.title}</h2>
+              {renderQuestion()}
+              {state.error && <p className="form-status error" role="alert">{state.error}</p>}
+              {state.success && <p className="form-status success" role="status">{state.success}</p>}
+            </section>
+            <footer className={`gift-card-flow-footer ${currentStep.key === 'review' ? 'review-step' : ''}`.trim()}>
+              {currentStep.key !== 'review' ? (
+                <>
+                  <button className="button secondary" type="button" onClick={goBack} disabled={stepIndex === 0 || state.loading}>{lang === 'it' ? 'Indietro' : 'Back'}</button>
+                  <button className="button primary" type="button" onClick={goNext} disabled={state.loading}>{lang === 'it' ? 'Avanti' : 'Next'}</button>
+                </>
+              ) : (
+                <div className="gift-card-review-actions-stack">
+                  <button className="button secondary" type="button" onClick={goBack} disabled={stepIndex === 0 || state.loading}>{lang === 'it' ? 'Indietro' : 'Back'}</button>
+                  <button className="button primary" type="button" onClick={submitWebsiteRequest} disabled={state.loading}>{state.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : (lang === 'it' ? 'Invia richiesta Gift Card dal sito' : 'Send Gift Card request via website')}</button>
+                  <a className="button secondary gift-card-whatsapp-action" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsappClick}>{lang === 'it' ? 'Invia richiesta Gift Card via WhatsApp' : 'Send Gift Card request via WhatsApp'}</a>
+                </div>
+              )}
+            </footer>
+          </main>
+        )}
+      </section>
+    </div>
+  ), document.body);
+}
+
+function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_mobile_bar', sourceCta = 'fast_request', ctaLocation = 'sticky_contact_bar', flowType = 'fast_request' }) {
+  const contact = resolvePublicContactDetails(siteContent);
+  useBodyScrollLock(true);
+  const sourceMetadata = { language: lang, source_section: sourceSection, source_cta: sourceCta, cta_location: ctaLocation, flow_type: flowType };
+  const formJourneyRef = useRef(null);
+  const [step, setStep] = useState(1);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState(() => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem('vulcaniq_fast_request') || '{}');
+      if (stored?.expires_at && Date.now() < stored.expires_at) {
+        return {
+          experienceId: stored.experienceId || 'etna-premium',
+          dateMode: stored.dateMode || 'flexible',
+          customDate: stored.customDate || '',
+          adults: stored.adults || '2',
+          children: stored.children || '0',
+          heardAboutUs: normalizeHeardAboutUs(stored.heardAboutUs) || '',
+          heardAboutUsDetail: cleanHeardAboutUsDetail(stored.heardAboutUsDetail)
+        };
+      }
+    } catch {}
+    return { experienceId: 'etna-premium', dateMode: 'flexible', customDate: '', adults: '2', children: '0', heardAboutUs: '', heardAboutUsDetail: '' };
+  });
+
+  useEffect(() => {
+    trackEvent('fast_request_start', sourceMetadata, { dedupe: false });
+    formJourneyRef.current = createFormJourney('fast_request', { ...sourceMetadata, has_selected_experience: true, has_people_count: true, has_attribution: false });
+    return () => {
+      try {
+        window.localStorage.setItem('vulcaniq_fast_request', JSON.stringify({ ...form, expires_at: Date.now() + 24 * 60 * 60 * 1000 }));
+      } catch {}
+    };
+  }, []);
+
+  function update(key, value) {
+    const nextValue = key === 'heardAboutUsDetail' ? cleanHeardAboutUsDetail(value) : value;
+    markFormFieldStarted(formJourneyRef.current?.journey_id, key, { ...sourceMetadata, step_index: step, step_key: key });
+    markFormActivity(formJourneyRef.current?.journey_id, {
+      has_selected_experience: key === 'experienceId' ? Boolean(nextValue) : Boolean(form.experienceId),
+      has_selected_date: key === 'customDate' ? Boolean(nextValue) : Boolean(form.customDate || form.dateMode === 'flexible'),
+      has_people_count: true,
+      has_attribution: key === 'heardAboutUs' ? Boolean(nextValue) : Boolean(form.heardAboutUs)
+    });
+    setError('');
+    setForm((current) => ({ ...current, [key]: nextValue }));
+  }
+
+  function validateAttributionStep() {
+    const cleanSource = normalizeHeardAboutUs(form.heardAboutUs);
+    const cleanDetail = cleanHeardAboutUsDetail(form.heardAboutUsDetail);
+    if (!cleanSource) {
+      setError(text(lang, 'heardAboutUsRequired'));
+      return false;
+    }
+    if (needsHeardAboutUsDetail(cleanSource) && !cleanDetail) {
+      setError(text(lang, 'heardAboutUsOtherRequired'));
+      return false;
+    }
+    return true;
+  }
+
+  function completeStep(nextStep) {
+    if (step === 4 && nextStep === 5 && !validateAttributionStep()) return;
+    setError('');
+    markFormFieldStarted(formJourneyRef.current?.journey_id, `step_${step}`, { ...sourceMetadata, step_index: step, step_key: `step_${step}` });
+    trackEvent('fast_request_step_complete', { ...sourceMetadata, step, next_step: nextStep, ...heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail) }, { dedupe: false });
+    setStep(nextStep);
+  }
+
+  const experience = experienceById(form.experienceId);
+  const dateLabel = form.dateMode === 'custom'
+    ? (form.customDate || (lang === 'it' ? 'data da definire' : 'date to define'))
+    : (lang === 'it' ? 'Sono flessibile' : "I'm flexible");
+  const peopleSummary = lang === 'it'
+    ? `${form.adults || 0} adulti, ${form.children || 0} bambini`
+    : `${form.adults || 0} adults, ${form.children || 0} children`;
+  const attributionDisplay = heardAboutUsDisplay(form.heardAboutUs, form.heardAboutUsDetail, lang);
+  const message = lang === 'it'
+    ? `Ciao Leonardo,\n\nvorrei verificare disponibilità per una esperienza vulcanIQ.\n\nEsperienza: ${experience.title}\nData: ${dateLabel}\nPersone: ${peopleSummary}\nLingua: Italiano\nCome ho conosciuto vulcanIQ: ${attributionDisplay || '-'}\nFonte: richiesta rapida\n\nVorrei sapere disponibilità, prezzo, durata e abbigliamento consigliato.\n\nGrazie!`
+    : `Hi Leonardo,\n\nI would like to check availability for a vulcanIQ experience.\n\nExperience: ${experience.title}\nDate: ${dateLabel}\nPeople: ${peopleSummary}\nLanguage: English\nHow I heard about vulcanIQ: ${attributionDisplay || '-'}\nSource: fast request\n\nI would like to know availability, price, duration and recommended clothing.\n\nThank you!`;
+  const whatsappUrl = `https://wa.me/${contact.phoneWa}?text=${encode(message)}`;
+  const supportMessage = lang === 'it'
+    ? 'Ciao Leonardo, ho bisogno di aiuto con una richiesta rapida vulcanIQ.'
+    : 'Hi Leonardo, I need help with a vulcanIQ fast request.';
+
+  function handleClose() {
+    markFormAbandoned(formJourneyRef.current?.journey_id, { ...sourceMetadata, step_index: step, step_key: `step_${step}`, has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true, has_attribution: Boolean(form.heardAboutUs), ...heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail) });
+    trackEvent('fast_request_abandon', { ...sourceMetadata, step, experience_id: form.experienceId, ...heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail) }, { dedupe: true });
+    onClose();
+  }
+
+  function handleWhatsApp() {
+    if (!validateAttributionStep()) {
+      setStep(4);
+      return;
+    }
+    const attributionMetadata = heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail);
+    markFormRecoveredViaWhatsApp(formJourneyRef.current?.journey_id, { ...sourceMetadata, has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true, has_attribution: true, ...attributionMetadata });
+    markFormSubmitted(formJourneyRef.current?.journey_id, { ...sourceMetadata, channel: 'whatsapp', has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true, has_attribution: true, ...attributionMetadata });
+    trackEvent('fast_request_whatsapp_click', { ...sourceMetadata, experience_id: form.experienceId, date_mode: form.dateMode, ...attributionMetadata }, { dedupe: false });
+    trackEvent('fast_request_submit_success', { ...sourceMetadata, experience_id: form.experienceId, channel: 'whatsapp', ...attributionMetadata }, { dedupe: false });
+    try { window.localStorage.removeItem('vulcaniq_fast_request'); } catch {}
+  }
+
+  return createPortal((
+    <div className="modal-backdrop fast-request-backdrop" role="dialog" aria-modal="true" aria-labelledby="fastRequestTitle">
+      <section className="admin-modal fast-request-modal">
+        <header className="admin-modal-header">
+          <div><span className="kicker">{lang === 'it' ? 'Richiesta rapida' : 'Fast request'}</span><h2 id="fastRequestTitle">{lang === 'it' ? 'Verifica disponibilità in pochi passaggi' : 'Check availability in a few steps'}</h2></div>
+          <button className="modal-close-button" type="button" onClick={handleClose}>{text(lang, 'close')}</button>
+        </header>
+        {step === 1 && (
+          <div className="admin-form-grid">
+            <label className="admin-field full"><span>{lang === 'it' ? 'Esperienza' : 'Experience'}</span><select value={form.experienceId} onChange={(event) => update('experienceId', event.target.value)}>{experiences.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+            <div className="modal-actions full fast-request-actions"><button className="button primary" type="button" onClick={() => completeStep(2)}>{lang === 'it' ? 'Continua' : 'Continue'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
+          </div>
+        )}
+        {step === 2 && (
+          <div className="admin-form-grid">
+            <label className="admin-field"><span>{lang === 'it' ? 'Data' : 'Date'}</span><select value={form.dateMode} onChange={(event) => update('dateMode', event.target.value)}><option value="flexible">{lang === 'it' ? 'Sono flessibile' : "I'm flexible"}</option><option value="custom">{lang === 'it' ? 'Data specifica' : 'Specific date'}</option></select></label>
+            {form.dateMode === 'custom' && <label className="admin-field"><span>{lang === 'it' ? 'Data preferita' : 'Preferred date'}</span><input type="date" min={todayIso()} value={form.customDate} onChange={(event) => update('customDate', event.target.value)} /></label>}
+            <div className="modal-actions full fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(1)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(3)}>{lang === 'it' ? 'Continua' : 'Continue'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
+          </div>
+        )}
+        {step === 3 && (
+          <div className="admin-form-grid">
+            <label className="admin-field"><span>{lang === 'it' ? 'Adulti' : 'Adults'}</span><input type="number" min="0" value={form.adults} onChange={(event) => update('adults', event.target.value)} /></label>
+            <label className="admin-field"><span>{lang === 'it' ? 'Bambini' : 'Children'}</span><input type="number" min="0" value={form.children} onChange={(event) => update('children', event.target.value)} /></label>
+            <div className="modal-actions full fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(2)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(4)}>{lang === 'it' ? 'Continua' : 'Continue'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
+          </div>
+        )}
+        {step === 4 && (
+          <div className="admin-form-grid fast-request-attribution-step">
+            <label className="admin-field full" htmlFor="fastRequestHeardAboutUs"><span>{text(lang, 'heardAboutUs')}</span><ContactAttributionSelect id="fastRequestHeardAboutUs" lang={lang} value={form.heardAboutUs || ''} onChange={(value) => update('heardAboutUs', value)} /></label>
+            {needsHeardAboutUsDetail(form.heardAboutUs) && <label className="admin-field full" htmlFor="fastRequestHeardAboutUsDetail"><span>{text(lang, 'heardAboutUsOtherLabel')}</span><textarea id="fastRequestHeardAboutUsDetail" className="fast-request-attribution-detail" value={form.heardAboutUsDetail || ''} onChange={(event) => update('heardAboutUsDetail', event.target.value)} placeholder={text(lang, 'heardAboutUsOtherPlaceholder')} rows={3} maxLength={240} /></label>}
+            {error && <p className="form-status error full" role="alert">{error}</p>}
+            <div className="modal-actions full fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(3)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(5)}>{lang === 'it' ? 'Rivedi messaggio' : 'Review message'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
+          </div>
+        )}
+        {step === 5 && (
+          <div className="fast-request-review">
+            <textarea readOnly value={message} rows={10} />
+            <div className="modal-actions fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(4)}>{lang === 'it' ? 'Modifica' : 'Edit'}</button><a className="button primary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>WhatsApp</a><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
+          </div>
+        )}
+        <aside className="booking-code-support-card fast-request-support-card">
+          <h3>{text(lang, 'bookingCodeNeedHelp')}</h3>
+          <ContactActions lang={lang} contextMessage={supportMessage} location="fast_request_screen" siteContent={siteContent} />
+        </aside>
+      </section>
+    </div>
+  ), document.body);
+}
+
+function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteContent, editor }) {
   const mediaSource = editor?.mediaMap || siteMedia || {};
   const backgroundItem = editorMediaItem(mediaSource, 'home_hero_background', '', lang === 'it' ? 'Sfondo hero homepage' : 'Home hero background');
   const heroBackground = backgroundItem.file_url || '';
   const heroStyle = heroBackground ? { backgroundImage: `linear-gradient(90deg, rgba(5,10,20,0.72), rgba(5,10,20,0.50) 50%, rgba(5,10,20,0.34)), url("${heroBackground}")` } : undefined;
   const backgroundSelected = editor?.selected?.type === 'image' && editor.selected.key === 'home_hero_background';
+  const [findExperienceOpen, setFindExperienceOpen] = useState(false);
+  const [bookingCodeOpen, setBookingCodeOpen] = useState(false);
+  const [supportContactOpen, setSupportContactOpen] = useState(false);
+  const [fastRequestOpen, setFastRequestOpen] = useState(false);
+
+  function handleBookNow() {
+    setFastRequestOpen(true);
+  }
+
+  function handleContact() {
+    trackEvent('contact_us_clicked', { language: lang, source_section: 'hero', source_cta: 'contact_us' }, { dedupe: false });
+    setSupportContactOpen(true);
+  }
+
+  function closeSupportContact() {
+    setSupportContactOpen(false);
+    setActivePage('home');
+    window.setTimeout(() => window.scrollTo({ top: 0, behavior: motionScrollBehavior() }), 0);
+  }
+
+  function handleFindExperienceRequest(experience, details = {}) {
+    setFindExperienceOpen(false);
+    const message = buildExperienceMessage(experience, lang);
+    if (typeof fillForm === 'function') {
+      fillForm({
+        experienceId: experience.id,
+        requestType: 'private',
+        message,
+        trackingContext: buildBookingTrackingContext({
+          experienceId: experience.id,
+          requestType: 'private',
+          sourceSection: 'find_experience_modal',
+          sourceCta: 'recommended_experience_request',
+          ctaLocation: 'find_experience_modal',
+          language: lang,
+          extra: details
+        }),
+        scroll: true
+      });
+      return;
+    }
+    setActivePage('experiences');
+  }
+
   return (
     <section className={`hero ${editor?.isEditing ? 'editor-hero-editable' : ''} ${backgroundSelected ? 'selected' : ''}`} id="top" style={heroStyle}>
       <div className="hero-overlay" />
@@ -2264,14 +3276,12 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, edito
         <div className="hero-copy">
           <EditableText as="h1" className="hero-title" itemKey="home.hero.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroTitle')} />
           <EditableText as="p" className="lead" itemKey="home.hero.subtitle" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroLead')} />
-          <div className="hero-ctas">
-            <button className="button primary" type="button" onClick={() => setActivePage('experiences')}><EditableText itemKey="home.hero.primary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'findExperience')} /></button>
-            <button className="button secondary dark" type="button" onClick={() => setActivePage('experiences')}><EditableText itemKey="home.hero.secondary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'viewAvailability')} /></button>
-            <button className="button secondary dark" type="button" onClick={scrollToForm}><EditableText itemKey="home.hero.contact_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'contact')} /></button>
-          </div>
-          <div className="trust-grid hero-trust-grid" aria-label="Trust points">
+          <div className="hero-action-grid">
+            <button className="button primary hero-action-main" type="button" onClick={handleBookNow}><EditableText itemKey="home.hero.secondary_cta" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'viewAvailability')} /></button>
+            <button className="button secondary dark hero-action-code" type="button" onClick={() => setBookingCodeOpen(true)}><EditableText itemKey="home.hero.cta.book_with_code" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'bookWithCode')} /></button>
+            <a className="button secondary dark hero-action-gift" href={`/gift-card?lang=${lang}`} onClick={(event) => { event.preventDefault(); trackEvent('gift_card_request_click', { language: lang, source_section: 'home_hero', source_cta: 'gift_card' }, { dedupe: false }); setActivePage('giftCard'); navigatePublicRoute('/gift-card', lang); }}><EditableText itemKey="home.hero.cta.gift_card" lang={lang} siteContent={siteContent} editor={editor} fallback="Gift Card" /></a>
             <a
-              className="trust-card guide-license-card"
+              className="trust-card guide-license-card hero-action-guide"
               href="https://www.guidealpinevulcanologichesicilia.it/tutte-le-guide/chiavetta-leonardo/"
               target="_blank"
               rel="noopener noreferrer"
@@ -2299,6 +3309,9 @@ function Hero({ lang, setActivePage, scrollToForm, siteMedia, siteContent, edito
           />
         </div>
       </div>
+      {bookingCodeOpen && <BookingCodeModal lang={lang} onClose={() => setBookingCodeOpen(false)} siteContent={siteContent} />}
+      {fastRequestOpen && <FastRequestModal lang={lang} siteContent={siteContent} sourceSection="hero" sourceCta="book_now" ctaLocation="hero_book_now" flowType="fast_request" onClose={() => setFastRequestOpen(false)} />}
+      {supportContactOpen && <SupportContactModal lang={lang} onClose={closeSupportContact} siteContent={siteContent} />}
     </section>
   );
 }
@@ -2307,6 +3320,8 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
   const contact = resolvePublicContactDetails(siteContent);
   const [items, setItems] = useState([]);
   const [leaflets, setLeaflets] = useState([]);
+  const [partnerCommissions, setPartnerCommissions] = useState([]);
+  const [partnerCommissionSummary, setPartnerCommissionSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [monthDate, setMonthDate] = useState(startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState(todayIso());
@@ -2412,14 +3427,19 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
     });
   }
 
-  function requestItem(item) {
+  function requestItem(item, event) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     const trackingContext = withBookingJourneyId(buildBookingTrackingContext({
       experienceId: item?.experience_id || '',
       requestType: 'fixed',
       sourceSection: 'calendar',
-      sourceCta: 'fixed_excursion',
+      sourceCta: 'calendar_fixed_excursion_request_info',
       ctaLocation: 'calendar_modal',
       selectedDate: item?.date || '',
+      selectedTime: item?.start_time || '',
+      fixedExcursionId: item?.id || '',
+      experienceName: fixedExcursionTitle(item, lang),
       hasFixedExcursion: true,
       language: lang
     }));
@@ -2494,6 +3514,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
           <h3>{title}</h3>
           <span>{timeRange}</span>
         </div>
+        <BlockedDatesAttachment item={item} lang={lang} onOpenFile={(file, label) => openLeafletModal(file, label || text(lang, 'openExcursionProgram'))} />
         <FormattedDescription textValue={description || experienceById(item.experience_id).summary[lang]} />
         <dl className="public-details-grid date-modal-details-grid">
           <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(item.date, lang)}</dd></div>
@@ -2503,10 +3524,9 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
           {price && <div><dt>{text(lang, 'priceNote')}</dt><dd>{price}</dd></div>}
           <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{item.places_remaining}/{item.capacity}</dd></div>
         </dl>
-        <BlockedDatesAttachment item={item} lang={lang} onOpenFile={(file, label) => openLeafletModal(file, label || text(lang, 'openExcursionProgram'))} />
         <div className="request-action-row date-modal-actions">
-          <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestItem(item)}>{text(lang, 'requestInformation')}</button>
-          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`, target: '_blank', location: 'calendar_modal', metadata: buildBookingTrackingContext({ experienceId: item.experience_id || '', requestType: 'fixed', sourceSection: 'calendar', sourceCta: 'whatsapp_direct', ctaLocation: 'calendar_modal', selectedDate: item.date || '', hasFixedExcursion: true, language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
+          <button className="request-action-button request-action-button-primary" type="button" onClick={(event) => requestItem(item, event)}>{text(lang, 'requestInformation')}</button>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(fixedMessage)}`, target: '_blank', location: 'calendar_modal', metadata: withBookingJourneyId(buildBookingTrackingContext({ experienceId: item.experience_id || '', requestType: 'fixed', sourceSection: 'calendar', sourceCta: 'fixed_excursion_whatsapp', ctaLocation: 'calendar_modal', selectedDate: item.date || '', selectedTime: item.start_time || '', fixedExcursionId: item.id || '', experienceName: fixedExcursionTitle(item, lang), hasFixedExcursion: true, language: lang })), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildContextualAttributionContactMessage(fixedMessage, source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
           {selectedDateLeaflet && (
             <button className="request-action-button request-action-button-secondary" type="button" onClick={() => openLeafletModal(selectedDateLeaflet, text(lang, 'openExcursionProgram'))}>{text(lang, 'openExcursionProgram')}</button>
           )}
@@ -2545,7 +3565,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
         </div>
         <div className="request-action-row date-modal-actions">
           <button className="request-action-button request-action-button-primary" type="button" onClick={requestAvailableDate}>{text(lang, 'requestDate')}</button>
-          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(message)}`, target: '_blank', location: 'calendar_modal', metadata: buildBookingTrackingContext({ experienceId: dateRequest.experienceId || '', requestType: 'private', sourceSection: 'calendar', sourceCta: 'whatsapp_direct', ctaLocation: 'calendar_modal', selectedDate, language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
+          <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(message)}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(message)}`, target: '_blank', location: 'calendar_modal', metadata: buildBookingTrackingContext({ experienceId: dateRequest.experienceId || '', requestType: 'private', sourceSection: 'calendar', sourceCta: 'whatsapp_direct', ctaLocation: 'calendar_modal', selectedDate, language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildContextualAttributionContactMessage(message, source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
         </div>
       </div>
     );
@@ -2653,7 +3673,7 @@ function ExperienceAccordion({ lang, fillForm, siteMedia, siteContent, editor })
                 </dl>
                 <div className="request-action-row experience-modal-actions">
                   <button className="request-action-button request-action-button-primary" type="button" onClick={() => requestExperience(renderedExperience)}>{text(lang, 'request')}</button>
-                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(renderedExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(renderedExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: buildBookingTrackingContext({ experienceId: renderedExperience?.id || '', requestType: 'private', sourceSection: 'experiences', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildAttributionContactMessage(source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
+                  <a className="request-action-button request-action-button-secondary" href={`https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(renderedExperience, lang))}`} target="_blank" rel="noopener noreferrer" onClick={(event) => requestContactAttribution(event, { type: 'whatsapp', url: `https://wa.me/${contact.phoneWa}?text=${encode(buildExperienceMessage(renderedExperience, lang))}`, target: '_blank', location: 'experience_modal', metadata: buildBookingTrackingContext({ experienceId: renderedExperience?.id || '', requestType: 'private', sourceSection: 'experiences', sourceCta: 'whatsapp_direct', ctaLocation: 'experience_modal', language: lang }), confirmLabel: contactActionConfirmLabel('whatsapp', lang), buildUrl: (_selectedMetadata, source, detail) => `https://wa.me/${contact.phoneWa}?text=${encode(buildContextualAttributionContactMessage(buildExperienceMessage(renderedExperience, lang), source, detail, lang))}` })}>{text(lang, 'sendWhatsapp')}</a>
                 </div>
               </div>
             </div>
@@ -2748,7 +3768,9 @@ function BlockedDatesAttachment({ item, lang, publicView = true, onOpenFile }) {
   const label = publicView ? text(lang, 'openExcursionProgram') : adminCopy(lang, 'Apri volantino', 'Open leaflet');
   const filePayload = { file_url: url, file_type: type, file_name: name, title_it: name, title_en: name };
 
-  const openFile = () => {
+  const openFile = (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     if (typeof onOpenFile === 'function') {
       onOpenFile(filePayload, label);
     } else if (typeof window !== 'undefined') {
@@ -2994,8 +4016,10 @@ function PublicUpcomingExcursions({ lang, fillForm, siteContent, editor }) {
 function PartnershipsPage({ lang, siteContent, editor }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState('other');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [partnershipFilterOpen, setPartnershipFilterOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
+  const partnershipFilterRef = useRef(null);
 
   useBodyScrollLock(Boolean(selectedItem));
 
@@ -3013,9 +4037,23 @@ function PartnershipsPage({ lang, siteContent, editor }) {
   const availableCategories = useMemo(() => PARTNERSHIP_CATEGORIES.filter((category) => enrichedItems.some((item) => item.categoryKey === category.key)), [enrichedItems]);
 
   useEffect(() => {
-    if (!availableCategories.length) return;
-    if (!availableCategories.some((category) => category.key === selectedCategory)) setSelectedCategory(availableCategories[0].key);
+    if (selectedCategory !== 'all' && !availableCategories.some((category) => category.key === selectedCategory)) setSelectedCategory('all');
   }, [availableCategories, selectedCategory]);
+
+  useEffect(() => {
+    if (!partnershipFilterOpen) return undefined;
+    function closeFilter(event) {
+      if (event?.key && event.key !== 'Escape') return;
+      if (event?.target && partnershipFilterRef.current?.contains(event.target)) return;
+      setPartnershipFilterOpen(false);
+    }
+    document.addEventListener('pointerdown', closeFilter);
+    window.addEventListener('keydown', closeFilter);
+    return () => {
+      document.removeEventListener('pointerdown', closeFilter);
+      window.removeEventListener('keydown', closeFilter);
+    };
+  }, [partnershipFilterOpen]);
 
   useEffect(() => {
     if (!selectedItem) return undefined;
@@ -3026,7 +4064,9 @@ function PartnershipsPage({ lang, siteContent, editor }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedItem]);
 
-  const selectedItems = enrichedItems.filter((item) => item.categoryKey === selectedCategory);
+  const partnershipFilterOptions = useMemo(() => [{ key: 'all' }, ...availableCategories], [availableCategories]);
+  const selectedItems = selectedCategory === 'all' ? enrichedItems : enrichedItems.filter((item) => item.categoryKey === selectedCategory);
+  const selectedCategoryLabel = selectedCategory === 'all' ? adminCopy(lang, 'Tutte', 'All') : partnershipCategoryLabel(selectedCategory, lang);
 
   function externalClick(eventName, item, extra = {}) {
     trackEvent(eventName, {
@@ -3049,28 +4089,48 @@ function PartnershipsPage({ lang, siteContent, editor }) {
   return (
     <section className="section page-section partnerships-page-section" id="partnerships">
       <div className="container">
-        <div className="section-header refined-section-header">
-          <EditableText as="h2" itemKey="partnerships.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'partnershipsTitle')} />
+        <div className="section-header refined-section-header partnership-section-header">
+          <div className="partnership-title-row">
+            <EditableText as="h2" itemKey="partnerships.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'partnershipsTitle')} />
+            {!loading && enrichedItems.length > 0 && (
+              <div className="partnership-filter-control" ref={partnershipFilterRef}>
+                <button
+                  className="partnership-filter-trigger review-filter-trigger"
+                  type="button"
+                  onClick={() => setPartnershipFilterOpen((open) => !open)}
+                  aria-expanded={partnershipFilterOpen}
+                  aria-haspopup="menu"
+                >
+                  {adminCopy(lang, 'Filtra', 'Filter')}: {selectedCategoryLabel} <span aria-hidden="true">▾</span>
+                </button>
+                {partnershipFilterOpen && (
+                  <div className="partnership-filter-menu review-filter-menu" role="menu">
+                    {partnershipFilterOptions.map((category) => {
+                      const label = category.key === 'all' ? adminCopy(lang, 'Tutte', 'All') : partnershipCategoryLabel(category.key, lang);
+                      return (
+                        <button
+                          key={category.key}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={selectedCategory === category.key}
+                          className={selectedCategory === category.key ? 'is-active' : ''}
+                          onClick={() => { setSelectedCategory(category.key); setPartnershipFilterOpen(false); }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <EditableText as="p" itemKey="partnerships.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'partnershipsIntro') || ''} />
         </div>
         {loading ? <p>{lang === 'it' ? 'Caricamento...' : 'Loading...'}</p> : enrichedItems.length === 0 ? (
           <article className="empty-state-card"><p>{text(lang, 'partnershipsEmpty')}</p></article>
         ) : (
           <div className="partnerships-browser">
-            <div className="partnership-category-list" role="tablist" aria-label={adminCopy(lang, 'Categorie collaborazioni', 'Collaboration categories')}>
-              {availableCategories.map((category) => (
-                <button
-                  key={category.key}
-                  className={selectedCategory === category.key ? 'is-active' : ''}
-                  type="button"
-                  role="tab"
-                  aria-selected={selectedCategory === category.key}
-                  onClick={() => setSelectedCategory(category.key)}
-                >
-                  <span>{partnershipCategoryLabel(category.key, lang)}</span>
-                </button>
-              ))}
-            </div>
             <div className="partnership-grid compact-partnership-grid">
               {selectedItems.map((item) => {
                 const description = localizedPartnershipDescription(item, lang);
@@ -3078,7 +4138,6 @@ function PartnershipsPage({ lang, siteContent, editor }) {
                   <button className="partnership-card partnership-click-card" type="button" key={item.id} onClick={() => setSelectedItem(item)}>
                     {renderPartnershipImage(item)}
                     <span className="partnership-card-copy">
-                      <span className="micro-label">{partnershipCategoryLabel(item.categoryKey, lang)}</span>
                       <strong>{item.name}</strong>
                       {description && <span className="partnership-teaser">{createTextTeaser(description)}</span>}
                       <span className="partnership-card-action">{adminCopy(lang, 'Apri dettagli', 'Open details')}</span>
@@ -3097,7 +4156,6 @@ function PartnershipsPage({ lang, siteContent, editor }) {
             <div className="partnership-modal-header">
               {renderPartnershipImage(selectedItem, 'partnership-modal-image')}
               <div>
-                <span className="micro-label">{partnershipCategoryLabel(selectedItem.categoryKey || partnershipCategoryKey(selectedItem), lang)}</span>
                 <h2 id="partnershipModalTitle">{selectedItem.name}</h2>
               </div>
               <button className="modal-close-button" type="button" onClick={() => setSelectedItem(null)}>{text(lang, 'close')}</button>
@@ -3181,21 +4239,28 @@ function ReviewsPage({ lang, siteContent, editor }) {
   function readableSubmitError(error) {
     const message = error?.message || '';
     if (message.includes('INVALID_BOOKING_CODE')) return lang === 'it' ? 'Codice non valido.' : 'Invalid code.';
-    if (message.includes('BOOKING_CODE_ALREADY_USED') || message.includes('duplicate key')) return lang === 'it' ? 'Questo codice è già stato usato.' : 'This code has already been used.';
+    if (message.includes('BOOKING_CODE_ALREADY_USED') || message.includes('BOOKING_CODE_USED') || message.includes('duplicate key')) return lang === 'it' ? 'Questo codice è già stato usato.' : 'This code has already been used.';
     if (message.includes('REVIEW_TEXT_REQUIRED')) return lang === 'it' ? 'Compila tutti i campi obbligatori.' : 'Please complete all required fields.';
     return lang === 'it' ? 'Recensione non inviata. Controlla il codice e riprova.' : 'Review not submitted. Check the code and try again.';
   }
 
   async function submitReview(event) {
     event.preventDefault();
+    const reviewCode = String(form.booking_code || '').trim().toUpperCase();
     setSubmitState({ loading: true, error: '', success: '' });
+    await trackEvent('booking_code_review_submit_attempt', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'review_modal', has_code: Boolean(reviewCode), language: lang }, { dedupe: false });
     try {
-      await submitPublicReview({ ...form, language: lang });
+      const reviewResult = await submitPublicReview({ ...form, booking_code: reviewCode, language: lang });
       setForm({ booking_code: '', reviewer_name: '', review_text: '', rating: '5' });
+      await trackEvent('booking_code_review_submit_success', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'review_modal', review_id: reviewResult?.id || '', language: lang }, { dedupe: false });
       setSubmitState({ loading: false, error: '', success: lang === 'it' ? 'Recensione pubblicata. Grazie.' : 'Review published. Thank you.' });
       refreshReviews();
       window.setTimeout(() => setModalOpen(false), 1200);
     } catch (err) {
+      const rawError = String(err?.message || err?.code || '');
+      if (rawError.includes('USED') || rawError.includes('duplicate')) {
+        await trackEvent('booking_code_review_duplicate', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'review_modal', language: lang }, { dedupe: false });
+      }
       setSubmitState({ loading: false, error: readableSubmitError(err), success: '' });
     }
   }
@@ -3247,7 +4312,7 @@ function ReviewsPage({ lang, siteContent, editor }) {
             <EditableText as="p" itemKey="reviews.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'reviewsIntro')} />
           </div>
           <div className="reviews-header-actions">
-            <button className="button primary" type="button" onClick={() => { setSubmitState({ loading: false, error: '', success: '' }); setModalOpen(true); }}><EditableText itemKey="reviews.publish_button" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'publishReview')} /></button>
+            <button className="button primary" type="button" onClick={() => { trackEvent('booking_code_review_open', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'reviews_header', language: lang }, { dedupe: false }); setSubmitState({ loading: false, error: '', success: '' }); setModalOpen(true); }}><EditableText itemKey="reviews.publish_button" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'publishReview')} /></button>
             <div className="review-filter-dropdown" ref={filterRef}>
               <button type="button" className="review-filter-trigger" aria-haspopup="menu" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)}>
                 {adminCopy(lang, 'Filtra', 'Filter')}: {reviewFilterLabel(filterMode, lang)} <span aria-hidden="true">▾</span>
@@ -3496,8 +4561,12 @@ function buildBookingTrackingContext({
   sourceCta = 'prepare_request',
   ctaLocation = 'contact_section',
   selectedDate = '',
+  selectedTime = '',
+  fixedExcursionId = '',
+  experienceName = '',
   hasFixedExcursion = false,
-  language = 'it'
+  language = 'it',
+  extra = {}
 } = {}) {
   const knownExperience = experiences.find((experience) => experience.id === experienceId) || null;
   const normalizedRequestType = requestType || (knownExperience ? 'experience' : 'private');
@@ -3517,9 +4586,13 @@ function buildBookingTrackingContext({
     source_cta: sourceCta || 'unknown',
     cta_location: ctaLocation || 'unknown',
     selected_date: selectedDate || '',
+    selected_time: selectedTime || '',
     selected_month: isoMonthKey(selectedDate),
+    ...(fixedExcursionId ? { fixed_excursion_id: fixedExcursionId } : {}),
+    ...(experienceName ? { experience_name: experienceName } : {}),
     has_fixed_excursion: Boolean(hasFixedExcursion),
     language: language || 'it',
+    ...(extra || {}),
     booking_journey_version: BOOKING_JOURNEY_VERSION
   };
 }
@@ -3556,6 +4629,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const selectedHeardAboutUsMetadata = heardAboutUsMetadata(selectedHeardAboutUs, lang, selectedHeardAboutUsDetail);
   const trackedFormOpenRef = useRef(new Set());
   const bookingJourneyIdRef = useRef(formState.trackingContext?.booking_journey_id || '');
+  const formJourneyRef = useRef(null);
   const modalRef = useRef(null);
   const previousFocusRef = useRef(null);
   const [leaflets, setLeaflets] = useState([]);
@@ -3668,6 +4742,12 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     if (!bookingJourneyIdRef.current && currentTrackingMetadata.booking_journey_id) bookingJourneyIdRef.current = currentTrackingMetadata.booking_journey_id;
     if (trackedFormOpenRef.current.has('field_start')) return;
     trackedFormOpenRef.current.add('field_start');
+    markFormFieldStarted(formJourneyRef.current?.journey_id, fieldName || 'unknown', { ...currentTrackingMetadata, ...extraMetadata, form_type: 'booking_form', step_index: stepIndex + 1, step_key: currentStep.key });
+    trackBookingFormStarted(effectiveExperienceId || requestType || 'private', {
+      ...currentTrackingMetadata,
+      ...extraMetadata,
+      first_field_name: fieldName || 'unknown'
+    });
     trackBookingFormFieldStart(effectiveExperienceId || requestType || 'private', {
       ...currentTrackingMetadata,
       ...extraMetadata,
@@ -3818,6 +4898,9 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   }
 
   function attemptCloseQuestionnaire() {
+    if (hasMeaningfulQuestionnaireData()) {
+      markFormAbandoned(formJourneyRef.current?.journey_id, { ...currentTrackingMetadata, form_type: 'booking_form', step_index: stepIndex + 1, step_key: currentStep.key, has_selected_experience: Boolean(effectiveExperienceId), has_selected_date: Boolean(selectedFixed?.date || formState.requestedDate), has_people_count: totalPeople > 0 });
+    }
     if (!hasMeaningfulQuestionnaireData() || window.confirm(text(lang, 'contactQuestionnaireCloseConfirm'))) {
       setQuestionnaireOpen(false);
       setStepError('');
@@ -3836,6 +4919,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       language: lang
     }), formState.trackingContext), formState.trackingContext, { forceNew: !formState.trackingContext?.booking_journey_id });
     bookingJourneyIdRef.current = trackingContext.booking_journey_id || createBookingJourneyId();
+    formJourneyRef.current = createFormJourney('booking_form', { ...trackingContext, journey_id: bookingJourneyIdRef.current, language: lang, source_section: 'contact', source_cta: 'start_questionnaire', has_selected_experience: Boolean(effectiveExperienceId), has_selected_date: Boolean(selectedFixed?.date || formState.requestedDate), has_people_count: totalPeople > 0 });
     trackedFormOpenRef.current.delete('field_start');
     const journeyTrackingContext = withBookingJourneyId(trackingContext, { booking_journey_id: bookingJourneyIdRef.current });
     trackBookingFormOpen(effectiveExperienceId || requestType || 'private', { ...journeyTrackingContext, questionnaire_version: 'contact_request_v1' });
@@ -3944,6 +5028,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       return;
     }
     setStepError('');
+    trackBookingFormStepCompleted(effectiveExperienceId || requestType || 'private', currentStep.key, stepIndex + 1, currentTrackingMetadata);
     setStepIndex((current) => {
       const next = Math.min(current + 1, questionnaireSteps.length - 1);
       if (questionnaireSteps[next]?.key === 'message') window.setTimeout(ensureFinalMessage, 0);
@@ -3967,10 +5052,10 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     const trackedExperience = effectiveExperienceId || requestType || 'private';
     const trackingMetadata = withBookingJourneyId({ ...currentTrackingMetadata, questionnaire_completed: true, questionnaire_step_key: 'message' }, { booking_journey_id: bookingJourneyIdRef.current || currentTrackingMetadata.booking_journey_id || '' });
     bookingJourneyIdRef.current = trackingMetadata.booking_journey_id;
-    trackBookingSubmitAttempt(trackedExperience, adults, children, {
+    const submitTrackingMetadata = {
       ...trackingMetadata,
       submit_trigger: 'questionnaire_submit_button'
-    });
+    };
     const preflightIssue = firstValidationIssue();
     const preflightError = preflightIssue?.error || '';
 
@@ -3991,12 +5076,13 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     setSubmitState({ loading: true, error: '', success: '' });
 
     try {
-      await submitPublicBookingRequestWithTracking({
+      const referralPayload = referralAttributionPayload();
+      const createdRequest = await submitPublicBookingRequestWithTracking({
         experience: trackedExperience,
         adults,
         children,
-        metadata: trackingMetadata,
-        attemptAlreadyTracked: true,
+        metadata: submitTrackingMetadata,
+        attemptAlreadyTracked: false,
         payload: {
           customer_name: formState.name,
           customer_email: email,
@@ -4025,6 +5111,10 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
           selected_date: trackingMetadata.selected_date || selectedFixed?.date || formState.requestedDate || null,
           has_fixed_excursion: trackingMetadata.has_fixed_excursion,
           traffic_source: trackingMetadata.traffic_source,
+          detected_source: trackingMetadata.detected_source || trackingMetadata.traffic_source,
+          declared_source: selectedHeardAboutUs,
+          referrer: trackingMetadata.referrer,
+          landing_path: trackingMetadata.landing_path,
           utm_source: trackingMetadata.utm_source,
           utm_medium: trackingMetadata.utm_medium,
           utm_campaign: trackingMetadata.utm_campaign,
@@ -4037,9 +5127,16 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
           selected_month: trackingMetadata.selected_month || isoMonthKey(trackingMetadata.selected_date || selectedFixed?.date || formState.requestedDate),
           device_type: trackingMetadata.device_type,
           browser: trackingMetadata.browser,
-          operating_system: trackingMetadata.operating_system
+          operating_system: trackingMetadata.operating_system,
+          form_started_at: formJourneyRef.current?.opened_at,
+          submission_idempotency_key: trackingMetadata.booking_journey_id || formJourneyRef.current?.journey_id,
+          submission_fingerprint: trackingMetadata.booking_journey_id || formJourneyRef.current?.journey_id,
+          website: '',
+          ...referralPayload
         }
       });
+      if (referralPayload.referral_code) trackEvent('referral_booking_request_created', { referral_code: referralPayload.referral_code, source_type: 'booking_form', source_id: createdRequest?.id || '', language: lang }, { dedupe: false });
+      markFormSubmitted(formJourneyRef.current?.journey_id, { ...trackingMetadata, form_type: 'booking_form', has_selected_experience: Boolean(effectiveExperienceId), has_selected_date: Boolean(selectedFixed?.date || formState.requestedDate), has_people_count: totalPeople > 0 });
       setSubmitState({ loading: false, error: '', success: text(lang, 'requestSent') });
       setQuestionnaireOpen(false);
       trackedFormOpenRef.current.delete('field_start');
@@ -4059,6 +5156,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       setSubmitState({ loading: false, error, success: '' });
       return;
     }
+    markFormRecoveredViaWhatsApp(formJourneyRef.current?.journey_id, { ...currentTrackingMetadata, form_type: 'booking_form', has_selected_experience: Boolean(effectiveExperienceId), has_selected_date: Boolean(selectedFixed?.date || formState.requestedDate), has_people_count: totalPeople > 0 });
     trackContactClick('whatsapp', 'questionnaire_modal', { ...currentTrackingMetadata, source_cta: 'whatsapp_direct', questionnaire_completed: true });
     if (typeof window !== 'undefined') {
       window.open(`https://wa.me/${contact.phoneWa}?text=${encode(fullMessage)}`, '_blank', 'noopener,noreferrer');
@@ -4226,18 +5324,15 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const finalActionsDisabled = Boolean(finalError || submitState.loading);
 
   return (
-    <section className="section alt-section" id="contact">
-      <div className="container contact-section-grid contact-questionnaire-entry">
-        <div>
-          <EditableText as="h2" itemKey="contact.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formTitle')} />
-          <EditableText as="p" itemKey="contact.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'formIntro')} />
-          <ContactActions lang={lang} contextMessage={fullMessage} onUseForm={openQuestionnaire} siteContent={siteContent} contactDetails={contact} />
-        </div>
+    <section className="section alt-section contact-page-clean-section" id="contact">
+      <div className="container contact-questionnaire-entry contact-questionnaire-entry-clean">
         <article className="contact-form questionnaire-start-card">
           <span className="kicker">{text(lang, 'formKicker')}</span>
-          <h3>{text(lang, 'prepareYourRequest')}</h3>
+          <div className="questionnaire-start-top-row">
+            <h3>{text(lang, 'prepareYourRequest')}</h3>
+            <button className="request-action-button request-action-button-primary questionnaire-start-button" type="button" onClick={openQuestionnaire}>{text(lang, 'startQuestionnaire')}</button>
+          </div>
           <p>{text(lang, 'contactQuestionnaireIntro')}</p>
-          <button className="request-action-button request-action-button-primary questionnaire-start-button" type="button" onClick={openQuestionnaire}>{text(lang, 'startQuestionnaire')}</button>
           {submitState.success && <p className="form-status success" role="status">{submitState.success}</p>}
         </article>
       </div>
@@ -4379,6 +5474,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
             </div>
             <div className="date-modal-content fixed-date-content">
               <article className="date-modal-fixed-card request-fixed-detail-card">
+                <BlockedDatesAttachment item={renderedFixedExcursionDetails} lang={lang} onOpenFile={(file, label) => setActiveLeaflet({ leaflet: file, label: label || text(lang, 'openExcursionProgram'), fixedExcursion: renderedFixedExcursionDetails })} />
                 <FormattedDescription textValue={fixedExcursionProgram(renderedFixedExcursionDetails, lang) || renderedFixedExcursionDetails[`note_${lang}`] || renderedFixedExcursionDetails.note_it || renderedFixedExcursionDetails.note_en || experienceById(renderedFixedExcursionDetails.experience_id).summary[lang]} />
                 <dl className="public-details-grid date-modal-details-grid">
                   <div><dt>{text(lang, 'dateLabel')}</dt><dd>{formatDateForMessage(renderedFixedExcursionDetails.date, lang)}</dd></div>
@@ -4388,7 +5484,6 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
                   {fixedExcursionField(renderedFixedExcursionDetails, 'price_note', lang) && <div><dt>{text(lang, 'priceNote')}</dt><dd>{fixedExcursionField(renderedFixedExcursionDetails, 'price_note', lang)}</dd></div>}
                   <div><dt>{text(lang, 'placesAvailable')}</dt><dd>{renderedFixedExcursionDetails.places_remaining}/{renderedFixedExcursionDetails.capacity}</dd></div>
                 </dl>
-                <BlockedDatesAttachment item={renderedFixedExcursionDetails} lang={lang} onOpenFile={(file, label) => setActiveLeaflet({ leaflet: file, label: label || text(lang, 'openExcursionProgram'), fixedExcursion: renderedFixedExcursionDetails })} />
                 <div className="request-action-row date-modal-actions">
                   <button className="request-action-button request-action-button-primary" type="button" onClick={() => { updateFixedExcursion(renderedFixedExcursionDetails.id); setSelectedFixedExcursionDetails(null); setFixedOptionsOpen(false); }}>{text(lang, 'useThisOptionInRequest')}</button>
                 </div>
@@ -4486,12 +5581,9 @@ function LatestNewsCard({ lang, siteContent, editor }) {
       <div className="container latest-news-card etna-news-card">
         <div className="etna-news-copy">
           {editor?.isEditing ? <EditableText as="h2" itemKey={latestNewsContentKey('title')} lang={lang} siteContent={siteContent} editor={editor} fallback={title} /> : <h2>{title}</h2>}
-          <EditableText as="p" itemKey={latestNewsContentKey('description')} lang={lang} siteContent={siteContent} editor={editor} fallback={settings.description} />
           <p className="small-note etna-news-safety-note">{safetyCopy}</p>
         </div>
         <div className="etna-news-action-card">
-          <strong>{adminCopy(lang, 'Aggiornamenti esterni selezionati', 'Selected external updates')}</strong>
-          <p>{adminCopy(lang, 'Apri la fonte configurata per consultare le notizie live sull’Etna.', 'Open the configured source to check live Etna news.')}</p>
           {disabled ? (
             <button className="button secondary" type="button" disabled>{adminCopy(lang, 'URL non configurato', 'URL not configured')}</button>
           ) : (
@@ -4557,7 +5649,7 @@ function LatestNewsPage({ lang, siteContent, editor }) {
 }
 
 
-function LegalPage({ lang, page, siteContent }) {
+function LegalPage({ lang, page, siteContent, modal = false }) {
   const contact = resolvePublicContactDetails(siteContent);
   const updated = '30/06/2026';
   const content = {
@@ -4602,12 +5694,11 @@ function LegalPage({ lang, page, siteContent }) {
   };
   const selected = content[page] || content.privacy;
   return (
-    <section className="section page-section legal-page-section">
+    <section className={`section page-section legal-page-section ${modal ? 'is-modal-content' : ''}`.trim()}>
       <div className="container legal-page-card">
         <div className="section-header refined-section-header">
-          <h1>{selected.title}</h1>
-          <p>{selected.intro}</p>
-          <p className="small-note">{adminCopy(lang, 'Ultimo aggiornamento', 'Last updated')}: {updated}. {adminCopy(lang, 'Testo di base da far verificare al titolare o a un consulente legale prima della pubblicazione definitiva.', 'Baseline copy to be reviewed by the business owner or a legal advisor before final publication.')}</p>
+          <h1 id={modal ? 'legalModalTitle' : undefined}>{selected.title}</h1>
+
         </div>
         <div className="legal-section-list">
           {selected.sections.map(([title, body]) => (
@@ -4639,8 +5730,11 @@ function FinalCTA({ lang, siteContent }) {
 
 function Footer({ lang, siteContent, editor }) {
   const contact = resolvePublicContactDetails(siteContent);
+  const [footerBookNowOpen, setFooterBookNowOpen] = useState(false);
   const [phoneChoicesOpen, setPhoneChoicesOpen] = useState(false);
+  const [legalModalPage, setLegalModalPage] = useState(null);
   const phoneChoiceRef = useRef(null);
+  useBodyScrollLock(Boolean(legalModalPage));
   const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
   const baseMetadata = buildBookingTrackingContext({ requestType: 'contact', sourceSection: 'footer', sourceCta: 'contact_direct', ctaLocation: 'footer', language: lang });
   const subject = text(lang, 'emailSubject');
@@ -4718,9 +5812,9 @@ function Footer({ lang, siteContent, editor }) {
         </section>
         <section className="footer-column">
           <h3>{adminCopy(lang, 'Legale', 'Legal')}</h3>
-          <a href="/privacy-policy">Privacy Policy</a>
-          <a href="/terms-and-conditions">{adminCopy(lang, 'Termini e condizioni', 'Terms and Conditions')}</a>
-          <a href="/cookie-policy">Cookie Policy</a>
+          <button className="footer-link-button" type="button" onClick={() => setLegalModalPage('privacy')}>Privacy Policy</button>
+          <button className="footer-link-button" type="button" onClick={() => setLegalModalPage('terms')}>{adminCopy(lang, 'Termini e condizioni', 'Terms and Conditions')}</button>
+          <button className="footer-link-button" type="button" onClick={() => setLegalModalPage('cookies')}>Cookie Policy</button>
         </section>
         <section className="footer-column">
           <h3>{adminCopy(lang, 'Social', 'Social')}</h3>
@@ -4729,12 +5823,40 @@ function Footer({ lang, siteContent, editor }) {
         <section className="footer-column">
           <h3>Etna</h3>
           <a href="/latest-news">{adminCopy(lang, 'Notizie live sull’Etna', 'Etna live news')}</a>
-          <a href="/experiences">{adminCopy(lang, 'Prenota ora', 'Book now')}</a>
+          <a
+            href="/contact"
+            onClick={(event) => {
+              event.preventDefault();
+              setFooterBookNowOpen(true);
+            }}
+          >{adminCopy(lang, 'Prenota ora', 'Book now')}</a>
         </section>
       </div>
       <div className="container footer-bottom-row">
         <p>{adminCopy(lang, '© 2026 vulcanIQ – Tutti i diritti riservati', '© 2026 vulcanIQ – All rights reserved')}</p>
       </div>
+      {legalModalPage && (
+        <div className="legal-modal-backdrop motion-backdrop" role="presentation" onClick={() => setLegalModalPage(null)}>
+          <article className="legal-modal-panel motion-panel" role="dialog" aria-modal="true" aria-labelledby="legalModalTitle" onClick={(event) => event.stopPropagation()}>
+            <div className="legal-modal-header">
+              <span>{adminCopy(lang, 'Documento legale', 'Legal document')}</span>
+              <button className="modal-close-button" type="button" onClick={() => setLegalModalPage(null)}>{text(lang, 'close')}</button>
+            </div>
+            <LegalPage lang={lang} page={legalModalPage} siteContent={siteContent} modal />
+          </article>
+        </div>
+      )}
+      {footerBookNowOpen && (
+        <FastRequestModal
+          lang={lang}
+          siteContent={siteContent}
+          sourceSection="footer"
+          sourceCta="book_now"
+          ctaLocation="footer_book_now"
+          flowType="fast_request"
+          onClose={() => setFooterBookNowOpen(false)}
+        />
+      )}
       {contactAttributionModal}
     </footer>
   );
@@ -4783,7 +5905,116 @@ function StickyMobileBar({ lang, siteContent }) {
 
 
 const REQUEST_STATUSES = ['pending', 'accepted', 'declined', 'cancelled', 'archived'];
-const REQUEST_SOURCES = ['website', 'whatsapp', 'phone', 'email', 'manual'];
+const LEAD_STATUSES = ['new_lead', 'contacted', 'waiting_customer', 'quoted', 'deposit_sent', 'deposit_paid', 'confirmed', 'completed', 'review_requested', 'review_received', 'lost', 'cancelled'];
+const LEAD_PRIORITIES = ['low', 'normal', 'high', 'urgent'];
+const LEAD_STATUS_LABELS = {
+  new_lead: { it: 'Nuovo lead', en: 'New lead' },
+  contacted: { it: 'Contattato', en: 'Contacted' },
+  waiting_customer: { it: 'In attesa cliente', en: 'Waiting customer' },
+  quoted: { it: 'Preventivo inviato', en: 'Quoted' },
+  deposit_sent: { it: 'Acconto richiesto', en: 'Deposit sent' },
+  deposit_paid: { it: 'Acconto pagato', en: 'Deposit paid' },
+  confirmed: { it: 'Confermato', en: 'Confirmed' },
+  completed: { it: 'Completato', en: 'Completed' },
+  review_requested: { it: 'Recensione richiesta', en: 'Review requested' },
+  review_received: { it: 'Recensione ricevuta', en: 'Review received' },
+  lost: { it: 'Perso', en: 'Lost' },
+  cancelled: { it: 'Annullato', en: 'Cancelled' }
+};
+const LEAD_PRIORITY_LABELS = {
+  low: { it: 'Bassa', en: 'Low' },
+  normal: { it: 'Normale', en: 'Normal' },
+  high: { it: 'Alta', en: 'High' },
+  urgent: { it: 'Urgente', en: 'Urgent' }
+};
+function leadStatusLabel(status, lang) { return LEAD_STATUS_LABELS[status]?.[lang] || status || '-'; }
+function leadPriorityLabel(priority, lang) { return LEAD_PRIORITY_LABELS[priority]?.[lang] || priority || '-'; }
+function requestMoneyValue(request) { return parseMoneyAmount(request.quoted_amount ?? request.expected_value ?? 0); }
+function isRequestConfirmedRevenue(request) {
+  if (request.source === 'booking_code') return false;
+  return ['accepted', 'confirmed', 'completed'].includes(request.status) || ['confirmed', 'completed', 'deposit_paid', 'review_requested', 'review_received'].includes(request.lead_status);
+}
+function isRequestLost(request) { return ['declined', 'cancelled', 'archived'].includes(request.status) || ['lost', 'cancelled'].includes(request.lead_status); }
+
+const PARTNER_COMMISSION_STATUSES = ['pending', 'approved', 'paid', 'cancelled'];
+const PARTNER_COMMISSION_STATUS_LABELS = {
+  pending: { it: 'In attesa', en: 'Pending' },
+  approved: { it: 'Approvata non pagata', en: 'Approved unpaid' },
+  paid: { it: 'Pagata', en: 'Paid' },
+  cancelled: { it: 'Annullata', en: 'Cancelled' }
+};
+const PARTNER_COMMISSION_TYPE_LABELS = {
+  none: { it: 'Nessuna', en: 'None' },
+  fixed_amount: { it: 'Importo fisso', en: 'Fixed amount' },
+  percentage: { it: 'Percentuale', en: 'Percentage' }
+};
+const PARTNER_COMMISSION_APPLIES_TO_LABELS = {
+  request_created: { it: 'Richiesta creata', en: 'Request created' },
+  booking_confirmed: { it: 'Prenotazione confermata', en: 'Booking confirmed' },
+  revenue_confirmed: { it: 'Revenue confermata', en: 'Revenue confirmed' }
+};
+function partnerCommissionStatusLabel(status, lang) { return PARTNER_COMMISSION_STATUS_LABELS[status]?.[lang] || status || '-'; }
+function partnerCommissionTypeLabel(type, lang) { return PARTNER_COMMISSION_TYPE_LABELS[type]?.[lang] || type || '-'; }
+function partnerCommissionAppliesToLabel(value, lang) { return PARTNER_COMMISSION_APPLIES_TO_LABELS[value]?.[lang] || value || '-'; }
+function partnerCommissionRuleLabel(item, lang) {
+  if (!item || item.commission_enabled === false || item.commission_type === 'none') return adminCopy(lang, 'Nessuna commissione', 'No commission');
+  if (item.commission_type === 'percentage') return `${parseMoneyAmount(item.commission_value)}%`;
+  if (item.commission_type === 'fixed_amount') return formatMoney(item.commission_value, item.commission_currency || item.currency || 'EUR', lang);
+  return partnerCommissionTypeLabel(item.commission_type, lang);
+}
+function partnerCommissionEligibleForRequest(request = {}, partner = {}) {
+  const appliesTo = partner?.commission_applies_to || 'revenue_confirmed';
+  if (appliesTo === 'request_created') return true;
+  if (appliesTo === 'booking_confirmed') return isRequestConfirmedRevenue(request);
+  return isRequestConfirmedRevenue(request) && requestMoneyValue(request) > 0;
+}
+function partnerCommissionGrossAmountForRequest(request = {}) { return requestMoneyValue(request); }
+function partnerCommissionSourceLabel(item = {}, lang) {
+  if (item.source_type === 'booking_request') return adminCopy(lang, 'Richiesta', 'Request');
+  if (item.source_type === 'booking_code') return adminCopy(lang, 'Codice prenotazione', 'Booking code');
+  if (item.source_type === 'manual_booking') return adminCopy(lang, 'Prenotazione manuale', 'Manual booking');
+  if (item.source_type === 'gift_card') return 'Gift Card';
+  return item.source_type || '-';
+}
+function requestSourceKey(request) {
+  if (request.referral_code || request.referral_source === 'customer_referral') return 'customer_referral';
+  if (request.source === 'booking_code') return 'booking_code';
+  if (request.source) return request.source;
+  if (request.utm_source === 'referral') return 'referral';
+  return request.utm_source || request.heard_about_us || 'unknown';
+}
+function requestExperienceKey(request, lang) { return adminExperienceLabel(request.experience_id, lang) || request.experience_id || 'unknown'; }
+function buildRequestsCrmSummary(requests, lang) {
+  const now = new Date();
+  const today = todayIso();
+  const due = requests.filter((request) => request.next_follow_up_at && String(request.next_follow_up_at).slice(0, 10) <= today && !isRequestLost(request));
+  const overdue = due.filter((request) => new Date(request.next_follow_up_at) < new Date(`${today}T00:00:00`));
+  const confirmed = requests.filter((request) => isRequestConfirmedRevenue(request) && !isRequestLost(request));
+  const pipeline = requests.filter((request) => !isRequestLost(request) && !isRequestConfirmedRevenue(request));
+  const confirmedRevenue = confirmed.reduce((sum, request) => sum + requestMoneyValue(request), 0);
+  const expectedPipeline = pipeline.reduce((sum, request) => sum + requestMoneyValue(request), 0);
+  const sourceMap = new Map();
+  const experienceMap = new Map();
+  confirmed.forEach((request) => {
+    sourceMap.set(requestSourceKey(request), (sourceMap.get(requestSourceKey(request)) || 0) + requestMoneyValue(request));
+    experienceMap.set(requestExperienceKey(request, lang), (experienceMap.get(requestExperienceKey(request, lang)) || 0) + requestMoneyValue(request));
+  });
+  return {
+    total: requests.length,
+    due: due.length,
+    overdue: overdue.length,
+    confirmedRevenue,
+    expectedPipeline,
+    averageBookingValue: confirmed.length ? confirmedRevenue / confirmed.length : 0,
+    leadToConfirmedRate: requests.length ? (confirmed.length / requests.length) * 100 : 0,
+    highPriority: requests.filter((request) => ['high', 'urgent'].includes(request.lead_priority)).length,
+    lost: requests.filter(isRequestLost).length,
+    sourceBreakdown: [...sourceMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5),
+    experienceBreakdown: [...experienceMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5),
+    generatedAt: now.toISOString()
+  };
+}
+const REQUEST_SOURCES = ['website', 'whatsapp', 'phone', 'email', 'manual', 'booking_code', 'referral', 'customer_referral'];
 const ADMIN_EXPERIENCE_OPTIONS = ['etna-premium', 'etna-learning', 'etna-live', 'etna-stories', 'unsure'];
 const AVAILABILITY_STATUSES = ['closed', 'limited', 'on-request'];
 
@@ -4875,6 +6106,19 @@ function buildAttributionContactMessage(value, detail, lang) {
     return `Hi Leonardo,\n\nI heard about vulcanIQ from "${display}" and I would like information about a vulcanIQ experience on Mount Etna.\n\nI would like to know availability, approximate duration, price and clothing recommendations.\n\nThank you!`;
   }
   return `Ciao Leonardo,\n\nHo sentito parlare di vulcanIQ da "${display}" e vorrei informazioni su un’esperienza vulcanIQ sull’Etna.\n\nVorrei sapere disponibilità, durata indicativa, prezzo e consigli sull’abbigliamento.\n\nGrazie!`;
+}
+
+
+function buildContextualAttributionContactMessage(baseMessage, value, detail, lang) {
+  const cleanBase = String(baseMessage || '').trim();
+  const defaultMessage = String(text(lang, 'defaultMessage') || '').trim();
+  const display = heardAboutUsDisplay(value, detail, lang);
+  if (!cleanBase || cleanBase === defaultMessage) return buildAttributionContactMessage(value, detail, lang);
+  if (!display) return cleanBase;
+  const sourceLine = lang === 'en'
+    ? `How I heard about vulcanIQ: ${display}.`
+    : `Come ho conosciuto vulcanIQ: ${display}.`;
+  return `${cleanBase}\n\n${sourceLine}`;
 }
 
 function ContactAttributionSelect({ lang, value, onChange, includeAdmin = false, id = 'heardAboutUs' }) {
@@ -5107,7 +6351,7 @@ function AdminLogin({ lang, setLang, navigate }) {
         setError(adminCopy(lang, 'Accesso negato: questo utente non è un owner attivo.', 'Access denied: this user is not an active owner.'));
         return;
       }
-      navigate('/admin/today');
+      navigate('/admin/requests');
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Login non riuscito.', 'Login failed.'));
     } finally {
@@ -5212,7 +6456,7 @@ function ProtectedAdminArea({ pathname, navigate, lang, setLang }) {
 }
 
 
-function AdminMenuDropdown({ lang, visibleSections, normalizedPath, currentNavValue, navigate }) {
+function AdminMenuDropdown({ lang, visibleSections, normalizedPath, currentNavValue, navigate, safeguards }) {
   const [open, setOpen] = useState(false);
   const shellRef = useRef(null);
   const sectionByKey = useMemo(() => visibleSections.reduce((acc, section) => ({ ...acc, [section.key]: section }), {}), [visibleSections]);
@@ -5291,7 +6535,8 @@ function AdminMenuDropdown({ lang, visibleSections, normalizedPath, currentNavVa
                         aria-current={active ? 'page' : undefined}
                         onClick={() => openSection(section)}
                       >
-                        {adminNavLabel(section, lang)}
+                        <span>{adminNavLabel(section, lang)}</span>
+                        {section.key === 'requests' && Number(safeguards?.pending_requests || 0) > 0 && <strong className="admin-nav-badge">{safeguards.pending_requests}</strong>}
                       </button>
                     );
                   })}
@@ -5305,16 +6550,98 @@ function AdminMenuDropdown({ lang, visibleSections, normalizedPath, currentNavVa
   );
 }
 
+
+function AdminUsersPage({ lang }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    try {
+      setUsers(await listAdminUsers());
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Utenti non caricati.', 'Users not loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  async function save(user, changes) {
+    setError('');
+    setFeedback('');
+    try {
+      await updateAdminUser(user.user_id, changes);
+      setFeedback(adminCopy(lang, 'Utente aggiornato.', 'User updated.'));
+      await refresh();
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Aggiornamento non riuscito.', 'Update failed.'));
+    }
+  }
+
+  return (
+    <section className="admin-panel admin-users-page">
+      <div className="admin-panel-header">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'Owner only', 'Owner only')}</span>
+          <h1>{adminCopy(lang, 'Utenti admin', 'Admin users')}</h1>
+          <p>{adminCopy(lang, 'Gestisci ruoli e stato degli account già presenti in Supabase Auth. La creazione sicura di nuovi account resta manuale in Supabase.', 'Manage roles and status for accounts already present in Supabase Auth. Secure creation of new accounts remains manual in Supabase.')}</p>
+        </div>
+      </div>
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {error && <div className="admin-alert error" role="alert">{error}</div>}
+      <div className="admin-users-help">
+        <button className="button secondary admin-users-details-button" type="button" onClick={() => setDetailsOpen((open) => !open)}>
+          {detailsOpen ? adminCopy(lang, 'Nascondi dettagli', 'Hide details') : adminCopy(lang, 'Dettagli aggiunta utente', 'User creation details')}
+        </button>
+        {detailsOpen && (
+          <div className="admin-alert warning admin-users-details-panel">
+            {adminCopy(lang, 'Per aggiungere un nuovo utente: crea prima l’utente in Supabase Auth, poi inserisci o aggiorna il profilo in admin_profiles con ruolo e active=true. Non usare mai service-role key nel frontend.', 'To add a new user: first create the user in Supabase Auth, then insert or update the profile in admin_profiles with role and active=true. Never use a service-role key in the frontend.')}
+          </div>
+        )}
+      </div>
+      {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : (
+        <div className="admin-table-wrap admin-users-table">
+          <table className="admin-table">
+            <thead><tr><th>{adminCopy(lang, 'Nome', 'Name')}</th><th>Email</th><th>{adminCopy(lang, 'Ruolo', 'Role')}</th><th>{adminCopy(lang, 'Attivo', 'Active')}</th><th>{adminCopy(lang, 'Ultimo accesso', 'Last seen')}</th><th>{adminCopy(lang, 'Azioni', 'Actions')}</th></tr></thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.user_id}>
+                  <td data-label={adminCopy(lang, 'Nome', 'Name')}>{user.full_name || '-'}</td>
+                  <td data-label="Email">{user.email || '-'}</td>
+                  <td data-label={adminCopy(lang, 'Ruolo', 'Role')}><select value={user.role || 'manager'} onChange={(event) => save(user, { role: event.target.value })}>{ADMIN_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}</select></td>
+                  <td data-label={adminCopy(lang, 'Attivo', 'Active')}>{user.active === false ? adminCopy(lang, 'No', 'No') : adminCopy(lang, 'Sì', 'Yes')}</td>
+                  <td data-label={adminCopy(lang, 'Ultimo accesso', 'Last seen')}>{user.last_seen_at ? new Date(user.last_seen_at).toLocaleString(lang === 'it' ? 'it-IT' : 'en-GB') : '-'}</td>
+                  <td data-label={adminCopy(lang, 'Azioni', 'Actions')}><button className="button secondary" type="button" onClick={() => save(user, { active: user.active === false })}>{user.active === false ? adminCopy(lang, 'Riattiva', 'Reactivate') : adminCopy(lang, 'Disattiva', 'Deactivate')}</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+
 function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
-  const normalizedPath = pathname === '/admin' ? '/admin/today' : pathname;
+  const normalizedPath = pathname === '/admin' ? '/admin/requests' : pathname;
   const currentAdminPath = adminPathFromLocation(pathname);
   const visibleSections = visibleAdminNavSections(profile);
-  const currentNavValue = visibleSections.some((section) => section.path === currentAdminPath) ? currentAdminPath : '/admin/today';
+  const currentNavValue = visibleSections.some((section) => section.path === currentAdminPath) ? currentAdminPath : '/admin/requests';
   const isOwner = profile?.role === 'owner' && profile?.active !== false;
   const isBackupPage = normalizedPath.includes('/system') || normalizedPath.includes('/backup');
+  const isUsersPage = normalizedPath.includes('/users');
 
   const [adminContentRows, setAdminContentRows] = useState([]);
   const [globalBackupProgress, setGlobalBackupProgress] = useState(inactiveBackupProgress);
+  const [operationalSafeguards, setOperationalSafeguards] = useState(null);
+  const [weeklyRecapState, setWeeklyRecapState] = useState({ loading: false, message: '' });
   const backupMonitorRef = useRef({ interval: null, timeout: null, requestedAt: '' });
 
   function clearBackupMonitorTimers() {
@@ -5404,7 +6731,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
 
 
   useEffect(() => {
-    if (pathname === '/admin') navigate('/admin/today');
+    if (pathname === '/admin') navigate('/admin/requests');
   }, [pathname, navigate]);
 
   useEffect(() => {
@@ -5432,6 +6759,32 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
     };
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    async function refreshSafeguards() {
+      try {
+        const result = await getOperationalSafeguards();
+        if (alive) setOperationalSafeguards(result);
+      } catch {
+        if (alive) setOperationalSafeguards(null);
+      }
+    }
+    refreshSafeguards();
+    const interval = window.setInterval(refreshSafeguards, 60000);
+    return () => { alive = false; window.clearInterval(interval); };
+  }, [normalizedPath]);
+
+  async function sendWeeklyRecapTest() {
+    setWeeklyRecapState({ loading: true, message: '' });
+    try {
+      const result = await sendWeeklyAdminRecap({ testMode: true, force: true });
+      setWeeklyRecapState({ loading: false, message: adminCopy(lang, `Report di test inviati: ${result.sent || 0}.`, `Test reports sent: ${result.sent || 0}.`) });
+      setOperationalSafeguards(await getOperationalSafeguards());
+    } catch (error) {
+      setWeeklyRecapState({ loading: false, message: error?.message || adminCopy(lang, 'Invio report non riuscito.', 'Report send failed.') });
+    }
+  }
+
   const adminContent = useMemo(() => buildSiteContentMap(adminContentRows), [adminContentRows]);
 
   async function logout() {
@@ -5448,6 +6801,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           normalizedPath={normalizedPath}
           currentNavValue={currentNavValue}
           navigate={navigate}
+          safeguards={operationalSafeguards}
         />
         <div className="admin-userbox">
           <span className="admin-userbox-name">{ownerDisplayName(profile, lang)}</span>
@@ -5457,7 +6811,21 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           </span>
         </div>
       </header>
-      {isOwner && !isBackupPage && (
+      {operationalSafeguards && (
+        <section className="admin-operational-banner" aria-label={adminCopy(lang, 'Avvisi operativi', 'Operational warnings')}>
+          <span><strong>{operationalSafeguards.pending_requests}</strong> {adminCopy(lang, 'richieste pending', 'pending requests')}</span>
+          <span><strong>{operationalSafeguards.pending_over_12h}</strong> &gt;12h</span>
+          <span className={Number(operationalSafeguards.pending_over_24h || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.pending_over_24h}</strong> &gt;24h</span>
+          <span className={Number(operationalSafeguards.failed_notifications || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.failed_notifications}</strong> {adminCopy(lang, 'email fallite', 'failed emails')}</span>
+          <span className={Number(operationalSafeguards.notifications_not_sent || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.notifications_not_sent}</strong> {adminCopy(lang, 'email non inviate', 'emails not sent')}</span>
+          <span><strong>{operationalSafeguards.gift_cards_missing_code}</strong> {adminCopy(lang, 'Gift Card senza codice', 'Gift Cards missing code')}</span>
+          <span className={Number(operationalSafeguards.upcoming_unconfirmed_72h || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.upcoming_unconfirmed_72h}</strong> {adminCopy(lang, 'entro 72h da confermare', 'within 72h unconfirmed')}</span>
+          <span className={Number(operationalSafeguards.weekly_report_failures || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.weekly_report_failures}</strong> {adminCopy(lang, 'report falliti', 'failed reports')}</span>
+          {isOwner && <button type="button" onClick={sendWeeklyRecapTest} disabled={weeklyRecapState.loading}>{weeklyRecapState.loading ? adminCopy(lang, 'Invio...', 'Sending...') : adminCopy(lang, 'Test recap', 'Test recap')}</button>}
+          {weeklyRecapState.message && <small>{weeklyRecapState.message}</small>}
+        </section>
+      )}
+      {isOwner && !isBackupPage && !isUsersPage && (
         <GlobalBackupProgressBanner
           lang={lang}
           progress={globalBackupProgress}
@@ -5473,12 +6841,18 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           <AdminAnalyticsPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/system') || normalizedPath.includes('/backup') ? (
           isOwner ? <AdminBackupPage lang={lang} session={session} profile={profile} adminContent={adminContent} globalBackupProgress={globalBackupProgress} startGlobalBackupMonitor={startGlobalBackupMonitor} stopGlobalBackupMonitor={stopBackupMonitor} /> : <OwnerOnlyAdminPage lang={lang} />
+        ) : normalizedPath.includes('/users') ? (
+          isOwner ? <AdminUsersPage lang={lang} session={session} profile={profile} /> : <OwnerOnlyAdminPage lang={lang} />
         ) : normalizedPath.includes('/edit') || normalizedPath.includes('/website') || normalizedPath.includes('/content') || normalizedPath.includes('/media') ? (
           <AdminEditPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/partnerships') ? (
           <PartnershipsAdminPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/upcoming') ? (
           <UpcomingPage lang={lang} session={session} navigate={navigate} adminContent={adminContent} />
+        ) : normalizedPath.includes('/booking-codes') ? (
+          <BookingCodesPage lang={lang} session={session} adminContent={adminContent} />
+        ) : normalizedPath.includes('/gift-cards') ? (
+          <GiftCardsAdminPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/requests') ? (
           <RequestsPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/availability') ? (
@@ -5721,7 +7095,7 @@ function CalendarBookingModal({ lang, request, onClose, onSave }) {
         <div className="admin-modal-header booking-edit-modal-header"><div><h2>{request.customer_name || adminCopy(lang, 'Prenotazione', 'Booking')}</h2><p>{request.customer_email || '-'} · {request.customer_phone || '-'}</p></div><button className="modal-close-button booking-modal-close-button" type="button" aria-label={adminCopy(lang, 'Chiudi', 'Close')} onClick={onClose}>{adminCopy(lang, 'Chiudi', 'Close')}</button></div>
         <div className="admin-form-grid booking-edit-modal-grid">
           <AdminSelect label={adminCopy(lang, 'Stato', 'Status')} value={form.status} onChange={(value) => setForm((current) => ({ ...current, status: value }))} options={REQUEST_STATUSES} formatter={(value) => requestStatusLabels[value]?.[lang] || value} />
-          <label className="admin-field confirmed-date-section"><span>{adminCopy(lang, 'Data confermata', 'Confirmed date')}</span><input type="date" value={form.requested_date || ''} onChange={(event) => setForm((current) => ({ ...current, requested_date: event.target.value }))} /></label>
+          <label className="admin-field confirmed-date-section"><span>{adminCopy(lang, 'Data confermata', 'Confirmed date')}</span><input type="date" min={todayIso()} value={form.requested_date || ''} onChange={(event) => setForm((current) => ({ ...current, requested_date: event.target.value }))} /></label>
           <AdminInput label={adminCopy(lang, 'Adulti', 'Adults')} type="number" value={form.adults} onChange={(value) => setForm((current) => ({ ...current, adults: value }))} />
           <AdminInput label={adminCopy(lang, 'Bambini', 'Children')} type="number" value={form.children} onChange={(value) => setForm((current) => ({ ...current, children: value }))} />
           <AdminSelect label={text(lang, 'heardAboutUsAdmin')} value={form.heard_about_us || 'not_specified'} onChange={(value) => setForm((current) => ({ ...current, heard_about_us: value, heard_about_us_label: heardAboutUsLabel(value, lang), heard_about_us_detail: needsHeardAboutUsDetail(value) ? current.heard_about_us_detail : '' }))} options={heardAboutUsOptions({ includeAdmin: true }).map((option) => option.value)} formatter={(value) => heardAboutUsLabel(value, lang)} />
@@ -5743,7 +7117,7 @@ function CalendarFixedModal({ lang, item, onClose, onSave }) {
       <div className="admin-modal wide" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <div className="admin-modal-header"><div><h2>{fixedExcursionTitle(item, lang)}</h2><p>{adminExperienceLabel(item.experience_id, lang)}</p></div><button className="round-button" type="button" onClick={onClose}>{text(lang, 'close')}</button></div>
         <div className="admin-form-grid">
-          <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.date} onChange={(value) => setForm((current) => ({ ...current, date: value }))} />
+          <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" min={todayIso()} value={form.date} onChange={(value) => setForm((current) => ({ ...current, date: value }))} />
           <AdminInput label={adminCopy(lang, 'Ora inizio', 'Start time')} type="time" value={form.start_time} onChange={(value) => setForm((current) => ({ ...current, start_time: value }))} />
           <AdminInput label={adminCopy(lang, 'Ora fine', 'End time')} type="time" value={form.end_time} onChange={(value) => setForm((current) => ({ ...current, end_time: value }))} />
           <AdminInput label={adminCopy(lang, 'Capienza', 'Capacity')} type="number" value={form.capacity} onChange={(value) => setForm((current) => ({ ...current, capacity: value }))} />
@@ -6491,7 +7865,7 @@ function VisualEditorPreview({ page, setPage, lang, setLang, device, siteMedia, 
         return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
       case 'home':
       default:
-        return <Hero lang={lang} setActivePage={setPage} scrollToForm={disabledActionNotice} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
+        return <Hero lang={lang} setActivePage={setPage} scrollToForm={disabledActionNotice} fillForm={null} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
     }
   }
 
@@ -6680,6 +8054,8 @@ const SITE_CONTENT_DEFINITIONS = [
   { key: 'home.hero.subtitle', section: 'Homepage', label_it: 'Homepage hero subtitle', label_en: 'Homepage hero subtitle', type: 'textarea', default_it: i18n.it.heroLead, default_en: i18n.en.heroLead, text_size: 'large', style_variant: 'body' },
   { key: 'home.hero.primary_cta', section: 'Homepage', label_it: 'CTA principale', label_en: 'Primary CTA', type: 'text', default_it: i18n.it.findExperience, default_en: i18n.en.findExperience, style_variant: 'label' },
   { key: 'home.hero.secondary_cta', section: 'Homepage', label_it: 'CTA secondaria', label_en: 'Secondary CTA', type: 'text', default_it: i18n.it.viewAvailability, default_en: i18n.en.viewAvailability, style_variant: 'label' },
+  { key: 'home.hero.cta.book_with_code', section: 'Homepage', label_it: 'CTA prenota con codice', label_en: 'Book with code CTA', type: 'text', default_it: i18n.it.bookWithCode, default_en: i18n.en.bookWithCode, style_variant: 'label' },
+  { key: 'home.hero.cta.gift_card', section: 'Homepage', label_it: 'CTA Gift Card', label_en: 'Gift Card CTA', type: 'text', default_it: 'Gift Card', default_en: 'Gift Card', style_variant: 'label' },
   { key: 'home.hero.contact_cta', section: 'Homepage', label_it: 'CTA contatto', label_en: 'Contact CTA', type: 'text', default_it: i18n.it.contact, default_en: i18n.en.contact, style_variant: 'label' },
   { key: 'home.hero.guide_badge', section: 'Homepage', label_it: 'Badge guida', label_en: 'Guide badge', type: 'text', default_it: i18n.it.trust[0], default_en: i18n.en.trust[0], style_variant: 'label' },
   { key: 'experiences.page.title', section: 'Esperienze', label_it: 'Titolo pagina esperienze', label_en: 'Experiences page title', type: 'textarea', default_it: i18n.it.experiencesTitle, default_en: i18n.en.experiencesTitle, text_size: 'hero', style_variant: 'display', text_align: 'center' },
@@ -7248,6 +8624,8 @@ function AdminContentEditorModal({ lang, item, onClose, onSave, saving }) {
   }, [onClose]);
 
   function update(key, value) {
+    markFormFieldStarted(formJourneyRef.current?.journey_id, key, { ...sourceMetadata, step_index: step, step_key: key });
+    markFormActivity(formJourneyRef.current?.journey_id, { has_selected_experience: key === 'experienceId' ? Boolean(value) : Boolean(form.experienceId), has_selected_date: key === 'customDate' ? Boolean(value) : Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true });
     setForm((current) => ({ ...current, [key]: value }));
   }
 
@@ -7407,6 +8785,8 @@ const FINANCE_CATEGORIES = {
     ['balance_payment', 'Saldo', 'Balance payment'],
     ['private_experience', 'Esperienza privata', 'Private experience'],
     ['fixed_excursion', 'Escursione fissa', 'Fixed excursion'],
+    ['booking_code_expected', 'Codice prenotazione atteso', 'Expected booking-code income'],
+    ['gift_card', 'Gift Card', 'Gift Card'],
     ['other_income', 'Altra entrata', 'Other income']
   ],
   expense: [
@@ -7448,8 +8828,8 @@ function financeDateFilterLabel(value, lang) {
   return found ? (lang === 'it' ? found[1] : found[2]) : value || '';
 }
 
-function formatMoney(amount, currency = 'EUR') {
-  return new Intl.NumberFormat('it-IT', { style: 'currency', currency: currency || 'EUR' }).format(Number(amount || 0));
+function formatMoney(amount, currency = 'EUR', lang = 'it') {
+  return formatCurrencyAmount(amount, currency, lang === 'en' ? 'en-GB' : 'it-IT');
 }
 
 function parseLocalIsoDate(value) {
@@ -7596,25 +8976,39 @@ function groupFinanceEntriesByCategory(entries, type) {
     .map((item) => ({ ...item, percentage: total > 0 ? Math.round((item.total / total) * 100) : 0 }));
 }
 
+function isVoidedFinanceEntry(entry) {
+  return ['cancelled', 'void', 'voided'].includes(String(entry.status || '').toLowerCase()) || entry.active === false;
+}
+
+function isExpectedFinanceEntry(entry) {
+  return ['pending', 'expected'].includes(String(entry.status || '').toLowerCase());
+}
+
 function calculateFinanceSummary(entries) {
-  const incomeEntries = entries.filter((entry) => entry.type === 'income');
-  const expenseEntries = entries.filter((entry) => entry.type === 'expense');
-  const linkedBookingEntries = entries.filter((entry) => entry.booking_request_id || entry.linkedBooking);
-  const linkedFixedEntries = entries.filter((entry) => entry.fixed_excursion_id || entry.linkedFixedExcursion);
-  const unlinkedEntries = entries.filter((entry) => !financeEntryIsLinked(entry));
+  const activeEntries = entries.filter((entry) => !isVoidedFinanceEntry(entry));
+  const expectedEntries = activeEntries.filter((entry) => entry.type === 'income' && isExpectedFinanceEntry(entry));
+  const confirmedEntries = activeEntries.filter((entry) => !isExpectedFinanceEntry(entry));
+  const incomeEntries = confirmedEntries.filter((entry) => entry.type === 'income' || String(entry.status || '').toLowerCase() === 'reversal');
+  const expenseEntries = confirmedEntries.filter((entry) => entry.type === 'expense');
+  const linkedBookingEntries = activeEntries.filter((entry) => entry.booking_request_id || entry.linkedBooking);
+  const linkedFixedEntries = activeEntries.filter((entry) => entry.fixed_excursion_id || entry.linkedFixedExcursion);
+  const unlinkedEntries = activeEntries.filter((entry) => !financeEntryIsLinked(entry));
   const income = incomeEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const expenses = expenseEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const expectedIncome = expectedEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   return {
     income,
     expenses,
+    expectedIncome,
     net: income - expenses,
     incomeEntries,
+    expectedEntries,
     expenseEntries,
     linkedBookingEntries,
     linkedFixedEntries,
     unlinkedEntries,
-    incomeCategories: groupFinanceEntriesByCategory(entries, 'income'),
-    expenseCategories: groupFinanceEntriesByCategory(entries, 'expense')
+    incomeCategories: groupFinanceEntriesByCategory(incomeEntries, 'income'),
+    expenseCategories: groupFinanceEntriesByCategory(expenseEntries, 'expense')
   };
 }
 
@@ -7658,6 +9052,9 @@ const SUBMIT_ATTEMPT_EVENTS = ['booking_form_submit_attempt', 'booking_submit_at
 const VALIDATION_ERROR_EVENTS = ['booking_form_validation_error', 'booking_submit_validation_error'];
 const SUBMIT_SUCCESS_EVENTS = ['booking_form_submit_success', 'booking_submit_success', 'booking_submit'];
 const SUBMIT_ERROR_EVENTS = ['booking_form_submit_error', 'booking_submit_error'];
+const BOOKING_CODE_REDEEM_ATTEMPT_EVENTS = ['booking_code_redeem_attempt', 'booking_code_submitted'];
+const BOOKING_CODE_REDEEM_SUCCESS_EVENTS = ['booking_code_redeem_success', 'booking_code_redeemed'];
+const BOOKING_CODE_REDEEM_ERROR_EVENTS = ['booking_code_redeem_error', 'booking_code_invalid'];
 const MAP_CLICK_EVENTS = ['google_maps_click', 'maps_click'];
 const CONTACT_ACTION_EVENTS = ['whatsapp_click', 'email_click', 'phone_click', 'google_maps_click', 'maps_click'];
 
@@ -7691,6 +9088,7 @@ function normalizedTrafficSourceForAnalytics(row = {}) {
   const metadata = row.metadata || {};
   const raw = String(metadata.utm_source || row.traffic_source || row.referrer_domain || '').toLowerCase().replace(/[-\s]+/g, '_');
   const medium = String(metadata.utm_medium || '').toLowerCase().replace(/[-\s]+/g, '_');
+  if (raw.includes('referral') || medium === 'customer') return 'customer_referral';
   if (raw.includes('instagram') || raw === 'ig') return 'instagram';
   if (raw.includes('whatsapp') || raw === 'wa') return 'whatsapp';
   if (raw.includes('facebook') || raw === 'fb') return 'facebook';
@@ -7709,6 +9107,7 @@ function trafficSourceLabel(source, lang) {
   if (source === 'google_business_profile') return 'Google Business Profile';
   if (source === 'partner') return adminCopy(lang, 'Partner', 'Partner');
   if (source === 'tiktok') return 'TikTok';
+  if (source === 'customer_referral' || source === 'referral') return adminCopy(lang, 'Referral cliente', 'Customer referral');
   if (source === 'other') return adminCopy(lang, 'Altri referrer', 'Other referrers');
   return source[0].toUpperCase() + source.slice(1);
 }
@@ -7829,6 +9228,16 @@ function normalizedPublicRequestSource(request = {}) {
   return source || 'website';
 }
 
+function isWebsiteFormRequest(request = {}) {
+  if (isAdminManualRequest(request)) return false;
+  return ['website', 'public_website', 'unknown'].includes(normalizedPublicRequestSource(request));
+}
+
+function isBookingCodeRequest(request = {}) {
+  if (isAdminManualRequest(request)) return false;
+  return normalizedPublicRequestSource(request) === 'booking_code';
+}
+
 function normalizedExperienceKey(value, lang) {
   const clean = String(value || '').trim();
   if (!clean || clean === 'unknown' || clean === 'unsure') return adminCopy(lang, 'Non specificata', 'Unspecified');
@@ -7931,7 +9340,7 @@ function buildSessionPaths(events, lang) {
 }
 
 function bookingRequestsInPeriod(requests, range) {
-  return (requests || []).filter((request) => periodContains(request, range) && !isAdminManualRequest(request) && ['website', 'public_website', 'unknown'].includes(normalizedPublicRequestSource(request))).length;
+  return (requests || []).filter((request) => periodContains(request, range) && isWebsiteFormRequest(request)).length;
 }
 
 function confirmedBookingRequestsInPeriod(requests, range) {
@@ -7984,7 +9393,7 @@ function buildDeclaredAttributionRows({ events = [], bookingRequests = [], range
     .sort((a, b) => (b.booking_requests + b.contact_events + b.form_events) - (a.booking_requests + a.contact_events + a.form_events));
 }
 
-function buildBookingRequestTrackingIntegrity({ requests = [], events = [], range, lang, isSubmitAttemptEvent, isSubmitSuccessEvent }) {
+function buildBookingRequestTrackingIntegrity({ requests = [], events = [], range, lang, isSubmitAttemptEvent, isSubmitSuccessEvent, isBookingCodeRedeemAttemptEvent, isBookingCodeRedeemSuccessEvent }) {
   const eventsByRequestId = new Map();
   const eventsByJourneyId = new Map();
   events.forEach((event) => {
@@ -8031,6 +9440,10 @@ function buildBookingRequestTrackingIntegrity({ requests = [], events = [], rang
       const matchedAttemptByJourney = matchedEventsByJourney.find(isSubmitAttemptEvent);
       const matchedSuccessByJourney = matchedEventsByJourney.find(isSubmitSuccessEvent);
       const matchedCreatedByJourney = matchedEventsByJourney.find((event) => event.event_name === 'booking_request_created');
+      const matchedCodeAttemptById = matchedEventsById.find(isBookingCodeRedeemAttemptEvent);
+      const matchedCodeSuccessById = matchedEventsById.find(isBookingCodeRedeemSuccessEvent);
+      const matchedCodeAttemptByJourney = matchedEventsByJourney.find(isBookingCodeRedeemAttemptEvent);
+      const matchedCodeSuccessByJourney = matchedEventsByJourney.find(isBookingCodeRedeemSuccessEvent);
 
       const legacyAttempts = (matchedAttemptById || matchedAttemptByJourney) ? [] : legacyMatches(request, legacyAttemptEvents);
       const legacySuccesses = (matchedSuccessById || matchedSuccessByJourney) ? [] : legacyMatches(request, legacySuccessEvents);
@@ -8040,6 +9453,9 @@ function buildBookingRequestTrackingIntegrity({ requests = [], events = [], rang
       const hasSuccess = Boolean(matchedSuccessById || matchedSuccessByJourney);
       const hasCreated = Boolean(matchedCreatedById || matchedCreatedByJourney);
       const adminManual = isAdminManualRequest(request);
+      const bookingCodeRequest = isBookingCodeRequest(request);
+      const hasCodeAttempt = Boolean(matchedCodeAttemptById || matchedCodeAttemptByJourney);
+      const hasCodeSuccess = Boolean(matchedCodeSuccessById || matchedCodeSuccessByJourney);
       const hasJourneyOnlySuccess = Boolean(!matchedSuccessById && matchedSuccessByJourney);
       const hasRequestIdSuccess = Boolean(matchedSuccessById);
       const hasRequestIdCreatedOnly = Boolean(!hasSuccess && matchedCreatedById);
@@ -8048,33 +9464,42 @@ function buildBookingRequestTrackingIntegrity({ requests = [], events = [], rang
 
       const matchMethod = adminManual
         ? 'admin_manual'
-        : hasRequestIdSuccess
-          ? 'matched_by_booking_request_id'
-          : hasJourneyOnlySuccess
-            ? 'matched_by_journey_id'
-            : hasRequestIdCreatedOnly
-              ? 'matched_created_event_only_by_booking_request_id'
-              : hasJourneyCreatedOnly
-                ? 'matched_created_event_only_by_journey_id'
-                : hasLegacyOnly
-                  ? 'matched_by_legacy_heuristic'
-                  : 'missing_submit_tracking';
+        : bookingCodeRequest
+          ? (hasCodeSuccess ? 'booking_code_redeem_success' : hasCodeAttempt ? 'booking_code_redeem_attempt_only' : 'booking_code_tracking_separate')
+          : hasRequestIdSuccess
+            ? 'matched_by_booking_request_id'
+            : hasJourneyOnlySuccess
+              ? 'matched_by_journey_id'
+              : hasRequestIdCreatedOnly
+                ? 'matched_created_event_only_by_booking_request_id'
+                : hasJourneyCreatedOnly
+                  ? 'matched_created_event_only_by_journey_id'
+                  : hasLegacyOnly
+                    ? 'matched_by_legacy_heuristic'
+                    : 'missing_submit_tracking';
 
       const createdDate = String(request.created_at || '').slice(0, 10);
       const legacyCutoff = '2026-06-29';
+      const bookingCodeCutoff = '2026-07-04';
       const status = adminManual
         ? 'admin_manual'
-        : hasRequestIdSuccess
-          ? 'matched_by_booking_request_id'
-          : hasJourneyOnlySuccess
-            ? 'matched_by_journey_id'
-            : hasRequestIdCreatedOnly || hasJourneyCreatedOnly
-              ? 'created_event_without_submit_success'
-              : hasLegacyOnly
-                ? 'matched_by_legacy_heuristic'
-                : createdDate && createdDate < legacyCutoff
-                  ? 'legacy_missing_tracking'
-                  : 'missing_submit_tracking';
+        : bookingCodeRequest
+          ? (hasCodeSuccess
+            ? 'booking_code_redeem_success'
+            : createdDate && createdDate < bookingCodeCutoff
+              ? 'booking_code_legacy_untracked'
+              : 'booking_code_missing_redeem_success')
+          : hasRequestIdSuccess
+            ? 'matched_by_booking_request_id'
+            : hasJourneyOnlySuccess
+              ? 'matched_by_journey_id'
+              : hasRequestIdCreatedOnly || hasJourneyCreatedOnly
+                ? 'created_event_without_submit_success'
+                : hasLegacyOnly
+                  ? 'matched_by_legacy_heuristic'
+                  : createdDate && createdDate < legacyCutoff
+                    ? 'legacy_missing_tracking'
+                    : 'missing_submit_tracking';
 
       return {
         booking_request_id: id || null,
@@ -8088,12 +9513,16 @@ function buildBookingRequestTrackingIntegrity({ requests = [], events = [], rang
         matched_submit_attempt: hasAttempt,
         matched_submit_success: hasSuccess,
         matched_booking_request_created_event: hasCreated,
+        matched_booking_code_redeem_attempt: hasCodeAttempt,
+        matched_booking_code_redeem_success: hasCodeSuccess,
         legacy_matched_submit_attempt: Boolean(legacyAttempts.length),
         legacy_matched_submit_success: Boolean(legacySuccesses.length),
         legacy_matched_form_open: Boolean(legacyFormOpens.length),
         submit_attempt_at: (matchedAttemptById || matchedAttemptByJourney)?.occurred_at || null,
         submit_success_at: (matchedSuccessById || matchedSuccessByJourney)?.occurred_at || null,
         booking_request_created_event_at: (matchedCreatedById || matchedCreatedByJourney)?.occurred_at || null,
+        booking_code_redeem_attempt_at: (matchedCodeAttemptById || matchedCodeAttemptByJourney)?.occurred_at || null,
+        booking_code_redeem_success_at: (matchedCodeSuccessById || matchedCodeSuccessByJourney)?.occurred_at || null,
         proper_event_count: allProperEvents.length,
         tracking_match_method: matchMethod,
         tracking_integrity_status: status,
@@ -8124,12 +9553,17 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   const validationErrors = eventCountAny(events, VALIDATION_ERROR_EVENTS);
   const submitSuccesses = eventCountAny(events, SUBMIT_SUCCESS_EVENTS);
   const submitErrors = eventCountAny(events, SUBMIT_ERROR_EVENTS);
+  const bookingCodeRedeemAttempts = eventCountAny(events, BOOKING_CODE_REDEEM_ATTEMPT_EVENTS);
+  const bookingCodeRedeemSuccesses = eventCountAny(events, BOOKING_CODE_REDEEM_SUCCESS_EVENTS);
+  const bookingCodeRedeemErrors = eventCountAny(events, BOOKING_CODE_REDEEM_ERROR_EVENTS);
   const bookingRequestCreatedEvents = eventCount(events, 'booking_request_created');
-  const websiteRequestRows = (bookingRequests || []).filter((request) => periodContains(request, range) && !isAdminManualRequest(request) && ['website', 'public_website', 'unknown'].includes(normalizedPublicRequestSource(request)));
+  const websiteRequestRows = (bookingRequests || []).filter((request) => periodContains(request, range) && isWebsiteFormRequest(request));
+  const bookingCodeRequestRows = (bookingRequests || []).filter((request) => periodContains(request, range) && isBookingCodeRequest(request));
   const websiteRequestIds = new Set(websiteRequestRows.map((request) => String(request.id || '').trim()).filter(Boolean));
   const adminManualRequestRows = (bookingRequests || []).filter((request) => periodContains(request, range) && isAdminManualRequest(request));
   const websiteRequests = websiteRequestRows.length;
-  const bookingRequestCount = Math.max(websiteRequests, bookingRequestCreatedEvents, submitSuccesses);
+  const bookingCodeRequests = bookingCodeRequestRows.length;
+  const bookingRequestCount = Math.max(websiteRequests + bookingCodeRequests, bookingRequestCreatedEvents, submitSuccesses + bookingCodeRedeemSuccesses);
   const confirmedRequests = confirmedBookingRequestsInPeriod(bookingRequests, range);
   const visitors = uniqueCount(events, 'visitor_id') || uniqueCount(sessions, 'visitor_id');
   const whatsappClicks = eventCount(events, 'whatsapp_click');
@@ -8146,14 +9580,22 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   const directTrafficShare = sourceTotal ? directTrafficCount / sourceTotal : 0;
   const mobileCount = events.filter((event) => event.device_type === 'mobile').length;
   const mobileShare = events.length ? mobileCount / events.length : 0;
+  const formJourneysStarted = eventCount(events, 'form_journey_started');
+  const abandonedForms = eventCount(events, 'abandoned_form_detected');
+  const recoveredByWhatsapp = eventCount(events, 'abandoned_form_recovered_whatsapp');
+  const journeySubmitSuccesses = eventCount(events, 'form_submit_success');
+  const abandonmentRate = percent(abandonedForms, formJourneysStarted || formOpens || fieldStarts);
+  const recoveryRate = percent(recoveredByWhatsapp, abandonedForms);
 
   function isSubmitAttemptEvent(event) { return event.event_name === 'booking_form_submit_attempt' || (!hasNewSubmitAttempts && event.event_name === 'booking_submit_attempt'); }
   function isValidationErrorEvent(event) { return event.event_name === 'booking_form_validation_error' || (!hasNewValidationErrors && event.event_name === 'booking_submit_validation_error'); }
   function isSubmitSuccessEvent(event) { return event.event_name === 'booking_form_submit_success' || (!hasNewSubmitSuccesses && ['booking_submit_success', 'booking_submit'].includes(event.event_name)); }
   function isSubmitErrorEvent(event) { return event.event_name === 'booking_form_submit_error' || (!hasNewSubmitErrors && event.event_name === 'booking_submit_error'); }
+  function isBookingCodeRedeemAttemptEvent(event) { return BOOKING_CODE_REDEEM_ATTEMPT_EVENTS.includes(event.event_name); }
+  function isBookingCodeRedeemSuccessEvent(event) { return BOOKING_CODE_REDEEM_SUCCESS_EVENTS.includes(event.event_name); }
   function isMapClickEvent(event) { return event.event_name === 'google_maps_click' || (!hasNewMapClicks && event.event_name === 'maps_click'); }
 
-  const sourceRows = ['direct', 'instagram', 'facebook', 'whatsapp', 'google_business_profile', 'google', 'partner', 'tiktok', 'other'].map((source) => ({
+  const sourceRows = ['direct', 'customer_referral', 'instagram', 'facebook', 'whatsapp', 'google_business_profile', 'google', 'partner', 'tiktok', 'other'].map((source) => ({
     label: trafficSourceLabel(source, lang),
     count: pageViewEvents.filter((event) => normalizedTrafficSourceForAnalytics(event) === source).length
   }));
@@ -8174,9 +9616,15 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     { label: adminCopy(lang, 'Visualizzazioni esperienze', 'Experience views'), count: experienceViews },
     { label: adminCopy(lang, 'Aperture modulo prenotazione', 'Booking form starts'), count: formOpens },
     { label: adminCopy(lang, 'Avvii compilazione modulo', 'Booking form field starts'), count: fieldStarts },
+    { label: adminCopy(lang, 'Journey form avviati', 'Form journeys started'), count: formJourneysStarted },
+    { label: adminCopy(lang, 'Form abbandonati', 'Abandoned forms'), count: abandonedForms },
+    { label: adminCopy(lang, 'Recuperi WhatsApp', 'WhatsApp recoveries'), count: recoveredByWhatsapp },
     { label: adminCopy(lang, 'Tentativi invio modulo', 'Booking form submit attempts'), count: submitAttempts },
     { label: adminCopy(lang, 'Invii riusciti tracciati', 'Tracked successful submissions'), count: submitSuccesses },
-    { label: adminCopy(lang, 'Richieste create', 'Created requests'), count: bookingRequestCount },
+    { label: adminCopy(lang, 'Richieste modulo sito create', 'Created website form requests'), count: websiteRequests },
+    { label: adminCopy(lang, 'Richieste con codice create', 'Created booking-code requests'), count: bookingCodeRequests },
+    { label: adminCopy(lang, 'Riscatti codice riusciti', 'Booking-code redeem successes'), count: bookingCodeRedeemSuccesses },
+    { label: adminCopy(lang, 'Richieste create totali', 'Total created requests'), count: bookingRequestCount },
     { label: adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks'), count: whatsappClicks },
     { label: adminCopy(lang, 'Click email', 'Email clicks'), count: emailClicks },
     { label: adminCopy(lang, 'Click telefono', 'Phone clicks'), count: phoneClicks },
@@ -8192,7 +9640,8 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     { label: adminCopy(lang, 'Errori validazione', 'Validation errors'), count: validationErrors },
     { label: adminCopy(lang, 'Invii riusciti tracciati', 'Tracked successful submissions'), count: submitSuccesses },
     { label: adminCopy(lang, 'Errori invio', 'Submit errors'), count: submitErrors },
-    { label: adminCopy(lang, 'Richieste create', 'Booking requests created'), count: bookingRequestCount }
+    { label: adminCopy(lang, 'Richieste modulo sito create', 'Website form requests created'), count: websiteRequests },
+    { label: adminCopy(lang, 'Richieste con codice create', 'Booking-code requests created'), count: bookingCodeRequests }
   ];
   const funnelDiagnostics = mainFunnelSteps.map((step, index) => ({
     step: step.label,
@@ -8235,7 +9684,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     if (isSubmitAttemptEvent(event)) row.submit_attempts += 1;
     if (isSubmitSuccessEvent(event)) row.submit_successes += 1;
     if (isSubmitErrorEvent(event)) row.submit_errors += 1;
-    if (event.event_name === 'booking_request_created') {
+    if (event.event_name === 'booking_request_created' && String(eventMeta(event, 'source') || '').trim() !== 'booking_code') {
       const eventRequestId = eventBookingRequestId(event);
       if (!eventRequestId || !websiteRequestIds.has(eventRequestId)) row.booking_requests += 1;
     }
@@ -8311,7 +9760,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     if (isValidationErrorEvent(event)) row.validation_errors += 1;
     if (isSubmitSuccessEvent(event)) row.submit_successes += 1;
     if (isSubmitErrorEvent(event)) row.submit_errors += 1;
-    if (event.event_name === 'booking_request_created') {
+    if (event.event_name === 'booking_request_created' && String(eventMeta(event, 'source') || '').trim() !== 'booking_code') {
       const eventRequestId = eventBookingRequestId(event);
       if (!eventRequestId || !websiteRequestIds.has(eventRequestId)) row.booking_requests += 1;
     }
@@ -8364,39 +9813,106 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
           : adminCopy(lang, 'Da UTM o referrer riconosciuto', 'From recognized UTM or referrer')
   }));
 
-  const requestTrackingIntegrity = buildBookingRequestTrackingIntegrity({ requests: bookingRequests, events, range, lang, isSubmitAttemptEvent, isSubmitSuccessEvent });
-  const publicRequestTrackingIntegrity = requestTrackingIntegrity.filter((row) => row.tracking_integrity_status !== 'admin_manual');
-  const requestsMatchedByBookingRequestId = publicRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'matched_by_booking_request_id').length;
-  const requestsMatchedByJourneyId = publicRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'matched_by_journey_id').length;
-  const requestsMatchedByLegacyHeuristic = publicRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'matched_by_legacy_heuristic').length;
-  const requestsCreatedEventOnly = publicRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'created_event_without_submit_success').length;
+  const requestTrackingIntegrity = buildBookingRequestTrackingIntegrity({ requests: bookingRequests, events, range, lang, isSubmitAttemptEvent, isSubmitSuccessEvent, isBookingCodeRedeemAttemptEvent, isBookingCodeRedeemSuccessEvent });
+  const websiteFormRequestTrackingIntegrity = requestTrackingIntegrity.filter((row) => isWebsiteFormRequest(row));
+  const bookingCodeRequestTrackingIntegrity = requestTrackingIntegrity.filter((row) => isBookingCodeRequest(row));
+  const requestsMatchedByBookingRequestId = websiteFormRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'matched_by_booking_request_id').length;
+  const requestsMatchedByJourneyId = websiteFormRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'matched_by_journey_id').length;
+  const requestsMatchedByLegacyHeuristic = websiteFormRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'matched_by_legacy_heuristic').length;
+  const requestsCreatedEventOnly = websiteFormRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'created_event_without_submit_success').length;
   const requestsWithTrackedSubmit = requestsMatchedByBookingRequestId + requestsMatchedByJourneyId;
-  const requestsWithoutTrackedSubmit = publicRequestTrackingIntegrity.filter((row) => ['missing_submit_tracking', 'legacy_missing_tracking', 'created_event_without_submit_success', 'matched_by_legacy_heuristic'].includes(row.tracking_integrity_status)).length;
-  const legacyIncompleteRequests = publicRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'legacy_missing_tracking').length;
+  const websiteSubmitGapStatuses = ['missing_submit_tracking', 'legacy_missing_tracking', 'created_event_without_submit_success', 'matched_by_legacy_heuristic'];
+  const websiteSubmitTrackingFixCutoffMs = Date.parse('2026-07-05T07:45:00.000Z');
+  const isPostSubmitTrackingFixRequest = (row) => {
+    const time = Date.parse(row?.created_at || '');
+    return Number.isFinite(time) && time >= websiteSubmitTrackingFixCutoffMs;
+  };
+  const requestsWithoutTrackedSubmit = websiteFormRequestTrackingIntegrity.filter((row) => websiteSubmitGapStatuses.includes(row.tracking_integrity_status)).length;
+  const postFixRequestsWithoutTrackedSubmit = websiteFormRequestTrackingIntegrity.filter((row) => websiteSubmitGapStatuses.includes(row.tracking_integrity_status) && isPostSubmitTrackingFixRequest(row)).length;
+  const historicalRequestsWithoutTrackedSubmit = Math.max(0, requestsWithoutTrackedSubmit - postFixRequestsWithoutTrackedSubmit);
+  const legacyIncompleteRequests = websiteFormRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'legacy_missing_tracking' || (websiteSubmitGapStatuses.includes(row.tracking_integrity_status) && !isPostSubmitTrackingFixRequest(row))).length;
+  const websiteSubmitGapDetail = requestsWithoutTrackedSubmit
+    ? postFixRequestsWithoutTrackedSubmit
+      ? trackingIncompleteLabel(lang)
+      : adminCopy(lang, 'Solo storico precedente alla correzione: non viene ricostruito artificialmente.', 'Historical pre-fix data only: not backfilled artificially.')
+    : '—';
+  const bookingCodeRequestsWithRedeemSuccess = bookingCodeRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'booking_code_redeem_success').length;
+  const bookingCodeRequestsWithoutRedeemSuccess = bookingCodeRequestTrackingIntegrity.filter((row) => ['booking_code_missing_redeem_success', 'booking_code_legacy_untracked'].includes(row.tracking_integrity_status)).length;
 
   const dataQualityRows = [
-    { check: adminCopy(lang, 'Richieste con invio tracciato', 'Requests with tracked submit'), count: requestsWithTrackedSubmit, detail: adminCopy(lang, 'Conta solo match puliti tramite booking_request_id o booking_journey_id con submit_success.', 'Counts only clean booking_request_id or booking_journey_id matches with submit_success.') },
-    { check: adminCopy(lang, 'Richieste matchate tramite journey id', 'Requests matched by journey id'), count: requestsMatchedByJourneyId, detail: adminCopy(lang, 'Match tramite booking_requests.analytics_journey_id = analytics_events.metadata.booking_journey_id.', 'Match via booking_requests.analytics_journey_id = analytics_events.metadata.booking_journey_id.') },
-    { check: adminCopy(lang, 'Richieste matchate tramite booking_request_id', 'Requests matched by booking_request_id'), count: requestsMatchedByBookingRequestId, detail: adminCopy(lang, 'Match tramite analytics_events.metadata.booking_request_id.', 'Match via analytics_events.metadata.booking_request_id.') },
-    { check: adminCopy(lang, 'Richieste matchate solo da euristica legacy', 'Requests matched only by legacy heuristic'), count: requestsMatchedByLegacyHeuristic, detail: requestsMatchedByLegacyHeuristic ? adminCopy(lang, 'Warning: non contano come invio tracciato correttamente.', 'Warning: these do not count as properly tracked submits.') : '—' },
-    { check: adminCopy(lang, 'Richieste senza invio tracciato', 'Requests without tracked submit'), count: requestsWithoutTrackedSubmit, detail: requestsWithoutTrackedSubmit ? trackingIncompleteLabel(lang) : '—' },
-    { check: adminCopy(lang, 'Eventi richiesta senza submit_success', 'Request events without submit_success'), count: requestsCreatedEventOnly, detail: requestsCreatedEventOnly ? adminCopy(lang, 'Esiste booking_request_created, ma manca booking_form_submit_success.', 'booking_request_created exists, but booking_form_submit_success is missing.') : '—' },
-    { check: adminCopy(lang, 'Richieste admin/manuali escluse', 'Admin/manual requests excluded'), count: adminManualRequestRows.length, detail: adminCopy(lang, 'Escluse dal funnel pubblico sito.', 'Excluded from the public website funnel.') },
+    { check: adminCopy(lang, 'Richieste modulo sito create', 'Created website form requests'), count: websiteRequests, detail: adminCopy(lang, 'Solo source=website/public_website/unknown, esclusi codici prenotazione e richieste admin/manuali.', 'Only source=website/public_website/unknown, excluding booking-code and admin/manual requests.') },
+    { check: adminCopy(lang, 'Richieste con codice create', 'Created booking-code requests'), count: bookingCodeRequests, detail: adminCopy(lang, 'Tracciate separatamente dal funnel del modulo pubblico.', 'Tracked separately from the public form funnel.') },
+    { check: adminCopy(lang, 'Richieste admin/manuali create', 'Created admin/manual requests'), count: adminManualRequestRows.length, detail: adminCopy(lang, 'Escluse dal funnel pubblico sito.', 'Excluded from the public website funnel.') },
+    { check: adminCopy(lang, 'Richieste sito con submit_success', 'Website requests with tracked submit_success'), count: requestsWithTrackedSubmit, detail: adminCopy(lang, 'Conta solo match puliti tramite booking_request_id o booking_journey_id con submit_success.', 'Counts only clean booking_request_id or booking_journey_id matches with submit_success.') },
+    { check: adminCopy(lang, 'Richieste sito senza submit_success', 'Website form requests without tracked submit_success'), count: requestsWithoutTrackedSubmit, detail: websiteSubmitGapDetail },
+    { check: adminCopy(lang, 'Richieste sito matchate tramite journey id', 'Website requests matched by journey id'), count: requestsMatchedByJourneyId, detail: adminCopy(lang, 'Match tramite booking_requests.analytics_journey_id = analytics_events.metadata.booking_journey_id.', 'Match via booking_requests.analytics_journey_id = analytics_events.metadata.booking_journey_id.') },
+    { check: adminCopy(lang, 'Richieste sito matchate tramite booking_request_id', 'Website requests matched by booking_request_id'), count: requestsMatchedByBookingRequestId, detail: adminCopy(lang, 'Match tramite analytics_events.metadata.booking_request_id.', 'Match via analytics_events.metadata.booking_request_id.') },
+    { check: adminCopy(lang, 'Richieste sito matchate solo da euristica legacy', 'Website requests matched only by legacy heuristic'), count: requestsMatchedByLegacyHeuristic, detail: requestsMatchedByLegacyHeuristic ? adminCopy(lang, 'Warning: non contano come invio tracciato correttamente.', 'Warning: these do not count as properly tracked submits.') : '—' },
+    { check: adminCopy(lang, 'Eventi richiesta sito senza submit_success', 'Website request events without submit_success'), count: requestsCreatedEventOnly, detail: requestsCreatedEventOnly ? adminCopy(lang, 'Esiste booking_request_created, ma manca booking_form_submit_success.', 'booking_request_created exists, but booking_form_submit_success is missing.') : '—' },
+    { check: adminCopy(lang, 'Riscatti codice con redeem_success', 'Booking-code redemptions with redeem_success'), count: bookingCodeRequestsWithRedeemSuccess, detail: adminCopy(lang, 'Match tramite booking_request_id su evento booking_code_redeem_success.', 'Matched by booking_request_id on booking_code_redeem_success event.') },
+    { check: adminCopy(lang, 'Richieste codice senza redeem_success', 'Booking-code requests without redeem_success'), count: bookingCodeRequestsWithoutRedeemSuccess, detail: bookingCodeRequestsWithoutRedeemSuccess ? adminCopy(lang, 'Non contano come problema del modulo sito. Verificare solo il tracciamento del riscatto codice.', 'Not counted as a website form issue. Check only booking-code redemption tracking.') : '—' },
+    { check: adminCopy(lang, 'Tentativi riscatto codice', 'Booking-code redeem attempts'), count: bookingCodeRedeemAttempts, detail: 'booking_code_redeem_attempt' },
+    { check: adminCopy(lang, 'Errori riscatto codice', 'Booking-code redeem errors'), count: bookingCodeRedeemErrors, detail: bookingCodeRedeemErrors ? 'booking_code_redeem_error' : '—' },
     { check: adminCopy(lang, 'Tracciamento legacy incompleto', 'Incomplete legacy tracking'), count: legacyIncompleteRequests, detail: legacyIncompleteRequests ? adminCopy(lang, 'Dati precedenti alla correzione: non vengono ricostruiti artificialmente.', 'Pre-fix data: not backfilled artificially.') : '—' },
-    { check: adminCopy(lang, 'Richieste senza apertura modulo tracciata', 'Requests without tracked form open'), count: requestsWithoutTrackedFormOpen.reduce((sum, row) => sum + row.booking_requests, 0), detail: requestsWithoutTrackedFormOpen.map((row) => `${row.experience}: ${row.booking_requests}`).join(', ') || '—' },
+    { check: adminCopy(lang, 'Richieste sito senza apertura modulo tracciata', 'Website requests without tracked form open'), count: requestsWithoutTrackedFormOpen.reduce((sum, row) => sum + row.booking_requests, 0), detail: requestsWithoutTrackedFormOpen.map((row) => `${row.experience}: ${row.booking_requests}`).join(', ') || '—' },
     { check: adminCopy(lang, 'Aperture modulo senza posizione CTA', 'Form opens without CTA location'), count: formOpenMissingCtaCount, detail: formOpenMissingCtaCount ? adminCopy(lang, 'Aggiornare i CTA che non inviano cta_location.', 'Update CTAs that do not send cta_location.') : '—' },
+    { check: adminCopy(lang, 'Form abbandonati', 'Abandoned forms'), count: abandonedForms, detail: `${abandonmentRate} · ${adminCopy(lang, 'recupero WhatsApp', 'WhatsApp recovery')}: ${recoveryRate}` },
     { check: adminCopy(lang, 'Traffico interno escluso', 'Internal traffic excluded'), count: internalEventsExcluded + internalSessionsExcluded, detail: adminCopy(lang, 'Admin, API, CMS/editor, finanze e dashboard analytics esclusi dalle metriche pubbliche.', 'Admin, API, CMS/editor, finance, and analytics dashboard rows excluded from public metrics.') },
     { check: adminCopy(lang, 'Campione insufficiente per conclusioni marketing', 'Sample too small for marketing conclusions'), count: visitors < 50 ? visitors : 0, detail: visitors < 50 ? adminCopy(lang, 'Usare come diagnostica, non come prova marketing.', 'Use as diagnostics, not as marketing proof.') : '—' }
   ];
 
   const warnings = [];
-  if (visitors < 50) warnings.push(adminCopy(lang, 'Campione dati ridotto: interpreta questi numeri come diagnostica, non come prova statistica.', 'Small data sample: interpret these numbers as diagnostics, not statistical proof.'));
-  if (websiteRequests > 0 && submitSuccesses === 0) warnings.push(adminCopy(lang, 'Possibile problema di tracciamento: esistono richieste nel database, ma nessun invio riuscito è stato registrato negli eventi analytics.', 'Possible tracking issue: booking requests exist in the database, but no successful submission was recorded in analytics events.'));
-  if (requestsWithoutTrackedFormOpen.length) warnings.push(adminCopy(lang, 'Alcune richieste non hanno una apertura modulo tracciata nella stessa esperienza/tipologia.', 'Some requests have no tracked form open for the same experience/request type.'));
-  if (formOpenMissingCtaCount) warnings.push(adminCopy(lang, 'Alcune aperture modulo non hanno cta_location.', 'Some form opens have no cta_location.'));
-  if (internalEventsExcluded || internalSessionsExcluded) warnings.push(adminCopy(lang, 'Traffico interno/admin escluso dalle metriche pubbliche.', 'Internal/admin traffic was excluded from public metrics.'));
-  if (directTrafficShare > 0.8) warnings.push(adminCopy(lang, 'Attribuzione limitata: gran parte del traffico risulta Diretto. Usa link UTM per leggere meglio le sorgenti.', 'Limited attribution: most traffic appears as Direct. Use UTM links to read sources more accurately.'));
-  if (mobileShare > 0.7) warnings.push(adminCopy(lang, 'Il traffico è prevalentemente mobile: testa prima il percorso su iPhone Safari e Android Chrome.', 'Traffic is mostly mobile: test the journey first on iPhone Safari and Android Chrome.'));
+  function addWarning(type, message, helper = '', detail = '') {
+    warnings.push({ type, message, helper, detail });
+  }
+  if (websiteRequests > 0 && postFixRequestsWithoutTrackedSubmit > 0) {
+    addWarning(
+      'critical',
+      adminCopy(lang, 'Il tracciamento del modulo sito è incompleto.', 'Website form tracking is incomplete.'),
+      adminCopy(lang, `${postFixRequestsWithoutTrackedSubmit} nuove richieste sito senza submit_success tracciato.`, `${postFixRequestsWithoutTrackedSubmit} new website requests without tracked submit_success.`),
+      adminCopy(
+        lang,
+        'Sono state create nuove richieste dal sito dopo la correzione del tracciamento, ma manca ancora un evento submit_success corrispondente. Testare il modulo pubblico e verificare che booking_form_submit_attempt, booking_form_submit_success e booking_request_created vengano salvati con lo stesso booking_journey_id o booking_request_id.',
+        'New website requests were created after the tracking fix, but a matching submit_success event is still missing. Test the public form and verify booking_form_submit_attempt, booking_form_submit_success, and booking_request_created are written with the same booking_journey_id or booking_request_id.'
+      )
+    );
+  }
+  if (bookingCodeRequests > 0 && websiteRequests === 0) {
+    addWarning(
+      'diagnostic',
+      adminCopy(lang, 'Le richieste con codice sono separate dal funnel del modulo pubblico.', 'Booking-code requests are separate from the public form funnel.'),
+      adminCopy(lang, `${bookingCodeRequests} richieste con codice create.`, `${bookingCodeRequests} booking-code requests created.`),
+      adminCopy(lang, 'Le richieste generate tramite codice prenotazione devono essere diagnosticate nel funnel booking-code, non come errori del modulo pubblico.', 'Requests created through booking codes should be diagnosed in the booking-code funnel, not as public form errors.')
+    );
+  }
+  if (visitors < 50) {
+    addWarning(
+      'diagnostic',
+      adminCopy(lang, 'Campione dati ancora piccolo.', 'Small sample size.'),
+      adminCopy(lang, `${visitors} visitatori nel periodo.`, `${visitors} visitors in this period.`),
+      adminCopy(lang, 'Usa questi numeri per diagnosi tecnica e controlli UX, non ancora per decidere quale canale, campagna o esperienza converte meglio.', 'Use these numbers for technical diagnosis and UX checks only. Do not use them yet to decide which channel, campaign, or experience converts best.')
+    );
+  }
+  if (requestsWithoutTrackedFormOpen.length) addWarning('diagnostic', adminCopy(lang, 'Alcune richieste sito non hanno una apertura modulo tracciata.', 'Some website requests have no tracked form open.'), '', adminCopy(lang, 'Controllare se i CTA interessati chiamano correttamente booking_form_open con esperienza e tipologia richiesta.', 'Check whether the affected CTAs correctly emit booking_form_open with experience and request type.'));
+  if (formOpenMissingCtaCount) addWarning('diagnostic', adminCopy(lang, 'Alcune aperture modulo non hanno cta_location.', 'Some form opens have no cta_location.'), '', adminCopy(lang, 'Aggiornare i CTA che non inviano cta_location per rendere leggibili i percorsi.', 'Update CTAs that do not send cta_location so paths are readable.'));
+  if (internalEventsExcluded || internalSessionsExcluded) addWarning('diagnostic', adminCopy(lang, 'Traffico interno escluso dalle metriche pubbliche.', 'Internal traffic excluded from public metrics.'), '', adminCopy(lang, 'Admin, API, CMS/editor, finanze e dashboard analytics restano esclusi dai conteggi pubblici.', 'Admin, API, CMS/editor, finance, and analytics dashboard rows remain excluded from public metrics.'));
+  if (directTrafficShare > 0.8) {
+    addWarning(
+      'attribution',
+      adminCopy(lang, 'Attribuzione ancora limitata.', 'Attribution is still limited.'),
+      adminCopy(lang, 'Gran parte del traffico risulta Direct.', 'Most traffic is still classified as Direct.'),
+      adminCopy(lang, 'Gran parte del traffico risulta Direct, quindi la performance dei canali non è ancora affidabile. Usa link UTM in modo coerente per bio Instagram, storie Instagram, condivisioni WhatsApp, partner e Profilo Google Business.', 'Most traffic is still classified as Direct, so source performance is not reliable yet. Use UTM links consistently for Instagram bio, Instagram stories, WhatsApp shares, partner links, and Google Business Profile.')
+    );
+  }
+  if (mobileShare > 0.7) {
+    addWarning(
+      'ux',
+      adminCopy(lang, 'Priorità ai test mobile.', 'Mobile journey needs priority testing.'),
+      adminCopy(lang, 'La maggior parte dell’attività arriva da mobile.', 'Most activity is mobile.'),
+      adminCopy(lang, 'La maggior parte dell’attività arriva da mobile. Dopo ogni release, testa il percorso completo su iPhone Safari e Android Chrome: apertura escursione, selezione data, avvio modulo, modifica campi, invio richiesta, apertura WhatsApp e ritorno al sito.', 'Most activity is mobile. After each release, test the complete request path on iPhone Safari and Android Chrome: open excursion, select date, start form, edit fields, submit request, open WhatsApp, and return to the site.')
+    );
+  }
+
 
   const conversionMetrics = {
     websiteRequestConversion: percent(websiteRequests, conversionBase),
@@ -8411,12 +9927,23 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     experienceViews,
     formOpens,
     fieldStarts,
+    formJourneysStarted,
+    abandonedForms,
+    recoveredByWhatsapp,
+    journeySubmitSuccesses,
+    abandonmentRate,
+    recoveryRate,
     submitAttempts,
     submitSuccesses,
     submitErrors,
     validationErrors,
+    bookingCodeRedeemAttempts,
+    bookingCodeRedeemSuccesses,
+    bookingCodeRedeemErrors,
     bookingRequests: bookingRequestCount,
     websiteRequests,
+    bookingCodeRequests,
+    adminManualRequests: adminManualRequestRows.length,
     confirmedRequests,
     whatsappClicks,
     emailClicks,
@@ -8449,12 +9976,23 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     dataQualityRows,
     requestTrackingIntegrity,
     requestTrackingSummary: {
+      website_form_requests: websiteRequests,
+      booking_code_requests: bookingCodeRequests,
+      admin_manual_requests: adminManualRequestRows.length,
+      website_form_submit_attempts: submitAttempts,
+      website_form_submit_successes: submitSuccesses,
+      booking_code_redeem_attempts: bookingCodeRedeemAttempts,
+      booking_code_redeem_successes: bookingCodeRedeemSuccesses,
+      website_requests_with_tracked_submit: requestsWithTrackedSubmit,
       requests_with_tracked_submit: requestsWithTrackedSubmit,
       requests_matched_by_journey_id: requestsMatchedByJourneyId,
       requests_matched_by_booking_request_id: requestsMatchedByBookingRequestId,
       requests_matched_by_legacy_heuristic: requestsMatchedByLegacyHeuristic,
       requests_created_event_only: requestsCreatedEventOnly,
-      requests_without_tracked_submit: requestsWithoutTrackedSubmit
+      website_requests_without_submit_success: requestsWithoutTrackedSubmit,
+      requests_without_tracked_submit: requestsWithoutTrackedSubmit,
+      booking_code_requests_with_redeem_success: bookingCodeRequestsWithRedeemSuccess,
+      booking_code_requests_without_redeem_success: bookingCodeRequestsWithoutRedeemSuccess
     },
     warnings,
     lowSampleNote: visitors < 50,
@@ -8482,11 +10020,170 @@ function AnalyticsRowList({ rows, total, empty, helperLabel }) {
   );
 }
 
-function AnalyticsWarningList({ warnings = [] }) {
+function AnalyticsWarningList({ warnings = [], lang = 'it', onOpenDetails }) {
   if (!warnings.length) return null;
+  const normalized = warnings.map((warning) => (typeof warning === 'string' ? { type: 'diagnostic', message: warning, helper: '', detail: '' } : warning));
+  const groups = [
+    ['critical', adminCopy(lang, 'Problemi critici di tracciamento', 'Critical tracking issues')],
+    ['diagnostic', adminCopy(lang, 'Note diagnostiche', 'Diagnostic notes')],
+    ['attribution', adminCopy(lang, 'Note attribuzione', 'Attribution notes')],
+    ['ux', adminCopy(lang, 'Note test UX', 'UX testing notes')]
+  ];
   return (
-    <div className="analytics-warning-list" role="status">
-      {warnings.map((warning) => <p key={warning}>{warning}</p>)}
+    <div className="analytics-warning-list grouped" role="status">
+      {groups.map(([type, fallbackTitle]) => {
+        const items = normalized.filter((warning) => warning.type === type);
+        if (!items.length) return null;
+        return (
+          <section className={`analytics-warning-group ${type}`} key={type}>
+            <h3>{fallbackTitle}</h3>
+            {items.map((warning, index) => (
+              <p key={`${type}-${index}`}>
+                <span>{warning.message}</span>
+                {warning.helper && <small>{warning.helper}</small>}
+              </p>
+            ))}
+          </section>
+        );
+      })}
+      {onOpenDetails && (
+        <div className="analytics-warning-actions">
+          <button className="button secondary analytics-details-button" type="button" onClick={onOpenDetails}>
+            {adminCopy(lang, 'Dettagli analytics', 'Analytics details')}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AnalyticsDetailsModal({ lang = 'it', model, onClose }) {
+  useBodyScrollLock(true);
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose?.();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  const warnings = Array.isArray(model?.warnings) ? model.warnings : [];
+  const utmExamples = [
+    '?utm_source=instagram&utm_medium=social&utm_campaign=july_2026',
+    '?utm_source=instagram&utm_medium=story&utm_campaign=summer_2026',
+    '?utm_source=whatsapp&utm_medium=share&utm_campaign=fixed_excursions',
+    '?utm_source=google_business_profile&utm_medium=organic&utm_campaign=profile'
+  ];
+
+  return (
+    <div className="modal-backdrop analytics-details-backdrop" role="presentation" onClick={onClose}>
+      <section className="admin-modal full-screen-admin-modal analytics-details-modal" role="dialog" aria-modal="true" aria-labelledby="analyticsDetailsTitle" onClick={(event) => event.stopPropagation()}>
+        <div className="admin-modal-header analytics-details-header">
+          <div>
+            <span className="kicker">vulcanIQ</span>
+            <h2 id="analyticsDetailsTitle">{adminCopy(lang, 'Dettagli analytics', 'Analytics details')}</h2>
+            <p>{adminCopy(lang, 'Diagnostica tecnica del funnel, qualità dati, attribuzione e percorso mobile. Usare questi dettagli per correggere il tracciamento, non come prova marketing.', 'Technical diagnostics for funnel integrity, data quality, attribution, and mobile paths. Use these details to fix tracking, not as marketing proof.')}</p>
+          </div>
+          <button className="modal-close-button" type="button" onClick={onClose}>{adminCopy(lang, 'Chiudi', 'Close')}</button>
+        </div>
+
+        <div className="admin-summary-grid analytics-mini-summary-grid analytics-details-summary">
+          <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model?.websiteRequests ?? 0} />
+          <SummaryCard label={adminCopy(lang, 'Submit success tracciati', 'Tracked submit successes')} value={model?.submitSuccesses ?? 0} />
+          <SummaryCard label={adminCopy(lang, 'Richieste con codice', 'Booking-code requests')} value={model?.bookingCodeRequests ?? 0} />
+          <SummaryCard label={adminCopy(lang, 'Riscatti codice riusciti', 'Booking-code redeem successes')} value={model?.bookingCodeRedeemSuccesses ?? 0} />
+        </div>
+
+        {warnings.length > 0 && (
+          <AnalyticsSubsection title={adminCopy(lang, 'Spiegazione degli avvisi', 'Warning explanations')}>
+            <div className="analytics-detail-warning-grid">
+              {warnings.map((warning, index) => (
+                <article className={`analytics-detail-warning-card ${warning.type || 'diagnostic'}`} key={`${warning.type || 'warning'}-${index}`}>
+                  <h4>{warning.message}</h4>
+                  {warning.helper && <p className="small-note">{warning.helper}</p>}
+                  {warning.detail && <p>{warning.detail}</p>}
+                </article>
+              ))}
+            </div>
+          </AnalyticsSubsection>
+        )}
+
+        <AnalyticsSubsection title={adminCopy(lang, 'Esempi UTM da usare', 'UTM examples to use')}>
+          <div className="analytics-utm-list">
+            {utmExamples.map((example) => <code key={example}>{example}</code>)}
+          </div>
+        </AnalyticsSubsection>
+
+        <AnalyticsSubsection title={adminCopy(lang, 'Qualità dati', 'Data quality')}>
+          <AnalyticsTable
+            columns={[
+              { key: 'check', label: adminCopy(lang, 'Controllo', 'Check') },
+              { key: 'count', label: adminCopy(lang, 'Conteggio', 'Count') },
+              { key: 'detail', label: adminCopy(lang, 'Dettaglio', 'Detail') }
+            ]}
+            rows={model?.dataQualityRows || []}
+            empty={adminCopy(lang, 'Nessun dato disponibile.', 'No data available.')}
+          />
+        </AnalyticsSubsection>
+
+        <AnalyticsSubsection title={adminCopy(lang, 'Diagnostica funnel', 'Funnel diagnostics')}>
+          <AnalyticsTable
+            columns={[
+              { key: 'step', label: adminCopy(lang, 'Step', 'Step') },
+              { key: 'count', label: adminCopy(lang, 'Conteggio', 'Count') },
+              { key: 'dropoff', label: 'Drop-off' }
+            ]}
+            rows={model?.funnelDiagnostics || []}
+            empty={adminCopy(lang, 'Nessun dato disponibile.', 'No data available.')}
+          />
+        </AnalyticsSubsection>
+
+        <AnalyticsSubsection title={adminCopy(lang, 'Integrità richieste', 'Request tracking integrity')}>
+          <AnalyticsTable
+            columns={[
+              { key: 'created_at', label: adminCopy(lang, 'Creata il', 'Created at') },
+              { key: 'request_type', label: adminCopy(lang, 'Tipo', 'Type') },
+              { key: 'experience_id', label: adminCopy(lang, 'Esperienza', 'Experience') },
+              { key: 'source', label: adminCopy(lang, 'Sorgente', 'Source') },
+              { key: 'matched_submit_success', label: adminCopy(lang, 'Submit success', 'Submit success') },
+              { key: 'matched_booking_code_redeem_success', label: adminCopy(lang, 'Riscatto codice', 'Code redeem') },
+              { key: 'tracking_integrity_status', label: adminCopy(lang, 'Stato', 'Status') }
+            ]}
+            rows={(model?.requestTrackingIntegrity || []).slice(0, 50)}
+            empty={adminCopy(lang, 'Nessuna richiesta disponibile.', 'No requests available.')}
+          />
+        </AnalyticsSubsection>
+
+        <AnalyticsSubsection title={adminCopy(lang, 'Funnel mobile', 'Mobile funnel')}>
+          <AnalyticsTable
+            columns={[
+              { key: 'device_browser', label: adminCopy(lang, 'Dispositivo/browser', 'Device/browser') },
+              { key: 'page_views', label: adminCopy(lang, 'Page views', 'Page views') },
+              { key: 'form_opens', label: adminCopy(lang, 'Aperture modulo', 'Form opens') },
+              { key: 'field_starts', label: adminCopy(lang, 'Avvio campi', 'Field starts') },
+              { key: 'submit_attempts', label: adminCopy(lang, 'Tentativi invio', 'Submit attempts') },
+              { key: 'submit_successes', label: adminCopy(lang, 'Invii riusciti', 'Submit successes') },
+              { key: 'whatsapp_clicks', label: 'WhatsApp' },
+              { key: 'phone_clicks', label: adminCopy(lang, 'Telefono', 'Phone') }
+            ]}
+            rows={model?.mobileFunnel || []}
+            empty={adminCopy(lang, 'Nessun dato mobile disponibile.', 'No mobile data available.')}
+          />
+          <p className="small-note analytics-mobile-checklist">{adminCopy(lang, 'Checklist: apri escursione, seleziona data, avvia modulo, modifica campi, invia richiesta, apri WhatsApp e torna al sito su iPhone Safari e Android Chrome.', 'Checklist: open excursion, select date, start form, edit fields, submit request, open WhatsApp, and return to the site on iPhone Safari and Android Chrome.')}</p>
+        </AnalyticsSubsection>
+
+        <AnalyticsSubsection title={adminCopy(lang, 'Qualità attribuzione traffico', 'Traffic attribution quality')}>
+          <AnalyticsTable
+            columns={[
+              { key: 'source', label: adminCopy(lang, 'Sorgente', 'Source') },
+              { key: 'count', label: adminCopy(lang, 'Conteggio', 'Count') },
+              { key: 'notes', label: adminCopy(lang, 'Note', 'Notes') }
+            ]}
+            rows={model?.trafficAttributionQuality || []}
+            empty={adminCopy(lang, 'Nessun dato attribuzione disponibile.', 'No attribution data available.')}
+          />
+        </AnalyticsSubsection>
+      </section>
     </div>
   );
 }
@@ -8635,8 +10332,15 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
       page_views: model.pageViews,
       booking_requests: model.bookingRequests,
       website_booking_requests: model.websiteRequests,
+      website_form_requests: model.requestTrackingSummary?.website_form_requests || model.websiteRequests || 0,
+      booking_code_requests: model.requestTrackingSummary?.booking_code_requests || model.bookingCodeRequests || 0,
+      admin_manual_requests: model.requestTrackingSummary?.admin_manual_requests || model.adminManualRequests || 0,
       tracked_submit_successes: model.submitSuccesses,
       submit_attempts: model.submitAttempts,
+      website_form_submit_attempts: model.requestTrackingSummary?.website_form_submit_attempts || model.submitAttempts || 0,
+      website_form_submit_successes: model.requestTrackingSummary?.website_form_submit_successes || model.submitSuccesses || 0,
+      booking_code_redeem_attempts: model.requestTrackingSummary?.booking_code_redeem_attempts || model.bookingCodeRedeemAttempts || 0,
+      booking_code_redeem_successes: model.requestTrackingSummary?.booking_code_redeem_successes || model.bookingCodeRedeemSuccesses || 0,
       submit_errors: model.submitErrors,
       validation_errors: model.validationErrors,
       whatsapp_clicks: model.whatsappClicks,
@@ -8650,12 +10354,16 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
       internal_events_excluded: model.internalEventsExcluded,
       internal_sessions_excluded: model.internalSessionsExcluded,
       website_booking_requests_in_period: bookingRequestsInPeriod(bookingRequests, range),
+      website_requests_with_tracked_submit: model.requestTrackingSummary?.website_requests_with_tracked_submit || model.requestTrackingSummary?.requests_with_tracked_submit || 0,
       requests_with_tracked_submit: model.requestTrackingSummary?.requests_with_tracked_submit || 0,
       requests_matched_by_journey_id: model.requestTrackingSummary?.requests_matched_by_journey_id || 0,
       requests_matched_by_booking_request_id: model.requestTrackingSummary?.requests_matched_by_booking_request_id || 0,
       requests_matched_by_legacy_heuristic: model.requestTrackingSummary?.requests_matched_by_legacy_heuristic || 0,
       requests_created_event_only: model.requestTrackingSummary?.requests_created_event_only || 0,
-      requests_without_tracked_submit: model.requestTrackingSummary?.requests_without_tracked_submit || 0
+      website_requests_without_submit_success: model.requestTrackingSummary?.website_requests_without_submit_success || model.requestTrackingSummary?.requests_without_tracked_submit || 0,
+      requests_without_tracked_submit: model.requestTrackingSummary?.requests_without_tracked_submit || 0,
+      booking_code_requests_with_redeem_success: model.requestTrackingSummary?.booking_code_requests_with_redeem_success || 0,
+      booking_code_requests_without_redeem_success: model.requestTrackingSummary?.booking_code_requests_without_redeem_success || 0
     },
     tables: {
       countries: model.countryRows,
@@ -9022,6 +10730,79 @@ function backupProgressFromStatus(result, requestedAt, lang) {
   };
 }
 
+function WeeklyReportsAdminPanel({ lang }) {
+  const [state, setState] = useState({ loading: true, sending: false, error: '', message: '', reports: [] });
+
+  async function refresh() {
+    setState((current) => ({ ...current, loading: true, error: '' }));
+    try {
+      const reports = await listWeeklyAdminReports(20);
+      setState((current) => ({ ...current, loading: false, reports }));
+    } catch (error) {
+      setState((current) => ({ ...current, loading: false, error: error?.message || adminCopy(lang, 'Report non disponibili.', 'Reports are not available.') }));
+    }
+  }
+
+  useEffect(() => { refresh(); }, [lang]);
+
+  async function sendTest() {
+    setState((current) => ({ ...current, sending: true, error: '', message: '' }));
+    try {
+      const result = await sendWeeklyAdminRecap({ testMode: true, force: true });
+      setState((current) => ({ ...current, sending: false, message: adminCopy(lang, `Report di test inviati: ${result.sent || 0}.`, `Test reports sent: ${result.sent || 0}.`) }));
+      refresh();
+    } catch (error) {
+      setState((current) => ({ ...current, sending: false, error: error?.message || adminCopy(lang, 'Invio report non riuscito.', 'Report send failed.') }));
+    }
+  }
+
+  async function resendFailed(report) {
+    setState((current) => ({ ...current, sending: true, error: '', message: '' }));
+    try {
+      const result = await sendWeeklyAdminRecap({ reportId: report.id });
+      setState((current) => ({ ...current, sending: false, message: adminCopy(lang, `Report reinviati: ${result.sent || 0}.`, `Reports resent: ${result.sent || 0}.`) }));
+      refresh();
+    } catch (error) {
+      setState((current) => ({ ...current, sending: false, error: error?.message || adminCopy(lang, 'Reinvio report non riuscito.', 'Report resend failed.') }));
+    }
+  }
+
+  return (
+    <section className="admin-panel backup-panel weekly-report-panel">
+      <div className="admin-panel-header">
+        <div>
+          <h2>{adminCopy(lang, 'Recap settimanale', 'Weekly management recap')}</h2>
+          <p>{adminCopy(lang, 'Storico invii, errori e test del report operativo del lunedì.', 'Delivery history, errors, and tests for the Monday operational report.')}</p>
+        </div>
+        <div className="modal-actions">
+          <button className="button secondary" type="button" onClick={refresh} disabled={state.loading}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+          <button className="button primary" type="button" onClick={sendTest} disabled={state.sending}>{state.sending ? adminCopy(lang, 'Invio...', 'Sending...') : adminCopy(lang, 'Invia test', 'Send test')}</button>
+        </div>
+      </div>
+      {state.message && <div className="admin-alert success" role="status">{state.message}</div>}
+      {state.error && <div className="admin-alert error" role="alert">{state.error}</div>}
+      {state.loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : state.reports.length ? (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>{adminCopy(lang, 'Periodo', 'Period')}</th><th>{adminCopy(lang, 'Destinatario', 'Recipient')}</th><th>{adminCopy(lang, 'Tipo', 'Type')}</th><th>{adminCopy(lang, 'Stato', 'Status')}</th><th>{adminCopy(lang, 'Inviato', 'Sent')}</th><th>{adminCopy(lang, 'Errore', 'Error')}</th><th>{adminCopy(lang, 'Azione', 'Action')}</th></tr></thead>
+            <tbody>{state.reports.map((report) => (
+              <tr key={report.id}>
+                <td>{formatAdminDate(report.period_start, lang)} – {formatAdminDate(report.period_end, lang)}</td>
+                <td>{report.recipient}</td>
+                <td>{report.report_type}</td>
+                <td><span className={`status-pill ${report.status === 'failed' ? 'cancelled' : report.status === 'sent' || report.status === 'test' ? 'accepted' : 'pending'}`}>{report.status}</span></td>
+                <td>{report.sent_at ? new Date(report.sent_at).toLocaleString(lang === 'it' ? 'it-IT' : 'en-GB') : '-'}</td>
+                <td>{report.error_message || '-'}</td>
+                <td>{report.status === 'failed' ? <button className="button secondary" type="button" disabled={state.sending} onClick={() => resendFailed(report)}>{adminCopy(lang, 'Reinvia', 'Resend')}</button> : '-'}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ) : <p>{adminCopy(lang, 'Nessun report registrato.', 'No reports recorded.')}</p>}
+    </section>
+  );
+}
+
 function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress(), startGlobalBackupMonitor, stopGlobalBackupMonitor }) {
   const [actionState, setActionState] = useState({ createLoading: false, downloadLoading: false, message: '', error: '' });
   const [statusState, setStatusState] = useState({ loading: true, error: '', latestBackup: null, workflowRun: null, configured: false, message: '' });
@@ -9188,17 +10969,50 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
   }
 
   const latestBackup = statusState.latestBackup;
-  const latestBackupLabel = statusState.loading
-    ? adminCopy(lang, 'Caricamento...', 'Loading...')
-    : latestBackup?.createdAt
-      ? <BackupTimeValue value={latestBackup.createdAt} lang={lang} />
-      : adminCopy(lang, 'Nessun backup', 'No backup');
-  const latestBackupHelper = latestBackup
-    ? <BackupSummaryHelper latestBackup={latestBackup} lang={lang} />
-    : (statusState.message || adminCopy(lang, 'Nessun backup scaricabile trovato.', 'No downloadable backup found.'));
-  const lastStatusLabel = statusState.configured ? adminCopy(lang, 'Pronto', 'Ready') : adminCopy(lang, 'Da configurare', 'Needs configuration');
   const workflowRun = statusState.workflowRun;
   const workflowIsActive = workflowRun && ['queued', 'in_progress'].includes(workflowRun.status);
+  const workflowCompleted = workflowRun?.status === 'completed';
+  const workflowSucceeded = workflowCompleted && workflowRun?.conclusion === 'success';
+  const workflowFailed = workflowCompleted && workflowRun?.conclusion && workflowRun.conclusion !== 'success';
+  const hasDownloadableBackup = Boolean(latestBackup?.createdAt && latestBackup?.expired !== true);
+  const latestCompletedAt = latestBackup?.createdAt || (workflowSucceeded ? workflowRun?.updatedAt || workflowRun?.createdAt : null);
+  const workflowArtifactMissing = workflowSucceeded && !hasDownloadableBackup;
+
+  const latestBackupLabel = statusState.loading
+    ? adminCopy(lang, 'Caricamento...', 'Loading...')
+    : latestCompletedAt
+      ? <BackupTimeValue value={latestCompletedAt} lang={lang} />
+      : workflowFailed
+        ? adminCopy(lang, 'Backup non riuscito', 'Backup failed')
+        : adminCopy(lang, 'Nessun backup completato', 'No completed backup yet');
+  const latestBackupHelper = hasDownloadableBackup
+    ? <BackupSummaryHelper latestBackup={latestBackup} lang={lang} />
+    : workflowArtifactMissing
+      ? adminCopy(lang, 'L’ultimo workflow di backup è terminato correttamente, ma non è stato trovato uno ZIP scaricabile. L’artifact potrebbe essere scaduto, non caricato o non risolto dall’endpoint di download diretto.', 'The latest backup workflow completed successfully, but no downloadable ZIP artifact was found. The artifact may have expired, may not have been uploaded, or the direct-download lookup may need checking.')
+      : latestBackup?.expired
+        ? adminCopy(lang, 'L’ultimo artifact backup è scaduto. Crea un nuovo backup per abilitarne il download diretto.', 'The latest backup artifact has expired. Create a new backup to enable direct download.')
+        : (statusState.message || adminCopy(lang, 'Crea un backup per generare il primo ZIP scaricabile.', 'Create a backup to generate the first downloadable ZIP.'));
+  const downloadAvailabilityLabel = statusState.loading
+    ? adminCopy(lang, 'Caricamento...', 'Loading...')
+    : hasDownloadableBackup
+      ? adminCopy(lang, 'Disponibile', 'Available')
+      : adminCopy(lang, 'Non disponibile', 'Not available');
+  const downloadAvailabilityHelper = hasDownloadableBackup
+    ? adminCopy(lang, 'Lo ZIP dell’ultimo backup può essere scaricato direttamente da questa pagina.', 'The latest backup ZIP can be downloaded directly from this page.')
+    : workflowArtifactMissing
+      ? adminCopy(lang, 'Il backup risulta completato, ma lo ZIP non è disponibile per il download diretto.', 'The backup appears completed, but the ZIP is not available for direct download.')
+      : adminCopy(lang, 'Nessun artifact scaricabile disponibile.', 'No downloadable artifact available.');
+  const lastStatusLabel = statusState.loading
+    ? adminCopy(lang, 'Caricamento...', 'Loading...')
+    : workflowIsActive
+      ? workflowStatusText(workflowRun, lang)
+      : workflowSucceeded
+        ? adminCopy(lang, 'Completato', 'Completed')
+        : workflowFailed
+          ? adminCopy(lang, 'Fallito', 'Failed')
+          : statusState.configured
+            ? adminCopy(lang, 'Pronto', 'Ready')
+            : adminCopy(lang, 'Da configurare', 'Needs configuration');
   const workflowHelper = workflowRun
     ? <BackupInlineTime label={workflowStatusText(workflowRun, lang)} value={workflowRun.updatedAt || workflowRun.createdAt} lang={lang} />
     : adminCopy(lang, 'Nessuna esecuzione workflow disponibile.', 'No workflow run available.');
@@ -9212,7 +11026,7 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
           <h1>{adminCopy(lang, 'Backup del database', 'Database backup')}</h1>
         </div>
         <div className="backup-header-actions">
-          <button className="button primary" type="button" disabled={actionState.downloadLoading || actionState.createLoading} onClick={handleDownloadBackup}>
+          <button className="button primary" type="button" disabled={actionState.downloadLoading || actionState.createLoading || statusState.loading || !hasDownloadableBackup} onClick={handleDownloadBackup}>
             {actionState.downloadLoading ? adminCopy(lang, 'Download del backup in corso...', 'Downloading backup...') : adminCopy(lang, 'Scarica ultimo backup', 'Download latest backup')}
           </button>
           <button className="button secondary" type="button" disabled={actionState.createLoading || actionState.downloadLoading} onClick={handleCreateBackup}>
@@ -9254,13 +11068,14 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
           <dl className="backup-workflow-grid compact-workflow-grid">
             <div><dt>{adminCopy(lang, 'Backup corrente avviato', 'Current backup started')}</dt><dd><BackupTimeValue value={workflowRun.createdAt || workflowRun.runStartedAt} lang={lang} compact /></dd></div>
             <div><dt>{adminCopy(lang, 'Backup corrente aggiornato', 'Current backup updated')}</dt><dd><BackupTimeValue value={workflowRun.updatedAt} lang={lang} compact /></dd></div>
-            <div><dt>{adminCopy(lang, 'Ultimo backup completato', 'Last completed backup')}</dt><dd>{latestBackup?.createdAt ? <BackupTimeValue value={latestBackup.createdAt} lang={lang} compact /> : adminCopy(lang, 'Nessun backup', 'No backup')}</dd></div>
+            <div><dt>{adminCopy(lang, 'Ultimo backup completato', 'Last completed backup')}</dt><dd>{latestBackup?.createdAt ? <BackupTimeValue value={latestBackup.createdAt} lang={lang} compact /> : adminCopy(lang, 'Nessun backup completato', 'No completed backup yet')}</dd></div>
           </dl>
         </section>
       )}
 
       <div className="admin-summary-grid backup-summary-grid">
         <SummaryCard label={adminCopy(lang, 'Ultimo backup completato', 'Last completed backup')} value={latestBackupLabel} helper={latestBackupHelper} />
+        <SummaryCard label={adminCopy(lang, 'Download backup', 'Backup download')} value={downloadAvailabilityLabel} helper={downloadAvailabilityHelper} />
         <SummaryCard label={adminCopy(lang, 'Ultimo stato', 'Last status')} value={lastStatusLabel} helper={latestBackup?.artifactName || workflowHelper} />
         <SummaryCard label={adminCopy(lang, 'Programmazione backup', 'Backup schedule')} value={backupFrequencyLabel(scheduleDraft.frequency, lang)} helper={backupScheduleSummary(scheduleDraft, lang)} />
         <SummaryCard label={adminCopy(lang, 'Storage incluso', 'Storage included')} value={storageIncludedLabel(latestBackup?.storage, lang)} helper={backupStorageHelper(latestBackup, lang)} />
@@ -9344,6 +11159,8 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
         {scheduleState.error && <div className="admin-alert warning" role="status">{scheduleState.error}</div>}
         <p className="small-note">{adminCopy(lang, 'Il controllo automatico viene eseguito ogni ora e usa questa programmazione salvata per decidere se creare un nuovo backup.', 'The automatic check runs hourly and uses this saved schedule to decide whether to create a new backup.')}</p>
       </section>
+
+      <WeeklyReportsAdminPanel lang={lang} />
 
       <details className="admin-panel backup-panel backup-restore-details">
         <summary>
@@ -9451,9 +11268,45 @@ function analyticsTechnicalError(error) {
   return error?.message || error?.details || error?.hint || error?.code || '';
 }
 
+
+function ShortLinksPanel({ lang }) {
+  const links = [
+    ['/r/google-profile', '/?utm_source=google_business_profile&utm_medium=organic&utm_campaign=profile', 'Google profile'],
+    ['/r/google-booking', '/experiences?utm_source=google_business_profile&utm_medium=booking&utm_campaign=fixed_excursions', 'Google booking'],
+    ['/r/ig-bio', '/?utm_source=instagram&utm_medium=social&utm_campaign=bio', 'Instagram bio'],
+    ['/r/wa', '/?utm_source=whatsapp&utm_medium=share&utm_campaign=direct', 'WhatsApp'],
+    ['/r/partner', '/?utm_source=partner&utm_medium=referral&utm_campaign=partner', 'Partner'],
+    ['/r/qr', '/?utm_source=qr&utm_medium=offline&utm_campaign=printed_qr', 'QR'],
+    ['/r/card', '/?utm_source=business_card&utm_medium=offline&utm_campaign=card', 'Business card']
+  ];
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  async function copyLink(path) {
+    const value = `${origin}${path}`;
+    try { await navigator.clipboard.writeText(value); } catch {}
+    trackEvent('gbp_utm_link_click', { language: lang, short_link: path, action: 'copy' }, { dedupe: false });
+  }
+  return (
+    <AnalyticsPanel title={adminCopy(lang, 'Link UTM rapidi', 'Quick UTM links')}>
+      <AnalyticsHelperNote>{adminCopy(lang, 'Usa questo link nella scheda Google per distinguere il traffico Google Business Profile da Instagram, WhatsApp, QR e partner.', 'Use this link in Google Business Profile to separate Google traffic from Instagram, WhatsApp, QR and partner traffic.')}</AnalyticsHelperNote>
+      <div className="short-link-panel">
+        {links.map(([path, destination, label]) => (
+          <div className="short-link-row" key={path}>
+            <strong>{label}</strong>
+            <code>{origin}{path}</code>
+            <button className="button secondary" type="button" onClick={() => copyLink(path)}>{adminCopy(lang, 'Copia', 'Copy')}</button>
+            <small>{destination}</small>
+          </div>
+        ))}
+      </div>
+    </AnalyticsPanel>
+  );
+}
+
+
 function AdminAnalyticsPage({ lang, adminContent = {} }) {
   const [period, setPeriod] = useState('30d');
   const [state, setState] = useState({ loading: true, error: '', technicalError: '', events: [], sessions: [], bookingRequests: [] });
+  const [analyticsDetailsOpen, setAnalyticsDetailsOpen] = useState(false);
   const range = useMemo(() => analyticsDateRange(period), [period]);
 
   useEffect(() => {
@@ -9501,6 +11354,8 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
         </div>
       </div>
 
+      <ShortLinksPanel lang={lang} />
+
       {state.error && (
         <div className="admin-alert warning" role="status">
           <p>{state.error}</p>
@@ -9519,13 +11374,17 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           {state.events.length >= 10000 && <p className="small-note analytics-limit-note">{adminCopy(lang, 'Risultati limitati ai primi 10.000 eventi del periodo.', 'Results are capped at the first 10,000 events in this period.')}</p>}
 
           <AnalyticsStaticPanel title={<AdminEditableText itemKey="admin.analytics.overview.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Panoramica', 'Overview')} />}>
-            <AnalyticsWarningList warnings={model.warnings} />
+            <AnalyticsWarningList warnings={model.warnings} lang={lang} onOpenDetails={() => setAnalyticsDetailsOpen(true)} />
             <div className="admin-summary-grid analytics-summary-grid">
               <SummaryCard label={adminCopy(lang, 'Visitatori', 'Visitors')} value={model.visitors || '—'} />
               <SummaryCard label={adminCopy(lang, 'Visualizzazioni pagina', 'Page views')} value={model.pageViews} />
               <SummaryCard label={adminCopy(lang, 'Aperture modulo', 'Form opens')} value={model.formOpens} />
+              <SummaryCard label={adminCopy(lang, 'Form abbandonati', 'Abandoned forms')} value={model.abandonedForms} helper={model.abandonmentRate} />
+              <SummaryCard label={adminCopy(lang, 'Recuperi WhatsApp', 'WhatsApp recoveries')} value={model.recoveredByWhatsapp} helper={model.recoveryRate} />
               <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} />
               <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model.websiteRequests} />
+              <SummaryCard label={adminCopy(lang, 'Richieste con codice', 'Booking-code requests')} value={model.bookingCodeRequests} />
+              <SummaryCard label={adminCopy(lang, 'Riscatti codice riusciti', 'Booking-code redeem successes')} value={model.bookingCodeRedeemSuccesses} />
               <SummaryCard label={adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks')} value={model.whatsappClicks} />
               <SummaryCard label={adminCopy(lang, 'Click email', 'Email clicks')} value={model.emailClicks} />
               <SummaryCard label={adminCopy(lang, 'Conversione richieste sito', 'Website request conversion')} value={model.conversionMetrics.websiteRequestConversion} />
@@ -9568,6 +11427,7 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
                   { key: 'experience_id', label: adminCopy(lang, 'Esperienza', 'Experience') },
                   { key: 'matched_submit_attempt', label: adminCopy(lang, 'Tentativo', 'Attempt') },
                   { key: 'matched_submit_success', label: adminCopy(lang, 'Invio riuscito', 'Submit success') },
+                  { key: 'matched_booking_code_redeem_success', label: adminCopy(lang, 'Riscatto codice', 'Code redeem') },
                   { key: 'matched_booking_request_created_event', label: adminCopy(lang, 'Evento richiesta', 'Request event') },
                   { key: 'tracking_match_method', label: adminCopy(lang, 'Match', 'Match') },
                   { key: 'tracking_integrity_status', label: adminCopy(lang, 'Stato', 'Status') },
@@ -9604,6 +11464,8 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
                   <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} />
                   <SummaryCard label={adminCopy(lang, 'Invii riusciti tracciati', 'Tracked successful submissions')} value={model.submitSuccesses} />
                   <SummaryCard label={adminCopy(lang, 'Errori invio', 'Submit errors')} value={model.submitErrors} />
+                  <SummaryCard label={adminCopy(lang, 'Tentativi codice', 'Code attempts')} value={model.bookingCodeRedeemAttempts} />
+                  <SummaryCard label={adminCopy(lang, 'Riscatti codice riusciti', 'Code successes')} value={model.bookingCodeRedeemSuccesses} />
                   <SummaryCard label={adminCopy(lang, 'Conversione invii', 'Tracked conversion')} value={model.conversionMetrics.trackedSubmissionConversion} />
                 </div>
               </AnalyticsSubsection>
@@ -9773,6 +11635,7 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           </AnalyticsPanel>
         </>
       )}
+      {analyticsDetailsOpen && <AnalyticsDetailsModal lang={lang} model={model} onClose={() => setAnalyticsDetailsOpen(false)} />}
     </section>
   );
 }
@@ -9800,11 +11663,25 @@ function AdminAnalyticsPreview({ lang, adminContent, editor }) {
 }
 
 function FinanceAdminPage({ lang, session, adminContent = {} }) {
-  const [entries, setEntries] = useState([]);
-  const [requests, setRequests] = useState([]);
-  const [fixedExcursions, setFixedExcursions] = useState([]);
-  const [leaflets, setLeaflets] = useState([]);
-  const [filters, setFilters] = useState({
+const [entries, setEntries] = useState([]);
+const [requests, setRequests] = useState([]);
+const [fixedExcursions, setFixedExcursions] = useState([]);
+const [leaflets, setLeaflets] = useState([]);
+const [partnerCommissions, setPartnerCommissions] = useState([]);
+const [partnerCommissionSummary, setPartnerCommissionSummary] = useState({
+  commissions: [],
+  pendingAmount: 0,
+  approvedUnpaidAmount: 0,
+  paidAmount: 0,
+  cancelledAmount: 0,
+  unpaidLiability: 0,
+  pendingCount: 0,
+  approvedCount: 0,
+  paidCount: 0,
+  cancelledCount: 0,
+  byPartner: []
+});
+const [filters, setFilters] = useState({
     type: 'all',
     dateMode: 'all',
     specificDate: todayIso(),
@@ -9829,16 +11706,19 @@ function FinanceAdminPage({ lang, session, adminContent = {} }) {
     setError('');
     const dateRange = resolveFinanceDateRange(filters, lang);
     try {
-      const [entryData, requestData, fixedData, leafletData] = await Promise.all([
+      const [entryData, requestData, fixedData, leafletData, commissionSummaryData] = await Promise.all([
         listFinanceEntries({ ...filters, fromDate: dateRange.startDate, toDate: dateRange.endDate }),
         listBookingRequests({ limit: 250 }),
         listFixedExcursions({ activeOnly: false }),
-        listMonthlyLeaflets({ activeOnly: false })
+        listMonthlyLeaflets({ activeOnly: false }),
+        listPartnerCommissionSummary({ limit: 1000 }).catch(() => ({ commissions: [], pendingAmount: 0, approvedUnpaidAmount: 0, paidAmount: 0, cancelledAmount: 0, unpaidLiability: 0, pendingCount: 0, approvedCount: 0, paidCount: 0, cancelledCount: 0, byPartner: [] }))
       ]);
       setEntries(entryData);
       setRequests(requestData);
       setFixedExcursions(fixedData);
       setLeaflets(leafletData);
+      setPartnerCommissions(commissionSummaryData.commissions || []);
+      setPartnerCommissionSummary(commissionSummaryData);
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Finanze non caricate.', 'Finance data not loaded.'));
     } finally {
@@ -9890,13 +11770,14 @@ function FinanceAdminPage({ lang, session, adminContent = {} }) {
     event.preventDefault();
     setError('');
     setFeedback('');
-    if (!form.entry_date || !form.title.trim() || Number(form.amount || 0) <= 0) {
+    if (!form.entry_date || !form.title.trim() || parseMoneyAmount(form.amount) <= 0) {
       setError(adminCopy(lang, 'Data, titolo e importo positivo sono obbligatori.', 'Date, title, and a positive amount are required.'));
       return;
     }
     try {
-      if (editing) await updateFinanceEntry(editing.id, form, session.user.id);
-      else await createFinanceEntry(form, session.user.id);
+      const normalizedForm = { ...form, amount: parseMoneyAmount(form.amount), currency: normalizeCurrency(form.currency) };
+      if (editing) await updateFinanceEntry(editing.id, normalizedForm, session.user.id);
+      else await createFinanceEntry(normalizedForm, session.user.id);
       setFeedback(editing ? adminCopy(lang, 'Voce aggiornata.', 'Entry updated.') : adminCopy(lang, 'Voce aggiunta.', 'Entry added.'));
       resetForm();
       await refresh();
@@ -9937,11 +11818,14 @@ function FinanceAdminPage({ lang, session, adminContent = {} }) {
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       <div className="admin-summary-grid finance-summary-grid">
-        <SummaryCard label={adminCopy(lang, 'Entrate totali', 'Total earnings')} value={formatMoney(financeSummary.income)} onClick={() => setActiveFinanceDetail({ key: 'income', title: adminCopy(lang, 'Entrate', 'Income'), entries: financeSummary.incomeEntries, total: financeSummary.income })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Entrate confermate', 'Confirmed earnings')} value={formatMoney(financeSummary.income)} onClick={() => setActiveFinanceDetail({ key: 'income', title: adminCopy(lang, 'Entrate', 'Income'), entries: financeSummary.incomeEntries, total: financeSummary.income })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Entrate attese', 'Expected income')} value={formatMoney(financeSummary.expectedIncome)} onClick={() => setActiveFinanceDetail({ key: 'expected-income', title: adminCopy(lang, 'Entrate attese', 'Expected income'), entries: financeSummary.expectedEntries, total: financeSummary.expectedIncome })} helper={adminCopy(lang, 'Non confermate', 'Not confirmed')} />
         <SummaryCard label={adminCopy(lang, 'Uscite totali', 'Total expenses')} value={formatMoney(financeSummary.expenses)} onClick={() => setActiveFinanceDetail({ key: 'expenses', title: adminCopy(lang, 'Uscite', 'Expenses'), entries: financeSummary.expenseEntries, total: financeSummary.expenses })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
         <SummaryCard label={adminCopy(lang, 'Utile netto', 'Net profit')} value={formatMoney(financeSummary.net)} onClick={() => setActiveFinanceDetail({ key: 'net', title: adminCopy(lang, 'Utile netto', 'Net profit'), entries: reportEntries, total: financeSummary.net })} helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
         <SummaryCard label={adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings')} value={linkedEntries.length} onClick={() => setActiveFinanceDetail({ key: 'linked', title: adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings'), entries: linkedEntries, total: linkedEntries.length })} helper={adminCopy(lang, 'Vedi movimenti', 'View entries')} />
         <SummaryCard label={adminCopy(lang, 'Spese non collegate', 'Unlinked expenses')} value={unlinkedExpenseEntries.length} onClick={() => setActiveFinanceDetail({ key: 'unlinked-expenses', title: adminCopy(lang, 'Spese non collegate', 'Unlinked expenses'), entries: unlinkedExpenseEntries, total: unlinkedExpenseEntries.length })} helper={adminCopy(lang, 'Vedi spese', 'View expenses')} />
+        {Number(partnerCommissionSummary?.unpaidLiability || 0) > 0 && <SummaryCard label={adminCopy(lang, 'Liabilità commissioni partner', 'Partner commission liabilities')} value={formatMoney(partnerCommissionSummary.unpaidLiability, 'EUR', lang)} helper={adminCopy(lang, 'In attesa + approvate non pagate', 'Pending + approved unpaid')} />}
+        <SummaryCard label={adminCopy(lang, 'Commissioni pagate', 'Paid commissions')} value={formatMoney(partnerCommissionSummary?.paidAmount || 0, 'EUR', lang)} helper={`${partnerCommissionSummary?.paidCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
       </div>
       <div className="admin-filter-bar finance-filter-bar">
         <select value={filters.dateMode} onChange={(event) => updateFilter('dateMode', event.target.value)} aria-label={adminCopy(lang, 'Filtro date', 'Date filter')}>
@@ -9959,6 +11843,7 @@ function FinanceAdminPage({ lang, session, adminContent = {} }) {
       </div>
       <FinanceOverview lang={lang} summary={financeSummary} rangeLabel={resolvedDateRange.label} onOpen={setActiveFinanceDetail} />
       <FinanceProfitLoss lang={lang} summary={financeSummary} adminContent={adminContent} />
+      <PartnerCommissionsFinancePanel lang={lang} session={session} commissions={partnerCommissions} summary={partnerCommissionSummary} onChanged={async (message) => { setFeedback(message); await refresh(); }} />
       <div className="admin-two-column finance-layout">
         <details className="admin-panel finance-collapsible-panel finance-form-panel" open={Boolean(editing)}>
           <summary className="finance-collapsible-summary">
@@ -9968,8 +11853,8 @@ function FinanceAdminPage({ lang, session, adminContent = {} }) {
           <form className="admin-form-grid" onSubmit={submit}>
             <AdminSelect label={adminCopy(lang, 'Tipo', 'Type')} value={form.type} onChange={(value) => update('type', value)} options={['income', 'expense']} formatter={(value) => value === 'income' ? adminCopy(lang, 'Entrata', 'Income') : adminCopy(lang, 'Uscita', 'Expense')} />
             <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.entry_date} onChange={(value) => update('entry_date', value)} />
-            <AdminInput label={adminCopy(lang, 'Importo', 'Amount')} type="number" value={form.amount} onChange={(value) => update('amount', value)} />
-            <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => update('currency', value)} />
+            <AdminInput label={adminCopy(lang, 'Importo', 'Amount')} type="text" value={form.amount} onChange={(value) => update('amount', value)} />
+            <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => update('currency', normalizeCurrency(value))} />
             <AdminInput label={adminCopy(lang, 'Titolo', 'Title')} value={form.title} onChange={(value) => update('title', value)} />
             <AdminSelect label={adminCopy(lang, 'Categoria', 'Category')} value={form.category} onChange={(value) => update('category', value)} options={(form.type === 'income' ? FINANCE_CATEGORIES.income : FINANCE_CATEGORIES.expense).map(([key]) => key)} formatter={(value) => financeCategoryLabel(value, lang)} />
             <AdminInput label={adminCopy(lang, 'Metodo pagamento', 'Payment method')} value={form.payment_method} onChange={(value) => update('payment_method', value)} />
@@ -9997,6 +11882,90 @@ function FinanceAdminPage({ lang, session, adminContent = {} }) {
       </div>
       {activeFinanceDetail && <FinanceDetailModal detail={activeFinanceDetail} lang={lang} onClose={() => setActiveFinanceDetail(null)} />}
     </section>
+  );
+}
+
+
+function PartnerCommissionsFinancePanel({ lang, session, commissions = [], summary = null, onChanged }) {
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [busyId, setBusyId] = useState('');
+  const [error, setError] = useState('');
+  const data = summary || { pendingAmount: 0, approvedUnpaidAmount: 0, paidAmount: 0, cancelledAmount: 0, unpaidLiability: 0, pendingCount: 0, approvedCount: 0, paidCount: 0, cancelledCount: 0, byPartner: [] };
+  const visible = statusFilter === 'all' ? commissions : commissions.filter((item) => item.status === statusFilter);
+
+  async function setStatus(item, status) {
+    setBusyId(item.id);
+    setError('');
+    try {
+      await updatePartnerCommissionStatus(item.id, status, item.status_notes || '', session.user.id);
+      trackEvent(status === 'paid' ? 'partner_commission_marked_paid' : 'partner_commission_status_changed', { partner_id: item.partner_id || '', source_type: item.source_type || '', commission_status: status, currency: item.currency || 'EUR', has_commission_amount: Boolean(item.commission_amount), commission_type: item.commission_type || '', source_section: 'admin_finance', admin_action: `set_${status}` }, { dedupe: false });
+      onChanged?.(status === 'paid' ? adminCopy(lang, 'Commissione segnata come pagata.', 'Commission marked as paid.') : adminCopy(lang, 'Commissione aggiornata.', 'Commission updated.'));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Commissione non aggiornata.', 'Commission not updated.'));
+    } finally {
+      setBusyId('');
+    }
+  }
+
+  return (
+    <details className="admin-panel finance-collapsible-panel partner-commissions-panel" open>
+      <summary className="finance-collapsible-summary">
+        <strong>{adminCopy(lang, 'Commissioni partner', 'Partner commissions')}</strong>
+        {Number(data.unpaidLiability || 0) > 0 && <em>{formatMoney(data.unpaidLiability || 0, 'EUR', lang)} {adminCopy(lang, 'non pagate', 'unpaid')}</em>}
+      </summary>
+      <div className="finance-collapsible-body">
+        <p className="small-note">{adminCopy(lang, 'Le commissioni sono interne, non pubbliche, e vengono conteggiate come liabilità fino al pagamento manuale.', 'Commissions are internal, non-public, and counted as liabilities until manually paid.')}</p>
+        {error && <div className="admin-alert error compact-alert">{error}</div>}
+        <div className="admin-summary-grid partner-commission-summary-grid">
+          <SummaryCard label={adminCopy(lang, 'In attesa', 'Pending')} value={formatMoney(data.pendingAmount || 0, 'EUR', lang)} helper={`${data.pendingCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+          <SummaryCard label={adminCopy(lang, 'Approvate non pagate', 'Approved unpaid')} value={formatMoney(data.approvedUnpaidAmount || 0, 'EUR', lang)} helper={`${data.approvedCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+          {Number(data.unpaidLiability || 0) > 0 && <SummaryCard label={adminCopy(lang, 'Totale non pagato', 'Total unpaid')} value={formatMoney(data.unpaidLiability || 0, 'EUR', lang)} helper={adminCopy(lang, 'Liabilità finance', 'Finance liability')} />}
+          <SummaryCard label={adminCopy(lang, 'Pagate', 'Paid')} value={formatMoney(data.paidAmount || 0, 'EUR', lang)} helper={`${data.paidCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+          <SummaryCard label={adminCopy(lang, 'Annullate', 'Cancelled')} value={formatMoney(data.cancelledAmount || 0, 'EUR', lang)} helper={`${data.cancelledCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+        </div>
+        <div className="admin-two-column partner-commission-layout">
+          <section className="partner-settlement-section">
+            <h3>{adminCopy(lang, 'Riepilogo settlement per partner', 'Partner settlement summary')}</h3>
+            {!data.byPartner?.length ? <p className="small-note">{adminCopy(lang, 'Nessuna commissione partner presente.', 'No partner commissions yet.')}</p> : (
+              <div className="admin-table-wrap">
+                <table className="admin-table compact-table">
+                  <thead><tr><th>Partner</th><th>{adminCopy(lang, 'In attesa', 'Pending')}</th><th>{adminCopy(lang, 'Approvate', 'Approved')}</th><th>{adminCopy(lang, 'Pagate', 'Paid')}</th><th>{adminCopy(lang, 'Record', 'Records')}</th><th>{adminCopy(lang, 'Ultima', 'Last')}</th></tr></thead>
+                  <tbody>{data.byPartner.map((row) => <tr key={row.partner_id || row.partner_name}><td>{row.partner_name || '—'}</td><td>{formatMoney(row.pendingAmount || 0, 'EUR', lang)}</td><td>{formatMoney(row.approvedUnpaidAmount || 0, 'EUR', lang)}</td><td>{formatMoney(row.paidAmount || 0, 'EUR', lang)}</td><td>{row.count}</td><td>{row.lastCommissionDate ? formatLocalDateTime(row.lastCommissionDate, lang, '') : '—'}</td></tr>)}</tbody>
+                </table>
+              </div>
+            )}
+          </section>
+          <section className="partner-commission-list-section">
+            <div className="admin-panel-header compact-header"><h3>{adminCopy(lang, 'Dettaglio commissioni', 'Commission details')}</h3><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">{adminCopy(lang, 'Tutti gli stati', 'All statuses')}</option>{PARTNER_COMMISSION_STATUSES.map((status) => <option value={status} key={status}>{partnerCommissionStatusLabel(status, lang)}</option>)}</select></div>
+            {!visible.length ? <p className="small-note">{adminCopy(lang, 'Nessuna commissione per questo filtro.', 'No commissions for this filter.')}</p> : (
+              <div className="partner-commission-card-list">
+                {visible.map((item) => (
+                  <article className="partner-commission-card" key={item.id}>
+                    <div className="request-card-head">
+                      <div><h4>{item.partner_name || '—'}</h4><p>{partnerCommissionSourceLabel(item, lang)} · {item.experience_title || adminExperienceLabel(item.experience_id, lang) || '—'} · {item.experience_date ? formatDateForMessage(item.experience_date, lang) : '—'}</p></div>
+                      <span className={`status-pill ${item.status}`}>{partnerCommissionStatusLabel(item.status, lang)}</span>
+                    </div>
+                    <dl className="request-details-grid compact-details-grid">
+                      <div><dt>{adminCopy(lang, 'Lordo', 'Gross')}</dt><dd>{formatMoney(item.gross_amount, item.currency, lang)}</dd></div>
+                      <div><dt>{adminCopy(lang, 'Regola', 'Rule')}</dt><dd>{item.commission_type === 'percentage' ? `${item.commission_value}%` : formatMoney(item.commission_value, item.currency, lang)}</dd></div>
+                      <div><dt>{adminCopy(lang, 'Commissione', 'Commission')}</dt><dd>{formatMoney(item.commission_amount, item.currency, lang)}</dd></div>
+                      <div><dt>{adminCopy(lang, 'Cliente', 'Customer')}</dt><dd>{item.customer_display_name || '—'}</dd></div>
+                    </dl>
+                    {item.status_notes && <p className="small-note">{item.status_notes}</p>}
+                    <div className="request-actions-row">
+                      {item.status === 'pending' && <button className="button secondary" type="button" disabled={busyId === item.id} onClick={() => setStatus(item, 'approved')}>{adminCopy(lang, 'Approva', 'Approve')}</button>}
+                      {['pending', 'approved'].includes(item.status) && <button className="button secondary danger" type="button" disabled={busyId === item.id} onClick={() => setStatus(item, 'cancelled')}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>}
+                      {item.status === 'approved' && <button className="button primary" type="button" disabled={busyId === item.id} onClick={() => setStatus(item, 'paid')}>{adminCopy(lang, 'Segna pagata', 'Mark paid')}</button>}
+                      {['paid', 'cancelled'].includes(item.status) && <span className="small-note">{adminCopy(lang, 'Solo consultazione', 'View only')}</span>}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -10332,7 +12301,7 @@ function TodayDashboard({ lang, session, navigate, adminContent = {} }) {
               </div>
               {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : todayRequests.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta con data oggi.', 'No requests dated today.')}</p> : (
                 <div className="request-card-list">
-                  {todayRequests.map((request) => <RequestCard key={request.id} request={request} lang={lang} onApprove={() => setDecision({ type: 'approve', request })} onDecline={() => setDecision({ type: 'decline', request })} />)}
+                  {todayRequests.map((request) => <RequestCard key={request.id} request={request} lang={lang} session={session} onApprove={() => setDecision({ type: 'approve', request })} onDecline={() => setDecision({ type: 'decline', request })} />)}
                 </div>
               )}
             </div>
@@ -10345,7 +12314,7 @@ function TodayDashboard({ lang, session, navigate, adminContent = {} }) {
             </div>
             {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : pending.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta in attesa.', 'No pending requests.')}</p> : (
               <div className="request-card-list">
-                {pending.map((request) => <RequestCard key={request.id} request={request} lang={lang} onApprove={() => setDecision({ type: 'approve', request })} onDecline={() => setDecision({ type: 'decline', request })} />)}
+                {pending.map((request) => <RequestCard key={request.id} request={request} lang={lang} session={session} onApprove={() => setDecision({ type: 'approve', request })} onDecline={() => setDecision({ type: 'decline', request })} />)}
               </div>
             )}
           </div>
@@ -10480,7 +12449,7 @@ function UpcomingPage({ lang, session, navigate, adminContent = {} }) {
                   <details className="admin-archive-details nested-upcoming-group" key={group.key}>
                     <summary><span>{group.title[lang]}</span><strong>{group.items.length}</strong></summary>
                     <div className="request-card-list compact-list">
-                      {group.items.map((request) => <RequestCard key={request.id} request={request} lang={lang} compact />)}
+                      {group.items.map((request) => <RequestCard key={request.id} request={request} lang={lang} session={session} compact />)}
                     </div>
                   </details>
                 ))}
@@ -10491,7 +12460,7 @@ function UpcomingPage({ lang, session, navigate, adminContent = {} }) {
             <summary><AdminEditableText itemKey="admin.upcoming.past.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Esperienze passate', 'Past experiences')} /><strong>{pastAccepted.length}</strong></summary>
             {pastAccepted.length === 0 ? <p className="small-note">{adminCopy(lang, 'Nessuna esperienza passata.', 'No past experiences.')}</p> : (
               <div className="request-card-list compact-list">
-                {pastAccepted.map((request) => <RequestCard key={request.id} request={request} lang={lang} compact />)}
+                {pastAccepted.map((request) => <RequestCard key={request.id} request={request} lang={lang} session={session} compact />)}
               </div>
             )}
           </details>
@@ -10536,7 +12505,578 @@ function AdminMiniList({ items, empty, render }) {
   return <ul className="admin-mini-list">{items.map((item) => <li key={item.id}>{render(item)}</li>)}</ul>;
 }
 
-function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = false }) {
+
+function RequestCrmControls({ request, lang, onUpdated }) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState(() => ({
+    lead_status: request.lead_status || 'new_lead',
+    lead_priority: request.lead_priority || 'normal',
+    next_follow_up_at: request.next_follow_up_at ? String(request.next_follow_up_at).slice(0, 10) : '',
+    expected_value: request.expected_value ?? '',
+    quoted_amount: request.quoted_amount ?? '',
+    lost_reason: request.lost_reason || '',
+    internal_notes: request.internal_notes || ''
+  }));
+
+  useEffect(() => {
+    setForm({
+      lead_status: request.lead_status || 'new_lead',
+      lead_priority: request.lead_priority || 'normal',
+      next_follow_up_at: request.next_follow_up_at ? String(request.next_follow_up_at).slice(0, 10) : '',
+      expected_value: request.expected_value ?? '',
+      quoted_amount: request.quoted_amount ?? '',
+      lost_reason: request.lost_reason || '',
+      internal_notes: request.internal_notes || ''
+    });
+  }, [request.id, request.lead_status, request.lead_priority, request.next_follow_up_at, request.expected_value, request.quoted_amount, request.lost_reason, request.internal_notes]);
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function save() {
+    setSaving(true);
+    setError('');
+    try {
+      const payload = {
+        lead_status: form.lead_status || null,
+        lead_priority: form.lead_priority || null,
+        next_follow_up_at: form.next_follow_up_at || null,
+        expected_value: form.expected_value === '' ? null : parseMoneyAmount(form.expected_value),
+        quoted_amount: form.quoted_amount === '' ? null : parseMoneyAmount(form.quoted_amount),
+        lost_reason: form.lost_reason || null,
+        internal_notes: form.internal_notes || null
+      };
+      await updateBookingRequest(request.id, payload);
+      if (payload.lead_status !== request.lead_status) trackEvent('lead_status_changed', { request_id: request.id, from_status: request.lead_status || '', to_status: payload.lead_status || '' }, { dedupe: false });
+      if (payload.next_follow_up_at !== request.next_follow_up_at) trackEvent('lead_follow_up_set', { request_id: request.id, next_follow_up_at: payload.next_follow_up_at || '' }, { dedupe: false });
+      if (payload.expected_value !== request.expected_value || payload.quoted_amount !== request.quoted_amount) trackEvent('lead_value_updated', { request_id: request.id }, { dedupe: false });
+      onUpdated?.(adminCopy(lang, 'CRM aggiornata.', 'CRM updated.'));
+      setOpen(false);
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'CRM non aggiornata.', 'CRM not updated.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const dueLabel = request.next_follow_up_at
+    ? formatDateForMessage(String(request.next_follow_up_at).slice(0, 10), lang)
+    : adminCopy(lang, 'Nessun follow-up', 'No follow-up');
+
+  return (
+    <div className="request-crm-box">
+      <button className="request-crm-toggle" type="button" onClick={() => setOpen((value) => !value)}>
+        <span>{adminCopy(lang, 'CRM', 'CRM')}</span>
+        <strong>{leadStatusLabel(request.lead_status || 'new_lead', lang)} · {leadPriorityLabel(request.lead_priority || 'normal', lang)}</strong>
+        <small>{dueLabel}</small>
+      </button>
+      {open && (
+        <div className="admin-form-grid request-crm-grid">
+          <label className="admin-field"><span>{adminCopy(lang, 'Stato lead', 'Lead status')}</span><select value={form.lead_status} onChange={(event) => update('lead_status', event.target.value)}>{LEAD_STATUSES.map((status) => <option key={status} value={status}>{leadStatusLabel(status, lang)}</option>)}</select></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Priorità', 'Priority')}</span><select value={form.lead_priority} onChange={(event) => update('lead_priority', event.target.value)}>{LEAD_PRIORITIES.map((priority) => <option key={priority} value={priority}>{leadPriorityLabel(priority, lang)}</option>)}</select></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Prossimo follow-up', 'Next follow-up')}</span><input type="date" value={form.next_follow_up_at} onChange={(event) => update('next_follow_up_at', event.target.value)} /></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Valore atteso', 'Expected value')}</span><input inputMode="decimal" value={form.expected_value} onChange={(event) => update('expected_value', event.target.value)} /></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Importo preventivato', 'Quoted amount')}</span><input inputMode="decimal" value={form.quoted_amount} onChange={(event) => update('quoted_amount', event.target.value)} /></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Motivo perso', 'Lost reason')}</span><input value={form.lost_reason} onChange={(event) => update('lost_reason', event.target.value)} /></label>
+          <label className="admin-field full"><span>{adminCopy(lang, 'Note interne', 'Internal notes')}</span><textarea rows={3} value={form.internal_notes} onChange={(event) => update('internal_notes', event.target.value)} /></label>
+          {error && <div className="admin-alert error full">{error}</div>}
+          <div className="modal-actions full"><button className="button primary" type="button" onClick={save} disabled={saving}>{saving ? adminCopy(lang, 'Salvataggio...', 'Saving...') : adminCopy(lang, 'Salva CRM', 'Save CRM')}</button></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RequestsCrmDashboard({ requests, lang }) {
+  const summary = useMemo(() => buildRequestsCrmSummary(requests, lang), [requests, lang]);
+  return (
+    <section className="admin-panel requests-crm-dashboard">
+      <div className="admin-panel-header"><h2>{adminCopy(lang, 'CRM e revenue', 'CRM and revenue')}</h2><small>{formatLocalDateTime(summary.generatedAt, lang, '')}</small></div>
+      <div className="admin-summary-grid crm-summary-grid">
+        <SummaryCard label={adminCopy(lang, 'Revenue confermata', 'Confirmed revenue')} value={formatMoney(summary.confirmedRevenue, 'EUR', lang)} />
+        <SummaryCard label={adminCopy(lang, 'Pipeline attesa', 'Expected pipeline')} value={formatMoney(summary.expectedPipeline, 'EUR', lang)} />
+        <SummaryCard label={adminCopy(lang, 'Valore medio', 'Average booking value')} value={formatMoney(summary.averageBookingValue, 'EUR', lang)} />
+        <SummaryCard label={adminCopy(lang, 'Conversione lead', 'Lead conversion')} value={`${summary.leadToConfirmedRate.toFixed(1)}%`} />
+        <SummaryCard label={adminCopy(lang, 'Follow-up oggi/scaduti', 'Due/overdue follow-ups')} value={`${summary.due}/${summary.overdue}`} />
+        <SummaryCard label={adminCopy(lang, 'Alta priorità', 'High priority')} value={summary.highPriority} />
+      </div>
+      <div className="crm-breakdown-grid">
+        <div><h3>{adminCopy(lang, 'Revenue per fonte', 'Revenue by source')}</h3>{summary.sourceBreakdown.length ? <ul className="admin-mini-list">{summary.sourceBreakdown.map(([key, value]) => <li key={key}><strong>{key}</strong> · {formatMoney(value, 'EUR', lang)}</li>)}</ul> : <p className="small-note">{adminCopy(lang, 'Nessun dato confermato.', 'No confirmed data.')}</p>}</div>
+        <div><h3>{adminCopy(lang, 'Revenue per esperienza', 'Revenue by experience')}</h3>{summary.experienceBreakdown.length ? <ul className="admin-mini-list">{summary.experienceBreakdown.map(([key, value]) => <li key={key}><strong>{key}</strong> · {formatMoney(value, 'EUR', lang)}</li>)}</ul> : <p className="small-note">{adminCopy(lang, 'Nessun dato confermato.', 'No confirmed data.')}</p>}</div>
+      </div>
+    </section>
+  );
+}
+
+function reviewStatusLabelForRecord(record, lang) {
+  if (record?.review_received_at || record?.review_submitted) return adminCopy(lang, 'Recensione ricevuta', 'Review received');
+  if (record?.review_requested_at) return adminCopy(lang, 'Recensione richiesta', 'Review requested');
+  return adminCopy(lang, 'Recensione non richiesta', 'Review not requested');
+}
+
+function reviewCodeForRecord(record, type = 'request') {
+  return type === 'booking_code' ? record?.code : (record?.review_code || record?.booking_code || '');
+}
+
+function buildReviewRequestMessage({ record, type, lang }) {
+  const name = type === 'booking_code' ? record.customer_name : record.customer_name;
+  const code = reviewCodeForRecord(record, type);
+  const link = `/reviews?code=${encodeURIComponent(code)}`;
+  return lang === 'it'
+    ? `Ciao ${name || ''}, grazie per aver vissuto l’Etna con vulcanIQ.\n\nSe ti va, puoi lasciare una recensione usando questo link:\n${link}\n\nGrazie ancora,\nTeam vulcanIQ`
+    : `Hi ${name || ''}, thank you for experiencing Mount Etna with vulcanIQ.\n\nIf you’d like, you can leave a review using this link:\n${link}\n\nThank you again,\nvulcanIQ team`;
+}
+
+function ReviewRequestActions({ record, type = 'request', lang, session, onUpdated }) {
+  const [busy, setBusy] = useState('');
+  const [copied, setCopied] = useState('');
+  const [error, setError] = useState('');
+  const code = reviewCodeForRecord(record, type);
+  const link = code ? `/reviews?code=${encodeURIComponent(code)}` : '';
+  const phone = normalizePhoneForWhatsApp(record.customer_phone);
+  const whatsappMessage = buildReviewRequestMessage({ record, type, lang });
+  const eligible = type === 'booking_code'
+    ? record.status === 'redeemed' && record.completion_status === 'completed'
+    : isRequestConfirmedRevenue(record) || record.lead_status === 'completed' || record.status === 'accepted';
+
+  async function run(action) {
+    if (!eligible || !code) return;
+    setBusy(action);
+    setError('');
+    try {
+      if (action === 'copy') {
+        await copyText(link);
+        if (type === 'booking_code') await markBookingCodeReviewLinkCopied(record.id, session.user.id);
+        else await markBookingRequestReviewLinkCopied(record.id, session.user.id);
+        trackEvent('review_link_copied', { record_type: type, record_id: record.id, language: lang, has_booking_code: Boolean(code), source_type: type }, { dedupe: false });
+        setCopied('link');
+      }
+      if (action === 'requested') {
+        if (type === 'booking_code') await markBookingCodeReviewRequested(record.id, 'manual', session.user.id);
+        else await markBookingRequestReviewRequested(record.id, 'manual', session.user.id);
+        trackEvent('review_requested_marked', { record_type: type, record_id: record.id, language: lang, has_booking_code: Boolean(code), source_type: type }, { dedupe: false });
+      }
+      if (action === 'received') {
+        if (type === 'booking_code') await markBookingCodeReviewReceived(record.id, session.user.id);
+        else await markBookingRequestReviewReceived(record.id, session.user.id);
+        trackEvent('review_received_marked', { record_type: type, record_id: record.id, language: lang, has_booking_code: Boolean(code), source_type: type }, { dedupe: false });
+      }
+      onUpdated?.(adminCopy(lang, 'Workflow recensione aggiornato.', 'Review workflow updated.'));
+      window.setTimeout(() => setCopied(''), 1400);
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Azione recensione non completata.', 'Review action failed.'));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function openWhatsapp() {
+    if (!eligible || !code) return;
+    setError('');
+    try {
+      if (type === 'booking_code') await markBookingCodeReviewRequested(record.id, 'whatsapp', session.user.id);
+      else await markBookingRequestReviewRequested(record.id, 'whatsapp', session.user.id);
+      trackEvent('review_request_whatsapp_click', { record_type: type, record_id: record.id, language: lang, has_booking_code: Boolean(code), source_type: type }, { dedupe: false });
+      const target = phone ? `https://wa.me/${phone}?text=${encode(whatsappMessage)}` : `https://wa.me/?text=${encode(whatsappMessage)}`;
+      window.open(target, '_blank', 'noopener,noreferrer');
+      onUpdated?.(adminCopy(lang, 'Richiesta recensione segnata.', 'Review request marked.'));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'WhatsApp non aperto.', 'WhatsApp not opened.'));
+    }
+  }
+
+  if (!eligible) return null;
+  return (
+    <div className="review-request-actions admin-inline-workflow">
+      <p className="small-note"><strong>{reviewStatusLabelForRecord(record, lang)}</strong>{record.review_requested_at ? ` · ${formatLocalDateTime(record.review_requested_at, lang, '')}` : ''}</p>
+      {!code && <p className="small-note warning-text">{adminCopy(lang, 'Nessun codice recensione disponibile.', 'No review code available.')}</p>}
+      <div className="request-actions-row">
+        <button className="button secondary" type="button" disabled={!code || Boolean(busy)} onClick={() => run('copy')}>{adminCopy(lang, 'Copia link recensione', 'Copy review link')} {copied === 'link' ? '· ✓' : ''}</button>
+        <button className="button secondary" type="button" disabled={!code || Boolean(busy)} onClick={openWhatsapp}>{adminCopy(lang, 'Apri richiesta WhatsApp', 'Open WhatsApp request')}</button>
+        <button className="button secondary" type="button" disabled={!code || Boolean(busy)} onClick={() => run('requested')}>{adminCopy(lang, 'Segna recensione richiesta', 'Mark review requested')}</button>
+        <button className="button secondary" type="button" disabled={!code || Boolean(busy)} onClick={() => run('received')}>{adminCopy(lang, 'Segna recensione ricevuta', 'Mark review received')}</button>
+      </div>
+      {error && <p className="form-status error">{error}</p>}
+    </div>
+  );
+}
+
+function ReferralActions({ record, type = 'request', lang, session, onUpdated }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [code, setCode] = useState(record?.referral_code || '');
+  const eligible = type === 'booking_code'
+    ? record.status === 'redeemed' && record.completion_status === 'completed'
+    : isRequestConfirmedRevenue(record) || ['completed', 'review_requested', 'review_received'].includes(record.lead_status);
+
+  async function createOrCopy() {
+    if (!eligible) return;
+    setBusy(true);
+    setError('');
+    try {
+      const created = await createCustomerReferralCode({
+        customer_name: record.customer_name,
+        customer_email: record.customer_email,
+        customer_phone: record.customer_phone,
+        source_booking_request_id: type === 'request' ? record.id : null,
+        source_booking_code_id: type === 'booking_code' ? record.id : null,
+        source_type: type
+      }, session.user.id);
+      setCode(created.code);
+      const link = referralLink(created.code, requestLang(record, lang));
+      await copyText(link);
+      trackEvent('referral_code_created', { referral_code: created.code, source_type: type, source_id: record.id, language: lang }, { dedupe: false });
+      trackEvent('referral_link_copied', { referral_code: created.code, source_type: type, source_id: record.id, language: lang }, { dedupe: false });
+      onUpdated?.(adminCopy(lang, `Codice referral copiato: ${created.code}`, `Referral code copied: ${created.code}`));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Codice referral non creato.', 'Referral code not created.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!eligible) return null;
+  return (
+    <div className="referral-actions admin-inline-workflow">
+      <p className="small-note"><strong>{adminCopy(lang, 'Referral cliente', 'Customer referral')}</strong>{code ? ` · ${code}` : ''}</p>
+      <div className="request-actions-row">
+        <button className="button secondary" type="button" disabled={busy} onClick={createOrCopy}>{code ? adminCopy(lang, 'Copia link referral', 'Copy referral link') : adminCopy(lang, 'Genera referral', 'Generate referral')}</button>
+      </div>
+      {error && <p className="form-status error">{error}</p>}
+    </div>
+  );
+}
+
+
+function ReferralCodesPanel({ lang, session }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    try { setItems(await listCustomerReferralCodes({ limit: 100 })); }
+    catch (err) { setError(err?.message || adminCopy(lang, 'Referral non caricati.', 'Could not load referrals.')); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  async function copyReferral(item) {
+    const link = referralLink(item.code, lang);
+    await copyText(link);
+    trackEvent('referral_link_copied', { referral_code: item.code, source_type: item.source_type || 'unknown', source_id: item.source_booking_request_id || item.source_booking_code_id || '', language: lang }, { dedupe: false });
+    setFeedback(adminCopy(lang, `Link referral copiato: ${item.code}`, `Referral link copied: ${item.code}`));
+  }
+
+  async function disableReferral(item) {
+    if (!window.confirm(adminCopy(lang, `Disattivare ${item.code}?`, `Disable ${item.code}?`))) return;
+    try {
+      await disableCustomerReferralCode(item.id, session.user.id);
+      trackEvent('referral_code_disabled', { referral_code: item.code, source_type: item.source_type || 'unknown', source_id: item.source_booking_request_id || item.source_booking_code_id || '', language: lang }, { dedupe: false });
+      await refresh();
+      setFeedback(adminCopy(lang, 'Referral disattivato.', 'Referral disabled.'));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Referral non disattivato.', 'Referral not disabled.'));
+    }
+  }
+
+  return (
+    <section className="admin-panel referral-codes-panel">
+      <div className="admin-panel-header">
+        <h2>{adminCopy(lang, 'Referral clienti', 'Customer referrals')} · {items.length}</h2>
+        <button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+      </div>
+      {feedback && <div className="admin-alert success compact-alert">{feedback}</div>}
+      {error && <div className="admin-alert error compact-alert">{error}</div>}
+      {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : items.length === 0 ? <p className="small-note">{adminCopy(lang, 'Nessun referral generato.', 'No referrals generated.')}</p> : (
+        <div className="referral-code-list">
+          {items.map((item) => (
+            <article className="referral-code-card" key={item.id}>
+              <div>
+                <strong>{item.code}</strong>
+                <p className="small-note">{item.customer_name || '-'} · {item.source_type || '-'} · {adminCopy(lang, 'Usi', 'Uses')} {item.used_count || 0}{item.last_used_at ? ` · ${formatLocalDateTime(item.last_used_at, lang, '')}` : ''}</p>
+              </div>
+              <span className={`status-pill ${item.active ? 'accepted' : 'cancelled'}`}>{item.active ? adminCopy(lang, 'Attiva', 'Active') : adminCopy(lang, 'Inattiva', 'Inactive')}</span>
+              <div className="request-actions-row">
+                <button className="button secondary" type="button" onClick={() => copyReferral(item)}>{adminCopy(lang, 'Copia link', 'Copy link')}</button>
+                {item.active && <button className="button secondary danger" type="button" onClick={() => disableReferral(item)}>{adminCopy(lang, 'Disattiva', 'Disable')}</button>}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const GIFT_CARD_STATUSES = ['new', 'contacted', 'quoted', 'paid', 'issued', 'cancelled'];
+function giftCardStatusLabel(status, lang) {
+  const labels = {
+    new: { it: 'Nuova richiesta', en: 'New request' },
+    contacted: { it: 'Contattato', en: 'Contacted' },
+    quoted: { it: 'Preventivo inviato', en: 'Quote sent' },
+    paid: { it: 'Pagato', en: 'Paid' },
+    issued: { it: 'Emesso', en: 'Issued' },
+    cancelled: { it: 'Annullato', en: 'Cancelled' }
+  };
+  return labels[status]?.[lang] || status || '-';
+}
+
+function buildGiftCardAdminReply(request, lang) {
+  const budget = request.budget ? formatMoney(request.budget, request.currency || 'EUR', lang) : (lang === 'it' ? 'da definire' : 'to define');
+  return lang === 'it'
+    ? `Ciao ${request.buyer_name || ''},\n\ngrazie per la richiesta Gift Card vulcanIQ.\n\nGift Card per: ${request.recipient_name || '-'}\nEsperienza/interesse: ${request.experience_type || '-'}\nBudget indicativo: ${budget}\n${request.booking_code ? `Codice destinatario: ${request.booking_code}\n` : ''}\nTi confermiamo disponibilità e proposta il prima possibile.\n\nTeam vulcanIQ`
+    : `Hi ${request.buyer_name || ''},\n\nthank you for your vulcanIQ Gift Card request.\n\nGift Card for: ${request.recipient_name || '-'}\nExperience/interest: ${request.experience_type || '-'}\nIndicative budget: ${budget}\n${request.booking_code ? `Recipient code: ${request.booking_code}\n` : ''}\nWe will confirm availability and proposal as soon as possible.\n\nvulcanIQ team`;
+}
+
+function useAdminGiftCards(filters = {}) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    try { setItems(await listGiftCardRequests(filters)); }
+    catch (err) { setError(err?.message || 'Could not load gift cards.'); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { refresh(); }, [JSON.stringify(filters)]);
+  return { items, loading, error, refresh };
+}
+
+function NotificationStatusControl({ record, table, lang, onUpdated }) {
+  const [state, setState] = useState({ loading: false, error: '' });
+  const status = record.notification_email_status || (record.notification_email_sent_at ? 'sent' : 'not_sent');
+  const canRetry = ['failed', 'not_sent'].includes(status);
+
+  async function retry() {
+    setState({ loading: true, error: '' });
+    try {
+      const result = await retryRequestNotification(table, record.id);
+      setState({ loading: false, error: '' });
+      const message = result?.sent > 0
+        ? adminCopy(lang, 'Notifica email inviata.', 'Email notification sent.')
+        : adminCopy(lang, 'Nessuna notifica da reinviare.', 'No notification required a resend.');
+      await onUpdated?.(message);
+    } catch (error) {
+      setState({ loading: false, error: error?.message || adminCopy(lang, 'Riprova notifica non riuscito.', 'Notification retry failed.') });
+    }
+  }
+
+  return (
+    <div className={`notification-status-control notification-${status}`}>
+      <span><strong>{adminCopy(lang, 'Notifica email', 'Email notification')}:</strong> {status}</span>
+      {record.notification_email_sent_at && <small>{formatLocalDateTime(record.notification_email_sent_at, lang, '')}</small>}
+      {record.notification_email_error && <small>{record.notification_email_error}</small>}
+      {canRetry && <button className="button secondary" type="button" onClick={retry} disabled={state.loading}>{state.loading ? adminCopy(lang, 'Invio...', 'Sending...') : adminCopy(lang, 'Riprova email', 'Retry email')}</button>}
+      {state.error && <small className="admin-warning-critical">{state.error}</small>}
+    </div>
+  );
+}
+
+function GiftCardsAdminPage({ lang, session, adminContent = {} }) {
+  const [filters, setFilters] = useState({ status: 'all', search: '', limit: 250 });
+  const { items, loading, error, refresh } = useAdminGiftCards(filters);
+  const [feedback, setFeedback] = useState('');
+  const [actionError, setActionError] = useState('');
+
+  async function updateItem(item, patch, message = '') {
+    setActionError('');
+    setFeedback('');
+    try {
+      const previousStatus = item.status;
+      const updated = await updateGiftCardRequest(item.id, patch, session.user.id);
+      if (patch.status && patch.status !== previousStatus) {
+        trackEvent('gift_card_status_changed', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
+        if (patch.status === 'paid') trackEvent('gift_card_paid', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
+        if (patch.status === 'issued') trackEvent('gift_card_issued', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
+        if (patch.status === 'cancelled') trackEvent('gift_card_cancelled', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
+        if (['paid', 'issued'].includes(patch.status) && updated?.booking_code) {
+          trackEvent('gift_card_booking_code_created', { request_id: item.id, booking_code_id: updated.booking_code_id || '', language: lang }, { dedupe: false });
+          message = message || adminCopy(lang, `Gift Card aggiornata. Codice destinatario: ${updated.booking_code}`, `Gift Card updated. Recipient code: ${updated.booking_code}`);
+        }
+      }
+      await refresh();
+      setFeedback(message || adminCopy(lang, 'Gift Card aggiornata.', 'Gift Card updated.'));
+      return updated;
+    } catch (err) {
+      setActionError(err?.message || adminCopy(lang, 'Gift Card non aggiornata.', 'Gift Card not updated.'));
+      return null;
+    }
+  }
+
+  async function copyReply(item, channel) {
+    const replyLang = item.buyer_preferred_language || lang;
+    const body = buildGiftCardAdminReply(item, replyLang);
+    await copyText(body);
+    trackEvent(channel === 'email' ? 'gift_card_email_reply_copied' : 'gift_card_whatsapp_reply_copied', { request_id: item.id, language: replyLang }, { dedupe: false });
+    setFeedback(channel === 'email' ? adminCopy(lang, 'Risposta email copiata.', 'Email reply copied.') : adminCopy(lang, 'Risposta WhatsApp copiata.', 'WhatsApp reply copied.'));
+  }
+
+  return (
+    <section className="admin-page gift-cards-admin-page">
+      <div className="admin-page-header">
+        <div>
+          <span className="kicker">Revenue OS</span>
+          <AdminEditableText as="h1" itemKey="admin.giftCards.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Richieste Gift Card', 'Gift Card requests')} />
+          <AdminEditableText as="p" itemKey="admin.giftCards.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Gestisci richieste, stato, note interne e revenue Gift Card separata dalle escursioni.', 'Manage requests, status, internal notes, and Gift Card revenue separately from excursions.')} />
+        </div>
+      </div>
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {(error || actionError) && <div className="admin-alert error" role="alert">{error || actionError}</div>}
+      <div className="admin-filter-bar">
+        <input aria-label="Search" placeholder={adminCopy(lang, 'Cerca Gift Card', 'Search Gift Cards')} value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} />
+        <select aria-label="Status" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="all">{adminCopy(lang, 'Tutti gli stati', 'All statuses')}</option>{GIFT_CARD_STATUSES.map((status) => <option key={status} value={status}>{giftCardStatusLabel(status, lang)}</option>)}</select>
+        <button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+      </div>
+      <section className="admin-panel">
+        <div className="admin-panel-header"><h2>{adminCopy(lang, 'Richieste Gift Card', 'Gift Card requests')} · {items.length}</h2></div>
+        {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : items.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta Gift Card.', 'No Gift Card requests.')}</p> : (
+          <div className="request-card-list gift-card-admin-list">
+            {items.map((item) => (
+              <article className="request-card gift-card-admin-card" key={item.id}>
+                <div className="request-card-head"><div><h3>{item.buyer_name || adminCopy(lang, 'Acquirente senza nome', 'Unnamed buyer')}</h3><p>{item.buyer_phone || '—'} · {item.buyer_email || '—'}</p></div><span className={`status-pill ${item.status}`}>{giftCardStatusLabel(item.status, lang)}</span></div>
+                <dl className="request-details-grid">
+                  <div><dt>{adminCopy(lang, 'Destinatario', 'Recipient')}</dt><dd>{item.recipient_name || '-'}</dd></div>
+                  <div><dt>{adminCopy(lang, 'Esperienza', 'Experience')}</dt><dd>{item.experience_type || '-'}</dd></div>
+                  <div><dt>{adminCopy(lang, 'Budget', 'Budget')}</dt><dd>{item.budget ? formatMoney(item.budget, item.currency, lang) : '-'}</dd></div>
+                  <div><dt>{adminCopy(lang, 'Consegna preferita', 'Preferred delivery')}</dt><dd>{formatDateForMessage(item.preferred_delivery_date, lang) || '-'}</dd></div>
+                  <div><dt>{adminCopy(lang, 'Lingua', 'Language')}</dt><dd>{item.buyer_preferred_language || '-'}</dd></div>
+                  <div><dt>{adminCopy(lang, 'Finance', 'Finance')}</dt><dd>{item.finance_entry_id ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Not linked')}</dd></div>
+                  <div><dt>{adminCopy(lang, 'Codice destinatario', 'Recipient code')}</dt><dd>{item.booking_code || '-'}</dd></div>
+                </dl>
+                <NotificationStatusControl record={item} table="gift_card_requests" lang={lang} onUpdated={async (message) => { await refresh(); setFeedback(message); }} />
+                {item.message && <p className="request-message">{item.message}</p>}
+                <label className="admin-field full"><span>{adminCopy(lang, 'Nota interna', 'Internal note')}</span><textarea rows={3} defaultValue={item.admin_note || ''} onBlur={(event) => { if (event.target.value !== (item.admin_note || '')) updateItem(item, { admin_note: event.target.value }, adminCopy(lang, 'Nota interna aggiornata.', 'Internal note updated.')); }} /></label>
+                <div className="request-actions-row">
+                  <select value={item.status} onChange={(event) => updateItem(item, { status: event.target.value })}>{GIFT_CARD_STATUSES.map((status) => <option key={status} value={status}>{giftCardStatusLabel(status, lang)}</option>)}</select>
+                  <button className="button secondary" type="button" onClick={() => copyReply(item, 'whatsapp')}>{adminCopy(lang, 'Copia risposta WhatsApp', 'Copy WhatsApp reply')}</button>
+                  <button className="button secondary" type="button" onClick={() => copyReply(item, 'email')}>{adminCopy(lang, 'Copia risposta email', 'Copy email reply')}</button>
+                  <button className="button secondary" type="button" onClick={() => updateItem(item, { status: 'paid' })}>{adminCopy(lang, 'Segna come pagato', 'Mark as paid')}</button>
+                  <button className="button secondary" type="button" onClick={() => updateItem(item, { status: 'issued' })}>{adminCopy(lang, 'Segna come emesso', 'Mark as issued')}</button>
+                  <button className="button secondary danger" type="button" onClick={() => updateItem(item, { status: 'cancelled' })}>{adminCopy(lang, 'Annulla richiesta', 'Cancel request')}</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </section>
+  );
+}
+
+
+function PartnerSourceControl({ request, lang, session, onUpdated }) {
+  const [open, setOpen] = useState(false);
+  const [partners, setPartners] = useState([]);
+  const [commissions, setCommissions] = useState([]);
+  const [partnerId, setPartnerId] = useState(request.partner_id || '');
+  const [grossAmount, setGrossAmount] = useState(String(partnerCommissionGrossAmountForRequest(request) || ''));
+  const [notes, setNotes] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setPartnerId(request.partner_id || '');
+    setGrossAmount(String(partnerCommissionGrossAmountForRequest(request) || ''));
+  }, [request.id, request.partner_id, request.expected_value, request.quoted_amount]);
+
+  async function refresh() {
+    if (!open || !session) return;
+    setLoading(true);
+    setError('');
+    try {
+      const [partnerRows, commissionRows] = await Promise.all([
+        listPartnerships({ activeOnly: true }),
+        listPartnerCommissions({ bookingRequestId: request.id, limit: 20 }).catch(() => [])
+      ]);
+      setPartners(partnerRows || []);
+      setCommissions(commissionRows || []);
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Partner non caricati.', 'Partners not loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, [open, request.id]);
+
+  const selectedPartner = partners.find((item) => item.id === partnerId) || null;
+  const preview = selectedPartner?.commission_enabled ? calculatePartnerCommission({
+    grossAmount,
+    commissionType: selectedPartner.commission_type,
+    commissionValue: selectedPartner.commission_value,
+    currency: selectedPartner.commission_currency || 'EUR'
+  }) : null;
+  const eligible = selectedPartner ? partnerCommissionEligibleForRequest(request, selectedPartner) : false;
+  const latestCommission = commissions[0] || null;
+
+  async function save() {
+    setSaving(true);
+    setError('');
+    try {
+      const updatedRequest = await assignPartnerToBookingRequest(request.id, partnerId || null, session.user.id);
+      trackEvent('partner_source_assigned', { partner_id: partnerId || '', source_type: 'booking_request', source_section: 'admin_requests', admin_action: 'assign_partner' }, { dedupe: false });
+      let commissionResult = null;
+      if (partnerId && selectedPartner?.commission_enabled) {
+        commissionResult = await upsertPartnerCommissionForSource({
+          sourceType: 'booking_request',
+          source: { ...request, ...updatedRequest, partner_id: partnerId },
+          partnerId,
+          grossAmount,
+          userId: session.user.id,
+          statusNotes: notes
+        });
+        if (commissionResult?.created) trackEvent('partner_commission_created', { partner_id: partnerId, source_type: 'booking_request', commission_status: 'pending', currency: preview?.currency || 'EUR', has_commission_amount: Boolean(preview?.commissionAmount), commission_type: selectedPartner.commission_type, source_section: 'admin_requests', admin_action: 'upsert_commission' }, { dedupe: false });
+      }
+      await refresh();
+      const skipped = commissionResult?.skipped ? ` · ${commissionResult.reason}` : '';
+      onUpdated?.(adminCopy(lang, `Fonte partner salvata${skipped}.`, `Partner source saved${skipped}.`));
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Fonte partner non salvata.', 'Partner source not saved.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!session) return null;
+
+  return (
+    <div className="partner-source-box admin-inline-workflow">
+      <button className="request-crm-toggle" type="button" onClick={() => setOpen((value) => !value)}>
+        <span>{adminCopy(lang, 'Fonte partner', 'Partner source')}</span>
+        <strong>{request.partner_id ? (partners.find((item) => item.id === request.partner_id)?.name || adminCopy(lang, 'Partner assegnato', 'Partner assigned')) : adminCopy(lang, 'Nessun partner', 'No partner')}</strong>
+        <small>{latestCommission ? `${partnerCommissionStatusLabel(latestCommission.status, lang)} · ${formatMoney(latestCommission.commission_amount, latestCommission.currency, lang)}` : adminCopy(lang, 'Commissioni interne non pubbliche', 'Internal commissions only')}</small>
+      </button>
+      {open && (
+        <div className="admin-form-grid request-crm-grid partner-source-grid">
+          {loading ? <p className="small-note full">{adminCopy(lang, 'Caricamento partner...', 'Loading partners...')}</p> : null}
+          <label className="admin-field"><span>{adminCopy(lang, 'Partner', 'Partner')}</span><select value={partnerId} onChange={(event) => setPartnerId(event.target.value)}><option value="">{adminCopy(lang, 'Nessun partner', 'No partner')}</option>{partners.map((partner) => <option key={partner.id} value={partner.id}>{partner.name}</option>)}</select></label>
+          <label className="admin-field"><span>{adminCopy(lang, 'Importo lordo', 'Gross amount')}</span><input inputMode="decimal" value={grossAmount} onChange={(event) => setGrossAmount(event.target.value)} placeholder="125.00" /></label>
+          <label className="admin-field full"><span>{adminCopy(lang, 'Note commissione', 'Commission notes')}</span><textarea rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
+          {selectedPartner && <div className="admin-alert compact-alert full">
+            <strong>{selectedPartner.name}</strong><br />
+            {adminCopy(lang, 'Regola', 'Rule')}: {partnerCommissionRuleLabel(selectedPartner, lang)} · {partnerCommissionAppliesToLabel(selectedPartner.commission_applies_to, lang)}<br />
+            {preview && <span>{adminCopy(lang, 'Commissione stimata', 'Estimated commission')}: {formatMoney(preview.commissionAmount, preview.currency, lang)} — {selectedPartner.commission_type === 'percentage' ? `${preview.commissionValue}% ${adminCopy(lang, 'su', 'of')} ${formatMoney(preview.grossAmount, preview.currency, lang)}` : partnerCommissionTypeLabel(selectedPartner.commission_type, lang)}</span>}
+            {!eligible && <p className="small-note">{adminCopy(lang, 'La commissione verrà creata solo quando la richiesta raggiunge lo stato configurato e l’importo è noto.', 'The commission is created only when the request reaches the configured state and the amount is known.')}</p>}
+          </div>}
+          {commissions.length > 0 && <div className="full partner-source-commission-list"><strong>{adminCopy(lang, 'Commissioni esistenti', 'Existing commissions')}</strong>{commissions.map((item) => <p className="small-note" key={item.id}>{partnerCommissionStatusLabel(item.status, lang)} · {formatMoney(item.commission_amount, item.currency, lang)} · {item.created_at ? formatLocalDateTime(item.created_at, lang, '') : ''}</p>)}</div>}
+          {error && <div className="admin-alert error full">{error}</div>}
+          <div className="modal-actions full"><button className="button primary" type="button" onClick={save} disabled={saving || loading}>{saving ? adminCopy(lang, 'Salvataggio...', 'Saving...') : adminCopy(lang, 'Salva fonte partner', 'Save partner source')}</button></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RequestCard({ request, lang, session = null, onApprove, onDecline, onRemove, onUpdated, compact = false }) {
   return (
     <article className={`request-card ${compact ? 'compact' : ''}`}>
       <div className="request-card-head">
@@ -10562,12 +13102,17 @@ function RequestCard({ request, lang, onApprove, onDecline, onRemove, compact = 
         <div><dt>{adminCopy(lang, 'Privata', 'Private')}</dt><dd>{request.private_experience === true ? adminCopy(lang, 'Sì', 'Yes') : request.private_experience === false ? adminCopy(lang, 'No', 'No') : '-'}</dd></div>
         {request.fixed_excursion_id && <div><dt>{adminCopy(lang, 'Escursione fissa', 'Fixed excursion')}</dt><dd>{request.fixed_excursion_id}</dd></div>}
       </dl>
+      <NotificationStatusControl record={request} table="booking_requests" lang={lang} onUpdated={onUpdated} />
       {request.children_under_3 && <div className="admin-alert warning compact-alert">{adminCopy(lang, 'Attenzione: bambini sotto i 3 anni. Percorso da valutare con particolare cura.', 'Warning: children under 3. Route must be assessed carefully.')}</div>}
       {request.message && <p className="request-message">{request.message}</p>}
       {request.admin_note && <p className="small-note"><strong>Note:</strong> {request.admin_note}</p>}
       {request.status !== 'pending' && (
         <p className="small-note decision-note"><strong>{adminCopy(lang, 'Decisione', 'Decision')}:</strong> {request.decision_note || '-'} · {request.decided_at ? formatDateForMessage(String(request.decided_at).slice(0, 10), lang) : '-'}{request.decided_by ? ` · ${request.decided_by}` : ''}</p>
       )}
+      <PartnerSourceControl request={request} lang={lang} session={session} onUpdated={onUpdated} />
+      <RequestCrmControls request={request} lang={lang} onUpdated={onUpdated} />
+      {session && <ReviewRequestActions record={request} type="request" lang={lang} session={session} onUpdated={onUpdated} />}
+      {session && <ReferralActions record={request} type="request" lang={lang} session={session} onUpdated={onUpdated} />}
       <ReplyTools request={request} lang={lang}>
         {request.status === 'pending' && (
           <>
@@ -10755,7 +13300,7 @@ function ManualRequestModal({ lang, session, onClose, onSaved }) {
         </div>
         <form className="admin-form-grid" onSubmit={submit}>
           <AdminInput label={adminCopy(lang, 'Nome cliente', 'Customer name')} value={form.customer_name} onChange={(value) => update('customer_name', value)} />
-          <AdminInput label="Phone / WhatsApp" value={form.customer_phone} onChange={(value) => update('customer_phone', value)} />
+          <AdminInput label="Phone / WhatsApp" type="tel" inputMode="tel" pattern="[0-9+\s().-]*" value={form.customer_phone} onChange={(value) => update('customer_phone', value.replace(/[^\d+\s().-]/g, ''))} />
           <AdminInput label="Email" type="email" value={form.customer_email} onChange={(value) => update('customer_email', value)} />
           <AdminSelect label={adminCopy(lang, 'Contatto preferito', 'Preferred contact')} value={form.preferred_contact} onChange={(value) => update('preferred_contact', value)} options={['whatsapp', 'phone', 'email', 'unknown']} />
           <AdminSelect label={adminCopy(lang, 'Fonte', 'Source')} value={form.source} onChange={(value) => update('source', value)} options={['whatsapp', 'phone', 'email', 'manual']} />
@@ -10764,8 +13309,8 @@ function ManualRequestModal({ lang, session, onClose, onSaved }) {
           <AdminSelect label={adminCopy(lang, 'Tipo richiesta', 'Request type')} value={form.request_type} onChange={(value) => update('request_type', value)} options={['private', 'fixed']} formatter={(value) => value === 'fixed' ? adminCopy(lang, 'Escursione fissa', 'Fixed excursion') : adminCopy(lang, 'Escursione privata', 'Private excursion')} />
           <AdminSelect label={adminCopy(lang, 'Tipo gruppo', 'Party type')} value={form.party_type} onChange={(value) => update('party_type', value)} options={['solo', 'couple', 'family', 'group', 'company', 'school', 'other']} formatter={(value) => ({ solo: adminCopy(lang, 'Singolo', 'Solo traveler'), couple: adminCopy(lang, 'Coppia', 'Couple'), family: adminCopy(lang, 'Famiglia', 'Family'), group: adminCopy(lang, 'Gruppo', 'Group'), company: adminCopy(lang, 'Azienda', 'Company'), school: adminCopy(lang, 'Scuola', 'School'), other: adminCopy(lang, 'Altro', 'Other') }[value] || value)} />
           <AdminSelect label={adminCopy(lang, 'Esperienza', 'Experience')} value={form.experience_id} onChange={(value) => update('experience_id', value)} options={ADMIN_EXPERIENCE_OPTIONS} formatter={(value) => adminExperienceLabel(value, lang)} />
-          <AdminInput label={adminCopy(lang, 'Data richiesta', 'Requested date')} type="date" value={form.requested_date} onChange={(value) => update('requested_date', value)} />
-          <AdminInput label={adminCopy(lang, 'Data alternativa', 'Alternative date')} type="date" value={form.alternative_date} onChange={(value) => update('alternative_date', value)} />
+          <AdminInput label={adminCopy(lang, 'Data richiesta', 'Requested date')} type="date" min={todayIso()} value={form.requested_date} onChange={(value) => update('requested_date', value)} />
+          <AdminInput label={adminCopy(lang, 'Data alternativa', 'Alternative date')} type="date" min={todayIso()} value={form.alternative_date} onChange={(value) => update('alternative_date', value)} />
           <AdminSelect label={adminCopy(lang, 'Lingua', 'Language')} value={form.language} onChange={(value) => update('language', value)} options={['it', 'en']} />
           <AdminInput label="Adults" type="number" value={form.adults} onChange={(value) => update('adults', value)} />
           <AdminInput label="Children" type="number" value={form.children} onChange={(value) => update('children', value)} />
@@ -10786,9 +13331,174 @@ function ManualRequestModal({ lang, session, onClose, onSaved }) {
   );
 }
 
-function AdminInput({ label, value, onChange, type = 'text', placeholder = '' }) {
+
+function cleanAdminAmount(value) {
+  const parsed = Number.parseFloat(String(value || '').replace(',', '.'));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function AdminBookingCodeModal({ lang, session, onClose, onSaved }) {
+  const [fixedExcursions, setFixedExcursions] = useState([]);
+  const [loadingOptions, setLoadingOptions] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [createdCode, setCreatedCode] = useState(null);
+  const [form, setForm] = useState({
+    customer_name: '',
+    customer_email: '',
+    customer_phone: '',
+    fixed_excursion_id: '',
+    experience_id: 'etna-live',
+    experience_name_it: '',
+    experience_name_en: '',
+    scheduled_date: '',
+    scheduled_time: '',
+    meeting_point_name: '',
+    meeting_point_maps_url: '',
+    expected_amount: '',
+    currency: 'EUR',
+    expiry_date: '',
+    admin_note: ''
+  });
+  useBodyScrollLock(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoadingOptions(true);
+    listFixedExcursions({ activeOnly: true, fromDate: todayIso() })
+      .then((items) => {
+        if (!alive) return;
+        setFixedExcursions((items || []).filter((item) => item.active !== false && (!item.date || item.date >= todayIso())));
+      })
+      .catch((err) => {
+        if (alive) setError(err?.message || adminCopy(lang, 'Escursioni non caricate.', 'Excursions not loaded.'));
+      })
+      .finally(() => alive && setLoadingOptions(false));
+    return () => { alive = false; };
+  }, [lang]);
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function applyFixedExcursion(id) {
+    const item = fixedExcursions.find((candidate) => candidate.id === id);
+    setForm((current) => ({
+      ...current,
+      fixed_excursion_id: id,
+      experience_id: item?.experience_id || current.experience_id,
+      experience_name_it: item ? fixedExcursionTitle(item, 'it') : current.experience_name_it,
+      experience_name_en: item ? fixedExcursionTitle(item, 'en') : current.experience_name_en,
+      scheduled_date: item?.date || current.scheduled_date,
+      scheduled_time: item?.start_time ? String(item.start_time).slice(0, 5) : current.scheduled_time,
+      meeting_point_name: item ? fixedExcursionField(item, 'meeting_point', lang) : current.meeting_point_name,
+      meeting_point_maps_url: item?.meeting_point_maps_url || current.meeting_point_maps_url
+    }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setError('');
+    if (!form.customer_name.trim()) {
+      setError(adminCopy(lang, 'Inserisci il nome cliente.', 'Enter the customer name.'));
+      return;
+    }
+    if (!form.fixed_excursion_id && !form.experience_id) {
+      setError(adminCopy(lang, 'Seleziona un’escursione o un’esperienza.', 'Select an excursion or an experience.'));
+      return;
+    }
+    if (cleanAdminAmount(form.expected_amount) < 0) {
+      setError(adminCopy(lang, 'Importo non valido.', 'Invalid amount.'));
+      return;
+    }
+    if ((form.scheduled_date && form.scheduled_date < todayIso()) || (form.expiry_date && form.expiry_date < todayIso())) {
+      setError(adminCopy(lang, 'Seleziona una data di oggi o futura.', 'Select today or a future date.'));
+      return;
+    }
+    setSaving(true);
+    try {
+      const selectedFixed = fixedExcursions.find((item) => item.id === form.fixed_excursion_id);
+      const payload = {
+        ...form,
+        fixed_excursion_id: selectedFixed?.id || null,
+        experience_id: selectedFixed?.experience_id || form.experience_id,
+        experience_name_it: form.experience_name_it || (selectedFixed ? fixedExcursionTitle(selectedFixed, 'it') : adminExperienceLabel(form.experience_id, 'it')),
+        experience_name_en: form.experience_name_en || (selectedFixed ? fixedExcursionTitle(selectedFixed, 'en') : adminExperienceLabel(form.experience_id, 'en')),
+        experience_type: selectedFixed ? 'fixed' : 'manual',
+        scheduled_date: form.scheduled_date || selectedFixed?.date || null,
+        scheduled_time: form.scheduled_time || (selectedFixed?.start_time ? String(selectedFixed.start_time).slice(0, 5) : null),
+        meeting_point_name: form.meeting_point_name || (selectedFixed ? fixedExcursionField(selectedFixed, 'meeting_point', lang) : ''),
+        meeting_point_maps_url: form.meeting_point_maps_url || selectedFixed?.meeting_point_maps_url || '',
+        expected_amount: cleanAdminAmount(form.expected_amount),
+        expires_at: form.expiry_date || null,
+        source: 'manual'
+      };
+      const created = await createBookingCode(payload, session.user.id);
+      setCreatedCode(created);
+      trackEvent('admin_booking_code_created', { language: lang, experience_id: payload.experience_id, has_fixed_excursion: Boolean(payload.fixed_excursion_id) }, { dedupe: false });
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Codice non creato.', 'Code not created.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const fixedOptions = fixedExcursions.map((item) => item.id);
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="admin-modal wide booking-code-admin-modal" role="dialog" aria-modal="true" aria-labelledby="adminBookingCodeTitle">
+        <div className="admin-modal-header">
+          <div>
+            <h2 id="adminBookingCodeTitle">{adminCopy(lang, 'Genera codice prenotazione', 'Generate booking code')}</h2>
+            <p>{adminCopy(lang, 'Crea un codice per prenotazioni arrivate da canali esterni.', 'Create a code for bookings that came from external channels.')}</p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>×</button>
+        </div>
+        {createdCode ? (
+          <div className="admin-code-result-card">
+            <span className="kicker">{adminCopy(lang, 'Codice pronto', 'Code ready')}</span>
+            <h3>{createdCode.code}</h3>
+            <p>{createdCode.customer_name} · {(lang === 'en' ? createdCode.experience_name_en || createdCode.experience_name_it : createdCode.experience_name_it || createdCode.experience_name_en)}</p>
+            <div className="modal-actions">
+              <button className="button primary" type="button" onClick={() => onSaved(createdCode.code)}>{adminCopy(lang, 'Fine', 'Done')}</button>
+              <button className="button secondary" type="button" onClick={() => navigator.clipboard?.writeText(createdCode.code)}>{adminCopy(lang, 'Copia codice', 'Copy code')}</button>
+            </div>
+          </div>
+        ) : (
+          <form className="admin-form-grid booking-code-generator-form" onSubmit={submit}>
+            <AdminInput label={adminCopy(lang, 'Nome cliente', 'Customer name')} value={form.customer_name} onChange={(value) => update('customer_name', value)} />
+            <AdminInput label="Email" type="email" value={form.customer_email} onChange={(value) => update('customer_email', value)} />
+            <AdminInput label="Phone / WhatsApp" type="tel" inputMode="tel" pattern="[0-9+\s().-]*" value={form.customer_phone} onChange={(value) => update('customer_phone', value.replace(/[^\d+\s().-]/g, ''))} />
+            <label className="admin-field"><span>{adminCopy(lang, 'Escursione disponibile', 'Available excursion')}</span><select value={form.fixed_excursion_id} onChange={(event) => applyFixedExcursion(event.target.value)} disabled={loadingOptions}><option value="">{loadingOptions ? adminCopy(lang, 'Caricamento...', 'Loading...') : adminCopy(lang, 'Nessuna / esperienza manuale', 'None / manual experience')}</option>{fixedOptions.map((id) => <option key={id} value={id}>{fixedExcursionLabel(fixedExcursions.find((item) => item.id === id), lang)}</option>)}</select></label>
+            {!form.fixed_excursion_id && <AdminSelect label={adminCopy(lang, 'Esperienza', 'Experience')} value={form.experience_id} onChange={(value) => update('experience_id', value)} options={ADMIN_EXPERIENCE_OPTIONS.filter((item) => item !== 'unsure')} formatter={(value) => adminExperienceLabel(value, lang)} />}
+            <AdminInput label={adminCopy(lang, 'Titolo esperienza IT', 'Experience title IT')} value={form.experience_name_it} onChange={(value) => update('experience_name_it', value)} />
+            <AdminInput label={adminCopy(lang, 'Titolo esperienza EN', 'Experience title EN')} value={form.experience_name_en} onChange={(value) => update('experience_name_en', value)} />
+            <AdminInput label={adminCopy(lang, 'Data prevista', 'Expected date')} type="date" min={todayIso()} value={form.scheduled_date} onChange={(value) => update('scheduled_date', value)} />
+            <AdminInput label={adminCopy(lang, 'Ora prevista', 'Expected time')} type="time" value={form.scheduled_time} onChange={(value) => update('scheduled_time', value)} />
+            <AdminInput label={adminCopy(lang, 'Punto d’incontro', 'Meeting point')} value={form.meeting_point_name} onChange={(value) => update('meeting_point_name', value)} />
+            <AdminInput label="Google Maps URL" value={form.meeting_point_maps_url} onChange={(value) => update('meeting_point_maps_url', value)} />
+            <AdminInput label={adminCopy(lang, 'Importo previsto', 'Expected amount')} type="number" value={form.expected_amount} onChange={(value) => update('expected_amount', value)} />
+            <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => update('currency', normalizeCurrency(value))} />
+            <AdminInput label={adminCopy(lang, 'Scadenza opzionale', 'Optional expiry')} type="date" min={todayIso()} value={form.expiry_date} onChange={(value) => update('expiry_date', value)} />
+            <label className="admin-field full"><span>{adminCopy(lang, 'Nota interna opzionale', 'Optional internal note')}</span><textarea value={form.admin_note} onChange={(event) => update('admin_note', event.target.value)} rows={4} /></label>
+            {error && <div className="admin-alert error full" role="alert">{error}</div>}
+            <div className="modal-actions full">
+              <button className="button primary" type="submit" disabled={saving}>{saving ? adminCopy(lang, 'Generazione...', 'Generating...') : adminCopy(lang, 'Genera codice', 'Generate code')}</button>
+              <button className="button secondary" type="button" onClick={onClose}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>
+            </div>
+          </form>
+        )}
+      </section>
+    </div>
+  );
+}
+
+
+function AdminInput({ label, value, onChange, type = 'text', placeholder = '', min, inputMode, pattern }) {
   const id = useMemo(() => `field-${Math.random().toString(36).slice(2)}`, []);
-  return <label className="admin-field" htmlFor={id}><span>{label}</span><input id={id} type={type} value={value || ''} placeholder={placeholder} min={type === 'number' ? '0' : undefined} onChange={(event) => onChange(event.target.value)} /></label>;
+  const resolvedMin = min !== undefined ? min : (type === 'number' ? '0' : undefined);
+  return <label className="admin-field" htmlFor={id}><span>{label}</span><input id={id} type={type} value={value || ''} placeholder={placeholder} min={resolvedMin} inputMode={inputMode} pattern={pattern} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
 function AdminSelect({ label, value, onChange, options, formatter = (item) => item }) {
@@ -10797,7 +13507,7 @@ function AdminSelect({ label, value, onChange, options, formatter = (item) => it
 }
 
 
-function RequestStatusAccordions({ requests, lang, onApprove, onDecline, onRemove }) {
+function RequestStatusAccordions({ requests, lang, session = null, onApprove, onDecline, onRemove, onUpdated }) {
   const groups = [
     { status: 'pending', label: adminCopy(lang, 'In attesa', 'Pending'), defaultOpen: true },
     { status: 'accepted', label: adminCopy(lang, 'Approvate / accettate', 'Approved / accepted'), defaultOpen: false },
@@ -10819,10 +13529,12 @@ function RequestStatusAccordions({ requests, lang, onApprove, onDecline, onRemov
                   key={request.id}
                   request={request}
                   lang={lang}
+                  session={session}
                   compact
                   onApprove={() => onApprove(request)}
                   onDecline={() => onDecline(request)}
                   onRemove={() => onRemove(request)}
+                  onUpdated={onUpdated}
                 />
               ))}
             </div>
@@ -11089,10 +13801,227 @@ function AdminReviewsPanel({ lang, adminContent = {} }) {
   );
 }
 
+function useAdminBookingCodes(filters = {}) {
+  const [codes, setCodes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  async function refresh() {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await listBookingCodes(filters);
+      setCodes(data || []);
+    } catch (err) {
+      setError(err?.message || 'Could not load booking codes.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, [JSON.stringify(filters)]);
+
+  return { codes, loading, error, refresh };
+}
+
+function bookingCodeStatusLabel(status, lang) {
+  const labels = {
+    unused: { it: 'Non usato', en: 'Unused' },
+    not_completed: { it: 'Non completato', en: 'Not completed' },
+    redeemed: { it: 'Usato', en: 'Redeemed' },
+    expired: { it: 'Scaduto', en: 'Expired' },
+    cancelled: { it: 'Annullato', en: 'Cancelled' },
+    completed: { it: 'Completato', en: 'Completed' },
+    no_show: { it: 'No-show', en: 'No-show' }
+  };
+  return labels[status]?.[lang] || status || '-';
+}
+
+function bookingCodeIncomeStatusLabel(status, lang) {
+  const labels = {
+    expected: { it: 'Entrata attesa', en: 'Expected income' },
+    pending: { it: 'In attesa', en: 'Pending' },
+    confirmed: { it: 'Entrata confermata', en: 'Confirmed income' },
+    cancelled: { it: 'Entrata annullata', en: 'Income cancelled' },
+    reversed: { it: 'Entrata stornata', en: 'Income reversed' },
+    none: { it: 'Nessuna entrata', en: 'No income' }
+  };
+  return labels[status]?.[lang] || status || '-';
+}
+
+function bookingCodeTitleForAdmin(code, lang) {
+  return lang === 'en'
+    ? (code.experience_name_en || code.experience_name_it || adminExperienceLabel(code.experience_id, lang))
+    : (code.experience_name_it || code.experience_name_en || adminExperienceLabel(code.experience_id, lang));
+}
+
+function adminMoney(value, currency = 'EUR', lang = 'it') {
+  return formatMoney(value, currency, lang);
+}
+
+function BookingCodesPage({ lang, session, adminContent = {} }) {
+  const [filters, setFilters] = useState({ status: 'all', search: '', limit: 250 });
+  const { codes, loading, error, refresh } = useAdminBookingCodes(filters);
+  const [bookingCodeOpen, setBookingCodeOpen] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [actionError, setActionError] = useState('');
+
+  function updateFilter(field, value) {
+    setFilters((current) => ({ ...current, [field]: value }));
+  }
+
+  async function refreshWithFeedback(message = '') {
+    await refresh();
+    if (message) setFeedback(message);
+  }
+
+  async function copyCode(code) {
+    await copyText(code);
+    setFeedback(adminCopy(lang, 'Codice copiato.', 'Code copied.'));
+  }
+
+  async function cancelCode(item) {
+    if (!window.confirm(adminCopy(lang, `Annullare il codice ${item.code}?`, `Cancel code ${item.code}?`))) return;
+    setActionError('');
+    setFeedback('');
+    try {
+      await cancelBookingCode(item.id, session.user.id);
+      trackEvent('booking_code_cancelled', { booking_code_id: item.id, code: item.code }, { dedupe: false });
+      await refreshWithFeedback(adminCopy(lang, 'Codice annullato.', 'Code cancelled.'));
+    } catch (err) {
+      setActionError(err?.message || adminCopy(lang, 'Codice non annullato.', 'Code not cancelled.'));
+    }
+  }
+
+  async function runCodeAction(item, action) {
+    setActionError('');
+    setFeedback('');
+    try {
+      if (action === 'completed') {
+        await markBookingCodeCompleted(item.id, session.user.id);
+        trackEvent('booking_code_completed', { booking_code_id: item.id, code: item.code }, { dedupe: false });
+        await refreshWithFeedback(adminCopy(lang, 'Esperienza segnata come completata.', 'Experience marked completed.'));
+      }
+      if (action === 'confirm-income') {
+        await confirmBookingCodeIncome(item.id, session.user.id);
+        trackEvent('booking_code_income_confirmed', { booking_code_id: item.id, code: item.code }, { dedupe: false });
+        await refreshWithFeedback(adminCopy(lang, 'Entrata confermata.', 'Income confirmed.'));
+      }
+      if (action === 'no-show') {
+        if (!window.confirm(adminCopy(lang, `Segnare ${item.code} come no-show?`, `Mark ${item.code} as no-show?`))) return;
+        await markBookingCodeNoShow(item.id, session.user.id);
+        trackEvent('booking_code_no_show', { booking_code_id: item.id, code: item.code }, { dedupe: false });
+        await refreshWithFeedback(adminCopy(lang, 'Codice segnato come no-show.', 'Code marked as no-show.'));
+      }
+    } catch (err) {
+      setActionError(err?.message || adminCopy(lang, 'Azione non completata.', 'Action failed.'));
+    }
+  }
+
+  const unusedCount = codes.filter((item) => item.status === 'unused').length;
+  const redeemedCount = codes.filter((item) => item.status === 'redeemed').length;
+  const totalExpected = codes
+    .filter((item) => item.status !== 'cancelled' && item.income_status !== 'confirmed')
+    .reduce((sum, item) => sum + Number(item.expected_amount || 0), 0);
+  const confirmedIncome = codes
+    .filter((item) => item.income_status === 'confirmed' || item.admin_confirmed_income)
+    .reduce((sum, item) => sum + Number(item.expected_amount || 0), 0);
+
+  return (
+    <section className="admin-page booking-codes-admin-page">
+      <div className="admin-page-header">
+        <div>
+          <span className="kicker">{adminCopy(lang, 'Codici prenotazione', 'Booking codes')}</span>
+          <AdminEditableText as="h1" itemKey="admin.bookingCodes.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Codici prenotazione', 'Booking codes')} />
+          <AdminEditableText as="p" itemKey="admin.bookingCodes.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Vedi i codici generati, controlla stato, cliente, esperienza, importo e collegamenti creati al momento dell’uso.', 'View generated codes, status, customer, experience, amount, and linked records created on redemption.')} />
+        </div>
+        <div className="admin-header-actions">
+          <button className="button secondary" type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+          <button className="button primary" type="button" onClick={() => setBookingCodeOpen(true)}>{adminCopy(lang, 'Genera codice', 'Generate code')}</button>
+        </div>
+      </div>
+
+      {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
+      {(error || actionError) && <div className="admin-alert error" role="alert">{error || actionError}</div>}
+
+      <div className="admin-summary-grid booking-code-summary-grid">
+        <SummaryCard label={adminCopy(lang, 'Totali caricati', 'Loaded total')} value={codes.length} />
+        <SummaryCard label={adminCopy(lang, 'Non usati', 'Unused')} value={unusedCount} />
+        <SummaryCard label={adminCopy(lang, 'Usati', 'Redeemed')} value={redeemedCount} />
+        <SummaryCard label={adminCopy(lang, 'Importo previsto', 'Expected amount')} value={adminMoney(totalExpected, 'EUR', lang)} />
+        <SummaryCard label={adminCopy(lang, 'Entrata confermata', 'Confirmed income')} value={adminMoney(confirmedIncome, 'EUR', lang)} />
+      </div>
+
+      <div className="admin-filter-bar booking-code-filter-bar">
+        <input aria-label="Search booking codes" placeholder={adminCopy(lang, 'Cerca codice, cliente, email, telefono', 'Search code, customer, email, phone')} value={filters.search} onChange={(event) => updateFilter('search', event.target.value)} />
+        <select aria-label="Status" value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}>
+          <option value="all">{adminCopy(lang, 'Tutti gli stati', 'All statuses')}</option>
+          {['unused', 'redeemed', 'expired', 'cancelled'].map((status) => <option key={status} value={status}>{bookingCodeStatusLabel(status, lang)}</option>)}
+        </select>
+      </div>
+
+      <section className="admin-panel">
+        <div className="admin-panel-header">
+          <h2>{adminCopy(lang, 'Codici generati', 'Generated codes')} · {codes.length}</h2>
+          <button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+        </div>
+        {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : codes.length === 0 ? <p>{adminCopy(lang, 'Nessun codice trovato.', 'No booking codes found.')}</p> : (
+          <div className="booking-code-admin-list">
+            {codes.map((item) => {
+              const title = bookingCodeTitleForAdmin(item, lang);
+              const mapsUrl = normalizeGoogleMapsUrl(item.meeting_point_maps_url);
+              return (
+                <article className={`booking-code-admin-card status-${item.status || 'unused'}`} key={item.id}>
+                  <div className="booking-code-admin-card-head">
+                    <div>
+                      <button className="booking-code-copy-button" type="button" onClick={() => copyCode(item.code)} title={adminCopy(lang, 'Copia codice', 'Copy code')}>{item.code}</button>
+                      <p className="small-note">{item.customer_name || '-'} · {item.customer_email || item.customer_phone || '-'}</p>
+                    </div>
+                    <span className={`status-pill ${item.status === 'redeemed' ? 'accepted' : item.status === 'cancelled' || item.status === 'expired' ? 'cancelled' : 'pending'}`}>{bookingCodeStatusLabel(item.status, lang)}</span>
+                  </div>
+                  <dl className="request-details-grid booking-code-details-grid">
+                    <div><dt>{adminCopy(lang, 'Esperienza', 'Experience')}</dt><dd>{title}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Data', 'Date')}</dt><dd>{item.scheduled_date || '-'}{item.scheduled_time ? ` · ${item.scheduled_time}` : ''}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Importo', 'Amount')}</dt><dd>{adminMoney(item.expected_amount, item.currency, lang)}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Creato', 'Created')}</dt><dd>{formatLocalDateTime(item.created_at, lang, '-')}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Scadenza', 'Expiry')}</dt><dd>{formatLocalDateTime(item.expires_at, lang, item.expires_at || '-')}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Usato il', 'Redeemed at')}</dt><dd>{formatLocalDateTime(item.redeemed_at, lang, '-')}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Punto d’incontro', 'Meeting point')}</dt><dd>{mapsUrl ? <a className="inline-link" href={mapsUrl} target="_blank" rel="noopener noreferrer">{item.meeting_point_name || adminCopy(lang, 'Apri Maps', 'Open Maps')}</a> : (item.meeting_point_name || '-')}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Collegamenti', 'Links')}</dt><dd>{item.redeemed_booking_request_id ? adminCopy(lang, 'Richiesta creata', 'Request created') : '-'}{item.redeemed_finance_entry_id ? ` · ${adminCopy(lang, 'Finanza attesa', 'Expected finance')}` : ''}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Completamento', 'Completion')}</dt><dd>{bookingCodeStatusLabel(item.completion_status || 'not_completed', lang)}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Entrata', 'Income')}</dt><dd>{bookingCodeIncomeStatusLabel(item.income_status || 'expected', lang)}</dd></div>
+                  </dl>
+                  {item.status === 'redeemed' && item.income_status !== 'confirmed' && <div className="admin-alert warning compact-alert">{adminCopy(lang, 'Codice usato: entrata non ancora confermata. Conferma solo dopo completamento/pagamento.', 'Code redeemed: income not confirmed. Confirm only after completion/payment.')}</div>}
+                  {item.admin_note && <p className="request-message"><strong>{adminCopy(lang, 'Nota interna', 'Internal note')}:</strong> {item.admin_note}</p>}
+                  <ReviewRequestActions record={item} type="booking_code" lang={lang} session={session} onUpdated={(message) => refreshWithFeedback(message)} />
+                  <ReferralActions record={item} type="booking_code" lang={lang} session={session} onUpdated={(message) => refreshWithFeedback(message)} />
+                  <div className="admin-quick-actions">
+                    <button type="button" onClick={() => copyCode(item.code)}>{adminCopy(lang, 'Copia codice', 'Copy code')}</button>
+                    {item.status === 'unused' && <button type="button" onClick={() => cancelCode(item)}>{adminCopy(lang, 'Annulla codice', 'Cancel code')}</button>}
+                    {item.status === 'redeemed' && item.completion_status !== 'completed' && <button type="button" onClick={() => runCodeAction(item, 'completed')}>{adminCopy(lang, 'Segna completato', 'Mark completed')}</button>}
+                    {item.status === 'redeemed' && item.income_status !== 'confirmed' && <button type="button" onClick={() => runCodeAction(item, 'confirm-income')}>{adminCopy(lang, 'Conferma entrata', 'Confirm income')}</button>}
+                    {item.status === 'redeemed' && item.income_status !== 'confirmed' && <button type="button" onClick={() => runCodeAction(item, 'no-show')}>{adminCopy(lang, 'No-show', 'No-show')}</button>}
+                    {item.status === 'redeemed' && <button type="button" onClick={() => cancelCode(item)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <ReferralCodesPanel lang={lang} session={session} />
+
+      {bookingCodeOpen && <AdminBookingCodeModal lang={lang} session={session} onClose={() => setBookingCodeOpen(false)} onSaved={(code) => { setBookingCodeOpen(false); refreshWithFeedback(adminCopy(lang, `Codice creato: ${code}`, `Code created: ${code}`)); }} />}
+    </section>
+  );
+}
+
 function RequestsPage({ lang, session, adminContent = {} }) {
-  const [filters, setFilters] = useState({ status: 'all', experience_id: 'all', source: 'all', search: '', fromDate: '', toDate: '', limit: 250 });
+  const [filters, setFilters] = useState({ status: 'pending', experience_id: 'all', source: 'all', search: '', fromDate: '', toDate: '', limit: 250 });
   const { requests, loading, error, refresh } = useAdminRequests(filters);
   const [manualOpen, setManualOpen] = useState(false);
+  const [bookingCodeOpen, setBookingCodeOpen] = useState(false);
   const [decision, setDecision] = useState(null);
   const [feedback, setFeedback] = useState('');
 
@@ -11113,7 +14042,10 @@ function RequestsPage({ lang, session, adminContent = {} }) {
           <AdminEditableText as="h1" itemKey="admin.requests.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Richieste', 'Requests')} />
           <AdminEditableText as="p" itemKey="admin.requests.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Cerca e filtra richieste da sito, WhatsApp, telefono o email.', 'Search and filter requests from the website, WhatsApp, phone, or email.')} />
         </div>
-        <button className="button primary" type="button" onClick={() => setManualOpen(true)}>{adminCopy(lang, 'Aggiungi manuale', 'Add manual')}</button>
+        <div className="admin-header-actions">
+          <button className="button secondary" type="button" onClick={() => setBookingCodeOpen(true)}>{adminCopy(lang, 'Genera codice', 'Generate code')}</button>
+          <button className="button primary" type="button" onClick={() => setManualOpen(true)}>{adminCopy(lang, 'Aggiungi manuale', 'Add manual')}</button>
+        </div>
       </div>
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
@@ -11125,6 +14057,7 @@ function RequestsPage({ lang, session, adminContent = {} }) {
         <input aria-label="From date" type="date" value={filters.fromDate} onChange={(event) => updateFilter('fromDate', event.target.value)} />
         <input aria-label="To date" type="date" value={filters.toDate} onChange={(event) => updateFilter('toDate', event.target.value)} />
       </div>
+      <RequestsCrmDashboard requests={requests} lang={lang} />
       <section className="admin-panel">
         <div className="admin-panel-header"><h2><AdminEditableText itemKey="admin.requests.results.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Risultati', 'Results')} /> · {requests.length}</h2><button type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button></div>
         {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : requests.length === 0 ? <p>{adminCopy(lang, 'Nessuna richiesta trovata.', 'No requests found.')}</p> : (
@@ -11134,11 +14067,14 @@ function RequestsPage({ lang, session, adminContent = {} }) {
             onApprove={(request) => setDecision({ type: 'approve', request })}
             onDecline={(request) => setDecision({ type: 'decline', request })}
             onRemove={(request) => setDecision({ type: 'remove', request })}
+            onUpdated={(message) => refreshWithFeedback(message)}
+            session={session}
           />
         )}
       </section>
       {decision && <DecisionModal lang={lang} session={session} decision={decision} onClose={() => setDecision(null)} onDone={(message) => { setDecision(null); refreshWithFeedback(message); }} />}
       {manualOpen && <ManualRequestModal lang={lang} session={session} onClose={() => setManualOpen(false)} onSaved={() => { setManualOpen(false); refreshWithFeedback(adminCopy(lang, 'Richiesta manuale creata.', 'Manual request created.')); }} />}
+      {bookingCodeOpen && <AdminBookingCodeModal lang={lang} session={session} onClose={() => setBookingCodeOpen(false)} onSaved={(code) => { setBookingCodeOpen(false); refreshWithFeedback(adminCopy(lang, `Codice creato: ${code}`, `Code created: ${code}`)); }} />}
     </section>
   );
 }
@@ -11158,7 +14094,7 @@ function PartnershipsAdminPage({ lang, session, adminContent = {} }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
-  const emptyForm = { name: '', category_key: 'other', category_it: 'Altro', category_en: 'Other', description_it: '', description_en: '', website_url: '', google_maps_url: '', social_url: '', image_url: '', image_path: '', image_name: '', image_type: '', imageFile: null, display_order: '0', active: true };
+  const emptyForm = { name: '', category_key: 'other', category_it: 'Altro', category_en: 'Other', description_it: '', description_en: '', website_url: '', google_maps_url: '', social_url: '', image_url: '', image_path: '', image_name: '', image_type: '', imageFile: null, display_order: '0', active: true, commission_enabled: false, commission_type: 'none', commission_value: '', commission_currency: 'EUR', commission_applies_to: 'revenue_confirmed', commission_notes: '', commission_status: 'inactive' };
   const [form, setForm] = useState(emptyForm);
 
   async function refresh() {
@@ -11190,6 +14126,10 @@ function PartnershipsAdminPage({ lang, session, adminContent = {} }) {
     }
     if (!isValidOptionalUrl(form.website_url) || !isValidOptionalUrl(form.google_maps_url) || !isValidOptionalUrl(form.social_url) || (!form.imageFile && !isValidOptionalUrl(form.image_url))) {
       setError(adminCopy(lang, 'Inserisci URL validi che iniziano con http o https.', 'Enter valid URLs starting with http or https.'));
+      return;
+    }
+    if (form.commission_enabled && (form.commission_type === 'none' || parseMoneyAmount(form.commission_value) <= 0 || (form.commission_type === 'percentage' && parseMoneyAmount(form.commission_value) > 100))) {
+      setError(adminCopy(lang, 'Configura una commissione valida: tipo, valore positivo e percentuale massimo 100%.', 'Configure a valid commission: type, positive value, and percentage max 100%.'));
       return;
     }
     try {
@@ -11231,6 +14171,15 @@ function PartnershipsAdminPage({ lang, session, adminContent = {} }) {
             {form.imageFile && <p className="small-note full">{adminCopy(lang, 'File selezionato', 'Selected file')}: {form.imageFile.name}</p>}
             <AdminInput label={adminCopy(lang, 'Ordine', 'Display order')} type="number" value={form.display_order} onChange={(value) => update('display_order', value)} />
             <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => update('active', event.target.checked)} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
+            <label className="check-field full"><input type="checkbox" checked={form.commission_enabled} onChange={(event) => { update('commission_enabled', event.target.checked); update('commission_status', event.target.checked ? 'active' : 'inactive'); update('commission_type', event.target.checked && form.commission_type === 'none' ? 'percentage' : form.commission_type); }} /> {adminCopy(lang, 'Abilita commissioni partner', 'Enable partner commissions')}</label>
+            {form.commission_enabled && <>
+              <AdminSelect label={adminCopy(lang, 'Tipo commissione', 'Commission type')} value={form.commission_type} onChange={(value) => update('commission_type', value)} options={['fixed_amount', 'percentage']} formatter={(value) => partnerCommissionTypeLabel(value, lang)} />
+              <AdminInput label={adminCopy(lang, 'Valore commissione', 'Commission value')} type="number" value={form.commission_value} onChange={(value) => update('commission_value', value)} />
+              <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.commission_currency} onChange={(value) => update('commission_currency', normalizeCurrency(value))} />
+              <AdminSelect label={adminCopy(lang, 'Si applica a', 'Applies to')} value={form.commission_applies_to} onChange={(value) => update('commission_applies_to', value)} options={['request_created', 'booking_confirmed', 'revenue_confirmed']} formatter={(value) => partnerCommissionAppliesToLabel(value, lang)} />
+              <label className="admin-field full"><span>{adminCopy(lang, 'Note interne commissione', 'Internal commission notes')}</span><textarea rows={2} value={form.commission_notes} onChange={(event) => update('commission_notes', event.target.value)} /></label>
+              <p className="small-note full">{adminCopy(lang, 'Le commissioni sono interne e non vengono mostrate sul sito pubblico.', 'Commissions are internal and are not shown on the public website.')}</p>
+            </>}
             <div className="modal-actions full"><button className="button primary" type="submit">{adminCopy(lang, 'Salva collaborazione', 'Save partnership')}</button></div>
           </form>
         </section>
@@ -11266,7 +14215,14 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
     imageFile: null,
     removeImage: false,
     display_order: String(item.display_order || 0),
-    active: item.active !== false
+    active: item.active !== false,
+    commission_enabled: item.commission_enabled === true,
+    commission_type: item.commission_type || 'none',
+    commission_value: item.commission_value ?? '',
+    commission_currency: item.commission_currency || 'EUR',
+    commission_applies_to: item.commission_applies_to || 'revenue_confirmed',
+    commission_notes: item.commission_notes || '',
+    commission_status: item.commission_status || (item.commission_enabled ? 'active' : 'inactive')
   });
   const [error, setError] = useState('');
 
@@ -11278,6 +14234,10 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
     }
     if (!isValidOptionalUrl(form.website_url) || !isValidOptionalUrl(form.google_maps_url) || !isValidOptionalUrl(form.social_url) || (!form.imageFile && !form.removeImage && !isValidOptionalUrl(form.image_url))) {
       setError(adminCopy(lang, 'URL non valido.', 'Invalid URL.'));
+      return;
+    }
+    if (form.commission_enabled && (form.commission_type === 'none' || parseMoneyAmount(form.commission_value) <= 0 || (form.commission_type === 'percentage' && parseMoneyAmount(form.commission_value) > 100))) {
+      setError(adminCopy(lang, 'Configura una commissione valida: tipo, valore positivo e percentuale massimo 100%.', 'Configure a valid commission: type, positive value, and percentage max 100%.'));
       return;
     }
     try {
@@ -11329,6 +14289,15 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
           {form.imageFile && <p className="small-note full">{adminCopy(lang, 'Nuovo file', 'New file')}: {form.imageFile.name}</p>}
           <AdminInput label={adminCopy(lang, 'Ordine', 'Display order')} type="number" value={form.display_order} onChange={(value) => setForm((current) => ({ ...current, display_order: value }))} />
           <label className="check-field"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
+          <label className="check-field full"><input type="checkbox" checked={form.commission_enabled} onChange={(event) => setForm((current) => ({ ...current, commission_enabled: event.target.checked, commission_status: event.target.checked ? 'active' : 'inactive', commission_type: event.target.checked && current.commission_type === 'none' ? 'percentage' : current.commission_type }))} /> {adminCopy(lang, 'Abilita commissioni partner', 'Enable partner commissions')}</label>
+          {form.commission_enabled && <>
+            <AdminSelect label={adminCopy(lang, 'Tipo commissione', 'Commission type')} value={form.commission_type} onChange={(value) => setForm((current) => ({ ...current, commission_type: value }))} options={['fixed_amount', 'percentage']} formatter={(value) => partnerCommissionTypeLabel(value, lang)} />
+            <AdminInput label={adminCopy(lang, 'Valore commissione', 'Commission value')} type="number" value={form.commission_value} onChange={(value) => setForm((current) => ({ ...current, commission_value: value }))} />
+            <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.commission_currency} onChange={(value) => setForm((current) => ({ ...current, commission_currency: normalizeCurrency(value) }))} />
+            <AdminSelect label={adminCopy(lang, 'Si applica a', 'Applies to')} value={form.commission_applies_to} onChange={(value) => setForm((current) => ({ ...current, commission_applies_to: value }))} options={['request_created', 'booking_confirmed', 'revenue_confirmed']} formatter={(value) => partnerCommissionAppliesToLabel(value, lang)} />
+            <label className="admin-field full"><span>{adminCopy(lang, 'Note interne commissione', 'Internal commission notes')}</span><textarea rows={2} value={form.commission_notes} onChange={(event) => setForm((current) => ({ ...current, commission_notes: event.target.value }))} /></label>
+            <p className="small-note full">{adminCopy(lang, 'Le commissioni sono interne e non vengono mostrate sul sito pubblico.', 'Commissions are internal and are not shown on the public website.')}</p>
+          </>}
           {error && <div className="admin-alert error full">{error}</div>}
           <div className="modal-actions full"><button className="button primary" type="button" onClick={save}>{adminCopy(lang, 'Salva', 'Save')}</button><button className="button secondary" type="button" onClick={() => setEditing(false)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button></div>
         </div>
@@ -11337,6 +14306,7 @@ function PartnershipAdminCard({ item, lang, userId, onChanged }) {
           {item.image_url && <img className="admin-card-preview-image" src={item.image_url} alt={item.name} />}
           {(item.description_it || item.description_en) && <FormattedText textValue={lang === 'it' ? item.description_it || item.description_en : item.description_en || item.description_it} className="formatted-text admin-partnership-preview-text" />}
           <p className="small-note">{item.website_url || '-'} · {item.google_maps_url ? 'Google Maps' : adminCopy(lang, 'Nessuna mappa', 'No map')} · {item.social_url ? 'Social' : adminCopy(lang, 'Nessun social', 'No social')} · {item.image_name || adminCopy(lang, 'Nessuna immagine', 'No image')} · {adminCopy(lang, 'Ordine', 'Order')} {item.display_order}</p>
+          <p className="small-note"><strong>{adminCopy(lang, 'Commissioni', 'Commissions')}:</strong> {item.commission_enabled ? `${partnerCommissionRuleLabel(item, lang)} · ${partnerCommissionAppliesToLabel(item.commission_applies_to, lang)}` : adminCopy(lang, 'Disabilitate', 'Disabled')}</p>
           {error && <div className="admin-alert error">{error}</div>}
           <div className="request-actions"><button className="button secondary" type="button" onClick={() => setEditing(true)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>{item.active && <button className="button secondary" type="button" onClick={deactivate}>{adminCopy(lang, 'Disattiva', 'Deactivate')}</button>}</div>
         </>
@@ -11504,7 +14474,7 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
           <section className="admin-panel">
             <AdminEditableText as="h2" itemKey="admin.availability.addBlock.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Aggiungi blocco disponibilità', 'Add availability block')} />
             <form className="admin-form-grid" onSubmit={submit}>
-              <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.date} onChange={(value) => update('date', value)} />
+              <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" min={todayIso()} value={form.date} onChange={(value) => update('date', value)} />
               <AdminSelect label={adminCopy(lang, 'Ambito', 'Scope')} value={form.experience_id} onChange={(value) => update('experience_id', value)} options={['', 'etna-premium', 'etna-learning', 'etna-live', 'etna-stories']} formatter={(value) => value ? adminExperienceLabel(value, lang) : adminCopy(lang, 'Tutte le esperienze', 'All experiences')} />
               <AdminSelect label={adminCopy(lang, 'Stato', 'Status')} value={form.status} onChange={(value) => update('status', value)} options={AVAILABILITY_STATUSES} formatter={(value) => adminAvailabilityStatusLabels[value][lang]} />
               <AdminInput label="Reason IT" value={form.reason_it || defaultReason(form.status, 'it')} onChange={(value) => update('reason_it', value)} />
@@ -11567,7 +14537,7 @@ function AvailabilityPage({ lang, session, adminContent = {} }) {
             <h2>{adminCopy(lang, 'Crea escursione fissa', 'Create fixed excursion')}</h2>
             <p className="small-note">{adminCopy(lang, 'Capienza predefinita 12. Per gruppi oltre 12 persone: contatto diretto con la guida.', 'Default capacity is 12. Groups over 12 should contact the guide directly.')}</p>
             <form className="admin-form-grid" onSubmit={submitFixed}>
-              <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={fixedForm.date} onChange={(value) => updateFixed('date', value)} />
+              <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" min={todayIso()} value={fixedForm.date} onChange={(value) => updateFixed('date', value)} />
               <AdminInput label={adminCopy(lang, 'Ora inizio', 'Start time')} type="time" value={fixedForm.start_time} onChange={(value) => updateFixed('start_time', value)} />
               <AdminInput label={adminCopy(lang, 'Ora fine opzionale', 'Optional end time')} type="time" value={fixedForm.end_time} onChange={(value) => updateFixed('end_time', value)} />
               <AdminSelect label={adminCopy(lang, 'Esperienza', 'Experience')} value={fixedForm.experience_id} onChange={(value) => updateFixed('experience_id', value)} options={['etna-premium', 'etna-learning', 'etna-live', 'etna-stories']} formatter={(value) => adminExperienceLabel(value, lang)} />
@@ -11854,7 +14824,7 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
       </div>
       {editing ? (
         <div className="admin-form-grid single-card-form">
-          <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.date} onChange={(value) => setForm((current) => ({ ...current, date: value }))} />
+          <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" min={todayIso()} value={form.date} onChange={(value) => setForm((current) => ({ ...current, date: value }))} />
           <AdminInput label={adminCopy(lang, 'Ora inizio', 'Start time')} type="time" value={form.start_time} onChange={(value) => setForm((current) => ({ ...current, start_time: value }))} />
           <AdminInput label={adminCopy(lang, 'Ora fine opzionale', 'Optional end time')} type="time" value={form.end_time} onChange={(value) => setForm((current) => ({ ...current, end_time: value }))} />
           <AdminSelect label={adminCopy(lang, 'Esperienza', 'Experience')} value={form.experience_id} onChange={(value) => setForm((current) => ({ ...current, experience_id: value }))} options={['etna-premium', 'etna-learning', 'etna-live', 'etna-stories']} formatter={(value) => adminExperienceLabel(value, lang)} />
@@ -11960,13 +14930,44 @@ function AvailabilityBlockCard({ block, lang, userId, onChanged }) {
 
 function App() {
   const [pathname, navigate] = usePathname();
-  const [lang, setLang] = useState('it');
-  const [formState, setFormState] = useState({ language: 'it', requestType: 'private', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', heardAboutUs: '', heardAboutUsDetail: '', message: i18n.it.defaultMessage });
+  const [lang, setLang] = useState(() => readInitialPublicLanguage());
+  const [formState, setFormState] = useState(() => ({ language: lang, requestType: 'private', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', heardAboutUs: '', heardAboutUsDetail: '', message: text(lang, 'defaultMessage') }));
   const [activePage, setActivePage] = useState(() => publicPageFromPathname(window.location.pathname) || 'home');
   const [siteMedia, setSiteMedia] = useState({});
   const [siteContent, setSiteContent] = useState({});
   const contactRef = useRef(null);
   const analyticsContextRef = useRef({ section: 'home', language: 'it' });
+
+  useEffect(() => {
+    const match = pathname.match(/^\/r\/ref\/([^/?#]+)/);
+    if (!match) return;
+    const code = match[1];
+    const params = new URLSearchParams(window.location.search || '');
+    const routeLang = params.get('lang') === 'en' ? 'en' : params.get('lang') === 'it' ? 'it' : lang;
+    let cancelled = false;
+    async function resolveReferral() {
+      const result = await validateAndRecordReferralClick(code);
+      if (cancelled) return;
+      if (result.valid) {
+        storeReferralJourney(result.code, { language: routeLang });
+        trackEvent('referral_link_click', { referral_code: result.code, source_type: 'customer_referral', language: routeLang }, { dedupe: false });
+      } else {
+        trackEvent('referral_invalid_link_click', { referral_code: code, source_type: 'customer_referral', language: routeLang }, { dedupe: false });
+      }
+      const query = new URLSearchParams();
+      if (routeLang === 'en' || routeLang === 'it') query.set('lang', routeLang);
+      if (result.valid) {
+        query.set('utm_source', 'referral');
+        query.set('utm_medium', 'customer');
+        query.set('utm_campaign', `referral_${result.code}`);
+      }
+      window.history.replaceState({}, '', `/${query.toString() ? `?${query.toString()}` : ''}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      setActivePage('home');
+    }
+    resolveReferral();
+    return () => { cancelled = true; };
+  }, [pathname]);
 
   useEffect(() => {
     analyticsContextRef.current = { section: activePage, language: lang };
@@ -12003,6 +15004,11 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (pathname.startsWith('/admin')) return;
+    applySeo({ page: activePage, lang, pathname });
+  }, [activePage, lang, pathname]);
+
+  useEffect(() => {
     if (!isSupabaseConfigured) return;
     let active = true;
     Promise.allSettled([listSiteMedia({ activeOnly: true }), loadPublicSiteContent()])
@@ -12016,7 +15022,6 @@ function App() {
 
   useEffect(() => {
     document.documentElement.lang = lang;
-    document.title = lang === 'it' ? 'vulcanIQ | Esperienze sull\'Etna' : 'vulcanIQ | Mount Etna experiences';
     setFormState((current) => ({
       ...current,
       language: current.language || lang,
@@ -12028,6 +15033,7 @@ function App() {
     setLang((current) => {
       const resolved = typeof nextLang === 'function' ? nextLang(current) : nextLang;
       if (resolved && resolved !== current) trackLanguageSwitch(current, resolved);
+      if (resolved) storePublicLanguage(resolved);
       return resolved || current;
     });
   }
@@ -12089,9 +15095,11 @@ function App() {
         return <LatestNewsPage lang={lang} siteContent={siteContent} />;
       case 'contact':
         return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteMedia={siteMedia} siteContent={siteContent} />;
+      case 'giftCard':
+        return <GiftCardPage lang={lang} siteContent={siteContent} onClose={() => { setActivePage('home'); navigatePublicRoute('/', lang); }} />;
       case 'home':
       default:
-        return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} siteMedia={siteMedia} siteContent={siteContent} />;
+        return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} />;
     }
   }
 

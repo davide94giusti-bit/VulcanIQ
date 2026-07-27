@@ -2,7 +2,7 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 
 const publicReviewFields = 'id, created_at, reviewer_name, review_text, rating, language, admin_reply, admin_reply_at, source, review_date, external_review_url, profile_photo_url, display_order';
 const legacyPublicReviewFields = 'id, created_at, reviewer_name, review_text, rating, language, admin_reply, admin_reply_at';
-const adminReviewFields = 'id, created_at, updated_at, booking_request_id, booking_code, reviewer_name, review_text, rating, language, approved, active, admin_reply, admin_reply_at, admin_reply_by, source, review_date, external_review_url, profile_photo_url, display_order';
+const adminReviewFields = 'id, created_at, updated_at, booking_request_id, booking_code_id, booking_code, reviewer_name, review_text, rating, language, approved, active, admin_reply, admin_reply_at, admin_reply_by, source, review_date, external_review_url, profile_photo_url, display_order';
 const legacyAdminReviewFields = 'id, created_at, booking_request_id, booking_code, reviewer_name, review_text, rating, language, approved, active, admin_reply, admin_reply_at, admin_reply_by';
 
 function cleanText(value) {
@@ -25,13 +25,13 @@ function normalizeSource(value) {
   const clean = cleanText(value).toLowerCase().replace(/[\s-]+/g, '_');
   if (clean.includes('google')) return 'google';
   if (clean === 'site' || clean === 'web') return 'website';
-  if (['website', 'internal', 'direct'].includes(clean)) return clean;
+  if (['website', 'internal', 'direct', 'booking_code', 'referral'].includes(clean)) return clean;
   return 'website';
 }
 
 function isExtendedReviewSchemaError(error) {
   const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
-  return message.includes('admin_reply') || message.includes('source') || message.includes('review_date') || message.includes('external_review_url') || message.includes('profile_photo_url') || message.includes('display_order') || message.includes('column') || message.includes('schema cache');
+  return message.includes('booking_code_id') || message.includes('admin_reply') || message.includes('source') || message.includes('review_date') || message.includes('external_review_url') || message.includes('profile_photo_url') || message.includes('display_order') || message.includes('column') || message.includes('schema cache');
 }
 
 function generatedManualBookingCode(source = 'manual') {
@@ -57,6 +57,7 @@ function reviewPayload(input = {}, { creating = false } = {}) {
   };
   if (creating) {
     payload.booking_code = cleanText(input.booking_code || input.bookingCode).toUpperCase() || generatedManualBookingCode(source);
+    if (cleanText(input.booking_code_id || input.bookingCodeId)) payload.booking_code_id = cleanText(input.booking_code_id || input.bookingCodeId);
     payload.created_at = input.created_at || undefined;
   }
   Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key]);
@@ -65,6 +66,7 @@ function reviewPayload(input = {}, { creating = false } = {}) {
 
 function stripExtendedReviewPayload(payload) {
   const clone = { ...payload };
+  delete clone.booking_code_id;
   delete clone.source;
   delete clone.review_date;
   delete clone.external_review_url;

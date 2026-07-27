@@ -1,5 +1,7 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 import { createAvailabilityBlock } from './availabilityService.js';
+import { cancelUnpaidPartnerCommissionsForSource } from './partnerCommissions.js';
+import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
 
 const requestFields = `
   id, created_at, updated_at, status, request_type, fixed_excursion_id,
@@ -9,10 +11,14 @@ const requestFields = `
   party_type, adults, children, children_under_3, private_experience,
   main_interest, preferred_pace, message, heard_about_us, heard_about_us_label, heard_about_us_detail,
   source, source_section, source_cta, cta_location, selected_date, selected_month, has_fixed_excursion,
-  traffic_source, utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+  traffic_source, detected_source, declared_source, utm_source, utm_medium, utm_campaign, utm_content, utm_term, referrer, landing_path,
   analytics_session_id, analytics_visitor_id, analytics_journey_id, booking_journey_version,
   device_type, browser, operating_system,
   admin_note, decision_note, decided_at, decided_by,
+  lead_status, lead_priority, lead_owner_id, next_follow_up_at, contacted_at, quoted_at, deposit_sent_at, deposit_paid_at, confirmed_at, completed_at, review_requested_at, review_received_at, review_request_channel, review_link_copied_at, review_code, lost_at, lost_reason, expected_value, quoted_amount, internal_notes,
+  referral_code, referral_source, referral_landing_at,
+  partner_id, partner_source_assigned_at, partner_source_assigned_by,
+  notification_email_status, notification_email_sent_at, notification_email_error, notification_email_attempts,
   created_by_admin, availability_block_id
 `;
 
@@ -92,6 +98,65 @@ function intOrNull(value) {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+async function reverseOrVoidFinanceForRequest(request, userId = null, reason = '') {
+  if (!request?.id || !isSupabaseConfigured) return;
+  const now = new Date().toISOString();
+  const { data: entries, error } = await supabase
+    .from('finance_entries')
+    .select('id, entry_date, type, amount, currency, title, description, category, payment_method, status, active, reversal_of, booking_request_id, booking_code_id, source_type, source_id')
+    .eq('booking_request_id', request.id);
+  if (error) throw error;
+
+  for (const entry of entries || []) {
+    const status = String(entry.status || 'confirmed');
+    if (entry.reversal_of || ['cancelled', 'void', 'voided', 'reversed', 'reversal'].includes(status)) continue;
+    if (status === 'confirmed') {
+      const { data: existingReversal, error: existingError } = await supabase
+        .from('finance_entries')
+        .select('id')
+        .eq('reversal_of', entry.id)
+        .limit(1);
+      if (existingError) throw existingError;
+      if (!existingReversal?.length && Number(entry.amount || 0) !== 0) {
+        const reversalPayload = {
+          entry_date: new Date().toISOString().slice(0, 10),
+          type: entry.type || 'income',
+          amount: -Math.abs(parseMoneyAmount(entry.amount)),
+          currency: normalizeCurrency(entry.currency),
+          title: `Reversal - ${entry.title || request.booking_code || request.customer_name || 'booking request'}`,
+          description: reason || 'Booking request declined/cancelled',
+          category: entry.category || 'booking_reversal',
+          payment_method: entry.payment_method || null,
+          booking_request_id: request.id,
+          booking_code_id: entry.booking_code_id || null,
+          source_type: entry.source_type || 'booking_request',
+          source_id: entry.source_id || request.id,
+          status: 'reversal',
+          reversal_of: entry.id,
+          active: true,
+          recognized_at: now,
+          created_by: userId || null,
+          updated_by: userId || null
+        };
+        const { error: insertError } = await supabase.from('finance_entries').insert(reversalPayload);
+        if (insertError) throw insertError;
+      }
+      const { error: updateError } = await supabase
+        .from('finance_entries')
+        .update({ status: 'reversed', reversed_at: now, updated_by: userId || null })
+        .eq('id', entry.id);
+      if (updateError) throw updateError;
+    } else {
+      const { error: updateError } = await supabase
+        .from('finance_entries')
+        .update({ status: 'cancelled', active: false, cancelled_at: now, updated_by: userId || null, archive_reason: reason || 'Booking request declined/cancelled' })
+        .eq('id', entry.id);
+      if (updateError) throw updateError;
+    }
+  }
+}
+
+
 export function normalizeRequestInput(input, defaults = {}) {
   const requestedDate = textOrNull(input.requested_date);
   const requestType = textOrNull(input.request_type) || defaults.request_type || 'private';
@@ -132,11 +197,18 @@ export function normalizeRequestInput(input, defaults = {}) {
     selected_month: textOrNull(input.selected_month),
     has_fixed_excursion: input.has_fixed_excursion === undefined ? requestType === 'fixed' : Boolean(input.has_fixed_excursion),
     traffic_source: textOrNull(input.traffic_source),
+    detected_source: textOrNull(input.detected_source || input.traffic_source),
+    declared_source: textOrNull(input.declared_source || input.heard_about_us),
     utm_source: textOrNull(input.utm_source),
     utm_medium: textOrNull(input.utm_medium),
     utm_campaign: textOrNull(input.utm_campaign),
     utm_content: textOrNull(input.utm_content),
     utm_term: textOrNull(input.utm_term),
+    referrer: textOrNull(input.referrer),
+    landing_path: textOrNull(input.landing_path),
+    referral_code: textOrNull(input.referral_code),
+    referral_source: textOrNull(input.referral_source),
+    referral_landing_at: textOrNull(input.referral_landing_at),
     analytics_session_id: textOrNull(input.analytics_session_id || input.session_id),
     analytics_visitor_id: textOrNull(input.analytics_visitor_id || input.visitor_id),
     analytics_journey_id: textOrNull(input.analytics_journey_id || input.booking_journey_id),
@@ -145,38 +217,52 @@ export function normalizeRequestInput(input, defaults = {}) {
     browser: textOrNull(input.browser),
     operating_system: textOrNull(input.operating_system),
     admin_note: textOrNull(input.admin_note),
+    lead_status: textOrNull(input.lead_status),
+    lead_priority: textOrNull(input.lead_priority),
+    next_follow_up_at: textOrNull(input.next_follow_up_at),
+    expected_value: input.expected_value === undefined || input.expected_value === '' ? null : Number(input.expected_value),
+    quoted_amount: input.quoted_amount === undefined || input.quoted_amount === '' ? null : Number(input.quoted_amount),
+    lost_reason: textOrNull(input.lost_reason),
+    internal_notes: textOrNull(input.internal_notes),
     status: defaults.status || input.status || 'pending',
     created_by_admin: input.created_by_admin || defaults.created_by_admin || null
   };
 }
 
 export async function createPublicBookingRequest(input) {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-
   const payload = normalizeRequestInput(input, { source: 'website', status: 'pending', language: input.language || 'it' });
   payload.source = 'website';
   payload.status = 'pending';
   payload.created_by_admin = null;
   delete payload.admin_note;
+  delete payload.booking_code;
 
-  const { data: rpcData, error: rpcError } = await supabase.rpc('create_public_booking_request', {
-    request_payload: payload
+  const journeyId = textOrNull(input.submission_idempotency_key || input.analytics_journey_id || input.booking_journey_id);
+  const idempotency = String(journeyId || globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`)
+    .replace(/[^a-zA-Z0-9:_-]/g, '-')
+    .slice(0, 160);
+  payload.submission_idempotency_key = idempotency.length >= 12 ? idempotency : `booking-${Date.now()}-${idempotency}`;
+  payload.submission_fingerprint = textOrNull(input.submission_fingerprint) || payload.submission_idempotency_key;
+  payload.form_started_at = textOrNull(input.form_started_at);
+  payload.website = textOrNull(input.website);
+  payload.turnstile_token = textOrNull(input.turnstile_token);
+
+  const response = await fetch('/api/public/booking-request', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': payload.submission_idempotency_key
+    },
+    body: JSON.stringify(payload)
   });
-
-  if (!rpcError) {
-    const created = Array.isArray(rpcData) ? rpcData[0] : rpcData;
-    if (created?.id) return created;
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result?.ok) {
+    const error = new Error(result?.message || 'The booking request could not be saved.');
+    error.code = result?.code || `HTTP_${response.status}`;
+    error.status = response.status;
+    throw error;
   }
-
-  const functionMissing = rpcError && ['PGRST202', 'PGRST204', '42883'].includes(String(rpcError.code || ''));
-  if (rpcError && !functionMissing) throw rpcError;
-
-  const { error } = await supabase
-    .from('booking_requests')
-    .insert(payload);
-
-  if (error) throw error;
-  return { id: null, status: 'pending', legacy_insert_without_returned_id: true };
+  return result;
 }
 
 export async function createManualBookingRequest(input, userId) {
@@ -323,23 +409,58 @@ export async function approveBookingRequest({ request, userId, mode = 'accept-on
 
 export async function declineBookingRequest({ request, userId, decisionNote = '', reasonCategory = '' }) {
   const note = [reasonCategory, decisionNote].filter(Boolean).join(' · ');
-  return updateBookingRequest(request.id, {
+  const updated = await updateBookingRequest(request.id, {
     status: 'declined',
     decision_note: note || null,
     decided_at: new Date().toISOString(),
     decided_by: userId
   });
+  await reverseOrVoidFinanceForRequest(updated, userId, note || 'Booking request declined');
+  await cancelUnpaidPartnerCommissionsForSource({ sourceType: 'booking_request', sourceId: updated.id, userId, reason: note || 'Booking request declined' });
+  return updated;
 }
 
 
 export async function cancelBookingRequest({ request, userId, decisionNote = '' }) {
   const note = ['removed/cancelled', decisionNote].filter(Boolean).join(' · ');
-  return updateBookingRequest(request.id, {
+  const updated = await updateBookingRequest(request.id, {
     status: 'cancelled',
     decision_note: note || null,
     decided_at: new Date().toISOString(),
     decided_by: userId,
     removed_at: new Date().toISOString(),
     removed_by: userId
+  });
+  await reverseOrVoidFinanceForRequest(updated, userId, note || 'Booking request cancelled');
+  await cancelUnpaidPartnerCommissionsForSource({ sourceType: 'booking_request', sourceId: updated.id, userId, reason: note || 'Booking request cancelled' });
+  return updated;
+}
+
+
+export async function markBookingRequestReviewLinkCopied(id, userId = null) {
+  return updateBookingRequest(id, {
+    review_link_copied_at: new Date().toISOString(),
+    updated_by: userId || null
+  });
+}
+
+export async function markBookingRequestReviewRequested(id, channel = 'whatsapp', userId = null) {
+  const now = new Date().toISOString();
+  return updateBookingRequest(id, {
+    review_requested_at: now,
+    review_request_channel: channel || 'whatsapp',
+    lead_status: 'review_requested',
+    updated_by: userId || null
+  });
+}
+
+export async function markBookingRequestReviewReceived(id, userId = null) {
+  const now = new Date().toISOString();
+  return updateBookingRequest(id, {
+    review_received_at: now,
+    review_submitted: true,
+    review_submitted_at: now,
+    lead_status: 'review_received',
+    updated_by: userId || null
   });
 }

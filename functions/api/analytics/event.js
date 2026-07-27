@@ -1,3 +1,4 @@
+// Keep this analytics allowlist synchronized with src/analytics.js.
 const EVENT_NAMES = new Set([
   'page_view',
   'language_switch',
@@ -6,6 +7,8 @@ const EVENT_NAMES = new Set([
   'experience_detail_open',
   'calendar_date_select',
   'booking_form_open',
+  'booking_form_started',
+  'booking_form_step_completed',
   'booking_form_field_start',
   'request_details_open',
   'fixed_excursion_options_open',
@@ -22,28 +25,127 @@ const EVENT_NAMES = new Set([
   'booking_submit_success',
   'booking_submit_error',
   'booking_request_created',
+  'book_with_code_clicked',
+  'booking_code_redeem_attempt',
+  'booking_code_redeem_success',
+  'booking_code_redeem_error',
+  'booking_code_submitted',
+  'booking_code_redeemed',
+  'booking_code_invalid',
   'whatsapp_click',
   'email_click',
   'phone_click',
   'google_maps_click',
   'maps_click',
+  'meeting_point_maps_click',
   'review_view',
+  'social_link_click',
+  'external_link_click',
+  'google_reviews_click',
   'session_start',
   'session_heartbeat',
-  'session_end'
+  'session_end',
+  'pricing_card_view',
+  'pricing_cta_click',
+  'fast_request_start',
+  'fast_request_step_complete',
+  'fast_request_abandon',
+  'fast_request_whatsapp_click',
+  'fast_request_submit_attempt',
+  'fast_request_submit_success',
+  'gift_card_view',
+  'gift_card_request_click',
+  'gbp_utm_link_click',
+  'lead_status_changed',
+  'lead_follow_up_set',
+  'booking_code_review_open',
+  'booking_code_review_submit_attempt',
+  'booking_code_review_submit_success',
+  'booking_code_review_duplicate',
+  'review_request_sent',
+  'google_review_request_click',
+  'gift_card_request_created',
+  'gift_card_questionnaire_started',
+  'gift_card_questionnaire_step_completed',
+  'gift_card_whatsapp_request_clicked',
+  'gift_card_status_changed',
+  'gift_card_paid',
+  'gift_card_issued',
+  'gift_card_cancelled',
+  'gift_card_whatsapp_reply_copied',
+  'gift_card_email_reply_copied',
+  'review_link_copied',
+  'review_request_whatsapp_click',
+  'review_requested_marked',
+  'review_received_marked',
+  'referral_code_created',
+  'referral_link_copied',
+  'referral_link_click',
+  'referral_invalid_link_click',
+  'referral_booking_request_created',
+  'referral_code_disabled',
+  'form_journey_started',
+  'form_field_started',
+  'abandoned_form_detected',
+  'abandoned_form_recovered_whatsapp',
+  'form_submit_success',
+  'partner_source_assigned',
+  'partner_commission_created',
+  'partner_commission_status_changed',
+  'partner_commission_marked_paid'
 ]);
 
 const UNSAFE_METADATA_KEYS = new Set([
-  'name', 'customer_name', 'guest_name', 'reviewer_name', 'email', 'customer_email',
-  'phone', 'customer_phone', 'message', 'booking_message', 'notes', 'address',
-  'coordinates', 'lat', 'lng', 'latitude', 'longitude', 'payment', 'card'
+  'name',
+  'customer_name',
+  'guest_name',
+  'reviewer_name',
+  'email',
+  'customer_email',
+  'phone',
+  'customer_phone',
+  'message',
+  'booking_message',
+  'customer_note',
+  'notes',
+  'address',
+  'coordinates',
+  'lat',
+  'lng',
+  'latitude',
+  'longitude',
+  'payment',
+  'card',
+  'buyer_name',
+  'buyer_email',
+  'buyer_phone',
+  'recipient_name',
+  'partner_bank_details',
+  'payment_details'
 ]);
 
 function json(status, body = {}) {
-  if (status === 204) return new Response(null, { status, headers: { 'Cache-Control': 'no-store' } });
+  if (status === 204) {
+    return new Response(null, {
+      status,
+      headers: {
+        'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      }
+    });
+  }
+
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    }
   });
 }
 
@@ -60,13 +162,21 @@ function cleanPath(value) {
 
 function cleanMetadata(metadata = {}) {
   const safe = {};
+
   Object.entries(metadata && typeof metadata === 'object' ? metadata : {}).forEach(([key, value]) => {
     const cleanKey = cleanText(key, 48);
     if (!cleanKey || UNSAFE_METADATA_KEYS.has(cleanKey.toLowerCase())) return;
     if (Array.isArray(value) || (value && typeof value === 'object')) return;
-    const cleanValue = typeof value === 'number' || typeof value === 'boolean' ? value : cleanText(value, 220);
-    if (cleanValue !== null && cleanValue !== undefined) safe[cleanKey] = cleanValue;
+
+    const cleanValue = typeof value === 'number' || typeof value === 'boolean'
+      ? value
+      : cleanText(value, 220);
+
+    if (cleanValue !== null && cleanValue !== undefined) {
+      safe[cleanKey] = cleanValue;
+    }
   });
+
   return safe;
 }
 
@@ -77,11 +187,25 @@ function validIso(value) {
 
 function normalizedTrafficSource(raw) {
   const value = (cleanText(raw, 40) || 'direct').toLowerCase();
-  return ['direct', 'google', 'instagram', 'facebook', 'whatsapp', 'other'].includes(value) ? value : 'other';
+
+  return [
+    'direct',
+    'google',
+    'google_business_profile',
+    'instagram',
+    'facebook',
+    'tiktok',
+    'whatsapp',
+    'partner',
+    'qr',
+    'business_card',
+    'other'
+  ].includes(value) ? value : 'other';
 }
 
 function cfGeo(request) {
   const cf = request.cf || {};
+
   return {
     country_code: cleanText(cf.country, 8),
     country_name: cleanText(cf.country, 80),
@@ -92,7 +216,11 @@ function cfGeo(request) {
 async function supabaseRequest(env, path, options) {
   const supabaseUrl = env.SUPABASE_URL;
   const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) throw new Error('Missing Supabase analytics environment variables.');
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('Missing Supabase analytics environment variables.');
+  }
+
   const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/${path}`, {
     ...options,
     headers: {
@@ -102,12 +230,34 @@ async function supabaseRequest(env, path, options) {
       ...(options.headers || {})
     }
   });
-  if (!response.ok) throw new Error(`Supabase analytics write failed: ${response.status}`);
+
+  if (!response.ok) {
+    throw new Error(`Supabase analytics write failed: ${response.status}`);
+  }
+
   return response;
+}
+
+
+async function sha256(value) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function analyticsRateAllowed(request, env) {
+  const ip = cleanText(request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown', 100) || 'unknown';
+  const actor = await sha256(`${env.SUBMISSION_HASH_SALT || env.SUPABASE_SERVICE_ROLE_KEY || 'analytics'}:${ip}`);
+  const response = await supabaseRequest(env, 'rpc/claim_public_submission_rate_limit', {
+    method: 'POST',
+    body: JSON.stringify({ p_action_key: 'analytics_ingestion', p_actor_key: actor, p_actor_limit: 240, p_global_limit: 20000, p_window_seconds: 3600 })
+  });
+  const payload = await response.json().catch(() => false);
+  return payload === true || payload?.allowed === true;
 }
 
 function sessionRow(payload, geo) {
   const duration = Math.max(0, Math.min(1800, Number.parseInt(payload.duration_seconds || 0, 10) || 0));
+
   return {
     session_id: cleanText(payload.session_id, 140),
     visitor_id: cleanText(payload.visitor_id, 140),
@@ -152,32 +302,50 @@ function eventRow(payload, geo) {
 }
 
 export async function onRequestOptions() {
-  return new Response(null, { status: 204 });
+  return json(204);
 }
 
 export async function onRequestPost(context) {
   try {
-    const payload = await context.request.json();
-    if (!EVENT_NAMES.has(payload?.event_name)) return json(400, { error: 'invalid_event_name' });
+    const contentType = String(context.request.headers.get('Content-Type') || '').toLowerCase();
+    const contentLength = Number(context.request.headers.get('Content-Length') || 0);
+    if (!contentType.includes('application/json') || contentLength > 16384) return json(204);
+    const raw = await context.request.text();
+    if (new TextEncoder().encode(raw).byteLength > 16384) return json(204);
+    if (!(await analyticsRateAllowed(context.request, context.env))) return json(204);
+    const payload = JSON.parse(raw || '{}');
+
+    // Analytics is diagnostic. Invalid analytics payloads should not create production noise.
+    if (!EVENT_NAMES.has(payload?.event_name)) return json(204);
+
     const geo = cfGeo(context.request);
     const event = eventRow(payload, geo);
-    if (!event.session_id || !event.visitor_id) return json(400, { error: 'missing_session' });
+
+    // Missing identity should silently drop the analytics event.
+    if (!event.session_id || !event.visitor_id) return json(204);
+
     const session = sessionRow(payload, geo);
 
-    await supabaseRequest(context.env, 'analytics_sessions?on_conflict=session_id', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify([session])
-    });
+    try {
+      await supabaseRequest(context.env, 'analytics_sessions?on_conflict=session_id', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify([session])
+      });
 
-    await supabaseRequest(context.env, 'analytics_events', {
-      method: 'POST',
-      headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify([event])
-    });
+      await supabaseRequest(context.env, 'analytics_events', {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify([event])
+      });
+    } catch {
+      // Analytics write failures must never surface to the public website.
+      return json(204);
+    }
 
     return json(204);
-  } catch (error) {
+  } catch {
+    // Analytics parsing/runtime failures must never surface to the public website.
     return json(204);
   }
 }

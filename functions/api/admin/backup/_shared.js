@@ -1,3 +1,5 @@
+import { importPKCS8, SignJWT } from 'jose';
+
 export function json(status, body = {}) {
   if (status === 204) return new Response(null, { status, headers: { 'Cache-Control': 'no-store' } });
   return new Response(JSON.stringify(body), {
@@ -30,6 +32,36 @@ export async function readRequestJson(request) {
     return await request.json();
   } catch {
     return {};
+  }
+}
+
+export async function readRequestJsonWithinLimit(request, maxBytes = 8192) {
+  const advertisedLength = Number(request.headers.get('Content-Length') || 0);
+  if (Number.isFinite(advertisedLength) && advertisedLength > maxBytes) {
+    return { ok: false, status: 413, code: 'request_body_too_large' };
+  }
+
+  let rawBody = '';
+  try {
+    rawBody = await request.text();
+  } catch {
+    return { ok: false, status: 400, code: 'invalid_request_body' };
+  }
+
+  if (new TextEncoder().encode(rawBody).byteLength > maxBytes) {
+    return { ok: false, status: 413, code: 'request_body_too_large' };
+  }
+
+  if (!rawBody.trim()) return { ok: true, value: {} };
+
+  try {
+    const value = JSON.parse(rawBody);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return { ok: false, status: 400, code: 'invalid_json_object' };
+    }
+    return { ok: true, value };
+  } catch {
+    return { ok: false, status: 400, code: 'malformed_json' };
   }
 }
 
@@ -118,27 +150,209 @@ export async function requireActiveOwner(request, env = {}, language = 'en') {
   return { ok: true, config, user, profile };
 }
 
+let cachedInstallationToken = null;
+let cachedInstallationTokenExpiresAt = 0;
+
+function base64ToBytes(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
+  return btoa(binary);
+}
+
+function derLength(length) {
+  if (length < 128) return Uint8Array.of(length);
+  const output = [];
+  let remaining = length;
+  while (remaining > 0) {
+    output.unshift(remaining & 0xff);
+    remaining >>= 8;
+  }
+  return Uint8Array.of(0x80 | output.length, ...output);
+}
+
+function derNode(tag, payload) {
+  const length = derLength(payload.length);
+  const output = new Uint8Array(1 + length.length + payload.length);
+  output[0] = tag;
+  output.set(length, 1);
+  output.set(payload, 1 + length.length);
+  return output;
+}
+
+function concatBytes(...parts) {
+  const length = parts.reduce((total, part) => total + part.length, 0);
+  const output = new Uint8Array(length);
+  let offset = 0;
+  parts.forEach((part) => {
+    output.set(part, offset);
+    offset += part.length;
+  });
+  return output;
+}
+
+function pkcs1ToPkcs8Pem(pem) {
+  const base64 = String(pem || '')
+    .replace(/-----BEGIN RSA PRIVATE KEY-----/g, '')
+    .replace(/-----END RSA PRIVATE KEY-----/g, '')
+    .replace(/\s+/g, '');
+  if (!base64) throw new Error('GitHub App private key is empty.');
+
+  const pkcs1 = base64ToBytes(base64);
+  const version = Uint8Array.of(0x02, 0x01, 0x00);
+  const rsaAlgorithmIdentifier = Uint8Array.of(
+    0x30, 0x0d,
+    0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01,
+    0x05, 0x00
+  );
+  const privateKeyOctetString = derNode(0x04, pkcs1);
+  const pkcs8 = derNode(0x30, concatBytes(version, rsaAlgorithmIdentifier, privateKeyOctetString));
+  const wrapped = bytesToBase64(pkcs8).match(/.{1,64}/g)?.join('\n') || '';
+  return `-----BEGIN PRIVATE KEY-----\n${wrapped}\n-----END PRIVATE KEY-----`;
+}
+
+function normalizePrivateKey(value) {
+  const key = String(value || '').replace(/\\n/g, '\n').trim();
+  if (key.includes('BEGIN PRIVATE KEY')) return key;
+  if (key.includes('BEGIN RSA PRIVATE KEY')) return pkcs1ToPkcs8Pem(key);
+  throw new Error('GitHub App private key must be PKCS#8 or PKCS#1 PEM.');
+}
+
 export function githubConfig(env = {}) {
   const owner = cleanText(env.GITHUB_OWNER, 120);
   const repo = cleanText(env.GITHUB_REPO, 120);
-  const token = env.GITHUB_BACKUP_TOKEN;
-  const workflowId = cleanText(env.GITHUB_BACKUP_WORKFLOW_ID || 'vulcaniq-db-backup.yml', 180);
+  const workflowId = cleanText(env.GITHUB_BACKUP_WORKFLOW || env.GITHUB_BACKUP_WORKFLOW_ID || 'vulcaniq-db-backup.yml', 180);
   const ref = cleanText(env.GITHUB_BACKUP_REF || 'main', 120);
-  if (!owner || !repo || !token || !workflowId || !ref) return null;
-  return { owner, repo, token, workflowId, ref };
+  const appId = cleanText(env.GITHUB_APP_ID, 80);
+  const installationId = cleanText(env.GITHUB_APP_INSTALLATION_ID, 80);
+  const privateKey = env.GITHUB_APP_PRIVATE_KEY;
+  const legacyToken = env.GITHUB_BACKUP_TOKEN;
+  const hasApp = Boolean(appId && installationId && privateKey);
+  const hasLegacyPat = Boolean(legacyToken);
+  if (!owner || !repo || !workflowId || !ref || (!hasApp && !hasLegacyPat)) return null;
+  return {
+    owner,
+    repo,
+    workflowId,
+    ref,
+    appId,
+    installationId,
+    privateKey,
+    legacyToken,
+    authMode: hasApp ? 'github_app' : 'legacy_pat'
+  };
+}
+
+async function createGitHubAppToken(config) {
+  const now = Math.floor(Date.now() / 1000);
+  if (cachedInstallationToken && cachedInstallationTokenExpiresAt > now + 60) {
+    return { token: cachedInstallationToken, authMode: 'github_app' };
+  }
+
+  const privateKey = await importPKCS8(normalizePrivateKey(config.privateKey), 'RS256');
+  const jwt = await new SignJWT({})
+    .setProtectedHeader({ alg: 'RS256' })
+    .setIssuedAt(now - 60)
+    .setExpirationTime(now + (9 * 60))
+    .setIssuer(config.appId)
+    .sign(privateKey);
+
+  const response = await fetch(`https://api.github.com/app/installations/${encodeURIComponent(config.installationId)}/access_tokens`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'vulcaniq-cloudflare-backup'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub App token creation failed: ${response.status}`);
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!payload?.token) throw new Error('GitHub did not return an installation token.');
+
+  cachedInstallationToken = payload.token;
+  cachedInstallationTokenExpiresAt = Math.floor(new Date(payload.expires_at || Date.now() + (50 * 60 * 1000)).getTime() / 1000);
+  return { token: payload.token, authMode: 'github_app' };
+}
+
+async function githubCredential(config) {
+  if (config.authMode === 'github_app') {
+    try {
+      return await createGitHubAppToken(config);
+    } catch (error) {
+      if (!config.legacyToken) throw error;
+      console.warn('vulcanIQ GitHub App authentication failed; using temporary PAT fallback', {
+        message: cleanText(error?.message || 'github_app_authentication_failed', 160)
+      });
+      return { token: config.legacyToken, authMode: 'legacy_pat' };
+    }
+  }
+  if (config.legacyToken) return { token: config.legacyToken, authMode: 'legacy_pat' };
+  throw new Error('GitHub backup authentication is not configured.');
 }
 
 export async function githubFetch(config, path, init = {}) {
-  return fetch(`https://api.github.com${path}`, {
-    ...init,
+  try {
+    const credential = await githubCredential(config);
+    const response = await fetch(`https://api.github.com${path}`, {
+      ...init,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${credential.token}`,
+        'User-Agent': 'vulcaniq-cloudflare-backup',
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(init.headers || {})
+      }
+    });
+    Object.defineProperty(response, 'vulcaniqAuthMode', { value: credential.authMode, enumerable: false });
+    return response;
+  } catch (error) {
+    console.error('vulcanIQ GitHub authentication failed', {
+      authMode: config?.authMode || 'unknown',
+      message: cleanText(error?.message || 'github_authentication_failed', 240)
+    });
+    return new Response('', { status: 502, headers: { 'Cache-Control': 'no-store' } });
+  }
+}
+
+export async function claimAdminActionRateLimit(config, actionKey, actorKey, limit = 3, windowSeconds = 300) {
+  const response = await fetch(`${config.supabaseUrl}/rest/v1/rpc/claim_admin_action_rate_limit`, {
+    method: 'POST',
     headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${config.token}`,
-      'User-Agent': 'vulcaniq-backup-admin',
-      'X-GitHub-Api-Version': '2022-11-28',
-      ...(init.headers || {})
-    }
+      apikey: config.serviceRoleKey,
+      Authorization: `Bearer ${config.serviceRoleKey}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    },
+    body: JSON.stringify({
+      p_action_key: cleanText(actionKey, 80),
+      p_actor_key: cleanText(actorKey, 160),
+      p_limit: Math.max(1, Math.min(20, Number(limit) || 3)),
+      p_window_seconds: Math.max(60, Math.min(86400, Number(windowSeconds) || 300))
+    })
   });
+  if (!response.ok) return false;
+  const result = await response.json().catch(() => false);
+  return result === true || result?.allowed === true;
+}
+
+export function requestHasJsonContentType(request) {
+  return String(request.headers.get('Content-Type') || '').toLowerCase().includes('application/json');
+}
+
+export function requestBodyWithinLimit(request, maxBytes = 8192) {
+  const value = Number(request.headers.get('Content-Length') || 0);
+  return !Number.isFinite(value) || value <= 0 || value <= maxBytes;
 }
 
 function validIsoString(value) {
@@ -269,8 +483,9 @@ export function backupErrorMessage(language, code) {
     case 'github_backup_not_configured':
       return localized(language, 'Endpoint backup non configurato.', 'Backup endpoint is not configured.');
     case 'no_successful_backup_runs':
+      return localized(language, 'Nessun backup completato trovato. Crea prima un backup.', 'No completed backup found. Create a backup first.');
     case 'no_backup_artifacts':
-      return localized(language, 'Nessun backup scaricabile trovato. Crea prima un backup.', 'No downloadable backup found. Create a backup first.');
+      return localized(language, 'Nessuno ZIP backup scaricabile trovato per l’ultimo workflow.', 'No downloadable backup ZIP found for the latest workflow.');
     case 'latest_artifact_expired':
       return localized(language, 'L\'ultimo artifact backup è scaduto. Crea un nuovo backup.', 'The latest backup artifact has expired. Create a new backup.');
     case 'github_access_denied':
