@@ -7,6 +7,8 @@ const EVENT_NAMES = new Set([
   'experience_detail_open',
   'calendar_date_select',
   'booking_form_open',
+  'booking_form_started',
+  'booking_form_step_completed',
   'booking_form_field_start',
   'request_details_open',
   'fixed_excursion_options_open',
@@ -95,6 +97,7 @@ const EVENT_NAMES = new Set([
 
 const VISITOR_KEY = 'vulcaniq_analytics_visitor_id';
 const SESSION_KEY = 'vulcaniq_analytics_session';
+const FIRST_TOUCH_KEY = 'vulcaniq_first_touch_attribution';
 const PAGEVIEW_COUNT_KEY = 'vulcaniq_analytics_pageview_count';
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_SESSION_SECONDS = 30 * 60;
@@ -318,14 +321,84 @@ function sanitizeMetadata(metadata = {}) {
   return output;
 }
 
-function safeUtmMetadata() {
+function captureFirstTouchAttribution() {
   if (typeof window === 'undefined') return {};
 
   const params = new URLSearchParams(window.location.search || '');
   const output = {};
+  const safeQuery = new URLSearchParams();
 
   SAFE_UTM_KEYS.forEach((key) => {
     const value = sanitizeText(params.get(key), 120);
+    if (value) {
+      output[key] = value;
+      safeQuery.set(key, value);
+    }
+  });
+
+  let referrer = '';
+  let referrerDomain = '';
+  try {
+    const raw = document.referrer || '';
+    if (raw) {
+      const parsed = new URL(raw);
+      const currentHost = window.location.hostname.replace(/^www\./, '').toLowerCase();
+      const sourceHost = parsed.hostname.replace(/^www\./, '').toLowerCase();
+      if (sourceHost && sourceHost !== currentHost) {
+        referrer = `${parsed.origin}${parsed.pathname}`.slice(0, 500);
+        referrerDomain = sourceHost.slice(0, 140);
+      }
+    }
+  } catch {}
+
+  const query = safeQuery.toString();
+  const landingPath = `${window.location.pathname || '/'}${query ? `?${query}` : ''}`.slice(0, 500);
+  const detectedSource = output.utm_source
+    ? normalizeTrafficSourceValue(output.utm_source, output.utm_medium)
+    : referrerDomain.includes('google.')
+      ? 'google'
+      : referrerDomain.includes('instagram.')
+        ? 'instagram'
+        : (referrerDomain.includes('facebook.') || referrerDomain === 'fb.com')
+          ? 'facebook'
+          : referrerDomain.includes('whatsapp.')
+            ? 'whatsapp'
+            : referrerDomain
+              ? 'other'
+              : 'direct';
+
+  return {
+    ...output,
+    referrer,
+    referrer_domain: referrerDomain,
+    landing_path: landingPath || '/',
+    detected_source: detectedSource,
+    captured_at: new Date().toISOString()
+  };
+}
+
+export function getFirstTouchAttribution() {
+  if (typeof window === 'undefined') return {};
+  const storage = browserStorage('local');
+  if (storage) {
+    try {
+      const existing = JSON.parse(storage.getItem(FIRST_TOUCH_KEY) || '{}');
+      if (existing && existing.landing_path && existing.captured_at) return existing;
+    } catch {}
+  }
+
+  const captured = captureFirstTouchAttribution();
+  if (storage && captured.landing_path) {
+    try { storage.setItem(FIRST_TOUCH_KEY, JSON.stringify(captured)); } catch {}
+  }
+  return captured;
+}
+
+function safeUtmMetadata() {
+  const attribution = getFirstTouchAttribution();
+  const output = {};
+  SAFE_UTM_KEYS.forEach((key) => {
+    const value = sanitizeText(attribution[key], 120);
     if (value) output[key] = value;
   });
 
@@ -565,12 +638,16 @@ function buildPayload(eventName, metadata = {}, options = {}) {
 export function getAnalyticsIdentitySnapshot(section = '') {
   const fallbackInfo = deviceInfo();
   const fallbackReferrer = referrerParts();
+  const firstTouch = getFirstTouchAttribution();
   const utm = safeUtmMetadata();
 
   if (!canTrack()) {
     return {
-      traffic_source: fallbackReferrer.traffic_source || 'direct',
-      referrer_domain: fallbackReferrer.referrer_domain || '',
+      traffic_source: firstTouch.detected_source || fallbackReferrer.traffic_source || 'direct',
+      detected_source: firstTouch.detected_source || fallbackReferrer.traffic_source || 'direct',
+      referrer_domain: firstTouch.referrer_domain || fallbackReferrer.referrer_domain || '',
+      referrer: firstTouch.referrer || '',
+      landing_path: firstTouch.landing_path || '/',
       ...fallbackInfo,
       ...utm
     };
@@ -584,8 +661,11 @@ export function getAnalyticsIdentitySnapshot(section = '') {
     analytics_visitor_id: visitorId,
     session_id: session.sessionId,
     visitor_id: visitorId,
-    traffic_source: fallbackReferrer.traffic_source || 'direct',
-    referrer_domain: fallbackReferrer.referrer_domain || '',
+    traffic_source: firstTouch.detected_source || fallbackReferrer.traffic_source || 'direct',
+    detected_source: firstTouch.detected_source || fallbackReferrer.traffic_source || 'direct',
+    referrer_domain: firstTouch.referrer_domain || fallbackReferrer.referrer_domain || '',
+    referrer: firstTouch.referrer || '',
+    landing_path: firstTouch.landing_path || '/',
     ...fallbackInfo,
     ...utm
   };
@@ -609,12 +689,15 @@ async function sendPayload(payload, options = {}) {
   }
 
   for (const endpoint of EVENT_ENDPOINTS) {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeout = window.setTimeout(() => controller?.abort(), Math.max(500, Math.min(3000, Number(options.timeoutMs || 1500))));
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        keepalive: Boolean(options.keepalive || payload.event_name.startsWith('session_'))
+        keepalive: Boolean(options.keepalive || payload.event_name.startsWith('session_')),
+        ...(controller ? { signal: controller.signal } : {})
       });
 
       if (response.ok || response.status === 204) return;
@@ -625,6 +708,8 @@ async function sendPayload(payload, options = {}) {
     } catch {
       // Analytics must never affect public browsing.
       return;
+    } finally {
+      window.clearTimeout(timeout);
     }
   }
 }
@@ -738,6 +823,19 @@ export function trackBookingFormOpen(experience, metadata = {}) {
   trackEvent('booking_form_open', experienceMetadata(experience, bookingContext({ source: 'booking_form', ...metadata })));
 }
 
+export function trackBookingFormStarted(experience, metadata = {}) {
+  trackEvent('booking_form_started', experienceMetadata(experience, bookingContext({ source: 'booking_form', ...metadata })), { dedupe: false });
+}
+
+export function trackBookingFormStepCompleted(experience, stepKey, stepIndex, metadata = {}) {
+  trackEvent('booking_form_step_completed', experienceMetadata(experience, bookingContext({
+    source: 'booking_form',
+    step_key: stepKey || metadata.step_key || 'unknown',
+    step_index: Number(stepIndex || metadata.step_index || 0),
+    ...metadata
+  })), { dedupe: false });
+}
+
 export function trackBookingFormFieldStart(experience, metadata = {}) {
   trackEvent('booking_form_field_start', experienceMetadata(experience, bookingContext({ source: 'booking_form', ...metadata })), { dedupe: false });
 }
@@ -783,11 +881,11 @@ export async function trackBookingSubmitSuccess(experience, adults, children, me
     source: 'booking_form'
   };
 
+  await trackEvent('booking_request_created', base, { dedupe: false, keepalive: true, timeoutMs: 1200 });
+  await trackEvent('booking_form_submit_success', base, { dedupe: false, keepalive: true, timeoutMs: 1200 });
   await Promise.allSettled([
-    trackEvent('booking_form_submit_success', base, { dedupe: false }),
-    trackEvent('booking_request_created', base, { dedupe: false }),
-    trackEvent('booking_submit_success', base, { dedupe: false }),
-    trackEvent('booking_submit', base, { dedupe: false })
+    trackEvent('booking_submit_success', base, { dedupe: false, keepalive: true, timeoutMs: 1200 }),
+    trackEvent('booking_submit', base, { dedupe: false, keepalive: true, timeoutMs: 1200 })
   ]);
 }
 

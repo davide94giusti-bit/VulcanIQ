@@ -15,9 +15,10 @@ import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFina
 import { assignPartnerToBookingRequest, calculatePartnerCommission, listPartnerCommissions, listPartnerCommissionSummary, updatePartnerCommissionStatus, upsertPartnerCommissionForSource } from './services/partnerCommissions.js';
 import { listAnalyticsEvents, listAnalyticsSessions } from './services/analyticsService.js';
 import { createDatabaseBackup, downloadLatestDatabaseBackup, getBackupSchedule, getBackupStatus, saveBackupSchedule } from './services/backupService.js';
-import { createGiftCardRequest, listGiftCardRequests, updateGiftCardRequest, ensureGiftCardReviewCode } from './services/giftCards.js';
+import { createGiftCardRequest, listGiftCardRequests, updateGiftCardRequest } from './services/giftCards.js';
+import { getOperationalSafeguards, listWeeklyAdminReports, retryRequestNotification, sendWeeklyAdminRecap } from './services/operationsService.js';
 import { createCustomerReferralCode, disableCustomerReferralCode, listCustomerReferralCodes, referralAttributionPayload, referralLink, storeReferralJourney, validateAndRecordReferralClick } from './services/referrals.js';
-import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot, createFormJourney, markFormFieldStarted, markFormActivity, markFormSubmitted, markFormAbandoned, markFormRecoveredViaWhatsApp } from './analytics.js';
+import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormStarted, trackBookingFormStepCompleted, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot, createFormJourney, markFormFieldStarted, markFormActivity, markFormSubmitted, markFormAbandoned, markFormRecoveredViaWhatsApp } from './analytics.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import { submitPublicBookingRequestWithTracking } from './services/publicBookingSubmit.js';
 import { formatCurrencyAmount, normalizeCurrency, parseMoneyAmount } from './utils/money.js';
@@ -2866,7 +2867,19 @@ function GiftCardPage({ lang, siteContent, onClose }) {
     }
     setState({ loading: true, error: '', success: '' });
     try {
-      const created = await createGiftCardRequest({ ...form, buyer_preferred_language: lang, language: lang, currency: form.currency || 'EUR' });
+      const identity = getAnalyticsIdentitySnapshot('gift_card_page');
+      const created = await createGiftCardRequest({
+        ...form,
+        ...identity,
+        buyer_preferred_language: lang,
+        language: lang,
+        currency: form.currency || 'EUR',
+        analytics_journey_id: journeyRef.current?.journey_id,
+        form_started_at: journeyRef.current?.opened_at,
+        submission_idempotency_key: journeyRef.current?.journey_id,
+        submission_fingerprint: journeyRef.current?.journey_id,
+        website: ''
+      });
       trackEvent('gift_card_request_created', {
         request_id: created?.id || '',
         language: lang,
@@ -4730,6 +4743,11 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
     if (trackedFormOpenRef.current.has('field_start')) return;
     trackedFormOpenRef.current.add('field_start');
     markFormFieldStarted(formJourneyRef.current?.journey_id, fieldName || 'unknown', { ...currentTrackingMetadata, ...extraMetadata, form_type: 'booking_form', step_index: stepIndex + 1, step_key: currentStep.key });
+    trackBookingFormStarted(effectiveExperienceId || requestType || 'private', {
+      ...currentTrackingMetadata,
+      ...extraMetadata,
+      first_field_name: fieldName || 'unknown'
+    });
     trackBookingFormFieldStart(effectiveExperienceId || requestType || 'private', {
       ...currentTrackingMetadata,
       ...extraMetadata,
@@ -5010,6 +5028,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       return;
     }
     setStepError('');
+    trackBookingFormStepCompleted(effectiveExperienceId || requestType || 'private', currentStep.key, stepIndex + 1, currentTrackingMetadata);
     setStepIndex((current) => {
       const next = Math.min(current + 1, questionnaireSteps.length - 1);
       if (questionnaireSteps[next]?.key === 'message') window.setTimeout(ensureFinalMessage, 0);
@@ -5092,6 +5111,10 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
           selected_date: trackingMetadata.selected_date || selectedFixed?.date || formState.requestedDate || null,
           has_fixed_excursion: trackingMetadata.has_fixed_excursion,
           traffic_source: trackingMetadata.traffic_source,
+          detected_source: trackingMetadata.detected_source || trackingMetadata.traffic_source,
+          declared_source: selectedHeardAboutUs,
+          referrer: trackingMetadata.referrer,
+          landing_path: trackingMetadata.landing_path,
           utm_source: trackingMetadata.utm_source,
           utm_medium: trackingMetadata.utm_medium,
           utm_campaign: trackingMetadata.utm_campaign,
@@ -5105,6 +5128,10 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
           device_type: trackingMetadata.device_type,
           browser: trackingMetadata.browser,
           operating_system: trackingMetadata.operating_system,
+          form_started_at: formJourneyRef.current?.opened_at,
+          submission_idempotency_key: trackingMetadata.booking_journey_id || formJourneyRef.current?.journey_id,
+          submission_fingerprint: trackingMetadata.booking_journey_id || formJourneyRef.current?.journey_id,
+          website: '',
           ...referralPayload
         }
       });
@@ -6429,7 +6456,7 @@ function ProtectedAdminArea({ pathname, navigate, lang, setLang }) {
 }
 
 
-function AdminMenuDropdown({ lang, visibleSections, normalizedPath, currentNavValue, navigate }) {
+function AdminMenuDropdown({ lang, visibleSections, normalizedPath, currentNavValue, navigate, safeguards }) {
   const [open, setOpen] = useState(false);
   const shellRef = useRef(null);
   const sectionByKey = useMemo(() => visibleSections.reduce((acc, section) => ({ ...acc, [section.key]: section }), {}), [visibleSections]);
@@ -6508,7 +6535,8 @@ function AdminMenuDropdown({ lang, visibleSections, normalizedPath, currentNavVa
                         aria-current={active ? 'page' : undefined}
                         onClick={() => openSection(section)}
                       >
-                        {adminNavLabel(section, lang)}
+                        <span>{adminNavLabel(section, lang)}</span>
+                        {section.key === 'requests' && Number(safeguards?.pending_requests || 0) > 0 && <strong className="admin-nav-badge">{safeguards.pending_requests}</strong>}
                       </button>
                     );
                   })}
@@ -6612,6 +6640,8 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
 
   const [adminContentRows, setAdminContentRows] = useState([]);
   const [globalBackupProgress, setGlobalBackupProgress] = useState(inactiveBackupProgress);
+  const [operationalSafeguards, setOperationalSafeguards] = useState(null);
+  const [weeklyRecapState, setWeeklyRecapState] = useState({ loading: false, message: '' });
   const backupMonitorRef = useRef({ interval: null, timeout: null, requestedAt: '' });
 
   function clearBackupMonitorTimers() {
@@ -6729,6 +6759,32 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
     };
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    async function refreshSafeguards() {
+      try {
+        const result = await getOperationalSafeguards();
+        if (alive) setOperationalSafeguards(result);
+      } catch {
+        if (alive) setOperationalSafeguards(null);
+      }
+    }
+    refreshSafeguards();
+    const interval = window.setInterval(refreshSafeguards, 60000);
+    return () => { alive = false; window.clearInterval(interval); };
+  }, [normalizedPath]);
+
+  async function sendWeeklyRecapTest() {
+    setWeeklyRecapState({ loading: true, message: '' });
+    try {
+      const result = await sendWeeklyAdminRecap({ testMode: true, force: true });
+      setWeeklyRecapState({ loading: false, message: adminCopy(lang, `Report di test inviati: ${result.sent || 0}.`, `Test reports sent: ${result.sent || 0}.`) });
+      setOperationalSafeguards(await getOperationalSafeguards());
+    } catch (error) {
+      setWeeklyRecapState({ loading: false, message: error?.message || adminCopy(lang, 'Invio report non riuscito.', 'Report send failed.') });
+    }
+  }
+
   const adminContent = useMemo(() => buildSiteContentMap(adminContentRows), [adminContentRows]);
 
   async function logout() {
@@ -6745,6 +6801,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           normalizedPath={normalizedPath}
           currentNavValue={currentNavValue}
           navigate={navigate}
+          safeguards={operationalSafeguards}
         />
         <div className="admin-userbox">
           <span className="admin-userbox-name">{ownerDisplayName(profile, lang)}</span>
@@ -6754,6 +6811,20 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           </span>
         </div>
       </header>
+      {operationalSafeguards && (
+        <section className="admin-operational-banner" aria-label={adminCopy(lang, 'Avvisi operativi', 'Operational warnings')}>
+          <span><strong>{operationalSafeguards.pending_requests}</strong> {adminCopy(lang, 'richieste pending', 'pending requests')}</span>
+          <span><strong>{operationalSafeguards.pending_over_12h}</strong> &gt;12h</span>
+          <span className={Number(operationalSafeguards.pending_over_24h || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.pending_over_24h}</strong> &gt;24h</span>
+          <span className={Number(operationalSafeguards.failed_notifications || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.failed_notifications}</strong> {adminCopy(lang, 'email fallite', 'failed emails')}</span>
+          <span className={Number(operationalSafeguards.notifications_not_sent || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.notifications_not_sent}</strong> {adminCopy(lang, 'email non inviate', 'emails not sent')}</span>
+          <span><strong>{operationalSafeguards.gift_cards_missing_code}</strong> {adminCopy(lang, 'Gift Card senza codice', 'Gift Cards missing code')}</span>
+          <span className={Number(operationalSafeguards.upcoming_unconfirmed_72h || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.upcoming_unconfirmed_72h}</strong> {adminCopy(lang, 'entro 72h da confermare', 'within 72h unconfirmed')}</span>
+          <span className={Number(operationalSafeguards.weekly_report_failures || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.weekly_report_failures}</strong> {adminCopy(lang, 'report falliti', 'failed reports')}</span>
+          {isOwner && <button type="button" onClick={sendWeeklyRecapTest} disabled={weeklyRecapState.loading}>{weeklyRecapState.loading ? adminCopy(lang, 'Invio...', 'Sending...') : adminCopy(lang, 'Test recap', 'Test recap')}</button>}
+          {weeklyRecapState.message && <small>{weeklyRecapState.message}</small>}
+        </section>
+      )}
       {isOwner && !isBackupPage && !isUsersPage && (
         <GlobalBackupProgressBanner
           lang={lang}
@@ -10659,6 +10730,79 @@ function backupProgressFromStatus(result, requestedAt, lang) {
   };
 }
 
+function WeeklyReportsAdminPanel({ lang }) {
+  const [state, setState] = useState({ loading: true, sending: false, error: '', message: '', reports: [] });
+
+  async function refresh() {
+    setState((current) => ({ ...current, loading: true, error: '' }));
+    try {
+      const reports = await listWeeklyAdminReports(20);
+      setState((current) => ({ ...current, loading: false, reports }));
+    } catch (error) {
+      setState((current) => ({ ...current, loading: false, error: error?.message || adminCopy(lang, 'Report non disponibili.', 'Reports are not available.') }));
+    }
+  }
+
+  useEffect(() => { refresh(); }, [lang]);
+
+  async function sendTest() {
+    setState((current) => ({ ...current, sending: true, error: '', message: '' }));
+    try {
+      const result = await sendWeeklyAdminRecap({ testMode: true, force: true });
+      setState((current) => ({ ...current, sending: false, message: adminCopy(lang, `Report di test inviati: ${result.sent || 0}.`, `Test reports sent: ${result.sent || 0}.`) }));
+      refresh();
+    } catch (error) {
+      setState((current) => ({ ...current, sending: false, error: error?.message || adminCopy(lang, 'Invio report non riuscito.', 'Report send failed.') }));
+    }
+  }
+
+  async function resendFailed(report) {
+    setState((current) => ({ ...current, sending: true, error: '', message: '' }));
+    try {
+      const result = await sendWeeklyAdminRecap({ reportId: report.id });
+      setState((current) => ({ ...current, sending: false, message: adminCopy(lang, `Report reinviati: ${result.sent || 0}.`, `Reports resent: ${result.sent || 0}.`) }));
+      refresh();
+    } catch (error) {
+      setState((current) => ({ ...current, sending: false, error: error?.message || adminCopy(lang, 'Reinvio report non riuscito.', 'Report resend failed.') }));
+    }
+  }
+
+  return (
+    <section className="admin-panel backup-panel weekly-report-panel">
+      <div className="admin-panel-header">
+        <div>
+          <h2>{adminCopy(lang, 'Recap settimanale', 'Weekly management recap')}</h2>
+          <p>{adminCopy(lang, 'Storico invii, errori e test del report operativo del lunedì.', 'Delivery history, errors, and tests for the Monday operational report.')}</p>
+        </div>
+        <div className="modal-actions">
+          <button className="button secondary" type="button" onClick={refresh} disabled={state.loading}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
+          <button className="button primary" type="button" onClick={sendTest} disabled={state.sending}>{state.sending ? adminCopy(lang, 'Invio...', 'Sending...') : adminCopy(lang, 'Invia test', 'Send test')}</button>
+        </div>
+      </div>
+      {state.message && <div className="admin-alert success" role="status">{state.message}</div>}
+      {state.error && <div className="admin-alert error" role="alert">{state.error}</div>}
+      {state.loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : state.reports.length ? (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>{adminCopy(lang, 'Periodo', 'Period')}</th><th>{adminCopy(lang, 'Destinatario', 'Recipient')}</th><th>{adminCopy(lang, 'Tipo', 'Type')}</th><th>{adminCopy(lang, 'Stato', 'Status')}</th><th>{adminCopy(lang, 'Inviato', 'Sent')}</th><th>{adminCopy(lang, 'Errore', 'Error')}</th><th>{adminCopy(lang, 'Azione', 'Action')}</th></tr></thead>
+            <tbody>{state.reports.map((report) => (
+              <tr key={report.id}>
+                <td>{formatAdminDate(report.period_start, lang)} – {formatAdminDate(report.period_end, lang)}</td>
+                <td>{report.recipient}</td>
+                <td>{report.report_type}</td>
+                <td><span className={`status-pill ${report.status === 'failed' ? 'cancelled' : report.status === 'sent' || report.status === 'test' ? 'accepted' : 'pending'}`}>{report.status}</span></td>
+                <td>{report.sent_at ? new Date(report.sent_at).toLocaleString(lang === 'it' ? 'it-IT' : 'en-GB') : '-'}</td>
+                <td>{report.error_message || '-'}</td>
+                <td>{report.status === 'failed' ? <button className="button secondary" type="button" disabled={state.sending} onClick={() => resendFailed(report)}>{adminCopy(lang, 'Reinvia', 'Resend')}</button> : '-'}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ) : <p>{adminCopy(lang, 'Nessun report registrato.', 'No reports recorded.')}</p>}
+    </section>
+  );
+}
+
 function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress(), startGlobalBackupMonitor, stopGlobalBackupMonitor }) {
   const [actionState, setActionState] = useState({ createLoading: false, downloadLoading: false, message: '', error: '' });
   const [statusState, setStatusState] = useState({ loading: true, error: '', latestBackup: null, workflowRun: null, configured: false, message: '' });
@@ -11015,6 +11159,8 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
         {scheduleState.error && <div className="admin-alert warning" role="status">{scheduleState.error}</div>}
         <p className="small-note">{adminCopy(lang, 'Il controllo automatico viene eseguito ogni ora e usa questa programmazione salvata per decidere se creare un nuovo backup.', 'The automatic check runs hourly and uses this saved schedule to decide whether to create a new backup.')}</p>
       </section>
+
+      <WeeklyReportsAdminPanel lang={lang} />
 
       <details className="admin-panel backup-panel backup-restore-details">
         <summary>
@@ -12704,6 +12850,36 @@ function useAdminGiftCards(filters = {}) {
   return { items, loading, error, refresh };
 }
 
+function NotificationStatusControl({ record, table, lang, onUpdated }) {
+  const [state, setState] = useState({ loading: false, error: '' });
+  const status = record.notification_email_status || (record.notification_email_sent_at ? 'sent' : 'not_sent');
+  const canRetry = ['failed', 'not_sent'].includes(status);
+
+  async function retry() {
+    setState({ loading: true, error: '' });
+    try {
+      const result = await retryRequestNotification(table, record.id);
+      setState({ loading: false, error: '' });
+      const message = result?.sent > 0
+        ? adminCopy(lang, 'Notifica email inviata.', 'Email notification sent.')
+        : adminCopy(lang, 'Nessuna notifica da reinviare.', 'No notification required a resend.');
+      await onUpdated?.(message);
+    } catch (error) {
+      setState({ loading: false, error: error?.message || adminCopy(lang, 'Riprova notifica non riuscito.', 'Notification retry failed.') });
+    }
+  }
+
+  return (
+    <div className={`notification-status-control notification-${status}`}>
+      <span><strong>{adminCopy(lang, 'Notifica email', 'Email notification')}:</strong> {status}</span>
+      {record.notification_email_sent_at && <small>{formatLocalDateTime(record.notification_email_sent_at, lang, '')}</small>}
+      {record.notification_email_error && <small>{record.notification_email_error}</small>}
+      {canRetry && <button className="button secondary" type="button" onClick={retry} disabled={state.loading}>{state.loading ? adminCopy(lang, 'Invio...', 'Sending...') : adminCopy(lang, 'Riprova email', 'Retry email')}</button>}
+      {state.error && <small className="admin-warning-critical">{state.error}</small>}
+    </div>
+  );
+}
+
 function GiftCardsAdminPage({ lang, session, adminContent = {} }) {
   const [filters, setFilters] = useState({ status: 'all', search: '', limit: 250 });
   const { items, loading, error, refresh } = useAdminGiftCards(filters);
@@ -12721,12 +12897,9 @@ function GiftCardsAdminPage({ lang, session, adminContent = {} }) {
         if (patch.status === 'paid') trackEvent('gift_card_paid', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
         if (patch.status === 'issued') trackEvent('gift_card_issued', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
         if (patch.status === 'cancelled') trackEvent('gift_card_cancelled', { request_id: item.id, previous_status: previousStatus, next_status: patch.status, language: lang }, { dedupe: false });
-        if (['paid', 'issued'].includes(patch.status)) {
-          const code = await ensureGiftCardReviewCode(updated, session.user.id);
-          if (code?.code) {
-            trackEvent('gift_card_review_code_created', { request_id: item.id, booking_code_id: code.id || '', language: lang }, { dedupe: false });
-            message = message || adminCopy(lang, `Gift Card aggiornata. Codice destinatario: ${code.code}`, `Gift Card updated. Recipient code: ${code.code}`);
-          }
+        if (['paid', 'issued'].includes(patch.status) && updated?.booking_code) {
+          trackEvent('gift_card_booking_code_created', { request_id: item.id, booking_code_id: updated.booking_code_id || '', language: lang }, { dedupe: false });
+          message = message || adminCopy(lang, `Gift Card aggiornata. Codice destinatario: ${updated.booking_code}`, `Gift Card updated. Recipient code: ${updated.booking_code}`);
         }
       }
       await refresh();
@@ -12778,6 +12951,7 @@ function GiftCardsAdminPage({ lang, session, adminContent = {} }) {
                   <div><dt>{adminCopy(lang, 'Finance', 'Finance')}</dt><dd>{item.finance_entry_id ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Not linked')}</dd></div>
                   <div><dt>{adminCopy(lang, 'Codice destinatario', 'Recipient code')}</dt><dd>{item.booking_code || '-'}</dd></div>
                 </dl>
+                <NotificationStatusControl record={item} table="gift_card_requests" lang={lang} onUpdated={async (message) => { await refresh(); setFeedback(message); }} />
                 {item.message && <p className="request-message">{item.message}</p>}
                 <label className="admin-field full"><span>{adminCopy(lang, 'Nota interna', 'Internal note')}</span><textarea rows={3} defaultValue={item.admin_note || ''} onBlur={(event) => { if (event.target.value !== (item.admin_note || '')) updateItem(item, { admin_note: event.target.value }, adminCopy(lang, 'Nota interna aggiornata.', 'Internal note updated.')); }} /></label>
                 <div className="request-actions-row">
@@ -12928,6 +13102,7 @@ function RequestCard({ request, lang, session = null, onApprove, onDecline, onRe
         <div><dt>{adminCopy(lang, 'Privata', 'Private')}</dt><dd>{request.private_experience === true ? adminCopy(lang, 'Sì', 'Yes') : request.private_experience === false ? adminCopy(lang, 'No', 'No') : '-'}</dd></div>
         {request.fixed_excursion_id && <div><dt>{adminCopy(lang, 'Escursione fissa', 'Fixed excursion')}</dt><dd>{request.fixed_excursion_id}</dd></div>}
       </dl>
+      <NotificationStatusControl record={request} table="booking_requests" lang={lang} onUpdated={onUpdated} />
       {request.children_under_3 && <div className="admin-alert warning compact-alert">{adminCopy(lang, 'Attenzione: bambini sotto i 3 anni. Percorso da valutare con particolare cura.', 'Warning: children under 3. Route must be assessed carefully.')}</div>}
       {request.message && <p className="request-message">{request.message}</p>}
       {request.admin_note && <p className="small-note"><strong>Note:</strong> {request.admin_note}</p>}

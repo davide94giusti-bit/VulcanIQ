@@ -7,6 +7,8 @@ const EVENT_NAMES = new Set([
   'experience_detail_open',
   'calendar_date_select',
   'booking_form_open',
+  'booking_form_started',
+  'booking_form_step_completed',
   'booking_form_field_start',
   'request_details_open',
   'fixed_excursion_options_open',
@@ -236,6 +238,23 @@ async function supabaseRequest(env, path, options) {
   return response;
 }
 
+
+async function sha256(value) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function analyticsRateAllowed(request, env) {
+  const ip = cleanText(request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown', 100) || 'unknown';
+  const actor = await sha256(`${env.SUBMISSION_HASH_SALT || env.SUPABASE_SERVICE_ROLE_KEY || 'analytics'}:${ip}`);
+  const response = await supabaseRequest(env, 'rpc/claim_public_submission_rate_limit', {
+    method: 'POST',
+    body: JSON.stringify({ p_action_key: 'analytics_ingestion', p_actor_key: actor, p_actor_limit: 240, p_global_limit: 20000, p_window_seconds: 3600 })
+  });
+  const payload = await response.json().catch(() => false);
+  return payload === true || payload?.allowed === true;
+}
+
 function sessionRow(payload, geo) {
   const duration = Math.max(0, Math.min(1800, Number.parseInt(payload.duration_seconds || 0, 10) || 0));
 
@@ -288,7 +307,13 @@ export async function onRequestOptions() {
 
 export async function onRequestPost(context) {
   try {
-    const payload = await context.request.json();
+    const contentType = String(context.request.headers.get('Content-Type') || '').toLowerCase();
+    const contentLength = Number(context.request.headers.get('Content-Length') || 0);
+    if (!contentType.includes('application/json') || contentLength > 16384) return json(204);
+    const raw = await context.request.text();
+    if (new TextEncoder().encode(raw).byteLength > 16384) return json(204);
+    if (!(await analyticsRateAllowed(context.request, context.env))) return json(204);
+    const payload = JSON.parse(raw || '{}');
 
     // Analytics is diagnostic. Invalid analytics payloads should not create production noise.
     if (!EVENT_NAMES.has(payload?.event_name)) return json(204);
