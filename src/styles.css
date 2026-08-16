@@ -14571,3 +14571,51 @@ section#reviews.compact-section,
     font-size: clamp(0.94rem, 4.2vw, 1.05rem) !important;
   }
 }
+
+/* Automation and operational safeguards */
+.admin-nav-badge {
+  display: inline-flex;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  border-radius: 999px;
+  background: #d85f23;
+  color: #fff;
+  font-size: .75rem;
+  line-height: 1;
+}
+.admin-operational-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem 1rem;
+  align-items: center;
+  padding: .75rem clamp(1rem, 3vw, 2rem);
+  background: #eef4f6;
+  border-bottom: 1px solid rgba(18, 52, 61, .18);
+  color: #12343d;
+  font-size: .85rem;
+}
+.admin-operational-banner span { white-space: nowrap; }
+.admin-operational-banner button { margin-left: auto; }
+.admin-operational-banner small { flex-basis: 100%; }
+.admin-warning-critical { color: #9d241f; }
+@media (max-width: 720px) {
+  .admin-operational-banner button { margin-left: 0; }
+}
+.notification-status-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem .75rem;
+  margin: .75rem 0;
+  padding: .65rem .75rem;
+  border: 1px solid rgba(18, 52, 61, .16);
+  border-radius: .7rem;
+  background: rgba(238, 244, 246, .72);
+  font-size: .82rem;
+}
+.notification-status-control small { flex-basis: 100%; }
+.notification-failed { border-color: rgba(157, 36, 31, .45); }
+.notification-sent { border-color: rgba(38, 122, 76, .35); }

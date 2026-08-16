@@ -1,0 +1,5 @@
+[functions.notify-new-request]
+verify_jwt = false
+
+[functions.send-weekly-admin-recap]
+verify_jwt = false

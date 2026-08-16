@@ -11,13 +11,14 @@ const requestFields = `
   party_type, adults, children, children_under_3, private_experience,
   main_interest, preferred_pace, message, heard_about_us, heard_about_us_label, heard_about_us_detail,
   source, source_section, source_cta, cta_location, selected_date, selected_month, has_fixed_excursion,
-  traffic_source, utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+  traffic_source, detected_source, declared_source, utm_source, utm_medium, utm_campaign, utm_content, utm_term, referrer, landing_path,
   analytics_session_id, analytics_visitor_id, analytics_journey_id, booking_journey_version,
   device_type, browser, operating_system,
   admin_note, decision_note, decided_at, decided_by,
   lead_status, lead_priority, lead_owner_id, next_follow_up_at, contacted_at, quoted_at, deposit_sent_at, deposit_paid_at, confirmed_at, completed_at, review_requested_at, review_received_at, review_request_channel, review_link_copied_at, review_code, lost_at, lost_reason, expected_value, quoted_amount, internal_notes,
   referral_code, referral_source, referral_landing_at,
   partner_id, partner_source_assigned_at, partner_source_assigned_by,
+  notification_email_status, notification_email_sent_at, notification_email_error, notification_email_attempts,
   created_by_admin, availability_block_id
 `;
 
@@ -196,17 +197,18 @@ export function normalizeRequestInput(input, defaults = {}) {
     selected_month: textOrNull(input.selected_month),
     has_fixed_excursion: input.has_fixed_excursion === undefined ? requestType === 'fixed' : Boolean(input.has_fixed_excursion),
     traffic_source: textOrNull(input.traffic_source),
+    detected_source: textOrNull(input.detected_source || input.traffic_source),
+    declared_source: textOrNull(input.declared_source || input.heard_about_us),
     utm_source: textOrNull(input.utm_source),
     utm_medium: textOrNull(input.utm_medium),
     utm_campaign: textOrNull(input.utm_campaign),
     utm_content: textOrNull(input.utm_content),
     utm_term: textOrNull(input.utm_term),
+    referrer: textOrNull(input.referrer),
+    landing_path: textOrNull(input.landing_path),
     referral_code: textOrNull(input.referral_code),
     referral_source: textOrNull(input.referral_source),
     referral_landing_at: textOrNull(input.referral_landing_at),
-    partner_id: textOrNull(input.partner_id),
-    partner_source_assigned_at: textOrNull(input.partner_source_assigned_at),
-    partner_source_assigned_by: textOrNull(input.partner_source_assigned_by),
     analytics_session_id: textOrNull(input.analytics_session_id || input.session_id),
     analytics_visitor_id: textOrNull(input.analytics_visitor_id || input.visitor_id),
     analytics_journey_id: textOrNull(input.analytics_journey_id || input.booking_journey_id),
@@ -228,32 +230,39 @@ export function normalizeRequestInput(input, defaults = {}) {
 }
 
 export async function createPublicBookingRequest(input) {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-
   const payload = normalizeRequestInput(input, { source: 'website', status: 'pending', language: input.language || 'it' });
   payload.source = 'website';
   payload.status = 'pending';
   payload.created_by_admin = null;
   delete payload.admin_note;
+  delete payload.booking_code;
 
-  const { data: rpcData, error: rpcError } = await supabase.rpc('create_public_booking_request', {
-    request_payload: payload
+  const journeyId = textOrNull(input.submission_idempotency_key || input.analytics_journey_id || input.booking_journey_id);
+  const idempotency = String(journeyId || globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`)
+    .replace(/[^a-zA-Z0-9:_-]/g, '-')
+    .slice(0, 160);
+  payload.submission_idempotency_key = idempotency.length >= 12 ? idempotency : `booking-${Date.now()}-${idempotency}`;
+  payload.submission_fingerprint = textOrNull(input.submission_fingerprint) || payload.submission_idempotency_key;
+  payload.form_started_at = textOrNull(input.form_started_at);
+  payload.website = textOrNull(input.website);
+  payload.turnstile_token = textOrNull(input.turnstile_token);
+
+  const response = await fetch('/api/public/booking-request', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': payload.submission_idempotency_key
+    },
+    body: JSON.stringify(payload)
   });
-
-  if (!rpcError) {
-    const created = Array.isArray(rpcData) ? rpcData[0] : rpcData;
-    if (created?.id) return created;
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result?.ok) {
+    const error = new Error(result?.message || 'The booking request could not be saved.');
+    error.code = result?.code || `HTTP_${response.status}`;
+    error.status = response.status;
+    throw error;
   }
-
-  const functionMissing = rpcError && ['PGRST202', 'PGRST204', '42883'].includes(String(rpcError.code || ''));
-  if (rpcError && !functionMissing) throw rpcError;
-
-  const { error } = await supabase
-    .from('booking_requests')
-    .insert(payload);
-
-  if (error) throw error;
-  return { id: null, status: 'pending', legacy_insert_without_returned_id: true };
+  return result;
 }
 
 export async function createManualBookingRequest(input, userId) {
