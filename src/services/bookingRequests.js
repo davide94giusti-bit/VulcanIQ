@@ -256,13 +256,15 @@ export async function createPublicBookingRequest(input) {
     body: JSON.stringify(payload)
   });
   const result = await response.json().catch(() => ({}));
+  const traceId = String(response.headers.get('X-Trace-Id') || result?.trace_id || '').slice(0, 80);
   if (!response.ok || !result?.ok) {
     const error = new Error(result?.message || 'The booking request could not be saved.');
     error.code = result?.code || `HTTP_${response.status}`;
     error.status = response.status;
+    error.traceId = traceId;
     throw error;
   }
-  return result;
+  return traceId ? { ...result, trace_id: traceId } : result;
 }
 
 export async function createManualBookingRequest(input, userId) {
