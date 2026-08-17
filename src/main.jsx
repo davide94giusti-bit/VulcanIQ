@@ -10748,6 +10748,7 @@ function formatAdminDate(value, lang) {
     }
   );
 }
+
 function WeeklyReportsAdminPanel({ lang }) {
   const [state, setState] = useState({ loading: true, sending: false, error: '', message: '', reports: [] });
 
