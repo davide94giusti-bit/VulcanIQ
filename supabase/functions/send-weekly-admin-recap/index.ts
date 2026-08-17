@@ -1,4 +1,4 @@
-import { claimAdminAction, clean, dbJson, env, escapeHtml, json, readJson, recipients, requireAdmin, resendEmail } from '../_shared/vulcaniq.ts';
+import { corsPreflight, claimAdminAction, clean, dbJson, env, escapeHtml, json, readJson, recipients, requireAdmin, resendEmail } from '../_shared/vulcaniq.ts';
 
 type Row = Record<string, unknown>;
 
@@ -119,6 +119,8 @@ function reportHtml(periodLabel: string, data: any): string {
 }
 
 Deno.serve(async (req) => {
+  const preflight = corsPreflight(req);
+  if (preflight) return preflight;
   if (req.method !== 'POST') return json(405, { ok: false, code: 'method_not_allowed' });
   try {
     const body = await readJson(req, 16384);

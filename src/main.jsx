@@ -10729,7 +10729,25 @@ function backupProgressFromStatus(result, requestedAt, lang) {
     failed: false
   };
 }
+function formatAdminDate(value, lang) {
+  if (!value) return '-';
 
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleDateString(
+    lang === 'it' ? 'it-IT' : 'en-GB',
+    {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      timeZone: 'Europe/Rome'
+    }
+  );
+}
 function WeeklyReportsAdminPanel({ lang }) {
   const [state, setState] = useState({ loading: true, sending: false, error: '', message: '', reports: [] });
 

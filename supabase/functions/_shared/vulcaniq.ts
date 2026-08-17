@@ -1,5 +1,17 @@
 const encoder = new TextEncoder();
 
+export const corsHeaders: HeadersInit = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-retry-count, traceparent, tracestate, baggage, x-vulcaniq-cron-secret, x-vulcaniq-webhook-secret',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Max-Age': '86400'
+};
+
+export function corsPreflight(req: Request): Response | null {
+  if (req.method !== 'OPTIONS') return null;
+  return new Response('ok', { status: 200, headers: corsHeaders });
+}
+
 export function env(name: string, required = true): string {
   const value = (Deno.env.get(name) || '').trim();
   if (required && !value) throw new Error(`missing_${name.toLowerCase()}`);
@@ -9,7 +21,7 @@ export function env(name: string, required = true): string {
 export function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
+    headers: { ...corsHeaders, 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
   });
 }
 

@@ -1,4 +1,4 @@
-import { claimAdminAction, clean, dbJson, env, escapeHtml, json, readJson, recipients, requireAdmin, resendEmail, validEmail } from '../_shared/vulcaniq.ts';
+import { corsPreflight, claimAdminAction, clean, dbJson, env, escapeHtml, json, readJson, recipients, requireAdmin, resendEmail, validEmail } from '../_shared/vulcaniq.ts';
 
 const SUPPORTED = new Set(['booking_requests', 'gift_card_requests']);
 
@@ -75,6 +75,8 @@ async function updateParent(table: string, id: string, status: string, error: st
 }
 
 Deno.serve(async (req) => {
+  const preflight = corsPreflight(req);
+  if (preflight) return preflight;
   if (req.method !== 'POST') return json(405, { ok: false, code: 'method_not_allowed' });
   try {
     const body = await readJson(req, 65536);
