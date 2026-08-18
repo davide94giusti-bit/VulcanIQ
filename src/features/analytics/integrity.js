@@ -1,6 +1,8 @@
-export const CURRENT_TRACKING_ACTIVATION_ISO = '2026-08-17T00:00:00.000Z';
+import { ANALYTICS_TRACKING_CONTRACT_STARTED_AT, SMALL_SAMPLE_VISITOR_THRESHOLD, classifySubmitIncident } from './contract.js';
+
+export const CURRENT_TRACKING_ACTIVATION_ISO = ANALYTICS_TRACKING_CONTRACT_STARTED_AT;
 export const CURRENT_TRACKING_ACTIVATION_MS = Date.parse(CURRENT_TRACKING_ACTIVATION_ISO);
-export const SMALL_SAMPLE_VISITOR_THRESHOLD = 100;
+export { SMALL_SAMPLE_VISITOR_THRESHOLD, classifySubmitIncident };
 
 export function recordTime(value) {
   const time = Date.parse(value || '');

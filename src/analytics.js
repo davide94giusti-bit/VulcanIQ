@@ -96,6 +96,7 @@ const EVENT_NAMES = new Set([
 ]);
 
 const VISITOR_KEY = 'vulcaniq_analytics_visitor_id';
+export const ANALYTICS_OPT_OUT_KEY = 'vulcaniq_analytics_opt_out';
 const SESSION_KEY = 'vulcaniq_analytics_session';
 const FIRST_TOUCH_KEY = 'vulcaniq_first_touch_attribution';
 const PAGEVIEW_COUNT_KEY = 'vulcaniq_analytics_pageview_count';
@@ -115,6 +116,8 @@ const UNSAFE_METADATA_KEYS = new Set([
   'customer_phone',
   'message',
   'booking_message',
+  'heard_about_us_detail',
+  'heard_about_us_display',
   'customer_note',
   'notes',
   'address',
@@ -180,9 +183,27 @@ function isLikelyBot() {
   );
 }
 
-function canTrack() {
-  return typeof window !== 'undefined' && !hasDoNotTrack() && !isAdminPath() && !isLikelyBot();
+function analyticsOptedOut() {
+  const storage = browserStorage('local');
+  return storage?.getItem(ANALYTICS_OPT_OUT_KEY) === '1';
 }
+
+export function isAnalyticsBrowserExcluded() {
+  return analyticsOptedOut();
+}
+
+export function setAnalyticsBrowserExcluded(excluded) {
+  const storage = browserStorage('local');
+  if (!storage) return false;
+  if (excluded) storage.setItem(ANALYTICS_OPT_OUT_KEY, '1');
+  else storage.removeItem(ANALYTICS_OPT_OUT_KEY);
+  return analyticsOptedOut();
+}
+
+function canTrack() {
+  return typeof window !== 'undefined' && !analyticsOptedOut() && !hasDoNotTrack() && !isAdminPath() && !isLikelyBot();
+}
+
 
 function randomId(prefix) {
   const value = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -621,6 +642,7 @@ function buildPayload(eventName, metadata = {}, options = {}) {
     visitor_id: getVisitorId(),
     session_id: session.sessionId,
     occurred_at: new Date().toISOString(),
+    started_at: new Date(Number(session.startedAt || Date.now())).toISOString(),
     path: sanitizeText(options.path || cleanMetadata.path || getSafePath(), 240) || '/',
     section: section || undefined,
     language: sanitizeText(options.language || cleanMetadata.language || document.documentElement.lang || 'it', 8) || 'it',
@@ -848,10 +870,7 @@ export async function trackBookingSubmitAttempt(experience, adults, children, me
     source: 'booking_form'
   };
 
-  await Promise.allSettled([
-    trackEvent('booking_form_submit_attempt', base, { dedupe: false }),
-    trackEvent('booking_submit_attempt', base, { dedupe: false })
-  ]);
+  await trackEvent('booking_form_submit_attempt', base, { dedupe: false });
 }
 
 export async function trackBookingSubmitValidationError(experience, reason, metadata = {}) {
@@ -861,10 +880,7 @@ export async function trackBookingSubmitValidationError(experience, reason, meta
     source: 'booking_form'
   };
 
-  await Promise.allSettled([
-    trackEvent('booking_form_validation_error', base, { dedupe: false }),
-    trackEvent('booking_submit_validation_error', base, { dedupe: false })
-  ]);
+  await trackEvent('booking_form_validation_error', base, { dedupe: false });
 }
 
 export async function trackBookingSubmitSuccess(experience, adults, children, metadata = {}) {
@@ -883,10 +899,6 @@ export async function trackBookingSubmitSuccess(experience, adults, children, me
 
   await trackEvent('booking_request_created', base, { dedupe: false, keepalive: true, timeoutMs: 1200 });
   await trackEvent('booking_form_submit_success', base, { dedupe: false, keepalive: true, timeoutMs: 1200 });
-  await Promise.allSettled([
-    trackEvent('booking_submit_success', base, { dedupe: false, keepalive: true, timeoutMs: 1200 }),
-    trackEvent('booking_submit', base, { dedupe: false, keepalive: true, timeoutMs: 1200 })
-  ]);
 }
 
 export async function trackBookingSubmitError(experience, errorType, metadata = {}) {
@@ -896,10 +908,7 @@ export async function trackBookingSubmitError(experience, errorType, metadata = 
     source: 'booking_form'
   };
 
-  await Promise.allSettled([
-    trackEvent('booking_form_submit_error', base, { dedupe: false }),
-    trackEvent('booking_submit_error', base, { dedupe: false })
-  ]);
+  await trackEvent('booking_form_submit_error', base, { dedupe: false });
 }
 
 export function trackBookingSubmit(experience, adults, children) {
@@ -943,11 +952,6 @@ export function trackMapsClick(location, metadata = {}) {
   });
 
   trackEvent('google_maps_click', base, {
-    dedupe: false,
-    transport: 'beacon'
-  });
-
-  trackEvent('maps_click', base, {
     dedupe: false,
     transport: 'beacon'
   });
@@ -1166,38 +1170,45 @@ export function markFormRecoveredViaWhatsApp(journeyId, metadata = {}) {
 export function startAnalyticsHeartbeat(getContext = () => ({})) {
   if (!canTrack()) return () => {};
 
-  trackEvent('session_start', getContext(), {
-    dedupe: false
+  let ended = false;
+  const emitLifecycle = (name, options = {}) => trackEvent(name, getContext(), {
+    dedupe: false,
+    keepalive: true,
+    ...options
   });
 
-  const heartbeat = () => {
-    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+  emitLifecycle('session_start');
 
-    trackEvent('session_heartbeat', getContext(), {
-      dedupe: false,
-      keepalive: true
-    });
+  const heartbeat = () => {
+    if (ended || !canTrack()) return;
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    emitLifecycle('session_heartbeat');
   };
 
-  const interval = window.setInterval(heartbeat, 25000);
+  const finalize = () => {
+    if (ended || !canTrack()) return;
+    ended = true;
+    emitLifecycle('session_end', { transport: 'beacon' });
+  };
 
   const onVisibilityChange = () => {
-    if (document.visibilityState === 'hidden') {
-      trackEvent('session_end', getContext(), {
-        dedupe: false,
-        transport: 'beacon'
-      });
-    } else {
-      heartbeat();
-    }
+    // Backgrounding a mobile browser is not a true session end. Keep the
+    // session recoverable and refresh it when the tab becomes visible again.
+    if (document.visibilityState === 'visible') heartbeat();
   };
 
-  window.addEventListener('visibilitychange', onVisibilityChange);
-  window.addEventListener('pagehide', onVisibilityChange);
+  const onPageHide = (event) => {
+    if (event?.persisted) return;
+    finalize();
+  };
+
+  const interval = window.setInterval(heartbeat, 60000);
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('pagehide', onPageHide);
 
   return () => {
     window.clearInterval(interval);
-    window.removeEventListener('visibilitychange', onVisibilityChange);
-    window.removeEventListener('pagehide', onVisibilityChange);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('pagehide', onPageHide);
   };
 }
