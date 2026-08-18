@@ -16,7 +16,7 @@ import { assignPartnerToBookingRequest, calculatePartnerCommission, listPartnerC
 import { listAnalyticsEvents, listAnalyticsSessions } from './services/analyticsService.js';
 import { createDatabaseBackup, downloadLatestDatabaseBackup, getBackupSchedule, getBackupStatus, saveBackupSchedule } from './services/backupService.js';
 import { createGiftCardRequest, listGiftCardRequests, updateGiftCardRequest } from './services/giftCards.js';
-import { getOperationalSafeguards, listWeeklyAdminReports, retryRequestNotification, sendWeeklyAdminRecap } from './services/operationsService.js';
+import { getOperationalSafeguards, retryRequestNotification, sendWeeklyAdminRecap } from './services/operationsService.js';
 import { createCustomerReferralCode, disableCustomerReferralCode, listCustomerReferralCodes, referralAttributionPayload, referralLink, storeReferralJourney, validateAndRecordReferralClick } from './services/referrals.js';
 import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormStarted, trackBookingFormStepCompleted, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot, createFormJourney, markFormFieldStarted, markFormActivity, markFormSubmitted, markFormAbandoned, markFormRecoveredViaWhatsApp } from './analytics.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
@@ -24,7 +24,11 @@ import { submitPublicBookingRequestWithTracking } from './services/publicBooking
 import { formatCurrencyAmount, normalizeCurrency, parseMoneyAmount } from './utils/money.js';
 import { applySeo } from './seo.js';
 import { ADMIN_ROLES, listAdminUsers, updateAdminUser } from './services/adminUsers.js';
+import OperationalSafeguardsBanner from './features/admin/OperationalSafeguardsBanner.jsx';
+import WeeklyReportsAdminPanel from './features/system/WeeklyReportsAdminPanel.jsx';
+import { CURRENT_TRACKING_ACTIVATION_MS, SMALL_SAMPLE_VISITOR_THRESHOLD, isCurrentTrackingRecord } from './features/analytics/integrity.js';
 import './styles.css';
+import './styles/admin-system.css';
 
 const PHONE_DISPLAY = '+39 334 929 8246';
 const PHONE_WA = '393349298246';
@@ -6811,20 +6815,13 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           </span>
         </div>
       </header>
-      {operationalSafeguards && (
-        <section className="admin-operational-banner" aria-label={adminCopy(lang, 'Avvisi operativi', 'Operational warnings')}>
-          <span><strong>{operationalSafeguards.pending_requests}</strong> {adminCopy(lang, 'richieste pending', 'pending requests')}</span>
-          <span><strong>{operationalSafeguards.pending_over_12h}</strong> &gt;12h</span>
-          <span className={Number(operationalSafeguards.pending_over_24h || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.pending_over_24h}</strong> &gt;24h</span>
-          <span className={Number(operationalSafeguards.failed_notifications || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.failed_notifications}</strong> {adminCopy(lang, 'email fallite', 'failed emails')}</span>
-          <span className={Number(operationalSafeguards.notifications_not_sent || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.notifications_not_sent}</strong> {adminCopy(lang, 'email non inviate', 'emails not sent')}</span>
-          <span><strong>{operationalSafeguards.gift_cards_missing_code}</strong> {adminCopy(lang, 'Gift Card senza codice', 'Gift Cards missing code')}</span>
-          <span className={Number(operationalSafeguards.upcoming_unconfirmed_72h || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.upcoming_unconfirmed_72h}</strong> {adminCopy(lang, 'entro 72h da confermare', 'within 72h unconfirmed')}</span>
-          <span className={Number(operationalSafeguards.weekly_report_failures || 0) ? 'admin-warning-critical' : ''}><strong>{operationalSafeguards.weekly_report_failures}</strong> {adminCopy(lang, 'report falliti', 'failed reports')}</span>
-          {isOwner && <button type="button" onClick={sendWeeklyRecapTest} disabled={weeklyRecapState.loading}>{weeklyRecapState.loading ? adminCopy(lang, 'Invio...', 'Sending...') : adminCopy(lang, 'Test recap', 'Test recap')}</button>}
-          {weeklyRecapState.message && <small>{weeklyRecapState.message}</small>}
-        </section>
-      )}
+      <OperationalSafeguardsBanner
+        lang={lang}
+        safeguards={operationalSafeguards}
+        isOwner={isOwner}
+        weeklyRecapState={weeklyRecapState}
+        onSendWeeklyRecapTest={sendWeeklyRecapTest}
+      />
       {isOwner && !isBackupPage && !isUsersPage && (
         <GlobalBackupProgressBanner
           lang={lang}
@@ -7524,30 +7521,117 @@ function WebsiteAdminPage({ lang, session }) {
   }
 
   async function saveMediaItem(item) {
-    if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non è configurato.', 'Supabase is not configured.'));
-    const key = item.media_key || item.key;
-    const cleanFileUrl = String(item.file_url || '').trim();
-    if (!isSupportedMediaUrl(cleanFileUrl)) throw new Error(adminCopy(lang, 'URL media non valido. Usa un URL https:// oppure un percorso che inizia con /.', 'Invalid media URL. Use an https:// URL or a path starting with /.'));
-    const existing = mediaRows.find((row) => row.media_key === key);
-    const uploaded = item.file ? await uploadSiteMediaFile(item.file, key, session.user.id) : {};
-    if (item.file && existing?.file_path) await removeSiteMediaFile(existing.file_path);
-    const keepsExistingStorageFile = !item.file && cleanFileUrl && cleanFileUrl === existing?.file_url;
-    await upsertSiteMedia({
-      media_key: key,
-      label_it: item.label_it || item.it || key,
-      label_en: item.label_en || item.en || key,
-      alt_it: item.alt_it || item.label_it || key,
-      alt_en: item.alt_en || item.label_en || key,
-      file_url: uploaded.file_url || cleanFileUrl || null,
-      file_path: uploaded.file_path || (keepsExistingStorageFile ? existing?.file_path : null),
-      file_name: uploaded.file_name || (keepsExistingStorageFile ? (item.file_name || existing?.file_name) : (item.file_name || null)),
-      file_type: uploaded.file_type || (keepsExistingStorageFile ? (item.file_type || existing?.file_type) : (item.file_type || null)),
-      media_kind: uploaded.media_kind || item.media_kind || mediaUrlKindFromValue(cleanFileUrl, 'image'),
-      active: item.active !== false,
-      updated_by: session.user.id
-    });
-  }
+    if (!isSupabaseConfigured) {
+      throw new Error(
+        adminCopy(
+          lang,
+          'Supabase non è configurato.',
+          'Supabase is not configured.'
+        )
+      );
+    }
 
+    const key = item.media_key || item.key;
+    const existing = mediaRows.find((row) => row.media_key === key);
+
+    let uploaded = {};
+    let saved = false;
+
+    try {
+      // A selected local file uses a temporary blob: URL only for preview.
+      // Upload the real file first, then validate and persist the permanent URL.
+      if (item.file) {
+        uploaded = await uploadSiteMediaFile(
+          item.file,
+          key,
+          session.user.id
+        );
+      }
+
+      const cleanFileUrl = String(
+        uploaded.file_url || item.file_url || ''
+      ).trim();
+
+      if (!isSupportedMediaUrl(cleanFileUrl)) {
+        throw new Error(
+          adminCopy(
+            lang,
+            'URL media non valido. Usa un URL https:// oppure un percorso che inizia con /.',
+            'Invalid media URL. Use an https:// URL or a path starting with /.'
+          )
+        );
+      }
+
+      const keepsExistingStorageFile =
+        !item.file &&
+        cleanFileUrl &&
+        cleanFileUrl === existing?.file_url;
+
+      await upsertSiteMedia({
+        media_key: key,
+        label_it: item.label_it || item.it || key,
+        label_en: item.label_en || item.en || key,
+        alt_it: item.alt_it || item.label_it || key,
+        alt_en: item.alt_en || item.label_en || key,
+        file_url: cleanFileUrl || null,
+        file_path:
+          uploaded.file_path ||
+          (keepsExistingStorageFile ? existing?.file_path : null),
+        file_name:
+          uploaded.file_name ||
+          (
+            keepsExistingStorageFile
+              ? (item.file_name || existing?.file_name)
+              : (item.file_name || null)
+          ),
+        file_type:
+          uploaded.file_type ||
+          (
+            keepsExistingStorageFile
+              ? (item.file_type || existing?.file_type)
+              : (item.file_type || null)
+          ),
+        media_kind:
+          uploaded.media_kind ||
+          item.media_kind ||
+          mediaUrlKindFromValue(cleanFileUrl, 'image'),
+        active: item.active !== false,
+        updated_by: session.user.id
+      });
+
+      saved = true;
+
+      // Once the database points to the new URL (or no URL), clean up the
+      // previous Storage object if it is no longer referenced.
+      const shouldRemoveExistingStorageFile =
+        Boolean(existing?.file_path) &&
+        (
+          (item.file && existing.file_path !== uploaded.file_path) ||
+          (!item.file && cleanFileUrl !== existing?.file_url)
+        );
+
+      if (shouldRemoveExistingStorageFile) {
+        try {
+          await removeSiteMediaFile(existing.file_path);
+        } catch {
+          // The database save succeeded. A failed cleanup must not turn a
+          // successful CMS update into a user-visible save failure.
+        }
+      }
+    } catch (error) {
+      // If a new upload was created but the database save failed, remove the
+      // orphaned upload and keep the previously stored media untouched.
+      if (!saved && uploaded?.file_path) {
+        try {
+          await removeSiteMediaFile(uploaded.file_path);
+        } catch {
+          // Preserve the original save error.
+        }
+      }
+
+      throw error;
+    }
+  }
   async function saveSelected() {
     if (!selected || saving) return;
     setError('');
@@ -9344,7 +9428,11 @@ function bookingRequestsInPeriod(requests, range) {
 }
 
 function confirmedBookingRequestsInPeriod(requests, range) {
-  return (requests || []).filter((request) => periodContains(request, range) && !isAdminManualRequest(request) && ['accepted', 'confirmed', 'completed'].includes(request.status)).length;
+  return (requests || []).filter((request) => periodContains(request, range) && isWebsiteFormRequest(request) && ['accepted', 'confirmed', 'completed'].includes(request.status)).length;
+}
+
+function confirmedBookingCodeRequestsInPeriod(requests, range) {
+  return (requests || []).filter((request) => periodContains(request, range) && isBookingCodeRequest(request) && ['accepted', 'confirmed', 'completed'].includes(request.status)).length;
 }
 
 
@@ -9437,9 +9525,11 @@ function buildBookingRequestTrackingIntegrity({ requests = [], events = [], rang
       const matchedAttemptById = matchedEventsById.find(isSubmitAttemptEvent);
       const matchedSuccessById = matchedEventsById.find(isSubmitSuccessEvent);
       const matchedCreatedById = matchedEventsById.find((event) => event.event_name === 'booking_request_created');
+      const matchedFormOpenById = matchedEventsById.find((event) => event.event_name === 'booking_form_open');
       const matchedAttemptByJourney = matchedEventsByJourney.find(isSubmitAttemptEvent);
       const matchedSuccessByJourney = matchedEventsByJourney.find(isSubmitSuccessEvent);
       const matchedCreatedByJourney = matchedEventsByJourney.find((event) => event.event_name === 'booking_request_created');
+      const matchedFormOpenByJourney = matchedEventsByJourney.find((event) => event.event_name === 'booking_form_open');
       const matchedCodeAttemptById = matchedEventsById.find(isBookingCodeRedeemAttemptEvent);
       const matchedCodeSuccessById = matchedEventsById.find(isBookingCodeRedeemSuccessEvent);
       const matchedCodeAttemptByJourney = matchedEventsByJourney.find(isBookingCodeRedeemAttemptEvent);
@@ -9452,6 +9542,7 @@ function buildBookingRequestTrackingIntegrity({ requests = [], events = [], rang
       const hasAttempt = Boolean(matchedAttemptById || matchedAttemptByJourney);
       const hasSuccess = Boolean(matchedSuccessById || matchedSuccessByJourney);
       const hasCreated = Boolean(matchedCreatedById || matchedCreatedByJourney);
+      const hasFormOpen = Boolean(matchedFormOpenById || matchedFormOpenByJourney || legacyFormOpens.length);
       const adminManual = isAdminManualRequest(request);
       const bookingCodeRequest = isBookingCodeRequest(request);
       const hasCodeAttempt = Boolean(matchedCodeAttemptById || matchedCodeAttemptByJourney);
@@ -9513,6 +9604,7 @@ function buildBookingRequestTrackingIntegrity({ requests = [], events = [], rang
         matched_submit_attempt: hasAttempt,
         matched_submit_success: hasSuccess,
         matched_booking_request_created_event: hasCreated,
+        matched_form_open: hasFormOpen,
         matched_booking_code_redeem_attempt: hasCodeAttempt,
         matched_booking_code_redeem_success: hasCodeSuccess,
         legacy_matched_submit_attempt: Boolean(legacyAttempts.length),
@@ -9565,6 +9657,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   const bookingCodeRequests = bookingCodeRequestRows.length;
   const bookingRequestCount = Math.max(websiteRequests + bookingCodeRequests, bookingRequestCreatedEvents, submitSuccesses + bookingCodeRedeemSuccesses);
   const confirmedRequests = confirmedBookingRequestsInPeriod(bookingRequests, range);
+  const confirmedBookingCodeRequests = confirmedBookingCodeRequestsInPeriod(bookingRequests, range);
   const visitors = uniqueCount(events, 'visitor_id') || uniqueCount(sessions, 'visitor_id');
   const whatsappClicks = eventCount(events, 'whatsapp_click');
   const emailClicks = eventCount(events, 'email_click');
@@ -9574,12 +9667,15 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   const conversionBase = visitors || pageViews;
   const averageSeconds = averageEngagementSeconds(sessions, events);
   const pageViewEvents = events.filter((event) => event.event_name === 'page_view');
-  const experienceViews = eventCount(events, 'experience_card_view') + eventCount(events, 'excursion_view') + eventCount(events, 'experience_detail_open');
+  const experienceCardImpressions = eventCount(events, 'experience_card_view');
+  const experienceDetailOpens = eventCount(events, 'experience_detail_open');
+  const legacyExcursionViews = eventCount(events, 'excursion_view');
+  const experienceViews = experienceDetailOpens || legacyExcursionViews;
   const sourceTotal = pageViewEvents.length || events.length || 1;
   const directTrafficCount = pageViewEvents.filter((event) => normalizedTrafficSourceForAnalytics(event) === 'direct').length;
   const directTrafficShare = sourceTotal ? directTrafficCount / sourceTotal : 0;
-  const mobileCount = events.filter((event) => event.device_type === 'mobile').length;
-  const mobileShare = events.length ? mobileCount / events.length : 0;
+  const mobileCount = pageViewEvents.filter((event) => event.device_type === 'mobile').length;
+  const mobileShare = pageViewEvents.length ? mobileCount / pageViewEvents.length : 0;
   const formJourneysStarted = eventCount(events, 'form_journey_started');
   const abandonedForms = eventCount(events, 'abandoned_form_detected');
   const recoveredByWhatsapp = eventCount(events, 'abandoned_form_recovered_whatsapp');
@@ -9599,21 +9695,23 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     label: trafficSourceLabel(source, lang),
     count: pageViewEvents.filter((event) => normalizedTrafficSourceForAnalytics(event) === source).length
   }));
-  const countryRows = topRows(events, (event) => event.country_name || event.country_code, 6, lang);
-  const cityRows = topRows(events, (event) => event.city, 6, lang);
+  const countryRows = topRows(pageViewEvents, (event) => event.country_name || event.country_code, 6, lang);
+  const cityRows = topRows(pageViewEvents, (event) => event.city, 6, lang);
   const topPageRows = topRows(pageViewEvents, (event) => normalizeAnalyticsPath(event.section || event.path), 7, lang);
-  const experienceRows = topRows(events.filter((event) => ['experience_card_view', 'excursion_view', 'experience_detail_open'].includes(event.event_name)), (event) => event.metadata?.experience_slug || event.metadata?.experience_id || event.metadata?.experience || event.metadata?.slug, 6, lang);
-  const deviceRows = topRows(events, (event) => event.device_type, 5, lang);
-  const browserRows = topRows(events, (event) => event.browser, 5, lang);
-  const osRows = topRows(events, (event) => event.operating_system, 5, lang);
+  const experienceDemandEvents = experienceDetailOpens ? events.filter((event) => event.event_name === 'experience_detail_open') : events.filter((event) => event.event_name === 'excursion_view');
+  const experienceRows = topRows(experienceDemandEvents, (event) => event.metadata?.experience_slug || event.metadata?.experience_id || event.metadata?.experience || event.metadata?.slug, 6, lang);
+  const deviceRows = topRows(pageViewEvents, (event) => event.device_type, 5, lang);
+  const browserRows = topRows(pageViewEvents, (event) => event.browser, 5, lang);
+  const osRows = topRows(pageViewEvents, (event) => event.operating_system, 5, lang);
   const languageRows = [
-    { label: adminCopy(lang, 'Azioni in italiano', 'Italian visitors/actions'), count: events.filter((event) => event.language === 'it').length, helper: uniqueCount(events.filter((event) => event.language === 'it'), 'visitor_id') },
-    { label: adminCopy(lang, 'Azioni in inglese', 'English visitors/actions'), count: events.filter((event) => event.language === 'en').length, helper: uniqueCount(events.filter((event) => event.language === 'en'), 'visitor_id') },
+    { label: adminCopy(lang, 'Pagine in italiano', 'Italian page views'), count: pageViewEvents.filter((event) => event.language === 'it').length, helper: uniqueCount(pageViewEvents.filter((event) => event.language === 'it'), 'visitor_id') },
+    { label: adminCopy(lang, 'Pagine in inglese', 'English page views'), count: pageViewEvents.filter((event) => event.language === 'en').length, helper: uniqueCount(pageViewEvents.filter((event) => event.language === 'en'), 'visitor_id') },
     { label: adminCopy(lang, 'Cambi lingua', 'Language switches'), count: eventCount(events, 'language_switch') }
   ];
   const flowRows = [
     { label: adminCopy(lang, 'Visualizzazioni pagina', 'Page views'), count: pageViews },
-    { label: adminCopy(lang, 'Visualizzazioni esperienze', 'Experience views'), count: experienceViews },
+    { label: adminCopy(lang, 'Impression card esperienze', 'Experience card impressions'), count: experienceCardImpressions },
+    { label: adminCopy(lang, 'Aperture dettaglio esperienze', 'Experience detail opens'), count: experienceViews },
     { label: adminCopy(lang, 'Aperture modulo prenotazione', 'Booking form starts'), count: formOpens },
     { label: adminCopy(lang, 'Avvii compilazione modulo', 'Booking form field starts'), count: fieldStarts },
     { label: adminCopy(lang, 'Journey form avviati', 'Form journeys started'), count: formJourneysStarted },
@@ -9633,7 +9731,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
 
   const mainFunnelSteps = [
     { label: adminCopy(lang, 'Visualizzazioni pagina', 'Page views'), count: pageViews },
-    { label: adminCopy(lang, 'Visualizzazioni esperienze', 'Experience views'), count: experienceViews },
+    { label: adminCopy(lang, 'Aperture dettaglio esperienze', 'Experience detail opens'), count: experienceViews },
     { label: adminCopy(lang, 'Aperture modulo prenotazione', 'Booking form opens'), count: formOpens },
     { label: adminCopy(lang, 'Avvii compilazione', 'Field starts'), count: fieldStarts },
     { label: adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts'), count: submitAttempts },
@@ -9659,6 +9757,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     const existing = formByExperienceMap.get(normalized) || {
       experience: displayExperienceLabel(normalized, lang),
       experience_views: 0,
+      card_impressions: 0,
       detail_opens: 0,
       form_opens: 0,
       submit_attempts: 0,
@@ -9678,8 +9777,9 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   events.forEach((event) => {
     const key = eventExperienceKey(event, lang);
     const row = ensureExperienceRow(key);
-    if (['experience_card_view', 'excursion_view'].includes(event.event_name)) row.experience_views += 1;
-    if (event.event_name === 'experience_detail_open') row.detail_opens += 1;
+    if (event.event_name === 'experience_card_view') row.card_impressions += 1;
+    if (event.event_name === 'experience_detail_open') { row.detail_opens += 1; row.experience_views += 1; }
+    if (!experienceDetailOpens && event.event_name === 'excursion_view') row.experience_views += 1;
     if (event.event_name === 'booking_form_open') row.form_opens += 1;
     if (isSubmitAttemptEvent(event)) row.submit_attempts += 1;
     if (isSubmitSuccessEvent(event)) row.submit_successes += 1;
@@ -9707,7 +9807,6 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     .sort((a, b) => (b.booking_requests + b.form_opens + b.whatsapp_clicks + b.email_clicks + b.phone_clicks) - (a.booking_requests + a.form_opens + a.whatsapp_clicks + a.email_clicks + a.phone_clicks))
     .slice(0, 14);
 
-  const requestsWithoutTrackedFormOpen = formByExperience.filter((row) => row.booking_requests > 0 && row.form_opens === 0).map((row) => ({ experience: row.experience, booking_requests: row.booking_requests }));
   const formOpenMissingCtaCount = events.filter((event) => event.event_name === 'booking_form_open' && !eventMeta(event, 'cta_location') && !eventMeta(event, 'location')).length;
 
   const contactMap = new Map();
@@ -9751,8 +9850,9 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     const group = browserDeviceGroup(event);
     const row = mobileMap.get(group) || mobileMap.get('Other');
     if (event.event_name === 'page_view') row.page_views += 1;
-    if (['experience_card_view', 'excursion_view'].includes(event.event_name)) row.experience_views += 1;
-    if (event.event_name === 'experience_detail_open') row.detail_opens += 1;
+    if (event.event_name === 'experience_card_view') row.card_impressions += 1;
+    if (event.event_name === 'experience_detail_open') { row.detail_opens += 1; row.experience_views += 1; }
+    if (!experienceDetailOpens && event.event_name === 'excursion_view') row.experience_views += 1;
     if (event.event_name === 'calendar_date_select') row.calendar_date_selections += 1;
     if (event.event_name === 'booking_form_open') row.form_opens += 1;
     if (event.event_name === 'booking_form_field_start') row.field_starts += 1;
@@ -9822,20 +9922,31 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   const requestsCreatedEventOnly = websiteFormRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'created_event_without_submit_success').length;
   const requestsWithTrackedSubmit = requestsMatchedByBookingRequestId + requestsMatchedByJourneyId;
   const websiteSubmitGapStatuses = ['missing_submit_tracking', 'legacy_missing_tracking', 'created_event_without_submit_success', 'matched_by_legacy_heuristic'];
-  const websiteSubmitTrackingFixCutoffMs = Date.parse('2026-07-05T07:45:00.000Z');
-  const isPostSubmitTrackingFixRequest = (row) => {
-    const time = Date.parse(row?.created_at || '');
-    return Number.isFinite(time) && time >= websiteSubmitTrackingFixCutoffMs;
-  };
-  const requestsWithoutTrackedSubmit = websiteFormRequestTrackingIntegrity.filter((row) => websiteSubmitGapStatuses.includes(row.tracking_integrity_status)).length;
-  const postFixRequestsWithoutTrackedSubmit = websiteFormRequestTrackingIntegrity.filter((row) => websiteSubmitGapStatuses.includes(row.tracking_integrity_status) && isPostSubmitTrackingFixRequest(row)).length;
-  const historicalRequestsWithoutTrackedSubmit = Math.max(0, requestsWithoutTrackedSubmit - postFixRequestsWithoutTrackedSubmit);
-  const legacyIncompleteRequests = websiteFormRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'legacy_missing_tracking' || (websiteSubmitGapStatuses.includes(row.tracking_integrity_status) && !isPostSubmitTrackingFixRequest(row))).length;
-  const websiteSubmitGapDetail = requestsWithoutTrackedSubmit
-    ? postFixRequestsWithoutTrackedSubmit
-      ? trackingIncompleteLabel(lang)
-      : adminCopy(lang, 'Solo storico precedente alla correzione: non viene ricostruito artificialmente.', 'Historical pre-fix data only: not backfilled artificially.')
-    : '—';
+  const websiteSubmitGapRows = websiteFormRequestTrackingIntegrity.filter((row) => websiteSubmitGapStatuses.includes(row.tracking_integrity_status));
+  const currentRequestsWithoutTrackedSubmitRows = websiteSubmitGapRows.filter(isCurrentTrackingRecord);
+  const historicalRequestsWithoutTrackedSubmitRows = websiteSubmitGapRows.filter((row) => !isCurrentTrackingRecord(row));
+  const requestsWithoutTrackedSubmit = websiteSubmitGapRows.length;
+  const currentRequestsWithoutTrackedSubmit = currentRequestsWithoutTrackedSubmitRows.length;
+  const historicalRequestsWithoutTrackedSubmit = historicalRequestsWithoutTrackedSubmitRows.length;
+  const legacyIncompleteRequests = historicalRequestsWithoutTrackedSubmit;
+  const websiteSubmitGapDetail = currentRequestsWithoutTrackedSubmit
+    ? trackingIncompleteLabel(lang)
+    : historicalRequestsWithoutTrackedSubmit
+      ? adminCopy(lang, 'Solo storico precedente al contratto di tracking corrente: non viene ricostruito artificialmente.', 'Historical data only, before the current tracking contract: not backfilled artificially.')
+      : '—';
+
+  const currentWebsiteFormRows = websiteFormRequestTrackingIntegrity.filter(isCurrentTrackingRecord);
+  const currentRequestsWithoutTrackedFormOpenRows = currentWebsiteFormRows.filter((row) => !row.matched_form_open);
+  const historicalRequestsWithoutTrackedFormOpenRows = websiteFormRequestTrackingIntegrity.filter((row) => !isCurrentTrackingRecord(row) && !row.matched_form_open);
+  const currentFormOpenGapMap = new Map();
+  currentRequestsWithoutTrackedFormOpenRows.forEach((row) => {
+    const experience = displayExperienceLabel(requestExperienceKeyFromRequest(row, lang), lang);
+    currentFormOpenGapMap.set(experience, (currentFormOpenGapMap.get(experience) || 0) + 1);
+  });
+  const requestsWithoutTrackedFormOpen = [...currentFormOpenGapMap.entries()].map(([experience, booking_requests]) => ({ experience, booking_requests }));
+  const currentCanonicalSubmitErrors = events.filter((event) => isSubmitErrorEvent(event) && eventOccurredAtTime(event) >= CURRENT_TRACKING_ACTIVATION_MS);
+  const currentSubmitErrors = currentCanonicalSubmitErrors.length;
+  const currentSubmitErrorDevices = [...new Set(currentCanonicalSubmitErrors.map((event) => browserDeviceGroup(event)).filter(Boolean))];
   const bookingCodeRequestsWithRedeemSuccess = bookingCodeRequestTrackingIntegrity.filter((row) => row.tracking_integrity_status === 'booking_code_redeem_success').length;
   const bookingCodeRequestsWithoutRedeemSuccess = bookingCodeRequestTrackingIntegrity.filter((row) => ['booking_code_missing_redeem_success', 'booking_code_legacy_untracked'].includes(row.tracking_integrity_status)).length;
 
@@ -9844,7 +9955,8 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     { check: adminCopy(lang, 'Richieste con codice create', 'Created booking-code requests'), count: bookingCodeRequests, detail: adminCopy(lang, 'Tracciate separatamente dal funnel del modulo pubblico.', 'Tracked separately from the public form funnel.') },
     { check: adminCopy(lang, 'Richieste admin/manuali create', 'Created admin/manual requests'), count: adminManualRequestRows.length, detail: adminCopy(lang, 'Escluse dal funnel pubblico sito.', 'Excluded from the public website funnel.') },
     { check: adminCopy(lang, 'Richieste sito con submit_success', 'Website requests with tracked submit_success'), count: requestsWithTrackedSubmit, detail: adminCopy(lang, 'Conta solo match puliti tramite booking_request_id o booking_journey_id con submit_success.', 'Counts only clean booking_request_id or booking_journey_id matches with submit_success.') },
-    { check: adminCopy(lang, 'Richieste sito senza submit_success', 'Website form requests without tracked submit_success'), count: requestsWithoutTrackedSubmit, detail: websiteSubmitGapDetail },
+    { check: adminCopy(lang, 'Gap submit correnti', 'Current submit tracking gaps'), count: currentRequestsWithoutTrackedSubmit, detail: currentRequestsWithoutTrackedSubmit ? trackingIncompleteLabel(lang) : '—' },
+    { check: adminCopy(lang, 'Gap submit storici esclusi dagli alert', 'Historical submit gaps excluded from alerts'), count: historicalRequestsWithoutTrackedSubmit, detail: websiteSubmitGapDetail },
     { check: adminCopy(lang, 'Richieste sito matchate tramite journey id', 'Website requests matched by journey id'), count: requestsMatchedByJourneyId, detail: adminCopy(lang, 'Match tramite booking_requests.analytics_journey_id = analytics_events.metadata.booking_journey_id.', 'Match via booking_requests.analytics_journey_id = analytics_events.metadata.booking_journey_id.') },
     { check: adminCopy(lang, 'Richieste sito matchate tramite booking_request_id', 'Website requests matched by booking_request_id'), count: requestsMatchedByBookingRequestId, detail: adminCopy(lang, 'Match tramite analytics_events.metadata.booking_request_id.', 'Match via analytics_events.metadata.booking_request_id.') },
     { check: adminCopy(lang, 'Richieste sito matchate solo da euristica legacy', 'Website requests matched only by legacy heuristic'), count: requestsMatchedByLegacyHeuristic, detail: requestsMatchedByLegacyHeuristic ? adminCopy(lang, 'Warning: non contano come invio tracciato correttamente.', 'Warning: these do not count as properly tracked submits.') : '—' },
@@ -9854,22 +9966,23 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     { check: adminCopy(lang, 'Tentativi riscatto codice', 'Booking-code redeem attempts'), count: bookingCodeRedeemAttempts, detail: 'booking_code_redeem_attempt' },
     { check: adminCopy(lang, 'Errori riscatto codice', 'Booking-code redeem errors'), count: bookingCodeRedeemErrors, detail: bookingCodeRedeemErrors ? 'booking_code_redeem_error' : '—' },
     { check: adminCopy(lang, 'Tracciamento legacy incompleto', 'Incomplete legacy tracking'), count: legacyIncompleteRequests, detail: legacyIncompleteRequests ? adminCopy(lang, 'Dati precedenti alla correzione: non vengono ricostruiti artificialmente.', 'Pre-fix data: not backfilled artificially.') : '—' },
-    { check: adminCopy(lang, 'Richieste sito senza apertura modulo tracciata', 'Website requests without tracked form open'), count: requestsWithoutTrackedFormOpen.reduce((sum, row) => sum + row.booking_requests, 0), detail: requestsWithoutTrackedFormOpen.map((row) => `${row.experience}: ${row.booking_requests}`).join(', ') || '—' },
+    { check: adminCopy(lang, 'Richieste correnti senza apertura modulo tracciata', 'Current website requests without tracked form open'), count: currentRequestsWithoutTrackedFormOpenRows.length, detail: currentRequestsWithoutTrackedFormOpenRows.map((row) => displayExperienceLabel(requestExperienceKeyFromRequest(row, lang), lang)).join(', ') || '—' },
+    { check: adminCopy(lang, 'Gap apertura modulo storici', 'Historical form-open gaps'), count: historicalRequestsWithoutTrackedFormOpenRows.length, detail: historicalRequestsWithoutTrackedFormOpenRows.length ? adminCopy(lang, 'Storico escluso dagli alert correnti.', 'Historical records excluded from current alerts.') : '—' },
     { check: adminCopy(lang, 'Aperture modulo senza posizione CTA', 'Form opens without CTA location'), count: formOpenMissingCtaCount, detail: formOpenMissingCtaCount ? adminCopy(lang, 'Aggiornare i CTA che non inviano cta_location.', 'Update CTAs that do not send cta_location.') : '—' },
     { check: adminCopy(lang, 'Form abbandonati', 'Abandoned forms'), count: abandonedForms, detail: `${abandonmentRate} · ${adminCopy(lang, 'recupero WhatsApp', 'WhatsApp recovery')}: ${recoveryRate}` },
     { check: adminCopy(lang, 'Traffico interno escluso', 'Internal traffic excluded'), count: internalEventsExcluded + internalSessionsExcluded, detail: adminCopy(lang, 'Admin, API, CMS/editor, finanze e dashboard analytics esclusi dalle metriche pubbliche.', 'Admin, API, CMS/editor, finance, and analytics dashboard rows excluded from public metrics.') },
-    { check: adminCopy(lang, 'Campione insufficiente per conclusioni marketing', 'Sample too small for marketing conclusions'), count: visitors < 50 ? visitors : 0, detail: visitors < 50 ? adminCopy(lang, 'Usare come diagnostica, non come prova marketing.', 'Use as diagnostics, not as marketing proof.') : '—' }
+    { check: adminCopy(lang, 'Campione insufficiente per conclusioni marketing', 'Sample too small for marketing conclusions'), count: visitors < SMALL_SAMPLE_VISITOR_THRESHOLD ? visitors : 0, detail: visitors < SMALL_SAMPLE_VISITOR_THRESHOLD ? adminCopy(lang, `Sotto ${SMALL_SAMPLE_VISITOR_THRESHOLD} visitatori: usare come diagnostica, non come prova marketing.`, `Below ${SMALL_SAMPLE_VISITOR_THRESHOLD} visitors: use as diagnostics, not as marketing proof.`) : '—' }
   ];
 
   const warnings = [];
   function addWarning(type, message, helper = '', detail = '') {
     warnings.push({ type, message, helper, detail });
   }
-  if (websiteRequests > 0 && postFixRequestsWithoutTrackedSubmit > 0) {
+  if (currentRequestsWithoutTrackedSubmit > 0) {
     addWarning(
       'critical',
       adminCopy(lang, 'Il tracciamento del modulo sito è incompleto.', 'Website form tracking is incomplete.'),
-      adminCopy(lang, `${postFixRequestsWithoutTrackedSubmit} nuove richieste sito senza submit_success tracciato.`, `${postFixRequestsWithoutTrackedSubmit} new website requests without tracked submit_success.`),
+      adminCopy(lang, `${currentRequestsWithoutTrackedSubmit} nuove richieste sito senza submit_success tracciato.`, `${currentRequestsWithoutTrackedSubmit} new website requests without tracked submit_success.`),
       adminCopy(
         lang,
         'Sono state create nuove richieste dal sito dopo la correzione del tracciamento, ma manca ancora un evento submit_success corrispondente. Testare il modulo pubblico e verificare che booking_form_submit_attempt, booking_form_submit_success e booking_request_created vengano salvati con lo stesso booking_journey_id o booking_request_id.',
@@ -9885,7 +9998,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
       adminCopy(lang, 'Le richieste generate tramite codice prenotazione devono essere diagnosticate nel funnel booking-code, non come errori del modulo pubblico.', 'Requests created through booking codes should be diagnosed in the booking-code funnel, not as public form errors.')
     );
   }
-  if (visitors < 50) {
+  if (visitors < SMALL_SAMPLE_VISITOR_THRESHOLD) {
     addWarning(
       'diagnostic',
       adminCopy(lang, 'Campione dati ancora piccolo.', 'Small sample size.'),
@@ -9893,7 +10006,9 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
       adminCopy(lang, 'Usa questi numeri per diagnosi tecnica e controlli UX, non ancora per decidere quale canale, campagna o esperienza converte meglio.', 'Use these numbers for technical diagnosis and UX checks only. Do not use them yet to decide which channel, campaign, or experience converts best.')
     );
   }
-  if (requestsWithoutTrackedFormOpen.length) addWarning('diagnostic', adminCopy(lang, 'Alcune richieste sito non hanno una apertura modulo tracciata.', 'Some website requests have no tracked form open.'), '', adminCopy(lang, 'Controllare se i CTA interessati chiamano correttamente booking_form_open con esperienza e tipologia richiesta.', 'Check whether the affected CTAs correctly emit booking_form_open with experience and request type.'));
+  if (currentRequestsWithoutTrackedFormOpenRows.length) addWarning('critical', adminCopy(lang, 'Alcune richieste sito correnti non hanno una apertura modulo tracciata.', 'Some current website requests have no tracked form open.'), adminCopy(lang, `${currentRequestsWithoutTrackedFormOpenRows.length} richieste correnti interessate.`, `${currentRequestsWithoutTrackedFormOpenRows.length} current requests affected.`), adminCopy(lang, 'Controllare se i CTA interessati chiamano correttamente booking_form_open con esperienza e tipologia richiesta.', 'Check whether the affected CTAs correctly emit booking_form_open with experience and request type.'));
+  else if (historicalRequestsWithoutTrackedFormOpenRows.length) addWarning('diagnostic', adminCopy(lang, 'I gap di apertura modulo rilevati sono storici.', 'Detected form-open gaps are historical.'), adminCopy(lang, `${historicalRequestsWithoutTrackedFormOpenRows.length} record storici esclusi dagli alert correnti.`, `${historicalRequestsWithoutTrackedFormOpenRows.length} historical records excluded from current alerts.`), adminCopy(lang, 'Non ricostruire artificialmente eventi precedenti al contratto di tracking corrente.', 'Do not artificially backfill events created before the current tracking contract.'));
+  if (currentSubmitErrors) addWarning('critical', adminCopy(lang, 'Gli invii del modulo pubblico stanno fallendo.', 'Public booking submissions are currently failing.'), adminCopy(lang, `${currentSubmitErrors} errori correnti · ${currentSubmitErrorDevices.join(', ') || 'device unknown'}.`, `${currentSubmitErrors} current errors · ${currentSubmitErrorDevices.join(', ') || 'device unknown'}.`), adminCopy(lang, 'Il problema avviene dopo il submit_attempt e prima di booking_request_created. Controllare /api/public/booking-request e create_public_booking_request prima di interpretarlo come drop-off UX.', 'The failure occurs after submit_attempt and before booking_request_created. Check /api/public/booking-request and create_public_booking_request before treating this as UX drop-off.'));
   if (formOpenMissingCtaCount) addWarning('diagnostic', adminCopy(lang, 'Alcune aperture modulo non hanno cta_location.', 'Some form opens have no cta_location.'), '', adminCopy(lang, 'Aggiornare i CTA che non inviano cta_location per rendere leggibili i percorsi.', 'Update CTAs that do not send cta_location so paths are readable.'));
   if (internalEventsExcluded || internalSessionsExcluded) addWarning('diagnostic', adminCopy(lang, 'Traffico interno escluso dalle metriche pubbliche.', 'Internal traffic excluded from public metrics.'), '', adminCopy(lang, 'Admin, API, CMS/editor, finanze e dashboard analytics restano esclusi dai conteggi pubblici.', 'Admin, API, CMS/editor, finance, and analytics dashboard rows remain excluded from public metrics.'));
   if (directTrafficShare > 0.8) {
@@ -9918,13 +10033,16 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     websiteRequestConversion: percent(websiteRequests, conversionBase),
     trackedSubmissionConversion: percent(submitSuccesses, conversionBase),
     contactIntentConversion: percent(websiteRequests + whatsappClicks + emailClicks, conversionBase),
-    confirmedBookingConversion: confirmedRequests ? percent(confirmedRequests, conversionBase) : adminCopy(lang, 'Dati insufficienti', 'Insufficient data')
+    confirmedBookingConversion: websiteRequests ? percent(confirmedRequests, websiteRequests) : adminCopy(lang, 'Dati insufficienti', 'Insufficient data'),
+    bookingCodeConfirmationRate: bookingCodeRequests ? percent(confirmedBookingCodeRequests, bookingCodeRequests) : adminCopy(lang, 'Dati insufficienti', 'Insufficient data')
   };
 
   return {
     visitors,
     pageViews,
     experienceViews,
+    experienceCardImpressions,
+    experienceDetailOpens,
     formOpens,
     fieldStarts,
     formJourneysStarted,
@@ -9945,6 +10063,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
     bookingCodeRequests,
     adminManualRequests: adminManualRequestRows.length,
     confirmedRequests,
+    confirmedBookingCodeRequests,
     whatsappClicks,
     emailClicks,
     phoneClicks,
@@ -9990,16 +10109,19 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
       requests_matched_by_legacy_heuristic: requestsMatchedByLegacyHeuristic,
       requests_created_event_only: requestsCreatedEventOnly,
       website_requests_without_submit_success: requestsWithoutTrackedSubmit,
+      current_website_requests_without_submit_success: currentRequestsWithoutTrackedSubmit,
+      historical_website_requests_without_submit_success: historicalRequestsWithoutTrackedSubmit,
+      current_submit_errors: currentSubmitErrors,
       requests_without_tracked_submit: requestsWithoutTrackedSubmit,
       booking_code_requests_with_redeem_success: bookingCodeRequestsWithRedeemSuccess,
       booking_code_requests_without_redeem_success: bookingCodeRequestsWithoutRedeemSuccess
     },
     warnings,
-    lowSampleNote: visitors < 50,
+    lowSampleNote: visitors < SMALL_SAMPLE_VISITOR_THRESHOLD,
     internalEventsExcluded,
     internalSessionsExcluded,
     directTrafficShare: rowPercent(directTrafficCount, sourceTotal),
-    mobileShare: rowPercent(mobileCount, events.length || 1)
+    mobileShare: rowPercent(mobileCount, pageViewEvents.length || 1)
   };
 }
 
@@ -10350,6 +10472,7 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
       tracked_submission_conversion: model.conversionMetrics.trackedSubmissionConversion,
       contact_intent_conversion: model.conversionMetrics.contactIntentConversion,
       confirmed_booking_conversion: model.conversionMetrics.confirmedBookingConversion,
+      booking_code_confirmation_rate: model.conversionMetrics.bookingCodeConfirmationRate,
       average_engagement_time: model.averageEngagement,
       internal_events_excluded: model.internalEventsExcluded,
       internal_sessions_excluded: model.internalSessionsExcluded,
@@ -10361,6 +10484,9 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
       requests_matched_by_legacy_heuristic: model.requestTrackingSummary?.requests_matched_by_legacy_heuristic || 0,
       requests_created_event_only: model.requestTrackingSummary?.requests_created_event_only || 0,
       website_requests_without_submit_success: model.requestTrackingSummary?.website_requests_without_submit_success || model.requestTrackingSummary?.requests_without_tracked_submit || 0,
+      current_website_requests_without_submit_success: model.requestTrackingSummary?.current_website_requests_without_submit_success || 0,
+      historical_website_requests_without_submit_success: model.requestTrackingSummary?.historical_website_requests_without_submit_success || 0,
+      current_submit_errors: model.requestTrackingSummary?.current_submit_errors || 0,
       requests_without_tracked_submit: model.requestTrackingSummary?.requests_without_tracked_submit || 0,
       booking_code_requests_with_redeem_success: model.requestTrackingSummary?.booking_code_requests_with_redeem_success || 0,
       booking_code_requests_without_redeem_success: model.requestTrackingSummary?.booking_code_requests_without_redeem_success || 0
@@ -10369,7 +10495,9 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
       countries: model.countryRows,
       cities: model.cityRows,
       top_pages: model.topPageRows,
+      experience_detail_opens: model.experienceRows,
       excursion_views: model.experienceRows,
+      experience_card_impressions: model.experienceCardImpressions,
       traffic_sources: model.sourceRows,
       devices: model.deviceRows,
       browsers: model.browserRows,
@@ -10729,99 +10857,6 @@ function backupProgressFromStatus(result, requestedAt, lang) {
     failed: false
   };
 }
-function formatAdminDate(value, lang) {
-  if (!value) return '-';
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
-  }
-
-  return date.toLocaleDateString(
-    lang === 'it' ? 'it-IT' : 'en-GB',
-    {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      timeZone: 'Europe/Rome'
-    }
-  );
-}
-
-function WeeklyReportsAdminPanel({ lang }) {
-  const [state, setState] = useState({ loading: true, sending: false, error: '', message: '', reports: [] });
-
-  async function refresh() {
-    setState((current) => ({ ...current, loading: true, error: '' }));
-    try {
-      const reports = await listWeeklyAdminReports(20);
-      setState((current) => ({ ...current, loading: false, reports }));
-    } catch (error) {
-      setState((current) => ({ ...current, loading: false, error: error?.message || adminCopy(lang, 'Report non disponibili.', 'Reports are not available.') }));
-    }
-  }
-
-  useEffect(() => { refresh(); }, [lang]);
-
-  async function sendTest() {
-    setState((current) => ({ ...current, sending: true, error: '', message: '' }));
-    try {
-      const result = await sendWeeklyAdminRecap({ testMode: true, force: true });
-      setState((current) => ({ ...current, sending: false, message: adminCopy(lang, `Report di test inviati: ${result.sent || 0}.`, `Test reports sent: ${result.sent || 0}.`) }));
-      refresh();
-    } catch (error) {
-      setState((current) => ({ ...current, sending: false, error: error?.message || adminCopy(lang, 'Invio report non riuscito.', 'Report send failed.') }));
-    }
-  }
-
-  async function resendFailed(report) {
-    setState((current) => ({ ...current, sending: true, error: '', message: '' }));
-    try {
-      const result = await sendWeeklyAdminRecap({ reportId: report.id });
-      setState((current) => ({ ...current, sending: false, message: adminCopy(lang, `Report reinviati: ${result.sent || 0}.`, `Reports resent: ${result.sent || 0}.`) }));
-      refresh();
-    } catch (error) {
-      setState((current) => ({ ...current, sending: false, error: error?.message || adminCopy(lang, 'Reinvio report non riuscito.', 'Report resend failed.') }));
-    }
-  }
-
-  return (
-    <section className="admin-panel backup-panel weekly-report-panel">
-      <div className="admin-panel-header">
-        <div>
-          <h2>{adminCopy(lang, 'Recap settimanale', 'Weekly management recap')}</h2>
-          <p>{adminCopy(lang, 'Storico invii, errori e test del report operativo del lunedì.', 'Delivery history, errors, and tests for the Monday operational report.')}</p>
-        </div>
-        <div className="modal-actions">
-          <button className="button secondary" type="button" onClick={refresh} disabled={state.loading}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
-          <button className="button primary" type="button" onClick={sendTest} disabled={state.sending}>{state.sending ? adminCopy(lang, 'Invio...', 'Sending...') : adminCopy(lang, 'Invia test', 'Send test')}</button>
-        </div>
-      </div>
-      {state.message && <div className="admin-alert success" role="status">{state.message}</div>}
-      {state.error && <div className="admin-alert error" role="alert">{state.error}</div>}
-      {state.loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : state.reports.length ? (
-        <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead><tr><th>{adminCopy(lang, 'Periodo', 'Period')}</th><th>{adminCopy(lang, 'Destinatario', 'Recipient')}</th><th>{adminCopy(lang, 'Tipo', 'Type')}</th><th>{adminCopy(lang, 'Stato', 'Status')}</th><th>{adminCopy(lang, 'Inviato', 'Sent')}</th><th>{adminCopy(lang, 'Errore', 'Error')}</th><th>{adminCopy(lang, 'Azione', 'Action')}</th></tr></thead>
-            <tbody>{state.reports.map((report) => (
-              <tr key={report.id}>
-                <td>{formatAdminDate(report.period_start, lang)} – {formatAdminDate(report.period_end, lang)}</td>
-                <td>{report.recipient}</td>
-                <td>{report.report_type}</td>
-                <td><span className={`status-pill ${report.status === 'failed' ? 'cancelled' : report.status === 'sent' || report.status === 'test' ? 'accepted' : 'pending'}`}>{report.status}</span></td>
-                <td>{report.sent_at ? new Date(report.sent_at).toLocaleString(lang === 'it' ? 'it-IT' : 'en-GB') : '-'}</td>
-                <td>{report.error_message || '-'}</td>
-                <td>{report.status === 'failed' ? <button className="button secondary" type="button" disabled={state.sending} onClick={() => resendFailed(report)}>{adminCopy(lang, 'Reinvia', 'Resend')}</button> : '-'}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </div>
-      ) : <p>{adminCopy(lang, 'Nessun report registrato.', 'No reports recorded.')}</p>}
-    </section>
-  );
-}
-
 function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress(), startGlobalBackupMonitor, stopGlobalBackupMonitor }) {
   const [actionState, setActionState] = useState({ createLoading: false, downloadLoading: false, message: '', error: '' });
   const [statusState, setStatusState] = useState({ loading: true, error: '', latestBackup: null, workflowRun: null, configured: false, message: '' });
@@ -11577,12 +11612,12 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
                 />
               </AnalyticsSubsection>
               <AnalyticsSubsection title={adminCopy(lang, 'Dispositivi', 'Devices')}>
-                <h4>{adminCopy(lang, 'Mobile / Desktop / Tablet', 'Mobile / Desktop / Tablet')}</h4>
-                <AnalyticsRowList rows={model.deviceRows} total={state.events.length || 1} empty={emptyText} />
-                <h4>{adminCopy(lang, 'Browser', 'Browser')}</h4>
-                <AnalyticsRowList rows={model.browserRows} total={state.events.length || 1} empty={emptyText} />
-                <h4>{adminCopy(lang, 'Sistema operativo', 'Operating system')}</h4>
-                <AnalyticsRowList rows={model.osRows} total={state.events.length || 1} empty={emptyText} />
+                <h4>{adminCopy(lang, 'Page views per dispositivo', 'Page views by device')}</h4>
+                <AnalyticsRowList rows={model.deviceRows} total={model.pageViews || 1} empty={emptyText} />
+                <h4>{adminCopy(lang, 'Page views per browser', 'Page views by browser')}</h4>
+                <AnalyticsRowList rows={model.browserRows} total={model.pageViews || 1} empty={emptyText} />
+                <h4>{adminCopy(lang, 'Page views per sistema operativo', 'Page views by operating system')}</h4>
+                <AnalyticsRowList rows={model.osRows} total={model.pageViews || 1} empty={emptyText} />
               </AnalyticsSubsection>
             </div>
             <div className="analytics-two-column-grid">
@@ -11604,7 +11639,7 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
                 />
               </AnalyticsSubsection>
               <AnalyticsSubsection title={adminCopy(lang, 'Lingua', 'Language')}>
-                <AnalyticsRowList rows={model.languageRows} total={state.events.length || 1} empty={emptyText} helperLabel={adminCopy(lang, 'visitatori', 'visitors')} />
+                <AnalyticsRowList rows={model.languageRows} total={model.pageViews || 1} empty={emptyText} helperLabel={adminCopy(lang, 'visitatori', 'visitors')} />
               </AnalyticsSubsection>
             </div>
             <div className="analytics-two-column-grid">
@@ -11624,9 +11659,9 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
               </AnalyticsSubsection>
               <AnalyticsSubsection title={adminCopy(lang, 'Geografia', 'Geography')}>
                 <h4>{adminCopy(lang, 'Paesi principali', 'Top countries')}</h4>
-                <AnalyticsRowList rows={model.countryRows} total={state.events.length || 1} empty={emptyText} />
+                <AnalyticsRowList rows={model.countryRows} total={model.pageViews || 1} empty={emptyText} />
                 <h4>{adminCopy(lang, 'Città principali', 'Top cities')}</h4>
-                <AnalyticsRowList rows={model.cityRows} total={state.events.length || 1} empty={adminCopy(lang, 'Città non disponibile se Cloudflare non la fornisce.', 'City is unavailable if Cloudflare does not provide it.')} />
+                <AnalyticsRowList rows={model.cityRows} total={model.pageViews || 1} empty={adminCopy(lang, 'Città non disponibile se Cloudflare non la fornisce.', 'City is unavailable if Cloudflare does not provide it.')} />
               </AnalyticsSubsection>
             </div>
             <div className="analytics-two-column-grid">

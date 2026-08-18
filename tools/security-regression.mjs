@@ -23,6 +23,13 @@ const backupShared = read('functions/api/admin/backup/_shared.js');
 const backupCreate = read('functions/api/admin/backup/create.js');
 const notifyFunction = read('supabase/functions/notify-new-request/index.ts');
 const recapFunction = read('supabase/functions/send-weekly-admin-recap/index.ts');
+const followupMigration = read('supabase/migrations/20260817_operational_analytics_reporting_fix.sql');
+const weeklyEmail = read('supabase/functions/_shared/weeklyRecapEmail.ts');
+const operationsService = read('src/services/operationsService.js');
+const mainSource = read('src/main.jsx');
+const analyticsIntegrity = read('src/features/analytics/integrity.js');
+const safeguardsComponent = read('src/features/admin/OperationalSafeguardsBanner.jsx');
+const weeklyPanelComponent = read('src/features/system/WeeklyReportsAdminPanel.jsx');
 
 check('jose dependency pinned', packageJson.dependencies?.jose === '5.9.6');
 check('GitHub App credentials supported', ['GITHUB_APP_ID', 'GITHUB_APP_INSTALLATION_ID', 'GITHUB_APP_PRIVATE_KEY'].every((key) => backupShared.includes(key)));
@@ -63,6 +70,16 @@ check('private key material is not committed', keyFiles.length === 0, keyFiles.j
 check('no service-role VITE variable', !fs.readdirSync(root, { recursive: true }).filter((name) => typeof name === 'string' && !name.startsWith('.git/') && !name.includes('node_modules/')).some((name) => {
   try { return fs.statSync(path.join(root, name)).isFile() && /VITE_[A-Z0-9_]*SERVICE_ROLE/i.test(fs.readFileSync(path.join(root, name), 'utf8')); } catch { return false; }
 }));
+
+check('weekly recap uses branded email template', recapFunction.includes('buildWeeklyRecapEmail') && weeklyEmail.includes('VULCANIQ · OPERATIONS') && weeklyEmail.includes('Executive overview'));
+check('weekly recap separates conversion families', ['Website booking funnel', 'Booking-code funnel', 'Gift Card funnel', 'Gift Card status', 'WhatsApp clicks'].every((value) => weeklyEmail.includes(value)) && recapFunction.includes("'occurred_at'"));
+check('operational safeguards exclude historical not-sent rows', followupMigration.includes("'safeguard_version', 2") && followupMigration.includes('notifications_historical_excluded') && followupMigration.includes("source = 'website'"));
+check('public RPC extension search path is explicit', ['create_public_booking_request(jsonb)', 'create_public_gift_card_request(jsonb)', 'admin_update_gift_card_request(uuid, jsonb)'].every((signature) => followupMigration.includes(`alter function public.${signature}`)) && followupMigration.includes('public, extensions, pg_temp'));
+check('analytics distinguishes current tracking from history', analyticsIntegrity.includes("CURRENT_TRACKING_ACTIVATION_ISO = '2026-08-17T00:00:00.000Z'") && mainSource.includes('currentRequestsWithoutTrackedSubmit') && mainSource.includes('historicalRequestsWithoutTrackedSubmit'));
+check('analytics traffic dimensions use page views', mainSource.includes('topRows(pageViewEvents, (event) => event.country_name') && mainSource.includes('topRows(pageViewEvents, (event) => event.device_type') && mainSource.includes('Experience detail opens'));
+check('public booking failures expose safe trace ids', bookingEndpoint.includes("'X-Trace-Id': traceId") && bookingEndpoint.includes('trace_id: traceId') && bookingService.includes('error.traceId = traceId'));
+check('system UI is split into feature modules', mainSource.includes("OperationalSafeguardsBanner from './features/admin/OperationalSafeguardsBanner.jsx'") && mainSource.includes("WeeklyReportsAdminPanel from './features/system/WeeklyReportsAdminPanel.jsx'") && safeguardsComponent.includes('admin-operational-chip') && weeklyPanelComponent.includes('weekly-report-table'));
+check('legacy unsent-email count is sanitized client-side', operationsService.includes('notifications_historical_excluded') && operationsService.includes('normalized.notifications_not_sent = 0'));
 
 for (const name of passes) console.log(`PASS  ${name}`);
 for (const name of failures) console.error(`FAIL  ${name}`);

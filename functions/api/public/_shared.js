@@ -55,12 +55,13 @@ export function corsHeaders(request, env = {}) {
   };
 }
 
-export function json(request, env, status, body = {}) {
+export function json(request, env, status, body = {}, extraHeaders = {}) {
   return new Response(status === 204 ? null : JSON.stringify(body), {
     status,
     headers: {
       ...corsHeaders(request, env),
-      ...(status === 204 ? {} : { 'Content-Type': 'application/json; charset=utf-8' })
+      ...(status === 204 ? {} : { 'Content-Type': 'application/json; charset=utf-8' }),
+      ...extraHeaders
     }
   });
 }
@@ -107,13 +108,13 @@ export async function supabaseRequest(env, path, init = {}) {
   return response;
 }
 
-export async function supabaseRpc(env, functionName, payload) {
+export async function supabaseRpc(env, functionName, payload, diagnostics = {}) {
   const response = await supabaseRequest(env, `rpc/${encodeURIComponent(functionName)}`, {
     method: 'POST',
     body: JSON.stringify(payload)
   });
   if (!response.ok) {
-    console.error('vulcanIQ public RPC failed', { functionName, status: response.status });
+    console.error('vulcanIQ public RPC failed', { functionName, status: response.status, traceId: diagnostics.traceId || undefined });
     throw new Error('request_creation_failed');
   }
   return response.json().catch(() => null);

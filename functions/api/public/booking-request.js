@@ -84,39 +84,42 @@ export async function onRequestOptions(context) {
 }
 
 export async function onRequestPost(context) {
+  const traceId = crypto.randomUUID();
+  const respond = (status, body = {}) => json(context.request, context.env, status, { ...body, trace_id: traceId }, { 'X-Trace-Id': traceId });
   const parsed = await readJsonBody(context.request, 32768);
-  if (!parsed.ok) return json(context.request, context.env, parsed.status, { ok: false, code: parsed.error, message: publicErrorMessage(parsed.error) });
+  if (!parsed.ok) return respond(parsed.status, { ok: false, code: parsed.error, message: publicErrorMessage(parsed.error) });
 
   const input = parsed.value;
   const antiAbuse = validateAntiAbuseFields(input);
-  if (!antiAbuse.ok) return json(context.request, context.env, antiAbuse.status, { ok: false, code: antiAbuse.error, message: publicErrorMessage(antiAbuse.error) });
+  if (!antiAbuse.ok) return respond(antiAbuse.status, { ok: false, code: antiAbuse.error, message: publicErrorMessage(antiAbuse.error) });
 
   const turnstile = await verifyTurnstile(context.request, context.env, input.turnstile_token);
-  if (!turnstile.ok) return json(context.request, context.env, 403, { ok: false, code: turnstile.error, message: publicErrorMessage(turnstile.error) });
+  if (!turnstile.ok) return respond(403, { ok: false, code: turnstile.error, message: publicErrorMessage(turnstile.error) });
 
   const key = idempotencyKey(context.request, input, 'booking');
-  if (!key) return json(context.request, context.env, 400, { ok: false, code: 'invalid_idempotency_key', message: publicErrorMessage('invalid_idempotency_key') });
+  if (!key) return respond(400, { ok: false, code: 'invalid_idempotency_key', message: publicErrorMessage('invalid_idempotency_key') });
 
   const existing = await existingRequestByIdempotency(context.env, 'booking_requests', key);
-  if (existing?.id) return json(context.request, context.env, 200, { ok: true, duplicate: true, id: existing.id, created_at: existing.created_at });
+  if (existing?.id) return respond(200, { ok: true, duplicate: true, id: existing.id, created_at: existing.created_at });
 
   if (!validEmail(input.customer_email) || !validPhone(input.customer_phone) || (!cleanText(input.customer_email) && !cleanText(input.customer_phone))) {
-    return json(context.request, context.env, 400, { ok: false, code: 'invalid_contact', message: publicErrorMessage('invalid_contact') });
+    return respond(400, { ok: false, code: 'invalid_contact', message: publicErrorMessage('invalid_contact') });
   }
   if (!validDate(input.requested_date) || !validDate(input.alternative_date) || !validDate(input.selected_date)) {
-    return json(context.request, context.env, 400, { ok: false, code: 'invalid_date', message: publicErrorMessage('invalid_date') });
+    return respond(400, { ok: false, code: 'invalid_date', message: publicErrorMessage('invalid_date') });
   }
 
   const actorHash = await clientActorHash(context.request, context.env);
   const allowed = await claimPublicRateLimit(context.env, 'booking_request', actorHash, { actorLimit: 8, globalLimit: 600, windowSeconds: 3600 });
-  if (!allowed) return json(context.request, context.env, 429, { ok: false, code: 'rate_limited', message: publicErrorMessage('rate_limited') });
+  if (!allowed) return respond(429, { ok: false, code: 'rate_limited', message: publicErrorMessage('rate_limited') });
 
   try {
-    const result = await supabaseRpc(context.env, 'create_public_booking_request', { request_payload: bookingPayload(input, key, actorHash) });
+    const result = await supabaseRpc(context.env, 'create_public_booking_request', { request_payload: bookingPayload(input, key, actorHash) }, { traceId });
     const created = Array.isArray(result) ? result[0] : result;
     if (!created?.id) throw new Error('request_creation_failed');
-    return json(context.request, context.env, 201, { ok: true, id: created.id, status: created.status || 'pending', created_at: created.created_at });
+    return respond(201, { ok: true, id: created.id, status: created.status || 'pending', created_at: created.created_at });
   } catch {
-    return json(context.request, context.env, 500, { ok: false, code: 'request_creation_failed', message: publicErrorMessage('request_creation_failed') });
+    console.error('vulcanIQ booking request failed', { traceId, code: 'request_creation_failed' });
+    return respond(500, { ok: false, code: 'request_creation_failed', message: publicErrorMessage('request_creation_failed') });
   }
 }

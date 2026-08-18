@@ -6,6 +6,8 @@ const EMPTY = Object.freeze({
   pending_over_24h: 0,
   failed_notifications: 0,
   notifications_not_sent: 0,
+  notifications_historical_excluded: 0,
+  safeguard_version: 1,
   gift_cards_missing_code: 0,
   upcoming_unconfirmed_72h: 0,
   weekly_report_failures: 0,
@@ -16,7 +18,17 @@ export async function getOperationalSafeguards() {
   if (!isSupabaseConfigured) return { ...EMPTY };
   const { data, error } = await supabase.rpc('get_admin_operational_safeguards');
   if (error) throw error;
-  return { ...EMPTY, ...(data || {}) };
+  const normalized = { ...EMPTY, ...(data || {}) };
+
+  // Version 1 of the RPC counted every historical not_sent row, including records
+  // created before notification automation existed. Never present that legacy count
+  // as an active incident while the v2 migration is being rolled out.
+  if (Number(normalized.safeguard_version || 1) < 2) {
+    normalized.notifications_historical_excluded = Number(normalized.notifications_not_sent || 0);
+    normalized.notifications_not_sent = 0;
+  }
+
+  return normalized;
 }
 
 export async function listWeeklyAdminReports(limit = 20) {

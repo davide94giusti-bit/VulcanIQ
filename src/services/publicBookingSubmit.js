@@ -4,7 +4,8 @@ import { trackBookingSubmitAttempt, trackBookingSubmitSuccess, trackBookingSubmi
 function safeErrorMetadata(error) {
   return {
     error_message: String(error?.message || 'booking_request_insert_failed').slice(0, 180),
-    error_code: String(error?.code || error?.status || '').slice(0, 80)
+    error_code: String(error?.code || error?.status || '').slice(0, 80),
+    trace_id: String(error?.traceId || '').slice(0, 80) || undefined
   };
 }
 

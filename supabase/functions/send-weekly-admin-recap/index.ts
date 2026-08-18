@@ -1,4 +1,5 @@
-import { corsPreflight, claimAdminAction, clean, dbJson, env, escapeHtml, json, readJson, recipients, requireAdmin, resendEmail } from '../_shared/vulcaniq.ts';
+import { corsPreflight, claimAdminAction, clean, dbJson, env, json, readJson, recipients, requireAdmin, resendEmail } from '../_shared/vulcaniq.ts';
+import { buildWeeklyRecapEmail } from '../_shared/weeklyRecapEmail.ts';
 
 type Row = Record<string, unknown>;
 
@@ -53,26 +54,59 @@ function countBy(rows: Row[], field: string): Record<string, number> {
   return rows.reduce((acc, row) => { const key = clean(row[field], 80) || 'unknown'; acc[key] = (acc[key] || 0) + 1; return acc; }, {} as Record<string, number>);
 }
 
+function canonicalEventCount(rows: Row[], primary: string, legacy: string[] = []): number {
+  const primaryCount = rows.filter((row) => clean(row.event_name, 100) === primary).length;
+  if (primaryCount) return primaryCount;
+  return rows.filter((row) => legacy.includes(clean(row.event_name, 100))).length;
+}
+
+function metadataValue(row: Row, key: string): string {
+  const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata as Record<string, unknown> : {};
+  return clean(metadata[key], 120);
+}
+
+function metadataFirstValue(row: Row, keys: string[]): string {
+  for (const key of keys) {
+    const value = metadataValue(row, key);
+    if (value) return value;
+  }
+  return '';
+}
+
+function countByMetadataFirst(rows: Row[], keys: string[]): Record<string, number> {
+  return rows.reduce((acc, row) => {
+    const value = metadataFirstValue(row, keys) || 'unknown';
+    acc[value] = (acc[value] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+}
+
 function money(rows: Row[], predicate: (row: Row) => boolean): number {
   return rows.filter(predicate).reduce((sum, row) => sum + Number(row.amount || 0), 0);
 }
 
-function line(label: string, value: unknown): string { return `<li><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</li>`; }
-
 async function metrics(period: { start: string; end: string }) {
   const [bookings, gifts, finance, analytics, reviews, notificationFailures, currentPending, currentGiftCodes] = await Promise.all([
-    list('booking_requests', 'id,status,request_type,experience_id,requested_date,adults,children,detected_source,declared_source,expected_value,created_at,notification_email_status', period.start, period.end),
+    list('booking_requests', 'id,status,request_type,experience_id,requested_date,adults,children,source,created_by_admin,detected_source,declared_source,expected_value,created_at,notification_email_status', period.start, period.end),
     list('gift_card_requests', 'id,status,budget,currency,booking_code,booking_code_id,preferred_delivery_date,created_at,notification_email_status', period.start, period.end),
     list('finance_entries', 'id,type,amount,currency,status,category,reversal_of,created_at', period.start, period.end),
-    list('analytics_events', 'id,event_name,device_type,browser,traffic_source,created_at', period.start, period.end),
+    list('analytics_events', 'id,event_name,visitor_id,device_type,browser,traffic_source,metadata,occurred_at,created_at', period.start, period.end, 'occurred_at'),
     list('reviews', 'id,rating,approved,active,admin_reply,created_at', period.start, period.end).catch(() => []),
     dbJson(`request_notification_log?select=id,status&status=eq.failed&created_at=gte.${encodeURIComponent(period.start)}&created_at=lt.${encodeURIComponent(period.end)}&limit=5000`, { method: 'GET' }).catch(() => []),
     dbJson('booking_requests?select=id,created_at,requested_date,status,customer_email,customer_phone&status=eq.pending&limit=5000', { method: 'GET' }).catch(() => []),
     dbJson('gift_card_requests?select=id,status,booking_code,booking_code_id,preferred_delivery_date&status=in.(paid,issued)&limit=5000', { method: 'GET' }).catch(() => [])
   ]);
+  const websiteBookings = bookings.filter((row) => !row.created_by_admin && ['website', 'public_website', 'unknown', ''].includes(clean(row.source, 40) || 'website'));
+  const bookingCodeBookings = bookings.filter((row) => clean(row.source, 40) === 'booking_code');
+  const isConfirmed = (row: Row) => ['accepted', 'confirmed', 'completed'].includes(clean(row.status).toLowerCase());
   const pending = bookings.filter((row) => clean(row.status).toLowerCase() === 'pending').length;
-  const confirmed = bookings.filter((row) => ['accepted', 'confirmed', 'completed'].includes(clean(row.status).toLowerCase())).length;
+  const confirmedWebsite = websiteBookings.filter(isConfirmed).length;
+  const confirmedBookingCode = bookingCodeBookings.filter(isConfirmed).length;
   const analyticsByEvent = countBy(analytics, 'event_name');
+  const pageViewRows = analytics.filter((row) => clean(row.event_name, 100) === 'page_view');
+  const detailRows = analytics.filter((row) => clean(row.event_name, 100) === 'experience_detail_open');
+  const legacyDetailRows = detailRows.length ? [] : analytics.filter((row) => clean(row.event_name, 100) === 'excursion_view');
+  const demandRows = detailRows.length ? detailRows : legacyDetailRows;
   const recordedRevenue = money(finance, (row) => ['confirmed', 'paid', 'collected'].includes(clean(row.status).toLowerCase()) && Number(row.amount || 0) > 0);
   const reversals = Math.abs(money(finance, (row) => Boolean(row.reversal_of) || Number(row.amount || 0) < 0));
   const now = Date.now();
@@ -86,6 +120,21 @@ async function metrics(period: { start: string; end: string }) {
   }).length;
   const missingContact = pendingRows.filter((row) => !clean(row.customer_email, 254) && !clean(row.customer_phone, 40)).length;
   const missingGiftCodes = (currentGiftCodes as Row[]).filter((row) => !row.booking_code_id && !clean(row.booking_code)).length;
+
+  const formOpen = canonicalEventCount(analytics, 'booking_form_open');
+  const formStarted = canonicalEventCount(analytics, 'booking_form_started');
+  const submitAttempt = canonicalEventCount(analytics, 'booking_form_submit_attempt', ['booking_submit_attempt']);
+  const submitSuccess = canonicalEventCount(analytics, 'booking_form_submit_success', ['booking_submit_success', 'booking_submit']);
+  const submitError = canonicalEventCount(analytics, 'booking_form_submit_error', ['booking_submit_error']);
+  const bookingRequestCreated = canonicalEventCount(analytics, 'booking_request_created');
+  const bookingCodeRedeemAttempt = canonicalEventCount(analytics, 'booking_code_redeem_attempt');
+  const bookingCodeRedeemSuccess = canonicalEventCount(analytics, 'booking_code_redeem_success');
+  const giftCardViews = canonicalEventCount(analytics, 'gift_card_view');
+  const giftCardStarts = canonicalEventCount(analytics, 'gift_card_questionnaire_started');
+  const giftCardRequestCreated = canonicalEventCount(analytics, 'gift_card_request_created');
+  const whatsappClicks = canonicalEventCount(analytics, 'whatsapp_click');
+  const visitorIds = new Set(pageViewRows.map((row) => clean(row.visitor_id, 160)).filter(Boolean));
+
   const recommendations: string[] = [];
   if (pendingRows.length) recommendations.push(`Review ${pendingRows.length} currently pending booking request(s).`);
   if (pendingOver24h) recommendations.push(`Escalate ${pendingOver24h} request(s) pending for more than 24 hours.`);
@@ -93,29 +142,51 @@ async function metrics(period: { start: string; end: string }) {
   if (upcomingUnconfirmed) recommendations.push(`Confirm ${upcomingUnconfirmed} excursion request(s) scheduled within 72 hours.`);
   if ((notificationFailures as Row[]).length) recommendations.push(`Retry ${(notificationFailures as Row[]).length} failed notification(s) from the reporting period.`);
   if (missingGiftCodes) recommendations.push(`Generate or repair ${missingGiftCodes} missing Gift Card booking code(s).`);
-  if ((analyticsByEvent.booking_form_submit_attempt || 0) > (analyticsByEvent.booking_form_submit_success || 0)) recommendations.push('Inspect current booking funnel submit gaps.');
+  if (submitError) recommendations.push(`Inspect ${submitError} public booking submission error(s) before interpreting the funnel as UX drop-off.`);
+  else if (submitAttempt > submitSuccess) recommendations.push('Inspect current website booking submit gaps and verify booking_request_created / submit_success integrity.');
   if (!recommendations.length) recommendations.push('No deterministic urgent action detected.');
+
   return {
-    bookings: { total: bookings.length, confirmed, pending, byStatus: countBy(bookings, 'status'), byExperience: countBy(bookings, 'experience_id'), bySource: countBy(bookings, 'detected_source') },
+    bookings: {
+      total: bookings.length,
+      website: websiteBookings.length,
+      bookingCode: bookingCodeBookings.length,
+      confirmedWebsite,
+      confirmedBookingCode,
+      pending,
+      byStatus: countBy(bookings, 'status'),
+      byExperience: countBy(websiteBookings, 'experience_id'),
+      bySource: countBy(bookings, 'source')
+    },
     giftCards: { total: gifts.length, byStatus: countBy(gifts, 'status'), missingCode: gifts.filter((row) => ['paid', 'issued'].includes(clean(row.status)) && !row.booking_code_id && !clean(row.booking_code)).length },
     finance: { recordedRevenue, reversals, netRecorded: recordedRevenue - reversals, entries: finance.length },
-    analytics: { events: analytics.length, byEvent: analyticsByEvent, byDevice: countBy(analytics, 'device_type'), byBrowser: countBy(analytics, 'browser') },
+    analytics: {
+      events: analytics.length,
+      pageViews: pageViewRows.length,
+      visitorsApprox: visitorIds.size,
+      formOpen,
+      formStarted,
+      submitAttempt,
+      submitSuccess,
+      submitError,
+      bookingRequestCreated,
+      bookingCodeRedeemAttempt,
+      bookingCodeRedeemSuccess,
+      giftCardViews,
+      giftCardStarts,
+      giftCardRequestCreated,
+      whatsappClicks,
+      byEvent: analyticsByEvent,
+      byDevice: countBy(pageViewRows, 'device_type'),
+      byBrowser: countBy(pageViewRows, 'browser'),
+      byTrafficSource: countBy(pageViewRows, 'traffic_source'),
+      byExperience: countByMetadataFirst(demandRows, ['experience_id', 'experience_slug', 'experience'])
+    },
     reviews: { total: reviews.length, negative: reviews.filter((row) => Number(row.rating || 5) <= 3).length, replyPending: reviews.filter((row) => !clean(row.admin_reply)).length },
     urgencies: { currentPending: pendingRows.length, pendingOver12h, pendingOver24h, upcomingUnconfirmed, missingContact, missingGiftCodes },
     system: { failedNotifications: (notificationFailures as Row[]).length },
     recommendations
   };
-}
-
-function reportHtml(periodLabel: string, data: any): string {
-  const conversion = data.analytics.byEvent.booking_form_open ? ((data.analytics.byEvent.booking_form_submit_success || 0) / data.analytics.byEvent.booking_form_open * 100).toFixed(1) : '0.0';
-  return `<h1>vulcanIQ weekly management recap</h1><p><strong>Period:</strong> ${escapeHtml(periodLabel)} · Europe/Rome</p>
-  <h2>Executive summary</h2><ul>${line('New requests', data.bookings.total)}${line('Confirmed bookings', data.bookings.confirmed)}${line('Pending requests', data.bookings.pending)}${line('Gift Cards', data.giftCards.total)}${line('Recorded revenue', `EUR ${data.finance.recordedRevenue.toFixed(2)}`)}${line('Reversals', `EUR ${data.finance.reversals.toFixed(2)}`)}${line('Failed notifications', data.system.failedNotifications)}</ul>
-  <h2>Urgencies</h2><ul>${line('Current pending requests', data.urgencies.currentPending)}${line('Pending over 12 hours', data.urgencies.pendingOver12h)}${line('Pending over 24 hours', data.urgencies.pendingOver24h)}${line('Unconfirmed within 72 hours', data.urgencies.upcomingUnconfirmed)}${line('Missing contact details', data.urgencies.missingContact)}${line('Gift Cards missing code', data.urgencies.missingGiftCodes)}</ul>
-  <h2>Analytics</h2><ul>${line('Form opens', data.analytics.byEvent.booking_form_open || 0)}${line('Form starts', data.analytics.byEvent.booking_form_started || 0)}${line('Submit attempts', data.analytics.byEvent.booking_form_submit_attempt || 0)}${line('Saved requests', data.analytics.byEvent.booking_request_created || 0)}${line('Submit successes', data.analytics.byEvent.booking_form_submit_success || 0)}${line('Website conversion', `${conversion}%`)}</ul>
-  <h2>Gift Cards</h2><ul>${line('New requests', data.giftCards.total)}${line('Paid/issued missing code', data.giftCards.missingCode)}</ul>
-  <h2>Reviews</h2><ul>${line('New reviews', data.reviews.total)}${line('Negative reviews', data.reviews.negative)}${line('Replies pending', data.reviews.replyPending)}</ul>
-  <h2>Recommended actions</h2><ol>${data.recommendations.map((item: string) => `<li>${escapeHtml(item)}</li>`).join('')}</ol>`;
 }
 
 Deno.serve(async (req) => {
@@ -169,7 +240,7 @@ Deno.serve(async (req) => {
         await dbJson(`admin_weekly_reports?id=eq.${reportId}`, { method: 'PATCH', body: JSON.stringify({ status: 'pending', error_message: null, metrics: data, generated_at: new Date().toISOString(), updated_at: new Date().toISOString() }) });
       }
       try {
-        const providerId = await resendEmail({ to: recipient, from, subject: `${testMode ? '[TEST] ' : ''}vulcanIQ weekly recap — ${period.label}`, html: reportHtml(period.label, data) });
+        const providerId = await resendEmail({ to: recipient, from, subject: `${testMode ? '[TEST] ' : ''}vulcanIQ weekly recap — ${period.label}`, html: buildWeeklyRecapEmail(period.label, data, testMode) });
         await dbJson(`admin_weekly_reports?id=eq.${reportId}`, { method: 'PATCH', body: JSON.stringify({ status: testMode ? 'test' : 'sent', provider_message_id: providerId, sent_at: new Date().toISOString(), updated_at: new Date().toISOString() }) });
         sent += 1;
       } catch {
