@@ -95,6 +95,8 @@ const EVENT_NAMES = new Set([
   'partner_commission_marked_paid'
 ]);
 
+const SESSION_LIFECYCLE_EVENTS = new Set(['session_start', 'session_heartbeat', 'session_end']);
+
 const UNSAFE_METADATA_KEYS = new Set([
   'name',
   'customer_name',
@@ -106,6 +108,8 @@ const UNSAFE_METADATA_KEYS = new Set([
   'customer_phone',
   'message',
   'booking_message',
+  'heard_about_us_detail',
+  'heard_about_us_display',
   'customer_note',
   'notes',
   'address',
@@ -197,6 +201,7 @@ function normalizedTrafficSource(raw) {
     'tiktok',
     'whatsapp',
     'partner',
+    'customer_referral',
     'qr',
     'business_card',
     'other'
@@ -333,11 +338,16 @@ export async function onRequestPost(context) {
         body: JSON.stringify([session])
       });
 
-      await supabaseRequest(context.env, 'analytics_events', {
-        method: 'POST',
-        headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify([event])
-      });
+      // Session lifecycle updates belong in analytics_sessions. Keeping every
+      // heartbeat as an analytics_events row previously made lifecycle noise
+      // dominate the behavioural event stream and accelerated row-cap issues.
+      if (!SESSION_LIFECYCLE_EVENTS.has(payload.event_name)) {
+        await supabaseRequest(context.env, 'analytics_events', {
+          method: 'POST',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify([event])
+        });
+      }
     } catch {
       // Analytics write failures must never surface to the public website.
       return json(204);

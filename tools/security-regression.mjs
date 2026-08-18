@@ -28,6 +28,10 @@ const weeklyEmail = read('supabase/functions/_shared/weeklyRecapEmail.ts');
 const operationsService = read('src/services/operationsService.js');
 const mainSource = read('src/main.jsx');
 const analyticsIntegrity = read('src/features/analytics/integrity.js');
+const analyticsContract = read('src/features/analytics/contract.js');
+const analyticsConsolidation = read('supabase/migrations/20260818_analytics_consolidation.sql');
+const analyticsService = read('src/services/analyticsService.js');
+const analyticsIngestion = read('functions/api/analytics/event.js');
 const safeguardsComponent = read('src/features/admin/OperationalSafeguardsBanner.jsx');
 const weeklyPanelComponent = read('src/features/system/WeeklyReportsAdminPanel.jsx');
 
@@ -47,7 +51,7 @@ check('server RPC ignores public partner authority', !migration.match(/request_p
 check('direct anonymous operational inserts revoked', migration.includes('revoke insert on public.booking_requests from anon') && migration.includes('revoke insert on public.gift_card_requests from anon'));
 check('analytics direct inserts revoked', migration.includes('revoke insert on public.analytics_events from anon, authenticated'));
 check('private operational tables have RLS', ['request_notification_log', 'admin_weekly_reports', 'endpoint_rate_limits'].every((table) => migration.includes(`alter table public.${table} enable row level security`)));
-check('no globally permissive policy in new migrations', !/using\s*\(\s*true\s*\)|with\s+check\s*\(\s*true\s*\)/i.test(`${migration}\n${storageMigration}`));
+check('no globally permissive policy in new migrations', !/using\s*\(\s*true\s*\)|with\s+check\s*\(\s*true\s*\)/i.test(`${migration}\n${storageMigration}\n${analyticsConsolidation}`));
 check('notification idempotency index exists', migration.includes('request_notification_log_idempotency_unique'));
 check('weekly report idempotency index exists', migration.includes('admin_weekly_reports_idempotency_unique'));
 check('privileged actions restricted to owner/manager', migration.includes("ap.role in ('owner', 'manager')") && migration.includes('is_privileged_admin'));
@@ -72,14 +76,24 @@ check('no service-role VITE variable', !fs.readdirSync(root, { recursive: true }
 }));
 
 check('weekly recap uses branded email template', recapFunction.includes('buildWeeklyRecapEmail') && weeklyEmail.includes('VULCANIQ · OPERATIONS') && weeklyEmail.includes('Executive overview'));
-check('weekly recap separates conversion families', ['Website booking funnel', 'Booking-code funnel', 'Gift Card funnel', 'Gift Card status', 'WhatsApp clicks'].every((value) => weeklyEmail.includes(value)) && recapFunction.includes("'occurred_at'"));
+check('weekly recap separates conversion families', ['Website booking funnel', 'Fast Request / WhatsApp', 'Booking-code funnel', 'Gift Card funnel', 'Gift Card status'].every((value) => weeklyEmail.includes(value)) && recapFunction.includes('rpc/get_admin_analytics_summary'));
 check('operational safeguards exclude historical not-sent rows', followupMigration.includes("'safeguard_version', 2") && followupMigration.includes('notifications_historical_excluded') && followupMigration.includes("source = 'website'"));
 check('public RPC extension search path is explicit', ['create_public_booking_request(jsonb)', 'create_public_gift_card_request(jsonb)', 'admin_update_gift_card_request(uuid, jsonb)'].every((signature) => followupMigration.includes(`alter function public.${signature}`)) && followupMigration.includes('public, extensions, pg_temp'));
-check('analytics distinguishes current tracking from history', analyticsIntegrity.includes("CURRENT_TRACKING_ACTIVATION_ISO = '2026-08-17T00:00:00.000Z'") && mainSource.includes('currentRequestsWithoutTrackedSubmit') && mainSource.includes('historicalRequestsWithoutTrackedSubmit'));
+check('analytics distinguishes current tracking from history', analyticsContract.includes("ANALYTICS_TRACKING_CONTRACT_STARTED_AT = '2026-08-17T00:00:00.000Z'") && analyticsIntegrity.includes('CURRENT_TRACKING_ACTIVATION_ISO') && mainSource.includes('currentRequestsWithoutTrackedSubmit') && mainSource.includes('historicalRequestsWithoutTrackedSubmit'));
 check('analytics traffic dimensions use page views', mainSource.includes('topRows(pageViewEvents, (event) => event.country_name') && mainSource.includes('topRows(pageViewEvents, (event) => event.device_type') && mainSource.includes('Experience detail opens'));
 check('public booking failures expose safe trace ids', bookingEndpoint.includes("'X-Trace-Id': traceId") && bookingEndpoint.includes('trace_id: traceId') && bookingService.includes('error.traceId = traceId'));
 check('system UI is split into feature modules', mainSource.includes("OperationalSafeguardsBanner from './features/admin/OperationalSafeguardsBanner.jsx'") && mainSource.includes("WeeklyReportsAdminPanel from './features/system/WeeklyReportsAdminPanel.jsx'") && safeguardsComponent.includes('admin-operational-chip') && weeklyPanelComponent.includes('weekly-report-table'));
 check('legacy unsent-email count is sanitized client-side', operationsService.includes('notifications_historical_excluded') && operationsService.includes('normalized.notifications_not_sent = 0'));
+check('canonical analytics summary RPC is protected', analyticsConsolidation.includes('get_admin_analytics_summary') && analyticsConsolidation.includes('security definer') && analyticsConsolidation.includes('revoke all on function public.get_admin_analytics_summary') && analyticsConsolidation.includes('not public.is_admin()'));
+check('analytics baseline mutation requires privileged admin', analyticsConsolidation.includes('set_analytics_reporting_baseline') && analyticsConsolidation.includes('clear_analytics_reporting_baseline') && analyticsConsolidation.includes('not public.is_privileged_admin()'));
+check('analytics baseline is non-destructive', !/truncate\s+(table\s+)?public\.(analytics_events|analytics_sessions)/i.test(analyticsConsolidation) && !/delete\s+from\s+public\.(analytics_events|analytics_sessions)/i.test(analyticsConsolidation));
+check('analytics raw reads are paginated', analyticsService.includes('.range(offset, offset + pageSize - 1)') && analyticsService.includes("count: 'exact'"));
+check('weekly recap consumes canonical analytics RPC', recapFunction.includes("rpc/get_admin_analytics_summary") && !recapFunction.includes("list('analytics_events'"));
+check('session lifecycle is stored outside behavioral event stream', analyticsIngestion.includes('SESSION_LIFECYCLE_EVENTS') && analyticsIngestion.includes('!SESSION_LIFECYCLE_EVENTS.has(payload.event_name)'));
+check('analytics owner browser opt-out exists', analytics.includes('vulcaniq_analytics_opt_out') && analytics.includes('setAnalyticsBrowserExcluded'));
+check('analytics strips free-form attribution detail', ['heard_about_us_detail', 'heard_about_us_display'].every((key) => analytics.includes(`'${key}'`) && analyticsIngestion.includes(`'${key}'`)));
+check('analytics consolidation migration has one transaction boundary', (analyticsConsolidation.match(/^begin;$/gm) || []).length === 1 && (analyticsConsolidation.match(/^commit;$/gm) || []).length === 1);
+
 
 for (const name of passes) console.log(`PASS  ${name}`);
 for (const name of failures) console.error(`FAIL  ${name}`);

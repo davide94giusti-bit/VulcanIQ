@@ -86,31 +86,47 @@ function money(rows: Row[], predicate: (row: Row) => boolean): number {
 }
 
 async function metrics(period: { start: string; end: string }) {
-  const [bookings, gifts, finance, analytics, reviews, notificationFailures, currentPending, currentGiftCodes] = await Promise.all([
-    list('booking_requests', 'id,status,request_type,experience_id,requested_date,adults,children,source,created_by_admin,detected_source,declared_source,expected_value,created_at,notification_email_status', period.start, period.end),
-    list('gift_card_requests', 'id,status,budget,currency,booking_code,booking_code_id,preferred_delivery_date,created_at,notification_email_status', period.start, period.end),
-    list('finance_entries', 'id,type,amount,currency,status,category,reversal_of,created_at', period.start, period.end),
-    list('analytics_events', 'id,event_name,visitor_id,device_type,browser,traffic_source,metadata,occurred_at,created_at', period.start, period.end, 'occurred_at'),
-    list('reviews', 'id,rating,approved,active,admin_reply,created_at', period.start, period.end).catch(() => []),
-    dbJson(`request_notification_log?select=id,status&status=eq.failed&created_at=gte.${encodeURIComponent(period.start)}&created_at=lt.${encodeURIComponent(period.end)}&limit=5000`, { method: 'GET' }).catch(() => []),
+  // Analytics KPIs come from the same protected PostgreSQL contract used by
+  // the admin dashboard. This prevents raw-row caps and formula drift.
+  const analyticsSummary = await dbJson('rpc/get_admin_analytics_summary', {
+    method: 'POST',
+    body: JSON.stringify({ p_from: period.start, p_to: period.end, p_use_reporting_baseline: true })
+  }) as Row;
+  const meta = (analyticsSummary.meta && typeof analyticsSummary.meta === 'object' ? analyticsSummary.meta : {}) as Row;
+  // If an owner/manager starts a reporting baseline inside the weekly period,
+  // all period-scoped business metrics use the same effective lower bound as
+  // analytics. Point-in-time operational safeguards remain current by design.
+  const reportingStart = clean(meta.effective_from, 80) || period.start;
+
+  const [bookings, gifts, finance, reviews, notificationFailures, currentPending, currentGiftCodes] = await Promise.all([
+    list('booking_requests', 'id,status,request_type,experience_id,requested_date,adults,children,source,created_by_admin,detected_source,declared_source,expected_value,created_at,notification_email_status', reportingStart, period.end),
+    list('gift_card_requests', 'id,status,budget,currency,booking_code,booking_code_id,preferred_delivery_date,created_at,notification_email_status', reportingStart, period.end),
+    list('finance_entries', 'id,type,amount,currency,status,category,reversal_of,created_at', reportingStart, period.end),
+    list('reviews', 'id,rating,approved,active,admin_reply,created_at', reportingStart, period.end).catch(() => []),
+    dbJson(`request_notification_log?select=id,status&status=eq.failed&created_at=gte.${encodeURIComponent(reportingStart)}&created_at=lt.${encodeURIComponent(period.end)}&limit=5000`, { method: 'GET' }).catch(() => []),
     dbJson('booking_requests?select=id,created_at,requested_date,status,customer_email,customer_phone&status=eq.pending&limit=5000', { method: 'GET' }).catch(() => []),
     dbJson('gift_card_requests?select=id,status,booking_code,booking_code_id,preferred_delivery_date&status=in.(paid,issued)&limit=5000', { method: 'GET' }).catch(() => [])
   ]);
-  const websiteBookings = bookings.filter((row) => !row.created_by_admin && ['website', 'public_website', 'unknown', ''].includes(clean(row.source, 40) || 'website'));
+
+  const summary = (analyticsSummary.summary && typeof analyticsSummary.summary === 'object' ? analyticsSummary.summary : {}) as Row;
+  const funnels = (analyticsSummary.funnels && typeof analyticsSummary.funnels === 'object' ? analyticsSummary.funnels : {}) as Row;
+  const website = (funnels.website && typeof funnels.website === 'object' ? funnels.website : {}) as Row;
+  const fastRequest = (funnels.fast_request && typeof funnels.fast_request === 'object' ? funnels.fast_request : {}) as Row;
+  const giftCard = (funnels.gift_card && typeof funnels.gift_card === 'object' ? funnels.gift_card : {}) as Row;
+  const bookingCode = (funnels.booking_code && typeof funnels.booking_code === 'object' ? funnels.booking_code : {}) as Row;
+  const dimensions = (analyticsSummary.dimensions && typeof analyticsSummary.dimensions === 'object' ? analyticsSummary.dimensions : {}) as Row;
+  const integrity = (analyticsSummary.integrity && typeof analyticsSummary.integrity === 'object' ? analyticsSummary.integrity : {}) as Row;
+  const asCountMap = (value: unknown): Record<string, number> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, count]) => [key, Number(count || 0)]));
+  };
+
+  const websiteBookings = bookings.filter((row) => ['website', 'public_website', ''].includes(clean(row.source, 40)));
   const bookingCodeBookings = bookings.filter((row) => clean(row.source, 40) === 'booking_code');
-  const isConfirmed = (row: Row) => ['accepted', 'confirmed', 'completed'].includes(clean(row.status).toLowerCase());
-  const pending = bookings.filter((row) => clean(row.status).toLowerCase() === 'pending').length;
-  const confirmedWebsite = websiteBookings.filter(isConfirmed).length;
-  const confirmedBookingCode = bookingCodeBookings.filter(isConfirmed).length;
-  const analyticsByEvent = countBy(analytics, 'event_name');
-  const pageViewRows = analytics.filter((row) => clean(row.event_name, 100) === 'page_view');
-  const detailRows = analytics.filter((row) => clean(row.event_name, 100) === 'experience_detail_open');
-  const legacyDetailRows = detailRows.length ? [] : analytics.filter((row) => clean(row.event_name, 100) === 'excursion_view');
-  const demandRows = detailRows.length ? detailRows : legacyDetailRows;
   const recordedRevenue = money(finance, (row) => ['confirmed', 'paid', 'collected'].includes(clean(row.status).toLowerCase()) && Number(row.amount || 0) > 0);
   const reversals = Math.abs(money(finance, (row) => Boolean(row.reversal_of) || Number(row.amount || 0) < 0));
   const now = Date.now();
-  const pendingRows = (currentPending as Row[]);
+  const pendingRows = currentPending as Row[];
   const pendingOver12h = pendingRows.filter((row) => now - new Date(String(row.created_at || '')).getTime() > 12 * 3600000).length;
   const pendingOver24h = pendingRows.filter((row) => now - new Date(String(row.created_at || '')).getTime() > 24 * 3600000).length;
   const next72h = now + 72 * 3600000;
@@ -121,19 +137,10 @@ async function metrics(period: { start: string; end: string }) {
   const missingContact = pendingRows.filter((row) => !clean(row.customer_email, 254) && !clean(row.customer_phone, 40)).length;
   const missingGiftCodes = (currentGiftCodes as Row[]).filter((row) => !row.booking_code_id && !clean(row.booking_code)).length;
 
-  const formOpen = canonicalEventCount(analytics, 'booking_form_open');
-  const formStarted = canonicalEventCount(analytics, 'booking_form_started');
-  const submitAttempt = canonicalEventCount(analytics, 'booking_form_submit_attempt', ['booking_submit_attempt']);
-  const submitSuccess = canonicalEventCount(analytics, 'booking_form_submit_success', ['booking_submit_success', 'booking_submit']);
-  const submitError = canonicalEventCount(analytics, 'booking_form_submit_error', ['booking_submit_error']);
-  const bookingRequestCreated = canonicalEventCount(analytics, 'booking_request_created');
-  const bookingCodeRedeemAttempt = canonicalEventCount(analytics, 'booking_code_redeem_attempt');
-  const bookingCodeRedeemSuccess = canonicalEventCount(analytics, 'booking_code_redeem_success');
-  const giftCardViews = canonicalEventCount(analytics, 'gift_card_view');
-  const giftCardStarts = canonicalEventCount(analytics, 'gift_card_questionnaire_started');
-  const giftCardRequestCreated = canonicalEventCount(analytics, 'gift_card_request_created');
-  const whatsappClicks = canonicalEventCount(analytics, 'whatsapp_click');
-  const visitorIds = new Set(pageViewRows.map((row) => clean(row.visitor_id, 160)).filter(Boolean));
+  const submitAttempt = Number(website.submit_attempts || 0);
+  const submitSuccess = Number(website.submit_successes || 0);
+  const submitError = Number(website.submit_errors || 0);
+  const incidentState = clean(integrity.submit_incident_state, 40) || 'none';
 
   const recommendations: string[] = [];
   if (pendingRows.length) recommendations.push(`Review ${pendingRows.length} currently pending booking request(s).`);
@@ -142,45 +149,73 @@ async function metrics(period: { start: string; end: string }) {
   if (upcomingUnconfirmed) recommendations.push(`Confirm ${upcomingUnconfirmed} excursion request(s) scheduled within 72 hours.`);
   if ((notificationFailures as Row[]).length) recommendations.push(`Retry ${(notificationFailures as Row[]).length} failed notification(s) from the reporting period.`);
   if (missingGiftCodes) recommendations.push(`Generate or repair ${missingGiftCodes} missing Gift Card booking code(s).`);
-  if (submitError) recommendations.push(`Inspect ${submitError} public booking submission error(s) before interpreting the funnel as UX drop-off.`);
-  else if (submitAttempt > submitSuccess) recommendations.push('Inspect current website booking submit gaps and verify booking_request_created / submit_success integrity.');
+  if (incidentState === 'current_failure') recommendations.push('Public booking tracking reports a recent unrecovered submission failure. Re-test the production booking journey immediately.');
+  else if (incidentState === 'retest_required') recommendations.push('The latest public booking submission failure has not yet been followed by a canonical success. Run a controlled production re-test.');
+  else if (submitAttempt > submitSuccess) recommendations.push('Review website booking attempts that did not reach canonical submit_success during this reporting period.');
   if (!recommendations.length) recommendations.push('No deterministic urgent action detected.');
+
+  const experienceDemand = Array.isArray(analyticsSummary.experience_demand) ? analyticsSummary.experience_demand as Row[] : [];
+  const experienceMap = Object.fromEntries(experienceDemand.map((row) => [clean(row.experience_id, 80) || 'unknown', Number(row.detail_opens || 0)]));
 
   return {
     bookings: {
-      total: bookings.length,
-      website: websiteBookings.length,
-      bookingCode: bookingCodeBookings.length,
-      confirmedWebsite,
-      confirmedBookingCode,
-      pending,
+      total: Number(summary.booking_requests_total || bookings.length),
+      website: Number(summary.website_requests || 0),
+      websiteCompatible: Number(summary.website_requests_compatible || 0),
+      bookingCode: Number(summary.booking_code_requests || 0),
+      bookingCodeCompatible: Number(summary.booking_code_requests_compatible || 0),
+      confirmedWebsite: Number(summary.confirmed_website_requests || 0),
+      confirmedBookingCode: Number(summary.confirmed_booking_code_requests || 0),
+      pending: bookings.filter((row) => clean(row.status).toLowerCase() === 'pending').length,
       byStatus: countBy(bookings, 'status'),
       byExperience: countBy(websiteBookings, 'experience_id'),
       bySource: countBy(bookings, 'source')
     },
-    giftCards: { total: gifts.length, byStatus: countBy(gifts, 'status'), missingCode: gifts.filter((row) => ['paid', 'issued'].includes(clean(row.status)) && !row.booking_code_id && !clean(row.booking_code)).length },
+    giftCards: {
+      total: Number(summary.gift_card_requests || 0),
+      compatible: Number(summary.gift_card_requests_compatible || 0),
+      byStatus: countBy(gifts, 'status'),
+      missingCode: gifts.filter((row) => ['paid', 'issued'].includes(clean(row.status)) && !row.booking_code_id && !clean(row.booking_code)).length
+    },
     finance: { recordedRevenue, reversals, netRecorded: recordedRevenue - reversals, entries: finance.length },
     analytics: {
-      events: analytics.length,
-      pageViews: pageViewRows.length,
-      visitorsApprox: visitorIds.size,
-      formOpen,
-      formStarted,
+      events: Number(meta.analytics_event_count || 0),
+      sessions: Number(meta.analytics_session_count || 0),
+      pageViews: Number(summary.page_views || 0),
+      visitorsApprox: Number(summary.approx_unique_visitors || 0),
+      formOpen: Number(website.form_opens || 0),
+      formStarted: Number(website.form_starts || 0),
       submitAttempt,
       submitSuccess,
       submitError,
-      bookingRequestCreated,
-      bookingCodeRedeemAttempt,
-      bookingCodeRedeemSuccess,
-      giftCardViews,
-      giftCardStarts,
-      giftCardRequestCreated,
-      whatsappClicks,
-      byEvent: analyticsByEvent,
-      byDevice: countBy(pageViewRows, 'device_type'),
-      byBrowser: countBy(pageViewRows, 'browser'),
-      byTrafficSource: countBy(pageViewRows, 'traffic_source'),
-      byExperience: countByMetadataFirst(demandRows, ['experience_id', 'experience_slug', 'experience'])
+      bookingRequestCreated: Number(website.request_created_events || 0),
+      bookingCodeRedeemAttempt: Number(bookingCode.redeem_attempts || 0),
+      bookingCodeRedeemSuccess: Number(bookingCode.redeem_successes || 0),
+      giftCardViews: Number(giftCard.views || 0),
+      giftCardStarts: Number(giftCard.questionnaire_starts || 0),
+      giftCardRequestCreated: Number(giftCard.request_created_events || 0),
+      whatsappClicks: Number(summary.whatsapp_clicks || 0),
+      emailClicks: Number(summary.email_clicks || 0),
+      phoneClicks: Number(summary.phone_clicks || 0),
+      mapsClicks: Number(summary.maps_clicks || 0),
+      contactIntentVisitors: Number(summary.contact_intent_visitors || 0),
+      fastRequestStarts: Number(fastRequest.starts || 0),
+      fastRequestSuccesses: Number(fastRequest.submit_successes || 0),
+      fastRequestWhatsapp: Number(fastRequest.whatsapp_outcomes || 0),
+      byEvent: {},
+      byDevice: asCountMap(dimensions.devices),
+      byBrowser: asCountMap(dimensions.browsers),
+      byTrafficSource: asCountMap(dimensions.traffic_sources),
+      byExperience: experienceMap,
+      coverage: {
+        dataComplete: meta.data_complete !== false,
+        baselineApplied: meta.baseline_applied === true,
+        reportingBaselineAt: clean(meta.reporting_baseline_at, 80),
+        trackingContractStartedAt: clean(meta.tracking_contract_started_at, 80),
+        effectiveFrom: clean(meta.effective_from, 80),
+        effectiveTo: clean(meta.effective_to, 80),
+        incidentState
+      }
     },
     reviews: { total: reviews.length, negative: reviews.filter((row) => Number(row.rating || 5) <= 3).length, replyPending: reviews.filter((row) => !clean(row.admin_reply)).length },
     urgencies: { currentPending: pendingRows.length, pendingOver12h, pendingOver24h, upcomingUnconfirmed, missingContact, missingGiftCodes },

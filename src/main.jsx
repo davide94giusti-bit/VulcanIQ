@@ -13,12 +13,12 @@ import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFil
 import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
 import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
 import { assignPartnerToBookingRequest, calculatePartnerCommission, listPartnerCommissions, listPartnerCommissionSummary, updatePartnerCommissionStatus, upsertPartnerCommissionForSource } from './services/partnerCommissions.js';
-import { listAnalyticsEvents, listAnalyticsSessions } from './services/analyticsService.js';
+import { getAdminAnalyticsSummary, listAnalyticsEventPage, listAnalyticsSessionPage, setAnalyticsReportingBaseline, clearAnalyticsReportingBaseline } from './services/analyticsService.js';
 import { createDatabaseBackup, downloadLatestDatabaseBackup, getBackupSchedule, getBackupStatus, saveBackupSchedule } from './services/backupService.js';
 import { createGiftCardRequest, listGiftCardRequests, updateGiftCardRequest } from './services/giftCards.js';
 import { getOperationalSafeguards, retryRequestNotification, sendWeeklyAdminRecap } from './services/operationsService.js';
 import { createCustomerReferralCode, disableCustomerReferralCode, listCustomerReferralCodes, referralAttributionPayload, referralLink, storeReferralJourney, validateAndRecordReferralClick } from './services/referrals.js';
-import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormStarted, trackBookingFormStepCompleted, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot, createFormJourney, markFormFieldStarted, markFormActivity, markFormSubmitted, markFormAbandoned, markFormRecoveredViaWhatsApp } from './analytics.js';
+import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormStarted, trackBookingFormStepCompleted, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot, isAnalyticsBrowserExcluded, setAnalyticsBrowserExcluded, createFormJourney, markFormFieldStarted, markFormActivity, markFormSubmitted, markFormAbandoned, markFormRecoveredViaWhatsApp } from './analytics.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import { submitPublicBookingRequestWithTracking } from './services/publicBookingSubmit.js';
 import { formatCurrencyAmount, normalizeCurrency, parseMoneyAmount } from './utils/money.js';
@@ -27,8 +27,12 @@ import { ADMIN_ROLES, listAdminUsers, updateAdminUser } from './services/adminUs
 import OperationalSafeguardsBanner from './features/admin/OperationalSafeguardsBanner.jsx';
 import WeeklyReportsAdminPanel from './features/system/WeeklyReportsAdminPanel.jsx';
 import { CURRENT_TRACKING_ACTIVATION_MS, SMALL_SAMPLE_VISITOR_THRESHOLD, isCurrentTrackingRecord } from './features/analytics/integrity.js';
+import { ANALYTICS_PERIODS as CANONICAL_ANALYTICS_PERIODS, analyticsPeriodLabel as canonicalAnalyticsPeriodLabel, analyticsDateRange as canonicalAnalyticsDateRange, summaryToAdminModelPatch, defaultAnalyticsCustomRange } from './features/analytics/contract.js';
+import AnalyticsHealthPanel from './features/analytics/AnalyticsHealthPanel.jsx';
+import AnalyticsCanonicalFunnels from './features/analytics/AnalyticsCanonicalFunnels.jsx';
 import './styles.css';
 import './styles/admin-system.css';
+import './styles/analytics-consolidated.css';
 
 const PHONE_DISPLAY = '+39 334 929 8246';
 const PHONE_WA = '393349298246';
@@ -2508,6 +2512,7 @@ function BookingCodeModal({ lang, onClose, siteContent }) {
   const [code, setCode] = useState('');
   const [state, setState] = useState({ loading: false, error: '', success: null });
   const inputRef = useRef(null);
+  const redemptionJourneyRef = useRef(`booking_code_journey_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
   useBodyScrollLock(true);
 
   useEffect(() => {
@@ -2531,6 +2536,7 @@ function BookingCodeModal({ lang, onClose, siteContent }) {
       await trackEvent('booking_code_redeem_attempt', {
         language: lang,
         source: 'booking_code',
+        journey_id: redemptionJourneyRef.current,
         source_section: 'booking_code_redemption',
         source_cta: 'booking_code_confirm',
         cta_location: 'booking_code_screen'
@@ -2539,6 +2545,7 @@ function BookingCodeModal({ lang, onClose, siteContent }) {
       const successMetadata = {
         language: lang,
         source: 'booking_code',
+        journey_id: redemptionJourneyRef.current,
         source_section: 'booking_code_redemption',
         source_cta: 'booking_code_confirm',
         cta_location: 'booking_code_screen',
@@ -2557,6 +2564,7 @@ function BookingCodeModal({ lang, onClose, siteContent }) {
       await trackEvent('booking_code_redeem_error', {
         language: lang,
         source: 'booking_code',
+        journey_id: redemptionJourneyRef.current,
         source_section: 'booking_code_redemption',
         source_cta: 'booking_code_confirm',
         cta_location: 'booking_code_screen',
@@ -2725,8 +2733,8 @@ function GiftCardPage({ lang, siteContent, onClose }) {
   );
 
   useEffect(() => {
-    trackEvent('gift_card_view', { language: lang, source_section: 'gift_card_page' }, { dedupe: false });
     journeyRef.current = createFormJourney('gift_card_request', sourceMetadata);
+    trackEvent('gift_card_view', { ...sourceMetadata, journey_id: journeyRef.current?.journey_id || '' }, { dedupe: false });
   }, [lang]);
 
   useEffect(() => {
@@ -2778,7 +2786,7 @@ function GiftCardPage({ lang, siteContent, onClose }) {
   function startQuestionnaire() {
     setStarted(true);
     setState({ loading: false, error: '', success: '' });
-    trackEvent('gift_card_questionnaire_started', { ...sourceMetadata, step_index: 1, step_key: 'buyer' }, { dedupe: false });
+    trackEvent('gift_card_questionnaire_started', { ...sourceMetadata, journey_id: journeyRef.current?.journey_id || '', step_index: 1, step_key: 'buyer' }, { dedupe: false });
   }
 
   function update(field, value) {
@@ -2837,6 +2845,7 @@ function GiftCardPage({ lang, siteContent, onClose }) {
     }
     trackEvent('gift_card_questionnaire_step_completed', {
       ...sourceMetadata,
+      journey_id: journeyRef.current?.journey_id || '',
       step_index: stepIndex + 1,
       step_key: currentStep.key,
       has_budget: Boolean(String(form.budget || '').trim()),
@@ -2885,7 +2894,9 @@ function GiftCardPage({ lang, siteContent, onClose }) {
         website: ''
       });
       trackEvent('gift_card_request_created', {
-        request_id: created?.id || '',
+        gift_card_request_id: created?.id || '',
+        journey_id: journeyRef.current?.journey_id || '',
+        form_type: 'gift_card_request',
         language: lang,
         source_section: 'gift_card_page',
         source_cta: 'website_submit',
@@ -2929,6 +2940,8 @@ function GiftCardPage({ lang, siteContent, onClose }) {
       has_budget: Boolean(String(form.budget || '').trim())
     });
     trackEvent('gift_card_whatsapp_request_clicked', {
+      journey_id: journeyRef.current?.journey_id || '',
+      form_type: 'gift_card_request',
       language: lang,
       source_section: 'gift_card_page',
       source_cta: 'whatsapp_submit',
@@ -3081,8 +3094,8 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   });
 
   useEffect(() => {
-    trackEvent('fast_request_start', sourceMetadata, { dedupe: false });
     formJourneyRef.current = createFormJourney('fast_request', { ...sourceMetadata, has_selected_experience: true, has_people_count: true, has_attribution: false });
+    trackEvent('fast_request_start', { ...sourceMetadata, journey_id: formJourneyRef.current?.journey_id || '', form_type: 'fast_request' }, { dedupe: false });
     return () => {
       try {
         window.localStorage.setItem('vulcaniq_fast_request', JSON.stringify({ ...form, expires_at: Date.now() + 24 * 60 * 60 * 1000 }));
@@ -3121,7 +3134,7 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
     if (step === 4 && nextStep === 5 && !validateAttributionStep()) return;
     setError('');
     markFormFieldStarted(formJourneyRef.current?.journey_id, `step_${step}`, { ...sourceMetadata, step_index: step, step_key: `step_${step}` });
-    trackEvent('fast_request_step_complete', { ...sourceMetadata, step, next_step: nextStep, ...heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail) }, { dedupe: false });
+    trackEvent('fast_request_step_complete', { ...sourceMetadata, journey_id: formJourneyRef.current?.journey_id || '', form_type: 'fast_request', step, next_step: nextStep, ...heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail) }, { dedupe: false });
     setStep(nextStep);
   }
 
@@ -3143,7 +3156,7 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
 
   function handleClose() {
     markFormAbandoned(formJourneyRef.current?.journey_id, { ...sourceMetadata, step_index: step, step_key: `step_${step}`, has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true, has_attribution: Boolean(form.heardAboutUs), ...heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail) });
-    trackEvent('fast_request_abandon', { ...sourceMetadata, step, experience_id: form.experienceId, ...heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail) }, { dedupe: true });
+    trackEvent('fast_request_abandon', { ...sourceMetadata, journey_id: formJourneyRef.current?.journey_id || '', form_type: 'fast_request', step, experience_id: form.experienceId, ...heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail) }, { dedupe: true });
     onClose();
   }
 
@@ -3155,8 +3168,8 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
     const attributionMetadata = heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail);
     markFormRecoveredViaWhatsApp(formJourneyRef.current?.journey_id, { ...sourceMetadata, has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true, has_attribution: true, ...attributionMetadata });
     markFormSubmitted(formJourneyRef.current?.journey_id, { ...sourceMetadata, channel: 'whatsapp', has_selected_experience: Boolean(form.experienceId), has_selected_date: Boolean(form.customDate || form.dateMode === 'flexible'), has_people_count: true, has_attribution: true, ...attributionMetadata });
-    trackEvent('fast_request_whatsapp_click', { ...sourceMetadata, experience_id: form.experienceId, date_mode: form.dateMode, ...attributionMetadata }, { dedupe: false });
-    trackEvent('fast_request_submit_success', { ...sourceMetadata, experience_id: form.experienceId, channel: 'whatsapp', ...attributionMetadata }, { dedupe: false });
+    trackEvent('fast_request_whatsapp_click', { ...sourceMetadata, journey_id: formJourneyRef.current?.journey_id || '', form_type: 'fast_request', experience_id: form.experienceId, date_mode: form.dateMode, ...attributionMetadata }, { dedupe: false });
+    trackEvent('fast_request_submit_success', { ...sourceMetadata, journey_id: formJourneyRef.current?.journey_id || '', form_type: 'fast_request', experience_id: form.experienceId, channel: 'whatsapp', ...attributionMetadata }, { dedupe: false });
     try { window.localStorage.removeItem('vulcaniq_fast_request'); } catch {}
   }
 
@@ -6835,7 +6848,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
         ) : normalizedPath.includes('/finance') ? (
           <FinanceAdminPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/analytics') || normalizedPath.includes('/data') ? (
-          <AdminAnalyticsPage lang={lang} session={session} adminContent={adminContent} />
+          <AdminAnalyticsPage lang={lang} session={session} profile={profile} adminContent={adminContent} />
         ) : normalizedPath.includes('/system') || normalizedPath.includes('/backup') ? (
           isOwner ? <AdminBackupPage lang={lang} session={session} profile={profile} adminContent={adminContent} globalBackupProgress={globalBackupProgress} startGlobalBackupMonitor={startGlobalBackupMonitor} stopGlobalBackupMonitor={stopBackupMonitor} /> : <OwnerOnlyAdminPage lang={lang} />
         ) : normalizedPath.includes('/users') ? (
@@ -9096,30 +9109,14 @@ function calculateFinanceSummary(entries) {
   };
 }
 
-const ANALYTICS_PERIODS = [
-  ['today', { it: 'Oggi', en: 'Today' }],
-  ['7d', { it: 'Ultimi 7 giorni', en: 'Last 7 days' }],
-  ['30d', { it: 'Ultimi 30 giorni', en: 'Last 30 days' }],
-  ['90d', { it: 'Ultimi 90 giorni', en: 'Last 90 days' }],
-  ['all', { it: 'Tutte le date', en: 'All dates' }]
-];
+const ANALYTICS_PERIODS = CANONICAL_ANALYTICS_PERIODS;
 
 function analyticsPeriodLabel(key, lang) {
-  return ANALYTICS_PERIODS.find(([value]) => value === key)?.[1]?.[lang] || key;
+  return canonicalAnalyticsPeriodLabel(key, lang);
 }
 
 function analyticsDateRange(period) {
-  if (period === 'all') return { from: '', to: '', label: 'All dates' };
-  const now = new Date();
-  const start = new Date(now);
-  if (period === 'today') {
-    start.setHours(0, 0, 0, 0);
-  } else {
-    const days = period === '7d' ? 7 : period === '90d' ? 90 : 30;
-    start.setDate(now.getDate() - days + 1);
-    start.setHours(0, 0, 0, 0);
-  }
-  return { from: start.toISOString(), to: now.toISOString() };
+  return canonicalAnalyticsDateRange(period);
 }
 
 function valueOrUnknown(value, lang) {
@@ -9242,7 +9239,7 @@ function periodContains(row, range) {
   const time = new Date(raw).getTime();
   if (Number.isNaN(time)) return false;
   if (range.from && time < new Date(range.from).getTime()) return false;
-  if (range.to && time > new Date(range.to).getTime()) return false;
+  if (range.to && time >= new Date(range.to).getTime()) return false;
   return true;
 }
 
@@ -9447,22 +9444,15 @@ function buildDeclaredAttributionRows({ events = [], bookingRequests = [], range
       booking_requests: 0,
       confirmed_bookings: 0,
       contact_events: 0,
-      form_events: 0,
-      detail_values: new Set()
+      form_events: 0
     };
     map.set(key, row);
     return row;
   }
 
-  function addDetail(row, detail) {
-    const clean = cleanHeardAboutUsDetail(detail);
-    if (clean && row.detail_values.size < 5) row.detail_values.add(clean);
-  }
-
   (bookingRequests || []).filter((request) => periodContains(request, range)).forEach((request) => {
     const row = ensure(request.heard_about_us);
     row.booking_requests += 1;
-    addDetail(row, request.heard_about_us_detail);
     if (['accepted', 'confirmed', 'completed'].includes(request.status)) row.confirmed_bookings += 1;
   });
 
@@ -9470,14 +9460,13 @@ function buildDeclaredAttributionRows({ events = [], bookingRequests = [], range
     const source = eventMeta(event, 'heard_about_us');
     if (!source) return;
     const row = ensure(source);
-    addDetail(row, eventMeta(event, 'heard_about_us_detail'));
     if (['whatsapp_click', 'email_click', 'phone_click'].includes(event.event_name)) row.contact_events += 1;
     if (['booking_form_field_start', 'booking_form_submit_attempt', 'booking_form_submit_success', 'booking_request_created'].includes(event.event_name)) row.form_events += 1;
   });
 
   return [...map.values()]
     .filter((row) => row.booking_requests || row.confirmed_bookings || row.contact_events || row.form_events)
-    .map((row) => ({ ...row, details: row.detail_values.size ? [...row.detail_values].join(' · ') : '—', detail_values: undefined }))
+    .map((row) => ({ ...row, details: '—' }))
     .sort((a, b) => (b.booking_requests + b.contact_events + b.form_events) - (a.booking_requests + a.contact_events + a.form_events));
 }
 
@@ -9620,8 +9609,9 @@ function buildBookingRequestTrackingIntegrity({ requests = [], events = [], rang
         tracking_integrity_status: status,
         heard_about_us: normalizeHeardAboutUs(request.heard_about_us, { allowAdmin: true }) || null,
         heard_about_us_label: heardAboutUsLabel(request.heard_about_us, lang, { fallback: '' }) || null,
-        heard_about_us_detail: cleanHeardAboutUsDetail(request.heard_about_us_detail) || null,
-        heard_about_us_display: heardAboutUsDisplay(request.heard_about_us, request.heard_about_us_detail, lang, { fallback: '' }) || null
+        // Analytics diagnostics intentionally retain only the categorical source.
+        // Free-form "Other" text remains a booking-record concern, not analytics data.
+        heard_about_us_display: heardAboutUsLabel(request.heard_about_us, lang, { fallback: '' }) || null
       };
     });
 }
@@ -9800,7 +9790,7 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   const formByExperience = [...formByExperienceMap.values()]
     .map((row) => ({
       ...row,
-      view_to_request: percent(row.booking_requests, row.experience_views || row.detail_opens),
+      view_to_request: row.booking_requests && (!(row.experience_views || row.detail_opens) || row.booking_requests > (row.experience_views || row.detail_opens)) ? trackingIncompleteLabel(lang) : percent(row.booking_requests, row.experience_views || row.detail_opens),
       form_to_request: row.booking_requests && (!row.form_opens || row.booking_requests > row.form_opens) ? trackingIncompleteLabel(lang) : percent(row.booking_requests, row.form_opens)
     }))
     .filter((row) => row.experience_views || row.detail_opens || row.form_opens || row.submit_attempts || row.submit_successes || row.booking_requests || row.whatsapp_clicks || row.email_clicks || row.phone_clicks)
@@ -10147,6 +10137,8 @@ function AnalyticsWarningList({ warnings = [], lang = 'it', onOpenDetails }) {
   const normalized = warnings.map((warning) => (typeof warning === 'string' ? { type: 'diagnostic', message: warning, helper: '', detail: '' } : warning));
   const groups = [
     ['critical', adminCopy(lang, 'Problemi critici di tracciamento', 'Critical tracking issues')],
+    ['warning', adminCopy(lang, 'Avvisi da verificare', 'Warnings to review')],
+    ['historical', adminCopy(lang, 'Diagnostica storica', 'Historical diagnostics')],
     ['diagnostic', adminCopy(lang, 'Note diagnostiche', 'Diagnostic notes')],
     ['attribution', adminCopy(lang, 'Note attribuzione', 'Attribution notes')],
     ['ux', adminCopy(lang, 'Note test UX', 'UX testing notes')]
@@ -10276,7 +10268,7 @@ function AnalyticsDetailsModal({ lang = 'it', model, onClose }) {
           />
         </AnalyticsSubsection>
 
-        <AnalyticsSubsection title={adminCopy(lang, 'Funnel mobile', 'Mobile funnel')}>
+        <AnalyticsSubsection title={adminCopy(lang, 'Funnel mobile · campione diagnostico', 'Mobile funnel · diagnostic sample')}>
           <AnalyticsTable
             columns={[
               { key: 'device_browser', label: adminCopy(lang, 'Dispositivo/browser', 'Device/browser') },
@@ -10389,12 +10381,36 @@ function safeBookingRequestRows(requests = [], range, lang) {
       requested_date_present: Boolean(request.requested_date),
       heard_about_us: normalizeHeardAboutUs(request.heard_about_us, { allowAdmin: true }) || null,
       heard_about_us_label: heardAboutUsLabel(request.heard_about_us, lang, { fallback: '' }) || null,
-      heard_about_us_detail: cleanHeardAboutUsDetail(request.heard_about_us_detail) || null,
-      heard_about_us_display: heardAboutUsDisplay(request.heard_about_us, request.heard_about_us_detail, lang, { fallback: '' }) || null,
       has_fixed_excursion: Boolean(request.has_fixed_excursion || request.fixed_excursion_id),
       adults_bucket: request.adults ? (Number(request.adults) > 6 ? '7+' : String(request.adults)) : null,
       children_present: Boolean(request.children)
     }));
+}
+
+const ANALYTICS_EXPORT_UNSAFE_METADATA_KEYS = new Set([
+  'name', 'customer_name', 'guest_name', 'reviewer_name',
+  'email', 'customer_email', 'phone', 'customer_phone',
+  'message', 'booking_message', 'customer_note', 'notes',
+  'heard_about_us_detail', 'heard_about_us_display',
+  'address', 'coordinates', 'lat', 'lng', 'latitude', 'longitude',
+  'payment', 'card', 'buyer_name', 'buyer_email', 'buyer_phone',
+  'recipient_name', 'partner_bank_details', 'payment_details'
+]);
+
+function safeAnalyticsExportMetadata(metadata = {}) {
+  const output = {};
+  Object.entries(metadata && typeof metadata === 'object' ? metadata : {}).forEach(([key, value]) => {
+    const cleanKey = String(key || '').trim().slice(0, 48);
+    if (!cleanKey || ANALYTICS_EXPORT_UNSAFE_METADATA_KEYS.has(cleanKey.toLowerCase())) return;
+    if (Array.isArray(value) || (value && typeof value === 'object')) return;
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      output[cleanKey] = value;
+      return;
+    }
+    const cleanValue = String(value ?? '').trim().replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 220);
+    if (cleanValue) output[cleanKey] = cleanValue;
+  });
+  return output;
 }
 
 function safeAnalyticsRows(rows = [], kind = 'event') {
@@ -10432,12 +10448,12 @@ function safeAnalyticsRows(rows = [], kind = 'event') {
       device_type: row.device_type,
       browser: row.browser,
       operating_system: row.operating_system,
-      metadata: row.metadata || {}
+      metadata: safeAnalyticsExportMetadata(row.metadata || {})
     };
   });
 }
 
-function downloadAnalyticsExport({ lang, period, range, model, events, sessions, bookingRequests }) {
+function downloadAnalyticsExport({ lang, period, range, model, canonicalSummary, events, sessions, bookingRequests, eventTotal = 0, sessionTotal = 0 }) {
   const generatedAt = new Date().toISOString();
   const payload = {
     export_type: 'vulcaniq_analytics_metrics',
@@ -10446,50 +10462,57 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
     period,
     period_label: analyticsPeriodLabel(period, lang),
     range,
+    meta: canonicalSummary?.meta || {},
+    coverage: {
+      data_complete: canonicalSummary?.meta?.data_complete !== false,
+      raw_event_sample_limit: 250,
+      raw_event_sample_rows: events.length,
+      raw_event_sample_is_truncated: Number(eventTotal || 0) > events.length,
+      raw_event_total_matching_rows: Number(eventTotal || 0),
+      raw_session_sample_limit: 250,
+      raw_session_sample_rows: sessions.length,
+      raw_session_sample_is_truncated: Number(sessionTotal || 0) > sessions.length,
+      raw_session_total_matching_rows: Number(sessionTotal || 0),
+      booking_request_sample_limit: 1000,
+      booking_request_sample_rows: bookingRequests.length,
+      booking_request_sample_may_be_truncated: bookingRequests.length >= 1000
+    },
+    canonical_funnels: canonicalSummary?.funnels || {},
+    canonical_rates: canonicalSummary?.rates || {},
+    canonical_integrity: canonicalSummary?.integrity || {},
     chatgpt_prompt: lang === 'it'
       ? 'Analizza queste metriche del sito vulcanIQ. Concentrati su integrità del funnel, comportamento form vs WhatsApp/email, UX mobile, domanda per esperienza, qualità attribuzione sorgenti e se il campione è sufficiente per conclusioni marketing.'
       : 'Analyze these vulcanIQ website metrics. Focus on funnel integrity, form vs WhatsApp/email behavior, mobile UX, experience demand, source attribution quality, and whether the sample size is sufficient for marketing conclusions.',
     summary: {
       visitors: model.visitors,
       page_views: model.pageViews,
-      booking_requests: model.bookingRequests,
-      website_booking_requests: model.websiteRequests,
-      website_form_requests: model.requestTrackingSummary?.website_form_requests || model.websiteRequests || 0,
-      booking_code_requests: model.requestTrackingSummary?.booking_code_requests || model.bookingCodeRequests || 0,
-      admin_manual_requests: model.requestTrackingSummary?.admin_manual_requests || model.adminManualRequests || 0,
-      tracked_submit_successes: model.submitSuccesses,
-      submit_attempts: model.submitAttempts,
-      website_form_submit_attempts: model.requestTrackingSummary?.website_form_submit_attempts || model.submitAttempts || 0,
-      website_form_submit_successes: model.requestTrackingSummary?.website_form_submit_successes || model.submitSuccesses || 0,
-      booking_code_redeem_attempts: model.requestTrackingSummary?.booking_code_redeem_attempts || model.bookingCodeRedeemAttempts || 0,
-      booking_code_redeem_successes: model.requestTrackingSummary?.booking_code_redeem_successes || model.bookingCodeRedeemSuccesses || 0,
-      submit_errors: model.submitErrors,
-      validation_errors: model.validationErrors,
-      whatsapp_clicks: model.whatsappClicks,
-      email_clicks: model.emailClicks,
-      booking_conversion_rate: model.bookingConversion,
-      website_request_conversion: model.conversionMetrics.websiteRequestConversion,
-      tracked_submission_conversion: model.conversionMetrics.trackedSubmissionConversion,
-      contact_intent_conversion: model.conversionMetrics.contactIntentConversion,
-      confirmed_booking_conversion: model.conversionMetrics.confirmedBookingConversion,
-      booking_code_confirmation_rate: model.conversionMetrics.bookingCodeConfirmationRate,
+      sessions: model.sessions,
+      booking_requests: Number(canonicalSummary?.summary?.booking_requests_total || 0),
+      website_booking_requests: Number(canonicalSummary?.summary?.website_requests || 0),
+      website_form_requests_compatible: Number(canonicalSummary?.summary?.website_requests_compatible || 0),
+      booking_code_requests: Number(canonicalSummary?.summary?.booking_code_requests || 0),
+      booking_code_requests_compatible: Number(canonicalSummary?.summary?.booking_code_requests_compatible || 0),
+      gift_card_requests: Number(canonicalSummary?.summary?.gift_card_requests || 0),
+      gift_card_requests_compatible: Number(canonicalSummary?.summary?.gift_card_requests_compatible || 0),
+      admin_manual_requests: Number(canonicalSummary?.summary?.admin_manual_requests || 0),
+      website_form_submit_attempts: Number(canonicalSummary?.funnels?.website?.submit_attempts || 0),
+      website_form_validation_errors: Number(canonicalSummary?.funnels?.website?.validation_errors || 0),
+      website_form_submit_successes: Number(canonicalSummary?.funnels?.website?.submit_successes || 0),
+      website_form_submit_errors: Number(canonicalSummary?.funnels?.website?.submit_errors || 0),
+      booking_code_redeem_attempts: Number(canonicalSummary?.funnels?.booking_code?.redeem_attempts || 0),
+      booking_code_redeem_successes: Number(canonicalSummary?.funnels?.booking_code?.redeem_successes || 0),
+      contact_intent_visitors: Number(canonicalSummary?.summary?.contact_intent_visitors || 0),
+      whatsapp_clicks: Number(canonicalSummary?.summary?.whatsapp_clicks || 0),
+      email_clicks: Number(canonicalSummary?.summary?.email_clicks || 0),
+      phone_clicks: Number(canonicalSummary?.summary?.phone_clicks || 0),
+      maps_clicks: Number(canonicalSummary?.summary?.maps_clicks || 0),
+      website_funnel_completion_rate: model.conversionMetrics.websiteFunnelCompletion,
+      visitor_to_tracked_request_rate: model.conversionMetrics.websiteRequestConversion,
+      contact_intent_visitor_rate: model.conversionMetrics.contactIntentConversion,
+      confirmed_website_request_rate: model.conversionMetrics.confirmedBookingConversion,
+      booking_code_redeem_rate: model.conversionMetrics.bookingCodeConfirmationRate,
       average_engagement_time: model.averageEngagement,
-      internal_events_excluded: model.internalEventsExcluded,
-      internal_sessions_excluded: model.internalSessionsExcluded,
-      website_booking_requests_in_period: bookingRequestsInPeriod(bookingRequests, range),
-      website_requests_with_tracked_submit: model.requestTrackingSummary?.website_requests_with_tracked_submit || model.requestTrackingSummary?.requests_with_tracked_submit || 0,
-      requests_with_tracked_submit: model.requestTrackingSummary?.requests_with_tracked_submit || 0,
-      requests_matched_by_journey_id: model.requestTrackingSummary?.requests_matched_by_journey_id || 0,
-      requests_matched_by_booking_request_id: model.requestTrackingSummary?.requests_matched_by_booking_request_id || 0,
-      requests_matched_by_legacy_heuristic: model.requestTrackingSummary?.requests_matched_by_legacy_heuristic || 0,
-      requests_created_event_only: model.requestTrackingSummary?.requests_created_event_only || 0,
-      website_requests_without_submit_success: model.requestTrackingSummary?.website_requests_without_submit_success || model.requestTrackingSummary?.requests_without_tracked_submit || 0,
-      current_website_requests_without_submit_success: model.requestTrackingSummary?.current_website_requests_without_submit_success || 0,
-      historical_website_requests_without_submit_success: model.requestTrackingSummary?.historical_website_requests_without_submit_success || 0,
-      current_submit_errors: model.requestTrackingSummary?.current_submit_errors || 0,
-      requests_without_tracked_submit: model.requestTrackingSummary?.requests_without_tracked_submit || 0,
-      booking_code_requests_with_redeem_success: model.requestTrackingSummary?.booking_code_requests_with_redeem_success || 0,
-      booking_code_requests_without_redeem_success: model.requestTrackingSummary?.booking_code_requests_without_redeem_success || 0
+      submit_incident_state: canonicalSummary?.integrity?.submit_incident_state || 'none'
     },
     tables: {
       countries: model.countryRows,
@@ -10505,9 +10528,7 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
       languages: model.languageRows,
       website_flow: model.flowRows,
       booking_funnel: model.funnelRows,
-      data_quality: model.dataQualityRows,
-      customer_declared_sources: model.declaredAttributionRows,
-      request_tracking_integrity: model.requestTrackingIntegrity
+      data_quality: (canonicalSummary?.integrity?.warnings || []).map((warning) => ({ severity: warning.severity, code: warning.code, count: warning.count ?? 0, detail: warning.message || '' }))
     },
     drilldowns: {
       funnel_diagnostics: model.funnelDiagnostics,
@@ -10518,9 +10539,9 @@ function downloadAnalyticsExport({ lang, period, range, model, events, sessions,
       language_conversion: model.languageConversion,
       geography_hypotheses: model.geographyHypotheses,
       traffic_attribution_quality: model.trafficAttributionQuality,
-      customer_declared_sources: model.declaredAttributionRows,
-      requests_without_tracked_form_open: model.requestsWithoutTrackedFormOpen,
-      request_tracking_integrity: model.requestTrackingIntegrity
+      customer_declared_sources_sample: model.declaredAttributionRows,
+      requests_without_tracked_form_open_sample: model.requestsWithoutTrackedFormOpen,
+      request_tracking_integrity_sample: model.requestTrackingIntegrity
     },
     anonymized_samples: {
       events: safeAnalyticsRows(events, 'event'),
@@ -11357,37 +11378,114 @@ function ShortLinksPanel({ lang }) {
 }
 
 
-function AdminAnalyticsPage({ lang, adminContent = {} }) {
+function AdminAnalyticsPage({ lang, profile, adminContent = {} }) {
   const [period, setPeriod] = useState('30d');
-  const [state, setState] = useState({ loading: true, error: '', technicalError: '', events: [], sessions: [], bookingRequests: [] });
+  const [customRange, setCustomRange] = useState(() => defaultAnalyticsCustomRange());
+  const [reloadToken, setReloadToken] = useState(0);
+  const [browserExcluded, setBrowserExcluded] = useState(() => isAnalyticsBrowserExcluded());
+  const [state, setState] = useState({
+    loading: true, error: '', technicalError: '', summary: null,
+    events: [], sessions: [], bookingRequests: [], eventTotal: 0, sessionTotal: 0,
+    lastRefreshed: null
+  });
   const [analyticsDetailsOpen, setAnalyticsDetailsOpen] = useState(false);
-  const range = useMemo(() => analyticsDateRange(period), [period]);
+  const range = useMemo(() => canonicalAnalyticsDateRange(period, new Date(), customRange), [period, customRange, reloadToken]);
 
   useEffect(() => {
     let alive = true;
     async function loadAnalytics() {
+      if (period === 'custom' && range.valid === false) {
+        if (alive) setState((current) => ({ ...current, loading: false, error: adminCopy(lang, 'Seleziona un intervallo personalizzato valido.', 'Select a valid custom date range.'), technicalError: '' }));
+        return;
+      }
       setState((current) => ({ ...current, loading: true, error: '', technicalError: '' }));
       try {
-        const [events, sessions, requests] = await Promise.all([
-          listAnalyticsEvents({ ...range, limit: 10000 }),
-          listAnalyticsSessions({ ...range, limit: 10000 }),
+        const summary = await getAdminAnalyticsSummary({ ...range, useReportingBaseline: range.useReportingBaseline !== false });
+        const drilldownRange = {
+          from: summary?.meta?.effective_from || '',
+          to: summary?.meta?.effective_to || range.to || ''
+        };
+        const [eventPage, sessionPage, requests] = await Promise.all([
+          listAnalyticsEventPage({ ...drilldownRange, page: 0, pageSize: 250 }),
+          listAnalyticsSessionPage({ ...drilldownRange, page: 0, pageSize: 250 }),
           listBookingRequests({ limit: 1000 }).catch(() => [])
         ]);
         if (!alive) return;
-        setState({ loading: false, error: '', technicalError: '', events, sessions, bookingRequests: requests || [] });
+        setState({
+          loading: false, error: '', technicalError: '', summary,
+          events: eventPage.rows || [], sessions: sessionPage.rows || [], bookingRequests: requests || [],
+          eventTotal: eventPage.total || 0, sessionTotal: sessionPage.total || 0,
+          lastRefreshed: new Date().toISOString()
+        });
       } catch (error) {
         if (!alive) return;
-        setState({ loading: false, error: analyticsAdminErrorMessage(lang, error), technicalError: analyticsTechnicalError(error), events: [], sessions: [], bookingRequests: [] });
+        setState((current) => ({
+          ...current, loading: false,
+          error: analyticsAdminErrorMessage(lang, error),
+          technicalError: analyticsTechnicalError(error),
+          summary: null, events: [], sessions: [], eventTotal: 0, sessionTotal: 0,
+          lastRefreshed: new Date().toISOString()
+        }));
       }
     }
     loadAnalytics();
     return () => { alive = false; };
-  }, [period, lang]);
+  }, [period, lang, reloadToken, range.from, range.to, range.useReportingBaseline, range.valid]);
 
-  const model = useMemo(() => buildAnalyticsModel({ events: state.events, sessions: state.sessions, bookingRequests: state.bookingRequests, range, lang }), [state.events, state.sessions, state.bookingRequests, range, lang]);
-  const hasData = state.events.length > 0 || state.sessions.length > 0;
+  const rawModel = useMemo(() => buildAnalyticsModel({ events: state.events, sessions: state.sessions, bookingRequests: state.bookingRequests, range, lang }), [state.events, state.sessions, state.bookingRequests, range, lang]);
+  const model = useMemo(() => {
+    if (!state.summary) return rawModel;
+    const canonical = summaryToAdminModelPatch(state.summary, formatDuration, lang);
+    return {
+      ...rawModel,
+      ...canonical,
+      conversionMetrics: { ...rawModel.conversionMetrics, ...canonical.conversionMetrics },
+      // Core warnings come from the server contract. Raw-sample warnings remain
+      // available in the details modal but cannot override operational truth.
+      warnings: canonical.warnings,
+      requestTrackingSummary: {
+        ...rawModel.requestTrackingSummary,
+        website_form_requests: canonical.websiteRequests,
+        booking_code_requests: canonical.bookingCodeRequests,
+        website_form_submit_attempts: canonical.submitAttempts,
+        website_form_submit_successes: canonical.submitSuccesses,
+        booking_code_redeem_attempts: canonical.bookingCodeRedeemAttempts,
+        booking_code_redeem_successes: canonical.bookingCodeRedeemSuccesses,
+        current_submit_errors: canonical.submitIncidentState === 'current_failure' ? canonical.submitErrors : 0
+      }
+    };
+  }, [rawModel, state.summary]);
+  const hasData = Boolean(state.summary && (model.pageViews > 0 || model.visitors > 0 || model.websiteRequests > 0 || model.bookingCodeRequests > 0 || model.giftCardRequests > 0));
   const emptyText = adminCopy(lang, 'Nessun dato disponibile per il periodo selezionato.', 'No analytics data available for the selected period.');
   const setupText = adminCopy(lang, 'I dati inizieranno a comparire dopo le prime visite pubbliche al sito.', 'Data will start appearing after the first public visits to the website.');
+
+  async function startNewBaseline() {
+    const confirmed = window.confirm(adminCopy(lang, 'Le metriche operative inizieranno da adesso. I dati storici resteranno salvati e saranno ancora visibili in “Tutti i dati storici”. Continuare?', 'Operational metrics will start from now. Historical analytics will remain stored and visible under “All historical data”. Continue?'));
+    if (!confirmed) return;
+    try {
+      await setAnalyticsReportingBaseline(new Date().toISOString());
+      setPeriod('baseline');
+      setReloadToken((value) => value + 1);
+    } catch (error) {
+      setState((current) => ({ ...current, error: analyticsAdminErrorMessage(lang, error), technicalError: analyticsTechnicalError(error) }));
+    }
+  }
+
+  async function clearBaseline() {
+    const confirmed = window.confirm(adminCopy(lang, 'Rimuovere la baseline di reporting? Nessun dato verrà eliminato.', 'Clear the reporting baseline? No data will be deleted.'));
+    if (!confirmed) return;
+    try {
+      await clearAnalyticsReportingBaseline();
+      setReloadToken((value) => value + 1);
+    } catch (error) {
+      setState((current) => ({ ...current, error: analyticsAdminErrorMessage(lang, error), technicalError: analyticsTechnicalError(error) }));
+    }
+  }
+
+  function toggleBrowserExclusion(excluded) {
+    setAnalyticsBrowserExcluded(excluded);
+    setBrowserExcluded(isAnalyticsBrowserExcluded());
+  }
 
   return (
     <section className="admin-subpage analytics-admin-page">
@@ -11404,9 +11502,26 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
               {ANALYTICS_PERIODS.map(([key]) => <option key={key} value={key}>{analyticsPeriodLabel(key, lang)}</option>)}
             </select>
           </label>
-          <button className="button secondary analytics-export-button" type="button" disabled={state.loading} onClick={() => downloadAnalyticsExport({ lang, period, range, model, events: state.events, sessions: state.sessions, bookingRequests: state.bookingRequests })}>{adminCopy(lang, 'Esporta metriche', 'Export metrics')}</button>
+          {period === 'custom' && <div className="analytics-custom-range">
+            <label><span>{adminCopy(lang, 'Dal', 'From')}</span><input type="date" value={customRange.from} onChange={(event) => setCustomRange((current) => ({ ...current, from: event.target.value }))} /></label>
+            <label><span>{adminCopy(lang, 'Al', 'To')}</span><input type="date" value={customRange.to} onChange={(event) => setCustomRange((current) => ({ ...current, to: event.target.value }))} /></label>
+          </div>}
+          <button className="button secondary analytics-export-button" type="button" disabled={state.loading || (period === 'custom' && range.valid === false)} onClick={() => downloadAnalyticsExport({ lang, period, range, model, canonicalSummary: state.summary, events: state.events, sessions: state.sessions, bookingRequests: state.bookingRequests, eventTotal: state.eventTotal, sessionTotal: state.sessionTotal })}>{adminCopy(lang, 'Esporta metriche', 'Export metrics')}</button>
         </div>
       </div>
+
+      {state.summary && <AnalyticsHealthPanel
+        lang={lang}
+        meta={state.summary.meta}
+        lastRefreshed={state.lastRefreshed}
+        busy={state.loading}
+        browserExcluded={browserExcluded}
+        onRefresh={() => setReloadToken((value) => value + 1)}
+        onStartBaseline={startNewBaseline}
+        onClearBaseline={clearBaseline}
+        canManageBaseline={['owner', 'manager'].includes(profile?.role) && profile?.active !== false}
+        onToggleBrowserExclusion={toggleBrowserExclusion}
+      />}
 
       <ShortLinksPanel lang={lang} />
 
@@ -11425,26 +11540,47 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
       {state.loading ? <p>{adminCopy(lang, 'Caricamento dati...', 'Loading analytics...')}</p> : (
         <>
           {!hasData && <div className="admin-alert warning" role="status">{emptyText}<br />{setupText}</div>}
-          {state.events.length >= 10000 && <p className="small-note analytics-limit-note">{adminCopy(lang, 'Risultati limitati ai primi 10.000 eventi del periodo.', 'Results are capped at the first 10,000 events in this period.')}</p>}
+          {(state.eventTotal > state.events.length || state.sessionTotal > state.sessions.length) && <p className="analytics-raw-sample-note">{adminCopy(lang, `Le metriche principali sono aggregate sul server e complete. I dettagli tecnici sotto mostrano solo un campione paginato (${state.events.length}/${state.eventTotal} eventi; ${state.sessions.length}/${state.sessionTotal} sessioni).`, `Primary metrics are complete server-side aggregates. Technical drilldowns below show only a paginated sample (${state.events.length}/${state.eventTotal} events; ${state.sessions.length}/${state.sessionTotal} sessions).`)}</p>}
 
           <AnalyticsStaticPanel title={<AdminEditableText itemKey="admin.analytics.overview.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Panoramica', 'Overview')} />}>
             <AnalyticsWarningList warnings={model.warnings} lang={lang} onOpenDetails={() => setAnalyticsDetailsOpen(true)} />
             <div className="admin-summary-grid analytics-summary-grid">
-              <SummaryCard label={adminCopy(lang, 'Visitatori', 'Visitors')} value={model.visitors || '—'} />
+              <SummaryCard label={adminCopy(lang, 'Visitatori unici stimati', 'Approx. unique visitors')} value={model.visitors || '—'} helper={adminCopy(lang, 'Profili browser anonimi', 'Anonymous browser profiles')} />
               <SummaryCard label={adminCopy(lang, 'Visualizzazioni pagina', 'Page views')} value={model.pageViews} />
-              <SummaryCard label={adminCopy(lang, 'Aperture modulo', 'Form opens')} value={model.formOpens} />
-              <SummaryCard label={adminCopy(lang, 'Form abbandonati', 'Abandoned forms')} value={model.abandonedForms} helper={model.abandonmentRate} />
-              <SummaryCard label={adminCopy(lang, 'Recuperi WhatsApp', 'WhatsApp recoveries')} value={model.recoveredByWhatsapp} helper={model.recoveryRate} />
-              <SummaryCard label={adminCopy(lang, 'Tentativi invio modulo', 'Form submit attempts')} value={model.submitAttempts} />
+              <SummaryCard label={adminCopy(lang, 'Sessioni', 'Sessions')} value={model.sessions ?? '—'} />
               <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model.websiteRequests} />
+              <SummaryCard label={adminCopy(lang, 'Completamento funnel sito', 'Website funnel completion')} value={model.conversionMetrics.websiteFunnelCompletion || '—'} />
+              <SummaryCard label={adminCopy(lang, 'Visitatori con intento contatto', 'Contact-intent visitors')} value={model.contactIntentVisitors ?? 0} helper={model.conversionMetrics.contactIntentConversion} />
               <SummaryCard label={adminCopy(lang, 'Richieste con codice', 'Booking-code requests')} value={model.bookingCodeRequests} />
-              <SummaryCard label={adminCopy(lang, 'Riscatti codice riusciti', 'Booking-code redeem successes')} value={model.bookingCodeRedeemSuccesses} />
-              <SummaryCard label={adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks')} value={model.whatsappClicks} />
-              <SummaryCard label={adminCopy(lang, 'Click email', 'Email clicks')} value={model.emailClicks} />
-              <SummaryCard label={adminCopy(lang, 'Conversione richieste sito', 'Website request conversion')} value={model.conversionMetrics.websiteRequestConversion} />
+              <SummaryCard label="Gift Card" value={model.giftCardRequests ?? 0} />
+              <SummaryCard label={adminCopy(lang, 'Tentativi invio sito', 'Website submit attempts')} value={model.submitAttempts} />
+              <SummaryCard label={adminCopy(lang, 'Invii riusciti sito', 'Website submit successes')} value={model.submitSuccesses} />
+              <SummaryCard label={adminCopy(lang, 'Errori invio sito', 'Website submit errors')} value={model.submitErrors} />
               <SummaryCard label={adminCopy(lang, 'Tempo medio di coinvolgimento', 'Average engagement time')} value={model.averageEngagement} />
             </div>
           </AnalyticsStaticPanel>
+
+          {state.summary && <AnalyticsCanonicalFunnels lang={lang} payload={state.summary} />}
+
+          {state.summary && <AnalyticsStaticPanel title={adminCopy(lang, 'Domanda per esperienza · canonica', 'Experience demand · canonical')}>
+            <AnalyticsHelperNote>{adminCopy(lang, 'Questi valori arrivano dalla stessa aggregazione server-side usata dai KPI e dal report settimanale. Le richieste database includono solo il periodo compatibile con il contratto di tracking.', 'These values come from the same server-side aggregate used by the KPI cards and weekly report. Database requests include only the period compatible with the tracking contract.')}</AnalyticsHelperNote>
+            <AnalyticsTable
+              columns={[
+                { key: 'experience', label: adminCopy(lang, 'Esperienza', 'Experience') },
+                { key: 'card_impressions', label: adminCopy(lang, 'Impression card', 'Card impressions') },
+                { key: 'detail_opens', label: adminCopy(lang, 'Dettagli aperti', 'Detail opens') },
+                { key: 'unique_detail_visitors', label: adminCopy(lang, 'Visitatori dettaglio', 'Detail visitors') },
+                { key: 'form_opens', label: adminCopy(lang, 'Aperture modulo', 'Form opens') },
+                { key: 'tracked_successes', label: adminCopy(lang, 'Invii tracciati', 'Tracked successes') },
+                { key: 'database_requests', label: adminCopy(lang, 'Richieste DB compatibili', 'Compatible DB requests') },
+                { key: 'confirmed_database_requests', label: adminCopy(lang, 'Confermate', 'Confirmed') },
+                { key: 'contact_actions', label: adminCopy(lang, 'Azioni contatto', 'Contact actions') },
+                { key: 'tracked_conversion', label: adminCopy(lang, 'Dettaglio → invio', 'Detail → submit') }
+              ]}
+              rows={model.canonicalExperienceRows || []}
+              empty={emptyText}
+            />
+          </AnalyticsStaticPanel>}
 
           <AnalyticsPanel title={adminCopy(lang, 'Qualità dati', 'Data quality')}>
             <AnalyticsHelperNote>{adminCopy(lang, 'Avvisi diagnostici per capire quando il funnel non è internamente coerente. Le metriche pubbliche escludono traffico admin/API.', 'Diagnostic warnings for identifying when the funnel is not internally coherent. Public metrics exclude admin/API traffic.')}</AnalyticsHelperNote>
@@ -11454,13 +11590,13 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
                 { key: 'count', label: adminCopy(lang, 'Conteggio', 'Count') },
                 { key: 'detail', label: adminCopy(lang, 'Dettaglio', 'Detail') }
               ]}
-              rows={model.dataQualityRows}
+              rows={state.summary ? (state.summary.integrity?.warnings || []).map((warning) => ({ check: warning.code || warning.severity || 'diagnostic', count: warning.count ?? 0, detail: warning.message || '—' })) : model.dataQualityRows}
               empty={emptyText}
             />
           </AnalyticsPanel>
 
-          <AnalyticsPanel title={<AdminEditableText itemKey="admin.analytics.bookingFunnel.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Funnel prenotazione', 'Booking funnel')} />}>
-            <AnalyticsHelperNote>{adminCopy(lang, 'Controlla se gli utenti passano da visita ad apertura modulo, tentativo di invio e richiesta creata. Questa sezione concentra le anomalie di tracciamento del form.', 'Check whether visitors move from visit to form open, submit attempt, and created request. This section concentrates form tracking anomalies.')}</AnalyticsHelperNote>
+          <AnalyticsPanel title={<AdminEditableText itemKey="admin.analytics.bookingFunnel.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Diagnostica dettagliata (campione)', 'Detailed diagnostics (sample)')} />}>
+            <AnalyticsHelperNote>{adminCopy(lang, 'Questa sezione usa solo il campione tecnico paginato per ispezionare singoli percorsi. Non è la fonte dei KPI o dei funnel canonici sopra.', 'This section uses only the paginated technical sample to inspect individual journeys. It is not the source of the KPI cards or canonical funnels above.')}</AnalyticsHelperNote>
             {model.lowSampleNote && <AnalyticsHelperNote>{adminCopy(lang, 'Campione dati ridotto: usa questi numeri per diagnosticare tracciamento e UX, non per conclusioni marketing definitive.', 'Small data sample: use these numbers to diagnose tracking and UX, not for definitive marketing conclusions.')}</AnalyticsHelperNote>}
             <AnalyticsSubsection title={adminCopy(lang, 'Diagnostica funnel', 'Funnel diagnostics')}>
               <AnalyticsTable
@@ -11527,14 +11663,14 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           </AnalyticsPanel>
 
           <AnalyticsPanel title={<AdminEditableText itemKey="admin.analytics.contactIntent.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Intento di contatto', 'Contact intent')} />}>
-            <AnalyticsHelperNote>{adminCopy(lang, 'Raggruppa le azioni con cui un visitatore prova a contattare vulcanIQ senza necessariamente completare il modulo.', 'Groups the actions where a visitor tries to contact vulcanIQ without necessarily completing the form.')}</AnalyticsHelperNote>
+            <AnalyticsHelperNote>{adminCopy(lang, 'I totali e i visitatori con intento contatto arrivano dall’aggregazione canonica server-side. La tabella dei percorsi sotto è un campione diagnostico paginato.', 'Contact totals and contact-intent visitors come from the canonical server-side aggregate. The path table below is a paginated diagnostic sample.')}</AnalyticsHelperNote>
             <div className="admin-summary-grid analytics-mini-summary-grid">
               <SummaryCard label={adminCopy(lang, 'Click WhatsApp', 'WhatsApp clicks')} value={model.whatsappClicks} />
               <SummaryCard label={adminCopy(lang, 'Click email', 'Email clicks')} value={model.emailClicks} />
               <SummaryCard label={adminCopy(lang, 'Click telefono', 'Phone clicks')} value={model.phoneClicks} />
               <SummaryCard label={adminCopy(lang, 'Click Google Maps', 'Google Maps clicks')} value={model.mapsClicks} />
             </div>
-            <AnalyticsSubsection title={adminCopy(lang, 'Percorsi di contatto', 'Contact paths')}>
+            <AnalyticsSubsection title={adminCopy(lang, 'Percorsi di contatto · campione diagnostico', 'Contact paths · diagnostic sample')}>
               <AnalyticsTable
                 columns={[
                   { key: 'cta_location', label: adminCopy(lang, 'Posizione CTA', 'CTA location') },
@@ -11564,11 +11700,11 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
                   empty={emptyText}
                 />
               </AnalyticsSubsection>
-              <AnalyticsSubsection title={adminCopy(lang, 'Sorgenti principali', 'Top sources')}>
+              <AnalyticsSubsection title={adminCopy(lang, 'Sorgenti principali · page views', 'Top sources · page views')}>
                 <AnalyticsRowList rows={model.sourceRows} total={Math.max(1, model.sourceRows.reduce((sum, row) => sum + row.count, 0))} empty={emptyText} />
               </AnalyticsSubsection>
             </div>
-            <AnalyticsSubsection title={adminCopy(lang, 'Dove ci hanno scoperto', 'Where customers found us')}>
+            <AnalyticsSubsection title={adminCopy(lang, 'Dove ci hanno scoperto · campione richieste', 'Where customers found us · request sample')}>
               <AnalyticsHelperNote>{adminCopy(lang, 'Dato dichiarato dal cliente. Non sostituisce traffic_source, che resta attribuzione tecnica da referrer/UTM/sessione.', 'Customer-declared source. This does not replace traffic_source, which remains technical attribution from referrer/UTM/session data.')}</AnalyticsHelperNote>
               <AnalyticsTable
                 columns={[
@@ -11586,7 +11722,7 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
           </AnalyticsPanel>
 
           <AnalyticsPanel title={<AdminEditableText itemKey="admin.analytics.audienceUx.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Pubblico e UX', 'Audience and UX')} />}>
-            <AnalyticsHelperNote>{adminCopy(lang, 'Raggruppa dispositivo, lingua, geografia e percorsi di navigazione per capire dove testare prima il sito.', 'Groups device, language, geography, and navigation paths to understand where to test the site first.')}</AnalyticsHelperNote>
+            <AnalyticsHelperNote>{adminCopy(lang, 'Dispositivi, browser, sistemi operativi, lingua, pagine e geografia sono aggregati dal server sulle page view complete. I funnel mobile, le ipotesi geografiche e i percorsi sessione sono invece campioni diagnostici paginati.', 'Devices, browsers, operating systems, language, pages, and geography are complete server-side page-view aggregates. Mobile funnels, geography hypotheses, and session paths are paginated diagnostic samples.')}</AnalyticsHelperNote>
             <div className="analytics-two-column-grid">
               <AnalyticsSubsection title={adminCopy(lang, 'Funnel mobile', 'Mobile funnel')}>
                 <AnalyticsTable
@@ -11621,7 +11757,7 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
               </AnalyticsSubsection>
             </div>
             <div className="analytics-two-column-grid">
-              <AnalyticsSubsection title={adminCopy(lang, 'Lingua e conversione', 'Language and conversion')}>
+              <AnalyticsSubsection title={adminCopy(lang, 'Lingua e conversione · campione diagnostico', 'Language and conversion · diagnostic sample')}>
                 <AnalyticsTable
                   columns={[
                     { key: 'language', label: adminCopy(lang, 'Lingua', 'Language') },
@@ -11639,11 +11775,11 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
                 />
               </AnalyticsSubsection>
               <AnalyticsSubsection title={adminCopy(lang, 'Lingua', 'Language')}>
-                <AnalyticsRowList rows={model.languageRows} total={model.pageViews || 1} empty={emptyText} helperLabel={adminCopy(lang, 'visitatori', 'visitors')} />
+                <AnalyticsRowList rows={model.languageRows} total={model.pageViews || 1} empty={emptyText} helperLabel={adminCopy(lang, 'page views', 'page views')} />
               </AnalyticsSubsection>
             </div>
             <div className="analytics-two-column-grid">
-              <AnalyticsSubsection title={adminCopy(lang, 'Geografia: ipotesi', 'Geography: hypotheses')}>
+              <AnalyticsSubsection title={adminCopy(lang, 'Geografia: ipotesi · campione diagnostico', 'Geography: hypotheses · diagnostic sample')}>
                 <AnalyticsTable
                   columns={[
                     { key: 'country_city', label: adminCopy(lang, 'Paese/città', 'Country/city') },
@@ -11665,7 +11801,7 @@ function AdminAnalyticsPage({ lang, adminContent = {} }) {
               </AnalyticsSubsection>
             </div>
             <div className="analytics-two-column-grid">
-              <AnalyticsSubsection title={adminCopy(lang, 'Percorsi sessione', 'Session paths')}>
+              <AnalyticsSubsection title={adminCopy(lang, 'Percorsi sessione · campione diagnostico', 'Session paths · diagnostic sample')}>
                 <AnalyticsTable
                   columns={[
                     { key: 'path', label: adminCopy(lang, 'Percorso', 'Path') },
@@ -14991,6 +15127,7 @@ function App() {
   const [siteContent, setSiteContent] = useState({});
   const contactRef = useRef(null);
   const analyticsContextRef = useRef({ section: 'home', language: 'it' });
+  const analyticsDisabledForRoute = pathname.startsWith('/admin');
 
   useEffect(() => {
     const match = pathname.match(/^\/r\/ref\/([^/?#]+)/);
@@ -15028,9 +15165,9 @@ function App() {
   }, [activePage, lang]);
 
   useEffect(() => {
-    if (pathname.startsWith('/admin')) return undefined;
+    if (analyticsDisabledForRoute) return undefined;
     return startAnalyticsHeartbeat(() => analyticsContextRef.current);
-  }, [pathname]);
+  }, [analyticsDisabledForRoute]);
 
   useEffect(() => {
     if (pathname.startsWith('/admin')) return;

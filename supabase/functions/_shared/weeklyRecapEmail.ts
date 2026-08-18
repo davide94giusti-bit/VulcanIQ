@@ -6,7 +6,9 @@ type RecapData = {
   bookings: {
     total: number;
     website: number;
+    websiteCompatible: number;
     bookingCode: number;
+    bookingCodeCompatible: number;
     confirmedWebsite: number;
     confirmedBookingCode: number;
     pending: number;
@@ -14,10 +16,11 @@ type RecapData = {
     byExperience: CountMap;
     bySource: CountMap;
   };
-  giftCards: { total: number; byStatus: CountMap; missingCode: number };
+  giftCards: { total: number; compatible: number; byStatus: CountMap; missingCode: number };
   finance: { recordedRevenue: number; reversals: number; netRecorded: number; entries: number };
   analytics: {
     events: number;
+    sessions: number;
     pageViews: number;
     visitorsApprox: number;
     formOpen: number;
@@ -32,6 +35,14 @@ type RecapData = {
     giftCardStarts: number;
     giftCardRequestCreated: number;
     whatsappClicks: number;
+    emailClicks: number;
+    phoneClicks: number;
+    mapsClicks: number;
+    contactIntentVisitors: number;
+    fastRequestStarts: number;
+    fastRequestSuccesses: number;
+    fastRequestWhatsapp: number;
+    coverage: { dataComplete: boolean; baselineApplied: boolean; reportingBaselineAt: string; trackingContractStartedAt: string; effectiveFrom: string; effectiveTo: string; incidentState: string };
     byDevice: CountMap;
     byBrowser: CountMap;
     byTrafficSource: CountMap;
@@ -53,8 +64,11 @@ function money(value: unknown): string {
 }
 
 function pct(value: number, total: number): string {
-  if (!total) return '0%';
-  return `${Math.round((value / total) * 1000) / 10}%`;
+  const numerator = number(value);
+  const denominator = number(total);
+  if (!denominator) return numerator ? 'Tracking mismatch' : '0%';
+  if (numerator > denominator) return 'Tracking mismatch';
+  return `${Math.round((numerator / denominator) * 1000) / 10}%`;
 }
 
 function metricCard(label: string, value: string | number, helper = ''): string {
@@ -79,10 +93,14 @@ function barChart(title: string, rows: Array<[string, number]>, emptyText = 'No 
 }
 
 function funnelChart(title: string, rows: Array<[string, number]>): string {
-  const first = Math.max(1, number(rows[0]?.[1]));
+  const firstRaw = number(rows[0]?.[1]);
+  const first = Math.max(1, firstRaw);
   return `<div class="chart-card"><h3>${escapeHtml(title)}</h3>${rows.map(([label, value]) => {
-    const width = Math.max(number(value) ? 4 : 0, Math.round((number(value) / first) * 100));
-    return `<div class="bar-row"><div class="bar-head"><span>${escapeHtml(label)}</span><strong>${number(value)} <em>${pct(number(value), first)}</em></strong></div><div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div></div>`;
+    const current = number(value);
+    const compatible = firstRaw > 0 ? current <= firstRaw : current === 0;
+    const width = compatible ? Math.max(current ? 4 : 0, Math.min(100, Math.round((current / first) * 100))) : 100;
+    const rate = compatible ? pct(current, firstRaw) : 'Tracking mismatch';
+    return `<div class="bar-row"><div class="bar-head"><span>${escapeHtml(label)}</span><strong>${current} <em>${escapeHtml(rate)}</em></strong></div><div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div></div>`;
   }).join('')}</div>`;
 }
 
@@ -93,6 +111,7 @@ function urgencyCard(label: string, value: number, critical = false): string {
 export function buildWeeklyRecapEmail(periodLabel: string, data: RecapData, testMode = false): string {
   const websiteConversion = pct(data.analytics.submitSuccess, data.analytics.formOpen);
   const bookingCodeConversion = pct(data.analytics.bookingCodeRedeemSuccess, data.analytics.bookingCodeRedeemAttempt);
+  const fastRequestConversion = pct(data.analytics.fastRequestSuccesses, data.analytics.fastRequestStarts);
   const netRevenue = money(data.finance.netRecorded);
 
   const deviceRows = mapRows(data.analytics.byDevice);
@@ -127,23 +146,32 @@ body{margin:0;background:#f3eee7;color:#102033;font-family:Arial,Helvetica,sans-
     </tr></table></div>
 
     <div class="section"><h2>Conversion funnels</h2><table class="two-col" role="presentation"><tr><td>
-      ${funnelChart(`Website booking funnel · ${websiteConversion}`, [['Form opens', data.analytics.formOpen], ['Form starts', data.analytics.formStarted], ['Submit attempts', data.analytics.submitAttempt], ['Submit successes', data.analytics.submitSuccess], ['Requests created', data.bookings.website]])}
+      ${funnelChart(`Website booking funnel · ${websiteConversion}`, [['Form opens', data.analytics.formOpen], ['Form starts', data.analytics.formStarted], ['Submit attempts', data.analytics.submitAttempt], ['Submit successes', data.analytics.submitSuccess], ['Compatible DB requests', data.bookings.websiteCompatible]])}
     </td><td>
-      ${funnelChart(`Booking-code funnel · ${bookingCodeConversion}`, [['Redeem attempts', data.analytics.bookingCodeRedeemAttempt], ['Redeem successes', data.analytics.bookingCodeRedeemSuccess], ['Requests created', data.bookings.bookingCode]])}
+      ${funnelChart(`Fast Request / WhatsApp · ${fastRequestConversion}`, [['Starts', data.analytics.fastRequestStarts], ['Submit successes', data.analytics.fastRequestSuccesses], ['WhatsApp outcomes', data.analytics.fastRequestWhatsapp]])}
     </td></tr><tr><td>
-      ${funnelChart('Gift Card funnel', [['Page views', data.analytics.giftCardViews], ['Questionnaire starts', data.analytics.giftCardStarts], ['Requests created event', data.analytics.giftCardRequestCreated], ['Database requests', data.giftCards.total]])}
+      ${funnelChart('Gift Card funnel', [['Views', data.analytics.giftCardViews], ['Questionnaire starts', data.analytics.giftCardStarts], ['Requests created event', data.analytics.giftCardRequestCreated], ['Compatible DB requests', data.giftCards.compatible]])}
     </td><td>
-      ${barChart('Contact intent', [['WhatsApp clicks', data.analytics.whatsappClicks], ['Website requests', data.bookings.website], ['Gift Card requests', data.giftCards.total]])}
-    </td></tr></table></div>
+      ${funnelChart(`Booking-code funnel · ${bookingCodeConversion}`, [['Redeem attempts', data.analytics.bookingCodeRedeemAttempt], ['Redeem successes', data.analytics.bookingCodeRedeemSuccess], ['Compatible DB requests', data.bookings.bookingCodeCompatible]])}
+    </td></tr></table>
+    ${barChart('Contact actions', [['WhatsApp clicks', data.analytics.whatsappClicks], ['Email clicks', data.analytics.emailClicks], ['Phone clicks', data.analytics.phoneClicks], ['Maps clicks', data.analytics.mapsClicks]])}
+    </div>
 
     <div class="section"><h2>Demand & status</h2><table class="two-col" role="presentation"><tr><td>${barChart('Experience detail opens', experienceRows)}</td><td>${barChart('Booking status', bookingStatusRows)}</td></tr><tr><td>${barChart('Gift Card status', giftRows)}</td><td>${barChart('Traffic sources (page views)', trafficRows)}</td></tr></table></div>
 
     <div class="section"><h2>Audience</h2><table class="metric-table" role="presentation"><tr>
       ${metricCard('Page views', data.analytics.pageViews)}
       ${metricCard('Approx. visitors', data.analytics.visitorsApprox)}
-      ${metricCard('WhatsApp clicks', data.analytics.whatsappClicks)}
-      ${metricCard('Submit errors', data.analytics.submitError)}
+      ${metricCard('Sessions', data.analytics.sessions)}
+      ${metricCard('Contact-intent visitors', data.analytics.contactIntentVisitors)}
     </tr></table><table class="two-col" role="presentation"><tr><td>${barChart('Devices (page views)', deviceRows)}</td><td>${barChart('Browsers', mapRows(data.analytics.byBrowser))}</td></tr></table></div>
+
+    <div class="section"><h2>Analytics coverage</h2><table class="metric-table" role="presentation"><tr>
+      ${metricCard('Coverage', data.analytics.coverage.dataComplete ? 'Complete' : 'Partial')}
+      ${metricCard('Reporting baseline', data.analytics.coverage.reportingBaselineAt || 'Not set', data.analytics.coverage.baselineApplied ? 'Applied to this report' : 'Not applied')}
+      ${metricCard('Tracking contract', data.analytics.coverage.trackingContractStartedAt || '—')}
+      ${metricCard('Submission health', data.analytics.coverage.incidentState || 'none')}
+    </tr></table></div>
 
     <div class="section"><h2>Finance</h2><table class="metric-table" role="presentation"><tr>${metricCard('Recorded revenue', money(data.finance.recordedRevenue))}${metricCard('Reversals', money(data.finance.reversals))}${metricCard('Net recorded', netRevenue)}${metricCard('Entries', data.finance.entries)}</tr></table></div>
 
