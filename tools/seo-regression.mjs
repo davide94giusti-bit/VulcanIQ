@@ -23,6 +23,7 @@ const redirects = read('public/_redirects');
 const headers = read('public/_headers');
 const index = read('index.html');
 const notFound = read('public/404.html');
+const mainSource = read('src/main.jsx');
 const allSeoFiles = `${seo}\n${site}\n${sitemap}\n${robots}\n${index}`;
 
 function sitemapLocs(xml) {
@@ -108,6 +109,23 @@ test('all indexable routes have localized SEO metadata', () => {
       assert.ok(meta.description?.length > 40, `${pathname} ${lang} description`);
     }
   }
+});
+
+test('partnerships and latest-news render helpers remain defined after feature extraction', () => {
+  for (const helper of [
+    'normalizedKeyText',
+    'partnershipCategoryOption',
+    'partnershipCategoryLabel',
+    'partnershipCategoryKey',
+    'partnershipCategoryLabelsForKey',
+    'localizedPartnershipDescription',
+    'createTextTeaser',
+    'FormattedText'
+  ]) {
+    assert.match(mainSource, new RegExp(`function\\s+${helper}\\s*\\(`), helper);
+  }
+  assert.match(mainSource, /normalizeLatestNewsTitle[\s\S]*normalizedKeyText\(clean\)/);
+  assert.match(mainSource, /items\.map\(\(item\) => \(\{ \.\.\.item, categoryKey: partnershipCategoryKey\(item\) \}\)\)/);
 });
 
 for (const name of passes) console.log(`PASS  ${name}`);

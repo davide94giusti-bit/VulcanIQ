@@ -912,6 +912,64 @@ const PARTNERSHIP_CATEGORIES = [
   { key: 'other', it: 'Altro', en: 'Other', aliases: ['altro', 'other', 'misc'] }
 ];
 
+function normalizedKeyText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function partnershipCategoryOption(key) {
+  return PARTNERSHIP_CATEGORIES.find((item) => item.key === key) || PARTNERSHIP_CATEGORIES[PARTNERSHIP_CATEGORIES.length - 1];
+}
+
+function partnershipCategoryLabel(key, lang) {
+  const option = partnershipCategoryOption(key);
+  return lang === 'it' ? option.it : option.en;
+}
+
+function partnershipCategoryKey(item = {}) {
+  const candidates = [item.category_key, item.category, item.category_it, item.category_en, item.name].map(normalizedKeyText).filter(Boolean);
+  for (const candidate of candidates) {
+    for (const option of PARTNERSHIP_CATEGORIES) {
+      if (candidate === normalizedKeyText(option.key) || candidate === normalizedKeyText(option.it) || candidate === normalizedKeyText(option.en) || option.aliases.some((alias) => candidate.includes(normalizedKeyText(alias)))) {
+        return option.key;
+      }
+    }
+  }
+  return 'other';
+}
+
+function partnershipCategoryLabelsForKey(key) {
+  const option = partnershipCategoryOption(key);
+  return { category_key: option.key, category_it: option.it, category_en: option.en };
+}
+
+function localizedPartnershipDescription(item = {}, lang) {
+  return lang === 'it' ? (item.description_it || item.description_en || '') : (item.description_en || item.description_it || '');
+}
+
+function createTextTeaser(value, maxLength = 150) {
+  const clean = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  return clean.length > maxLength ? `${clean.slice(0, maxLength).replace(/\s+\S*$/, '')}…` : clean;
+}
+
+function FormattedText({ textValue, className = 'formatted-text' }) {
+  const raw = String(textValue || '').replace(/\r\n/g, '\n').trim();
+  if (!raw) return null;
+  return (
+    <div className={className}>
+      {raw.split(/\n\s*\n/).map((paragraph) => paragraph.trim()).filter(Boolean).map((paragraph, index) => (
+        <p key={`${index}-${paragraph.slice(0, 16)}`}>{paragraph}</p>
+      ))}
+    </div>
+  );
+}
+
 function normalizeLatestNewsTitle(value, lang) {
   const clean = cleanEditableTextValue(value);
   const normalized = normalizedKeyText(clean);
