@@ -1,0 +1,51 @@
+name: vulcanIQ quality gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'fix/**'
+      - 'feat/**'
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            echo "::warning::package-lock.json is missing; run npm install locally and commit it. Falling back to npm install for this transition build."
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Security regressions
+        run: npm run test:security
+
+      - name: Analytics regressions
+        run: npm run test:analytics
+
+      - name: SEO regressions
+        run: npm run test:seo
+
+      - name: Reviews regressions
+        run: npm run test:reviews
+
+      - name: Production build
+        run: npm run build

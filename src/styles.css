@@ -14619,3 +14619,303 @@ section#reviews.compact-section,
 .notification-status-control small { flex-basis: 100%; }
 .notification-failed { border-color: rgba(157, 36, 31, .45); }
 .notification-sent { border-color: rgba(38, 122, 76, .35); }
+
+/* Pre-modernization review consolidation: compact public cards + accessible detail overlay */
+.compact-reviews-grid {
+  align-items: stretch;
+}
+
+.compact-review-card {
+  appearance: none;
+  width: 100%;
+  min-height: 178px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--night);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.compact-review-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(240, 107, 79, 0.32);
+  box-shadow: 0 18px 42px rgba(13, 22, 38, 0.10);
+  background: #fff;
+}
+
+.compact-review-card:focus-visible {
+  outline: 3px solid rgba(240, 107, 79, 0.34);
+  outline-offset: 3px;
+  border-color: rgba(240, 107, 79, 0.55);
+}
+
+.compact-review-card .review-card-info-header {
+  width: 100%;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.compact-review-card .review-card-source-row {
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.compact-review-info-list {
+  display: grid;
+  gap: 7px;
+  font-size: 0.92rem;
+}
+
+.compact-review-card-action {
+  align-self: flex-end;
+  color: var(--ash);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.review-detail-backdrop {
+  z-index: 430;
+  padding: clamp(12px, 2vw, 24px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.review-detail-modal {
+  width: min(100%, 900px);
+  max-height: calc(100svh - 32px);
+  overflow: auto;
+  display: grid;
+  gap: clamp(20px, 3vw, 32px);
+  padding: clamp(24px, 4vw, 48px);
+  border: 1px solid rgba(255, 255, 255, 0.44);
+  border-radius: clamp(22px, 3vw, 34px);
+  background: var(--paper);
+  box-shadow: 0 30px 90px rgba(7, 16, 29, 0.3);
+  color: var(--night);
+  outline: none;
+}
+
+.review-detail-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: start;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(13, 22, 38, 0.10);
+}
+
+.review-detail-header h2 {
+  margin: 6px 0 10px;
+  font-size: clamp(2rem, 5vw, 4.2rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.review-detail-close {
+  width: auto;
+  min-width: 88px;
+  padding: 0 18px;
+}
+
+.review-detail-meta {
+  display: grid;
+  gap: 6px;
+}
+
+.review-detail-body {
+  width: min(100%, 720px);
+  font-size: clamp(1.06rem, 1.6vw, 1.24rem);
+  line-height: 1.74;
+}
+
+.review-detail-reply {
+  width: min(100%, 720px);
+}
+
+.google-review-attribution {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  min-height: 40px;
+  padding: 7px 12px 7px 8px;
+  border: 1px solid rgba(13, 22, 38, 0.10);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--basalt);
+  font-size: 0.83rem;
+  font-weight: 850;
+}
+
+.google-review-attribution img {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.review-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 6px;
+}
+
+.google-reviews-admin-status {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: clamp(16px, 2.5vw, 24px);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.google-reviews-admin-status .admin-panel-header {
+  margin: 0;
+}
+
+.google-reviews-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.google-reviews-status-grid > div {
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(13, 22, 38, 0.045);
+}
+
+.google-reviews-status-grid dt {
+  margin-bottom: 4px;
+  color: var(--ash);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.google-reviews-status-grid dd {
+  margin: 0;
+  color: var(--night);
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.not-found-page {
+  min-height: min(720px, calc(100svh - 160px));
+  display: grid;
+  align-items: center;
+}
+
+.not-found-card {
+  width: min(100%, 720px);
+  margin-inline: auto;
+  text-align: center;
+}
+
+.not-found-card h1 {
+  margin: 10px 0 14px;
+  font-size: clamp(2.6rem, 7vw, 5.8rem);
+  line-height: 0.96;
+}
+
+.not-found-card .button {
+  margin-top: 10px;
+}
+
+@media (max-width: 900px) {
+  .google-reviews-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .compact-reviews-grid {
+    gap: 12px;
+  }
+
+  .compact-review-card,
+  .featured-review-card.compact-review-card {
+    min-height: 158px;
+    padding: 20px;
+    border-radius: 22px;
+  }
+
+  .review-detail-backdrop {
+    display: block;
+    padding: 0;
+    background: var(--paper);
+  }
+
+  .review-detail-modal {
+    width: 100%;
+    min-height: 100svh;
+    max-height: none;
+    padding: calc(18px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .review-detail-header {
+    position: sticky;
+    top: calc(-18px - env(safe-area-inset-top));
+    z-index: 2;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: calc(18px + env(safe-area-inset-top)) 0 16px;
+    background: color-mix(in srgb, var(--paper) 94%, transparent);
+    backdrop-filter: blur(16px);
+  }
+
+  .review-detail-header h2 {
+    font-size: clamp(2rem, 11vw, 3.4rem);
+  }
+
+  .review-detail-close {
+    min-width: 72px;
+    min-height: 42px;
+    padding-inline: 14px;
+  }
+
+  .review-detail-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .review-detail-actions .button {
+    width: 100%;
+  }
+
+  .google-reviews-status-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compact-review-card,
+  .review-detail-modal,
+  .review-detail-backdrop {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+.domain-error-boundary {
+  min-height: min(680px, calc(100svh - 160px));
+  display: grid;
+  align-items: center;
+}

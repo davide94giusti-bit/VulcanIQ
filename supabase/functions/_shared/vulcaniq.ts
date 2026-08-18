@@ -2,7 +2,7 @@ const encoder = new TextEncoder();
 
 export const corsHeaders: HeadersInit = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-retry-count, traceparent, tracestate, baggage, x-vulcaniq-cron-secret, x-vulcaniq-webhook-secret',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-retry-count, traceparent, tracestate, baggage, x-vulcaniq-cron-secret, x-vulcaniq-webhook-secret, x-vulcaniq-google-reviews-sync-secret',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Max-Age': '86400'
 };

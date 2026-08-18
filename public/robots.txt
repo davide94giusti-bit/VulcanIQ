@@ -1,5 +1,6 @@
 User-agent: *
 Allow: /
-Disallow: /admin
-Disallow: /api
-Sitemap: https://www.vulcaniq.com/sitemap.xml
+Disallow: /admin/
+Disallow: /api/
+Disallow: /r/
+Sitemap: https://vulcaniq.it/sitemap.xml

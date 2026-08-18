@@ -1,3 +1,13 @@
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), usb=()
+  Content-Security-Policy-Report-Only: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co https://cloudflareinsights.com https://static.cloudflareinsights.com; manifest-src 'self'; worker-src 'self' blob:
+
+/admin/*
+  X-Robots-Tag: noindex, nofollow
+
 /*.html
   Content-Type: text/html; charset=utf-8
 

@@ -332,6 +332,27 @@ test('owner browser analytics opt-out is implemented', () => {
   assert.match(adminSource, /Exclude this browser/);
 });
 
+
+test('session ingestion uses atomic monotonic RPC instead of direct table upsert', () => {
+  assert.match(ingestion, /rpc\/upsert_analytics_session/);
+  assert.doesNotMatch(ingestion, /analytics_sessions\?on_conflict=session_id/);
+});
+
+test('session pageview count cannot decrease when packets arrive out of order', () => {
+  const hardening = read('supabase/migrations/20260818150000_reviews_google_session_hardening.sql');
+  assert.match(hardening, /pageview_count = greatest\(public\.analytics_sessions\.pageview_count, excluded\.pageview_count\)/);
+  assert.match(hardening, /duration_seconds = greatest\(public\.analytics_sessions\.duration_seconds, excluded\.duration_seconds\)/);
+  assert.match(hardening, /last_seen_at = greatest\(public\.analytics_sessions\.last_seen_at, excluded\.last_seen_at\)/);
+  assert.match(hardening, /started_at = least\(public\.analytics_sessions\.started_at, excluded\.started_at\)/);
+  assert.match(hardening, /when excluded\.last_seen_at >= public\.analytics_sessions\.last_seen_at[\s\S]*then coalesce\(nullif\(excluded\.exit_path/);
+});
+
+test('analytics overview distinguishes historical business totals from compatible tracked requests', () => {
+  assert.match(adminSource, /All historical business records/);
+  assert.match(read('src/features/analytics/AnalyticsCanonicalFunnels.jsx'), /Compatible tracked requests/);
+  assert.match(read('src/features/analytics/AnalyticsCanonicalFunnels.jsx'), /current tracking contract/);
+});
+
 for (const name of passes) console.log(`PASS  ${name}`);
 for (const message of failures) console.error(`FAIL  ${message}`);
 console.log(`\n${passes.length} passed, ${failures.length} failed.`);
