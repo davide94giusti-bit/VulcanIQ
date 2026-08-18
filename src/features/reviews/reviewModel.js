@@ -105,6 +105,16 @@ export function reviewDate(review = {}, lang = 'it') {
   return new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : 'it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
 }
 
+
+export function reviewRating(review = {}, fallback = 5) {
+  review = review && typeof review === 'object' ? review : {};
+  const value = Number(review.rating);
+  const fallbackValue = Math.max(1, Math.min(5, Number(fallback) || 5));
+  return Number.isFinite(value) && value > 0
+    ? Math.max(1, Math.min(5, Math.round(value)))
+    : fallbackValue;
+}
+
 export function reviewGuide(review = {}) {
   review = review && typeof review === 'object' ? review : {};
   const explicitGuide = String(review.guide_name || review.guide || review.owner_name || '').trim();
@@ -133,7 +143,7 @@ export function isLeonardoPlaceholderReview(review) {
 }
 
 export function filterAndSortReviews(reviews = [], filterMode = 'all') {
-  const visible = reviews.filter((review) => !isLeonardoPlaceholderReview(review));
+  const visible = reviews.filter((review) => review && typeof review === 'object' && !isLeonardoPlaceholderReview(review));
   const filtered = visible.filter((review) => {
     if (filterMode === 'google_reviews') return reviewSource(review) === 'google';
     if (filterMode === 'website_reviews') return reviewSource(review) === 'website';

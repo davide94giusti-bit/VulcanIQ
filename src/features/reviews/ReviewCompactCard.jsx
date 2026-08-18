@@ -1,11 +1,13 @@
 import React from 'react';
-import { reviewBookedBy, reviewCopy, reviewDate, reviewGuide, reviewSource, reviewSourceLabel } from './reviewModel.js';
+import { reviewBookedBy, reviewCopy, reviewDate, reviewGuide, reviewRating, reviewSource, reviewSourceLabel } from './reviewModel.js';
 
 export default function ReviewCompactCard({ review, lang = 'it', onOpen }) {
+  if (!review || typeof review !== 'object') return null;
+
   const copy = reviewCopy(lang);
   const source = reviewSource(review);
   const guide = reviewGuide(review);
-  const rating = Math.max(1, Math.min(5, Number(review.rating) || 5));
+  const rating = reviewRating(review);
   const reviewer = reviewBookedBy(review, lang);
 
   return (

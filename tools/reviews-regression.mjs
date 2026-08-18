@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { filterAndSortReviews, reviewSource, reviewDate, reviewGuide } from '../src/features/reviews/reviewModel.js';
+import { filterAndSortReviews, reviewSource, reviewDate, reviewGuide, reviewRating } from '../src/features/reviews/reviewModel.js';
 
 const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -33,6 +33,8 @@ const fixtures = [
 test('review model is null-safe before detail dialog opens', () => {
   assert.equal(reviewSource(null), 'website');
   assert.equal(reviewDate(null, 'en'), '-');
+  assert.equal(reviewRating(null), 5);
+  assert.deepEqual(filterAndSortReviews([null, undefined, fixtures[0]], 'all').map((r) => r.id), ['w1']);
 });
 
 test('review model normalizes provider and first-party sources', () => {
@@ -61,10 +63,17 @@ test('compact review card does not render review body', () => {
   assert.match(compact, /review-rating-stars/);
 });
 
+test('closed review detail never dereferences a null review', () => {
+  assert.match(detail, /const isOpen = Boolean\(review && typeof review === 'object'\)/);
+  assert.match(detail, /const safeReview = isOpen \? review : \{\}/);
+  assert.match(detail, /reviewRating\(safeReview\)/);
+  assert.equal(detail.includes('Number(review.rating)'), false);
+});
+
 test('full review detail renders body, replies, Google source link and dialog semantics', () => {
-  assert.match(detail, /review\.review_text/);
-  assert.match(detail, /review\.admin_reply/);
-  assert.match(detail, /review\.external_review_url/);
+  assert.match(detail, /safeReview\.review_text/);
+  assert.match(detail, /safeReview\.admin_reply/);
+  assert.match(detail, /safeReview\.external_review_url/);
   assert.match(detail, /role="dialog"/);
   assert.match(detail, /aria-modal="true"/);
   assert.match(detail, /useDialogFocusTrap/);
