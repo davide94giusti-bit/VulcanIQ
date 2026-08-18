@@ -1,5 +1,5 @@
 {
   "version": 1,
-  "include": ["/api/*"],
+  "include": ["/api/*", "/admin", "/admin/*"],
   "exclude": ["/assets/*", "/*.js", "/*.css", "/*.png", "/*.jpg", "/*.jpeg", "/*.webp", "/*.svg", "/*.ico", "/*.json", "/manifest.webmanifest"]
 }
