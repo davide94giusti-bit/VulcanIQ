@@ -71,8 +71,9 @@ export default function ReviewsPage({ lang = 'it', siteContent, editor, Editable
   }
 
   function openReview(review) {
+    if (!review || typeof review !== 'object') return;
     setSelectedReview(review);
-    trackEvent('review_card_open', { review_id: review.id, review_source: review.source || 'website', rating_bucket: Number(review.rating) || 0, language: lang }, { dedupe: false });
+    trackEvent('review_card_open', { review_id: review.id || '', review_source: review.source || 'website', rating_bucket: Number(review.rating) || 0, language: lang }, { dedupe: false });
   }
 
   function closeReview() {
@@ -111,7 +112,7 @@ export default function ReviewsPage({ lang = 'it', siteContent, editor, Editable
         review={selectedReview}
         lang={lang}
         onClose={closeReview}
-        onGoogleOpen={(review) => trackEvent('google_review_source_open', { review_id: review.id, review_source: 'google', language: lang }, { dedupe: false, transport: 'beacon' })}
+        onGoogleOpen={(review) => { if (review && typeof review === 'object') trackEvent('google_review_source_open', { review_id: review.id || '', review_source: 'google', language: lang }, { dedupe: false, transport: 'beacon' }); }}
       />
       <ReviewSubmissionModal
         open={reviewSubmissionOpen}
