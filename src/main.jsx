@@ -30,6 +30,13 @@ import { CURRENT_TRACKING_ACTIVATION_MS, SMALL_SAMPLE_VISITOR_THRESHOLD, isCurre
 import { ANALYTICS_PERIODS as CANONICAL_ANALYTICS_PERIODS, analyticsPeriodLabel as canonicalAnalyticsPeriodLabel, analyticsDateRange as canonicalAnalyticsDateRange, summaryToAdminModelPatch, defaultAnalyticsCustomRange } from './features/analytics/contract.js';
 import AnalyticsHealthPanel from './features/analytics/AnalyticsHealthPanel.jsx';
 import AnalyticsCanonicalFunnels from './features/analytics/AnalyticsCanonicalFunnels.jsx';
+import ReviewsPage from './features/reviews/ReviewsPage.jsx';
+import GoogleReviewsAdminStatus from './features/reviews/GoogleReviewsAdminStatus.jsx';
+import { normalizeReviewText, reviewSourceLabel } from './features/reviews/reviewModel.js';
+import useBodyScrollLock from './hooks/useBodyScrollLock.js';
+import { publicPageFromPathname, legalPageFromPathname, routeDefinitionFromPathname, canonicalPathForPage, isReferralPath } from './app/publicRoutes.js';
+import NotFoundPage from './app/NotFoundPage.jsx';
+import DomainErrorBoundary from './app/DomainErrorBoundary.jsx';
 import './styles.css';
 import './styles/admin-system.css';
 import './styles/analytics-consolidated.css';
@@ -109,58 +116,6 @@ const MEDIA = {
   naturalLight: '/images/vulcaniq/natural-light.jpeg',
   introVideo: '/videos/vulcaniq/intro.mp4'
 };
-
-let bodyScrollLockCount = 0;
-let bodyScrollLockSnapshot = null;
-
-function useBodyScrollLock(isLocked) {
-  useEffect(() => {
-    if (!isLocked || typeof document === 'undefined') return undefined;
-
-    if (bodyScrollLockCount === 0) {
-      const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
-      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-      bodyScrollLockSnapshot = {
-        overflow: document.body.style.overflow,
-        paddingRight: document.body.style.paddingRight,
-        position: document.body.style.position,
-        top: document.body.style.top,
-        left: document.body.style.left,
-        right: document.body.style.right,
-        width: document.body.style.width,
-        scrollY
-      };
-      document.body.style.overflow = 'hidden';
-      document.body.style.position = 'fixed';
-      document.body.style.top = `-${scrollY}px`;
-      document.body.style.left = '0';
-      document.body.style.right = '0';
-      document.body.style.width = '100%';
-      document.body.classList.add('modal-scroll-lock');
-      if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
-    }
-
-    bodyScrollLockCount += 1;
-
-    return () => {
-      bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1);
-      if (bodyScrollLockCount === 0 && bodyScrollLockSnapshot) {
-        const restoreScrollY = bodyScrollLockSnapshot.scrollY || 0;
-        document.body.style.overflow = bodyScrollLockSnapshot.overflow;
-        document.body.style.paddingRight = bodyScrollLockSnapshot.paddingRight;
-        document.body.style.position = bodyScrollLockSnapshot.position;
-        document.body.style.top = bodyScrollLockSnapshot.top;
-        document.body.style.left = bodyScrollLockSnapshot.left;
-        document.body.style.right = bodyScrollLockSnapshot.right;
-        document.body.style.width = bodyScrollLockSnapshot.width;
-        document.body.classList.remove('modal-scroll-lock');
-        bodyScrollLockSnapshot = null;
-        window.scrollTo(0, restoreScrollY);
-      }
-    };
-  }, [isLocked]);
-}
-
 
 
 const MOTION_DURATION_MS = 220;
@@ -945,46 +900,6 @@ function openDefaultEmailApp(to, subject = '', body = '') {
   window.location.assign(mailto);
 }
 
-function normalizeReviewText(value) {
-  const raw = String(value || '').replace(/\r\n/g, '\n').trim();
-  if (!raw) return [];
-
-  const normalized = raw
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph
-      .replace(/[ \t\f\v]+/g, ' ')
-      .replace(/([.!?;:])(?=\S)/g, '$1 ')
-      .replace(/,([A-Za-zÀ-ÖØ-öø-ÿ])/g, ', $1')
-      .trim())
-    .filter(Boolean);
-
-  const source = normalized.length ? normalized : [raw];
-  const paragraphs = [];
-
-  source.forEach((paragraph) => {
-    if (paragraph.length <= 260) {
-      paragraphs.push(paragraph);
-      return;
-    }
-
-    const sentences = paragraph.match(/[^.!?]+[.!?]+[”"']?|[^.!?]+$/g) || [paragraph];
-    let buffer = '';
-
-    sentences.map((sentence) => sentence.trim()).filter(Boolean).forEach((sentence) => {
-      const next = buffer ? `${buffer} ${sentence}` : sentence;
-      if (next.length > 260 && buffer) {
-        paragraphs.push(buffer);
-        buffer = sentence;
-      } else {
-        buffer = next;
-      }
-    });
-
-    if (buffer) paragraphs.push(buffer);
-  });
-
-  return paragraphs.length ? paragraphs : [raw];
-}
 
 
 const PARTNERSHIP_CATEGORIES = [
@@ -997,116 +912,12 @@ const PARTNERSHIP_CATEGORIES = [
   { key: 'other', it: 'Altro', en: 'Other', aliases: ['altro', 'other', 'misc'] }
 ];
 
-const REVIEW_FILTER_OPTIONS = [
-  { key: 'all', it: 'Tutte', en: 'All' },
-  { key: 'highest_rating', it: 'Valutazione più alta', en: 'Highest rating' },
-  { key: 'lowest_rating', it: 'Valutazione più bassa', en: 'Lowest rating' },
-  { key: 'most_recent', it: 'Più recenti', en: 'Most recent' },
-  { key: 'website_reviews', it: 'Recensioni dal sito', en: 'Website reviews' },
-  { key: 'google_reviews', it: 'Recensioni Google', en: 'Google reviews' }
-];
-
-function normalizedKeyText(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function partnershipCategoryOption(key) {
-  return PARTNERSHIP_CATEGORIES.find((item) => item.key === key) || PARTNERSHIP_CATEGORIES[PARTNERSHIP_CATEGORIES.length - 1];
-}
-
-function partnershipCategoryLabel(key, lang) {
-  const option = partnershipCategoryOption(key);
-  return lang === 'it' ? option.it : option.en;
-}
-
-function partnershipCategoryKey(item = {}) {
-  const candidates = [item.category_key, item.category, item.category_it, item.category_en, item.name].map(normalizedKeyText).filter(Boolean);
-  for (const candidate of candidates) {
-    for (const option of PARTNERSHIP_CATEGORIES) {
-      if (candidate === normalizedKeyText(option.key) || candidate === normalizedKeyText(option.it) || candidate === normalizedKeyText(option.en) || option.aliases.some((alias) => candidate.includes(normalizedKeyText(alias)))) {
-        return option.key;
-      }
-    }
-  }
-  return 'other';
-}
-
-function partnershipCategoryLabelsForKey(key) {
-  const option = partnershipCategoryOption(key);
-  return { category_key: option.key, category_it: option.it, category_en: option.en };
-}
-
-function localizedPartnershipDescription(item = {}, lang) {
-  return lang === 'it' ? (item.description_it || item.description_en || '') : (item.description_en || item.description_it || '');
-}
-
-function createTextTeaser(value, maxLength = 150) {
-  const clean = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!clean) return '';
-  return clean.length > maxLength ? `${clean.slice(0, maxLength).replace(/\s+\S*$/, '')}…` : clean;
-}
-
-function FormattedText({ textValue, className = 'formatted-text' }) {
-  const raw = String(textValue || '').replace(/\r\n/g, '\n').trim();
-  if (!raw) return null;
-  return (
-    <div className={className}>
-      {raw.split(/\n\s*\n/).map((paragraph) => paragraph.trim()).filter(Boolean).map((paragraph, index) => (
-        <p key={`${index}-${paragraph.slice(0, 16)}`}>{paragraph}</p>
-      ))}
-    </div>
-  );
-}
-
-function reviewFilterLabel(key, lang) {
-  const option = REVIEW_FILTER_OPTIONS.find((item) => item.key === key) || REVIEW_FILTER_OPTIONS[0];
-  return lang === 'it' ? option.it : option.en;
-}
-
-function reviewSource(review = {}) {
-  const source = normalizedKeyText(review.source || review.review_source || review.platform || '');
-  if (source.includes('google')) return 'google';
-  if (['website', 'internal', 'direct', 'site', 'web'].some((item) => source.includes(item))) return 'website';
-  return 'website';
-}
-
-function reviewSourceLabel(review = {}, lang) {
-  return reviewSource(review) === 'google' ? 'Google' : adminCopy(lang, 'Sito', 'Website');
-}
-
-function reviewSortTimestamp(review = {}) {
-  const raw = review.review_date || review.experience_date || review.excursion_date || review.submitted_at || review.created_at || '';
-  const time = Date.parse(raw);
-  return Number.isFinite(time) ? time : 0;
-}
-
 function normalizeLatestNewsTitle(value, lang) {
   const clean = cleanEditableTextValue(value);
   const normalized = normalizedKeyText(clean);
   if (!clean || normalized === 'ultime notizie' || normalized === 'latest news') return lang === 'it' ? LATEST_NEWS_DEFAULTS.title_it : LATEST_NEWS_DEFAULTS.title_en;
   return clean;
 }
-
-function publicPageFromPathname(pathname = '/') {
-  const clean = (`/${String(pathname || '/').split('?')[0]}`).replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
-  if (clean === '/' || clean === '/home') return 'home';
-  if (clean === '/experiences') return 'experiences';
-  if (clean === '/partnerships' || clean === '/collaborations') return 'partnerships';
-  if (clean === '/about') return 'about';
-  if (clean === '/reviews') return 'reviews';
-  if (clean === '/social') return 'social';
-  if (clean === '/latest-news' || clean === '/etna-live-news') return 'latestNews';
-  if (clean === '/contact') return 'contact';
-  if (clean === '/gift-card') return 'giftCard';
-  return '';
-}
-
 
 function readInitialPublicLanguage() {
   if (typeof window === 'undefined') return 'it';
@@ -1128,21 +939,13 @@ function storePublicLanguage(lang) {
 function navigatePublicRoute(path, lang) {
   if (typeof window === 'undefined') return;
   const cleanLang = lang === 'en' ? 'en' : 'it';
-  const separator = path.includes('?') ? '&' : '?';
-  const nextPath = `${path}${separator}lang=${cleanLang}`;
+  const target = new URL(path, window.location.origin);
+  if (cleanLang === 'en') target.searchParams.set('lang', 'en');
+  else target.searchParams.delete('lang');
   storePublicLanguage(cleanLang);
-  window.history.pushState({}, '', nextPath);
+  window.history.pushState({}, '', `${target.pathname}${target.search}${target.hash}`);
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
-
-function legalPageFromPathname(pathname = '') {
-  const clean = (`/${String(pathname || '').split('?')[0]}`).replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
-  if (clean === '/privacy-policy') return 'privacy';
-  if (clean === '/terms-and-conditions') return 'terms';
-  if (clean === '/cookie-policy') return 'cookies';
-  return '';
-}
-
 
 function text(lang, key) {
   return i18n[lang][key];
@@ -2332,6 +2135,7 @@ function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor })
   function choose(page) {
     setActivePage(page);
     setOpen(false);
+    if (!editor?.isEditing) navigatePublicRoute(canonicalPathForPage(page), lang);
     window.setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
   }
 
@@ -3271,6 +3075,7 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
       return;
     }
     setActivePage('experiences');
+    navigatePublicRoute('/experiences', lang);
   }
 
   return (
@@ -4192,216 +3997,6 @@ function PartnershipsPage({ lang, siteContent, editor }) {
           </article>
         </div>
       )}
-    </section>
-  );
-}
-
-function isLeonardoPlaceholderReview(review) {
-  const reviewer = String(review?.reviewer_name || review?.customer_name || review?.booked_by || '').trim().toLowerCase();
-  const date = String(review?.experience_date || review?.excursion_date || review?.submitted_at || review?.created_at || '').slice(0, 10);
-  const guide = String(review?.guide_name || review?.guide || review?.owner_name || '').trim().toLowerCase();
-  const body = String(review?.review_text || '').toLowerCase();
-  const hasPlaceholderBody = body.includes('bellissima esperienza grazie alla nostra guida leonardo')
-    || body.includes('beautiful experience thanks to our guide leonardo')
-    || body.includes('percorso moderato, pause ben gestite')
-    || body.includes('the route was moderate, breaks were well managed');
-  return hasPlaceholderBody || (reviewer === 'leonardo' && date === '2025-01-01' && guide.includes('leonardo chiavetta'));
-}
-
-function ReviewsPage({ lang, siteContent, editor }) {
-  const [reviews, setReviews] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [filterMode, setFilterMode] = useState('all');
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [form, setForm] = useState({ booking_code: '', reviewer_name: '', review_text: '', rating: '5' });
-  const [submitState, setSubmitState] = useState({ loading: false, error: '', success: '' });
-  const filterRef = useRef(null);
-
-  useBodyScrollLock(modalOpen);
-
-  async function refreshReviews() {
-    setLoading(true);
-    try {
-      const data = await loadPublicReviews();
-      setReviews(data || []);
-    } catch (err) {
-      setReviews([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { trackReviewView(); refreshReviews(); }, []);
-
-  useEffect(() => {
-    if (!filterOpen) return undefined;
-    function closeFilter(event) {
-      if (event?.key && event.key !== 'Escape') return;
-      if (event?.target && filterRef.current?.contains(event.target)) return;
-      setFilterOpen(false);
-    }
-    document.addEventListener('pointerdown', closeFilter);
-    window.addEventListener('keydown', closeFilter);
-    return () => {
-      document.removeEventListener('pointerdown', closeFilter);
-      window.removeEventListener('keydown', closeFilter);
-    };
-  }, [filterOpen]);
-
-  function update(field, value) {
-    setForm((current) => ({ ...current, [field]: value }));
-  }
-
-  function readableSubmitError(error) {
-    const message = error?.message || '';
-    if (message.includes('INVALID_BOOKING_CODE')) return lang === 'it' ? 'Codice non valido.' : 'Invalid code.';
-    if (message.includes('BOOKING_CODE_ALREADY_USED') || message.includes('BOOKING_CODE_USED') || message.includes('duplicate key')) return lang === 'it' ? 'Questo codice è già stato usato.' : 'This code has already been used.';
-    if (message.includes('REVIEW_TEXT_REQUIRED')) return lang === 'it' ? 'Compila tutti i campi obbligatori.' : 'Please complete all required fields.';
-    return lang === 'it' ? 'Recensione non inviata. Controlla il codice e riprova.' : 'Review not submitted. Check the code and try again.';
-  }
-
-  async function submitReview(event) {
-    event.preventDefault();
-    const reviewCode = String(form.booking_code || '').trim().toUpperCase();
-    setSubmitState({ loading: true, error: '', success: '' });
-    await trackEvent('booking_code_review_submit_attempt', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'review_modal', has_code: Boolean(reviewCode), language: lang }, { dedupe: false });
-    try {
-      const reviewResult = await submitPublicReview({ ...form, booking_code: reviewCode, language: lang });
-      setForm({ booking_code: '', reviewer_name: '', review_text: '', rating: '5' });
-      await trackEvent('booking_code_review_submit_success', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'review_modal', review_id: reviewResult?.id || '', language: lang }, { dedupe: false });
-      setSubmitState({ loading: false, error: '', success: lang === 'it' ? 'Recensione pubblicata. Grazie.' : 'Review published. Thank you.' });
-      refreshReviews();
-      window.setTimeout(() => setModalOpen(false), 1200);
-    } catch (err) {
-      const rawError = String(err?.message || err?.code || '');
-      if (rawError.includes('USED') || rawError.includes('duplicate')) {
-        await trackEvent('booking_code_review_duplicate', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'review_modal', language: lang }, { dedupe: false });
-      }
-      setSubmitState({ loading: false, error: readableSubmitError(err), success: '' });
-    }
-  }
-
-  const visibleReviews = loading ? [] : reviews.filter((review) => !isLeonardoPlaceholderReview(review));
-  const filteredCards = visibleReviews.filter((review) => {
-    if (filterMode === 'google_reviews') return reviewSource(review) === 'google';
-    if (filterMode === 'website_reviews') return reviewSource(review) === 'website';
-    return true;
-  });
-  const sortedCards = [...filteredCards].sort((a, b) => {
-    if (filterMode === 'highest_rating') return Number(b.rating || -1) - Number(a.rating || -1) || reviewSortTimestamp(b) - reviewSortTimestamp(a);
-    if (filterMode === 'lowest_rating') return Number(a.rating || 999) - Number(b.rating || 999) || reviewSortTimestamp(b) - reviewSortTimestamp(a);
-    return reviewSortTimestamp(b) - reviewSortTimestamp(a);
-  });
-
-  function reviewDate(review) {
-    const raw = review.review_date || review.experience_date || review.excursion_date || review.submitted_at || review.created_at;
-    return raw ? formatDateForMessage(String(raw).slice(0, 10), lang) : '-';
-  }
-
-  function reviewGuide(review) {
-    return review.guide_name || review.guide || review.owner_name || 'Leonardo Chiavetta';
-  }
-
-  function reviewBookedBy(review) {
-    return review.reviewer_name || review.customer_name || review.booked_by || (lang === 'it' ? 'Ospite' : 'Guest');
-  }
-
-  function renderReviewText(value, className = 'formatted-review-text') {
-    return (
-      <div className={className}>
-        {normalizeReviewText(value).map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 12)}`}>{paragraph}</p>)}
-      </div>
-    );
-  }
-
-  function selectFilter(key) {
-    setFilterMode(key);
-    setFilterOpen(false);
-  }
-
-  return (
-    <section className="section compact-section" id="reviews">
-      <div className="container reviews-panel redesigned-reviews-panel">
-        <div className="section-header refined-section-header reviews-header-row">
-          <div>
-            <EditableText as="h2" itemKey="reviews.page.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'reviewsTitle')} />
-            <EditableText as="p" itemKey="reviews.page.intro" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'reviewsIntro')} />
-          </div>
-          <div className="reviews-header-actions">
-            <button className="button primary" type="button" onClick={() => { trackEvent('booking_code_review_open', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'reviews_header', language: lang }, { dedupe: false }); setSubmitState({ loading: false, error: '', success: '' }); setModalOpen(true); }}><EditableText itemKey="reviews.publish_button" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'publishReview')} /></button>
-            <div className="review-filter-dropdown" ref={filterRef}>
-              <button type="button" className="review-filter-trigger" aria-haspopup="menu" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)}>
-                {adminCopy(lang, 'Filtra', 'Filter')}: {reviewFilterLabel(filterMode, lang)} <span aria-hidden="true">▾</span>
-              </button>
-              {filterOpen && (
-                <div className="review-filter-menu" role="menu">
-                  {REVIEW_FILTER_OPTIONS.map((option) => (
-                    <button key={option.key} type="button" role="menuitemradio" aria-checked={filterMode === option.key} className={filterMode === option.key ? 'is-active' : ''} onClick={() => selectFilter(option.key)}>
-                      {reviewFilterLabel(option.key, lang)}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="reviews-grid-public balanced-reviews-grid">
-          {!loading && sortedCards.length === 0 && (
-            <article className="empty-state-card review-empty-card">
-              <p>{adminCopy(lang, 'Nessuna recensione pubblicata al momento.', 'No published reviews yet.')}</p>
-            </article>
-          )}
-          {sortedCards.map((review) => (
-            <article className="review-card featured-review-card" key={review.id}>
-              <header className="review-card-info-header">
-                <div className="review-card-source-row">
-                  <span className={`review-source-badge ${reviewSource(review)}`}>{reviewSourceLabel(review, lang)}</span>
-                  <div className="stars review-rating-stars" aria-label={`${review.rating || 0}/5`}>{'★'.repeat(Number(review.rating) || 5)}</div>
-                </div>
-                <div className="review-info-list">
-                  <span><b>{text(lang, 'bookedBy')}:</b> {reviewBookedBy(review)}</span>
-                  <span><b>{text(lang, 'reviewDateLabel')}:</b> {reviewDate(review)}</span>
-                  {reviewSource(review) !== 'google' && <span><b>{text(lang, 'guideLabel')}:</b> {reviewGuide(review)}</span>}
-                </div>
-              </header>
-              <blockquote>{renderReviewText(review.review_text)}</blockquote>
-              {review.external_review_url && reviewSource(review) === 'google' && (
-                <a className="review-external-link" href={review.external_review_url} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent('google_reviews_click', { review_id: review.id, cta_location: 'reviews_section', source_section: 'reviews', language: lang }, { dedupe: false, transport: 'beacon' })}>{adminCopy(lang, 'Apri su Google', 'Open on Google')}</a>
-              )}
-              {review.admin_reply && (
-                <div className="public-admin-reply">
-                  <strong>{adminCopy(lang, 'Risposta vulcanIQ', 'vulcanIQ response')}</strong>
-                  {renderReviewText(review.admin_reply, 'formatted-review-text admin-reply-text')}
-                </div>
-              )}
-            </article>
-          ))}
-        </div>
-        {loading && <p className="small-note">{lang === 'it' ? 'Caricamento recensioni...' : 'Loading reviews...'}</p>}
-        {modalOpen && (
-          <div className="public-modal-backdrop" role="presentation" onClick={() => setModalOpen(false)}>
-            <div className="admin-modal review-modal" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle" onClick={(event) => event.stopPropagation()}>
-              <div className="admin-modal-header">
-                <div>
-                  <h2 id="reviewModalTitle">{text(lang, 'leaveReviewTitle')}</h2>
-                  <p>{text(lang, 'leaveReviewIntro')}</p>
-                </div>
-                <button className="modal-close-button" type="button" onClick={() => setModalOpen(false)}>{text(lang, 'close')}</button>
-              </div>
-              <form className="review-form modal-review-form" onSubmit={submitReview}>
-                <label><span>{text(lang, 'bookingCode')}</span><input value={form.booking_code} onChange={(event) => update('booking_code', event.target.value)} required /></label>
-                <label><span>{text(lang, 'name')}</span><input value={form.reviewer_name} onChange={(event) => update('reviewer_name', event.target.value)} /></label>
-                <label><span>{text(lang, 'rating')}</span><select value={form.rating} onChange={(event) => update('rating', event.target.value)}>{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating}/5</option>)}</select></label>
-                <label><span>{text(lang, 'reviewText')}</span><textarea rows={5} value={form.review_text} onChange={(event) => update('review_text', event.target.value)} required /></label>
-                {submitState.error && <div className="admin-alert error" role="alert">{submitState.error}</div>}
-                {submitState.success && <div className="admin-alert success" role="status">{submitState.success}</div>}
-                <div className="modal-actions"><button className="button primary" type="submit" disabled={submitState.loading || !isSupabaseConfigured}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitReview')}</button><button className="button secondary" type="button" onClick={() => setModalOpen(false)}>{text(lang, 'close')}</button></div>
-              </form>
-            </div>
-          </div>
-        )}
-      </div>
     </section>
   );
 }
@@ -7953,7 +7548,7 @@ function VisualEditorPreview({ page, setPage, lang, setLang, device, siteMedia, 
       case 'about':
         return <Team lang={lang} siteMedia={siteMedia} siteContent={siteContent} editor={editor} />;
       case 'reviews':
-        return <ReviewsPage lang={lang} siteContent={siteContent} editor={editor} />;
+        return <ReviewsPage lang={lang} siteContent={siteContent} editor={editor} EditableTextComponent={EditableText} />;
       case 'social':
         return <SocialPage lang={lang} siteContent={siteContent} editor={editor} />;
       case 'latestNews':
@@ -10202,9 +9797,9 @@ function AnalyticsDetailsModal({ lang = 'it', model, onClose }) {
         </div>
 
         <div className="admin-summary-grid analytics-mini-summary-grid analytics-details-summary">
-          <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model?.websiteRequests ?? 0} />
+          <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model?.websiteRequests ?? 0} helper={adminCopy(lang, 'Tutti i record business storici', 'All historical business records')} />
           <SummaryCard label={adminCopy(lang, 'Submit success tracciati', 'Tracked submit successes')} value={model?.submitSuccesses ?? 0} />
-          <SummaryCard label={adminCopy(lang, 'Richieste con codice', 'Booking-code requests')} value={model?.bookingCodeRequests ?? 0} />
+          <SummaryCard label={adminCopy(lang, 'Richieste con codice', 'Booking-code requests')} value={model?.bookingCodeRequests ?? 0} helper={adminCopy(lang, 'Tutti i record business storici', 'All historical business records')} />
           <SummaryCard label={adminCopy(lang, 'Riscatti codice riusciti', 'Booking-code redeem successes')} value={model?.bookingCodeRedeemSuccesses ?? 0} />
         </div>
 
@@ -11548,11 +11143,11 @@ function AdminAnalyticsPage({ lang, profile, adminContent = {} }) {
               <SummaryCard label={adminCopy(lang, 'Visitatori unici stimati', 'Approx. unique visitors')} value={model.visitors || '—'} helper={adminCopy(lang, 'Profili browser anonimi', 'Anonymous browser profiles')} />
               <SummaryCard label={adminCopy(lang, 'Visualizzazioni pagina', 'Page views')} value={model.pageViews} />
               <SummaryCard label={adminCopy(lang, 'Sessioni', 'Sessions')} value={model.sessions ?? '—'} />
-              <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model.websiteRequests} />
+              <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model.websiteRequests} helper={adminCopy(lang, 'Tutti i record business storici', 'All historical business records')} />
               <SummaryCard label={adminCopy(lang, 'Completamento funnel sito', 'Website funnel completion')} value={model.conversionMetrics.websiteFunnelCompletion || '—'} />
               <SummaryCard label={adminCopy(lang, 'Visitatori con intento contatto', 'Contact-intent visitors')} value={model.contactIntentVisitors ?? 0} helper={model.conversionMetrics.contactIntentConversion} />
-              <SummaryCard label={adminCopy(lang, 'Richieste con codice', 'Booking-code requests')} value={model.bookingCodeRequests} />
-              <SummaryCard label="Gift Card" value={model.giftCardRequests ?? 0} />
+              <SummaryCard label={adminCopy(lang, 'Richieste con codice', 'Booking-code requests')} value={model.bookingCodeRequests} helper={adminCopy(lang, 'Tutti i record business storici', 'All historical business records')} />
+              <SummaryCard label="Gift Card" value={model.giftCardRequests ?? 0} helper={adminCopy(lang, 'Tutti i record business storici', 'All historical business records')} />
               <SummaryCard label={adminCopy(lang, 'Tentativi invio sito', 'Website submit attempts')} value={model.submitAttempts} />
               <SummaryCard label={adminCopy(lang, 'Invii riusciti sito', 'Website submit successes')} value={model.submitSuccesses} />
               <SummaryCard label={adminCopy(lang, 'Errori invio sito', 'Website submit errors')} value={model.submitErrors} />
@@ -13915,7 +13510,9 @@ function AdminReviewsPanel({ lang, adminContent = {} }) {
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
 
-      <details className="admin-archive-details manual-review-editor" open>
+      <GoogleReviewsAdminStatus lang={lang} />
+
+      <details className="admin-archive-details manual-review-editor">
         <summary><span>{adminCopy(lang, 'Recensione manuale / Google', 'Manual / Google review')}</span><strong>{adminCopy(lang, 'Fonte gratuita gestita da admin', 'Free admin-managed source')}</strong></summary>
         <form className="admin-form-grid" onSubmit={submitManualReview}>
           <label className="admin-field"><span>{adminCopy(lang, 'Fonte', 'Source')}</span><select value={manualForm.source} onChange={(event) => updateManual('source', event.target.value)}><option value="google">Google</option><option value="website">Website</option></select></label>
@@ -13930,7 +13527,7 @@ function AdminReviewsPanel({ lang, adminContent = {} }) {
           <label className="check-field"><input type="checkbox" checked={manualForm.active} onChange={(event) => updateManual('active', event.target.checked)} /> {adminCopy(lang, 'Attiva', 'Active')}</label>
           <div className="modal-actions full"><button className="button primary" type="submit">{adminCopy(lang, 'Salva recensione manuale', 'Save manual review')}</button></div>
         </form>
-        <p className="small-note">{adminCopy(lang, 'Le recensioni Google sono inserite manualmente dall’admin. Nessuna API Google a pagamento, scraping o widget esterno è richiesto.', 'Google reviews are entered manually by the admin. No paid Google API, scraping or external widget is required.')}</p>
+        <p className="small-note">{adminCopy(lang, 'Usa l’inserimento manuale solo come fallback se il provider Google Business Profile non è ancora autorizzato. Quando la cache provider è disponibile, le recensioni Google sincronizzate hanno priorità sul sito pubblico.', 'Use manual entry only as a fallback while the Google Business Profile provider is not authorized. When the provider cache is available, synchronized Google reviews take priority on the public site.')}</p>
       </details>
 
       {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : reviews.length === 0 ? <p>{adminCopy(lang, 'Nessuna recensione ricevuta.', 'No reviews received.')}</p> : (
@@ -15146,7 +14743,7 @@ function App() {
         trackEvent('referral_invalid_link_click', { referral_code: code, source_type: 'customer_referral', language: routeLang }, { dedupe: false });
       }
       const query = new URLSearchParams();
-      if (routeLang === 'en' || routeLang === 'it') query.set('lang', routeLang);
+      if (routeLang === 'en') query.set('lang', 'en');
       if (result.valid) {
         query.set('utm_source', 'referral');
         query.set('utm_medium', 'customer');
@@ -15172,8 +14769,10 @@ function App() {
   useEffect(() => {
     if (pathname.startsWith('/admin')) return;
     const legalPage = legalPageFromPathname(pathname);
-    const trackedSection = legalPage ? `legal_${legalPage}` : activePage;
-    const trackedPath = legalPage ? pathname : `/${activePage === 'home' ? '' : activePage}`;
+    const route = routeDefinitionFromPathname(pathname);
+    const notFound = !legalPage && !route && !isReferralPath(pathname);
+    const trackedSection = notFound ? 'not_found' : (legalPage ? `legal_${legalPage}` : activePage);
+    const trackedPath = notFound || legalPage ? pathname : `/${activePage === 'home' ? '' : activePage}`;
     trackPageView(trackedSection, { path: trackedPath, language: lang });
   }, [activePage, lang, pathname]);
 
@@ -15196,7 +14795,10 @@ function App() {
 
   useEffect(() => {
     if (pathname.startsWith('/admin')) return;
-    applySeo({ page: activePage, lang, pathname });
+    const legalPage = legalPageFromPathname(pathname);
+    const route = routeDefinitionFromPathname(pathname);
+    const notFound = !legalPage && !route && !isReferralPath(pathname);
+    applySeo({ page: notFound ? 'notFound' : (legalPage || activePage), lang, pathname, forceNoIndex: notFound });
   }, [activePage, lang, pathname]);
 
   useEffect(() => {
@@ -15224,13 +14826,22 @@ function App() {
     setLang((current) => {
       const resolved = typeof nextLang === 'function' ? nextLang(current) : nextLang;
       if (resolved && resolved !== current) trackLanguageSwitch(current, resolved);
-      if (resolved) storePublicLanguage(resolved);
+      if (resolved) {
+        storePublicLanguage(resolved);
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/admin')) {
+          const url = new URL(window.location.href);
+          if (resolved === 'en') url.searchParams.set('lang', 'en');
+          else url.searchParams.delete('lang');
+          window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        }
+      }
       return resolved || current;
     });
   }
 
   function scrollContactIntoView() {
     setActivePage('contact');
+    navigatePublicRoute('/contact', lang);
     window.setTimeout(() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   }
 
@@ -15271,6 +14882,9 @@ function App() {
   function renderPublicPage() {
     const legalPage = legalPageFromPathname(pathname);
     if (legalPage) return <LegalPage lang={lang} page={legalPage} siteContent={siteContent} />;
+    if (!routeDefinitionFromPathname(pathname) && !isReferralPath(pathname)) {
+      return <NotFoundPage lang={lang} onHome={() => navigatePublicRoute('/', lang)} />;
+    }
     switch (activePage) {
       case 'experiences':
         return <ExperienceAccordion lang={lang} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} />;
@@ -15279,7 +14893,7 @@ function App() {
       case 'about':
         return <Team lang={lang} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'reviews':
-        return <ReviewsPage lang={lang} siteContent={siteContent} />;
+        return <ReviewsPage lang={lang} siteContent={siteContent} EditableTextComponent={EditableText} />;
       case 'social':
         return <SocialPage lang={lang} siteContent={siteContent} />;
       case 'latestNews':
@@ -15302,7 +14916,7 @@ function App() {
     <>
       <Header lang={lang} setLang={setPublicLanguage} activePage={activePage} setActivePage={setActivePage} siteMedia={siteMedia} />
       <main ref={contactRef} className={`public-page-shell public-page-${activePage}`}>
-        {renderPublicPage()}
+        <DomainErrorBoundary resetKey={`${pathname}:${lang}`} lang={lang}>{renderPublicPage()}</DomainErrorBoundary>
       </main>
       <Footer lang={lang} siteContent={siteContent} />
       <StickyMobileBar lang={lang} siteContent={siteContent} />

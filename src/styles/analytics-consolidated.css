@@ -30,3 +30,11 @@
     width: 100%;
   }
 }
+
+.analytics-canonical-scope {
+  margin: 10px 0 0;
+  color: var(--ash);
+  font-size: 0.72rem;
+  font-weight: 750;
+  line-height: 1.4;
+}

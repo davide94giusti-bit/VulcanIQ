@@ -234,3 +234,28 @@ VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN=optional-token
 ```
 
 If the optional token is absent, no Cloudflare Web Analytics script is injected. The admin Analytics tab does not depend on Cloudflare Web Analytics.
+
+## Pre-modernization consolidation (2026-08-18)
+
+Current architecture/operations references:
+
+- `docs/ARCHITECTURE.md`
+- `docs/SECURITY_MODEL.md`
+- `docs/PLATFORM_CONSOLIDATION_AUDIT_20260818.md`
+- `docs/SEO_AEO_AUDIT_20260818.md`
+- `docs/GOOGLE_REVIEWS_SETUP.md`
+- `docs/PERFORMANCE_MEDIA_AUDIT_20260818.md`
+
+Quality gates:
+
+```bash
+npm run test:security
+npm run test:analytics
+npm run test:seo
+npm run test:reviews
+npm run build
+```
+
+`.npmrc` now permits creation of `package-lock.json`. Generate and commit the lockfile in a connected development environment, then prefer `npm ci` for deterministic CI/deploy installs.
+
+The Google Business Profile review integration is intentionally non-blocking until owner-side Google API/OAuth setup is complete. First-party reviews continue to work independently.

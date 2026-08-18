@@ -39,6 +39,9 @@ const EVENT_NAMES = new Set([
   'maps_click',
   'meeting_point_maps_click',
   'review_view',
+  'review_card_open',
+  'review_detail_close',
+  'google_review_source_open',
   'social_link_click',
   'external_link_click',
   'google_reviews_click',
@@ -285,6 +288,28 @@ function sessionRow(payload, geo) {
   };
 }
 
+function sessionRpcPayload(session) {
+  return {
+    p_session_id: session.session_id,
+    p_visitor_id: session.visitor_id,
+    p_started_at: session.started_at,
+    p_last_seen_at: session.last_seen_at,
+    p_duration_seconds: session.duration_seconds,
+    p_pageview_count: session.pageview_count,
+    p_entry_path: session.entry_path,
+    p_exit_path: session.exit_path,
+    p_referrer_domain: session.referrer_domain,
+    p_traffic_source: session.traffic_source,
+    p_country_code: session.country_code,
+    p_country_name: session.country_name,
+    p_city: session.city,
+    p_language: session.language,
+    p_device_type: session.device_type,
+    p_browser: session.browser,
+    p_operating_system: session.operating_system
+  };
+}
+
 function eventRow(payload, geo) {
   return {
     event_name: payload.event_name,
@@ -332,10 +357,9 @@ export async function onRequestPost(context) {
     const session = sessionRow(payload, geo);
 
     try {
-      await supabaseRequest(context.env, 'analytics_sessions?on_conflict=session_id', {
+      await supabaseRequest(context.env, 'rpc/upsert_analytics_session', {
         method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify([session])
+        body: JSON.stringify(sessionRpcPayload(session))
       });
 
       // Session lifecycle updates belong in analytics_sessions. Keeping every

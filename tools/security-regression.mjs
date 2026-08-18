@@ -34,6 +34,11 @@ const analyticsService = read('src/services/analyticsService.js');
 const analyticsIngestion = read('functions/api/analytics/event.js');
 const safeguardsComponent = read('src/features/admin/OperationalSafeguardsBanner.jsx');
 const weeklyPanelComponent = read('src/features/system/WeeklyReportsAdminPanel.jsx');
+const premodernMigration = read('supabase/migrations/20260818150000_reviews_google_session_hardening.sql');
+const googleReviewsSync = read('supabase/functions/google-reviews-sync/index.ts');
+const googleBusinessShared = read('supabase/functions/_shared/googleBusiness.ts');
+const googleReviewsClient = read('src/services/googleReviewsService.js');
+const securityHeaders = read('public/_headers');
 
 check('jose dependency pinned', packageJson.dependencies?.jose === '5.9.6');
 check('GitHub App credentials supported', ['GITHUB_APP_ID', 'GITHUB_APP_INSTALLATION_ID', 'GITHUB_APP_PRIVATE_KEY'].every((key) => backupShared.includes(key)));
@@ -51,7 +56,7 @@ check('server RPC ignores public partner authority', !migration.match(/request_p
 check('direct anonymous operational inserts revoked', migration.includes('revoke insert on public.booking_requests from anon') && migration.includes('revoke insert on public.gift_card_requests from anon'));
 check('analytics direct inserts revoked', migration.includes('revoke insert on public.analytics_events from anon, authenticated'));
 check('private operational tables have RLS', ['request_notification_log', 'admin_weekly_reports', 'endpoint_rate_limits'].every((table) => migration.includes(`alter table public.${table} enable row level security`)));
-check('no globally permissive policy in new migrations', !/using\s*\(\s*true\s*\)|with\s+check\s*\(\s*true\s*\)/i.test(`${migration}\n${storageMigration}\n${analyticsConsolidation}`));
+check('no globally permissive policy in new migrations', !/using\s*\(\s*true\s*\)|with\s+check\s*\(\s*true\s*\)/i.test(`${migration}\n${storageMigration}\n${analyticsConsolidation}\n${premodernMigration}`));
 check('notification idempotency index exists', migration.includes('request_notification_log_idempotency_unique'));
 check('weekly report idempotency index exists', migration.includes('admin_weekly_reports_idempotency_unique'));
 check('privileged actions restricted to owner/manager', migration.includes("ap.role in ('owner', 'manager')") && migration.includes('is_privileged_admin'));
@@ -94,6 +99,18 @@ check('analytics owner browser opt-out exists', analytics.includes('vulcaniq_ana
 check('analytics strips free-form attribution detail', ['heard_about_us_detail', 'heard_about_us_display'].every((key) => analytics.includes(`'${key}'`) && analyticsIngestion.includes(`'${key}'`)));
 check('analytics consolidation migration has one transaction boundary', (analyticsConsolidation.match(/^begin;$/gm) || []).length === 1 && (analyticsConsolidation.match(/^commit;$/gm) || []).length === 1);
 
+
+check('Google review cache has RLS and no direct browser table grants', premodernMigration.includes('alter table public.google_reviews_cache enable row level security') && premodernMigration.includes('revoke all on public.google_reviews_cache from public, anon, authenticated'));
+check('Google public review RPC is narrow and hardened', premodernMigration.includes('get_public_google_reviews') && premodernMigration.includes('security definer') && premodernMigration.includes('set search_path = public, pg_temp') && premodernMigration.includes('expires_at > now()'));
+check('Google sync manual action requires admin and rate limiting', googleReviewsSync.includes('requireAdmin(req)') && googleReviewsSync.includes("claimAdminAction('google-reviews-sync-manual'"));
+check('Google sync cron requires dedicated server secret', googleReviewsSync.includes('GOOGLE_REVIEWS_SYNC_SECRET') && googleReviewsSync.includes('x-vulcaniq-google-reviews-sync-secret'));
+check('Google OAuth credentials remain server-only', googleBusinessShared.includes('GOOGLE_BUSINESS_CLIENT_SECRET') && googleBusinessShared.includes('GOOGLE_BUSINESS_REFRESH_TOKEN') && !googleReviewsClient.includes('GOOGLE_BUSINESS_CLIENT_SECRET') && !googleReviewsClient.includes('GOOGLE_BUSINESS_REFRESH_TOKEN'));
+check('analytics session mutation is service-role-only', premodernMigration.includes('upsert_analytics_session') && premodernMigration.includes('revoke all on function public.upsert_analytics_session') && premodernMigration.includes('to service_role'));
+check('analytics session upsert is monotonic', ['greatest(public.analytics_sessions.last_seen_at, excluded.last_seen_at)', 'greatest(public.analytics_sessions.duration_seconds, excluded.duration_seconds)', 'greatest(public.analytics_sessions.pageview_count, excluded.pageview_count)'].every((value) => premodernMigration.includes(value)));
+check('premodernization migration has one transaction boundary', (premodernMigration.match(/^begin;$/gm) || []).length === 1 && (premodernMigration.match(/^commit;$/gm) || []).length === 1);
+check('security headers add browser hardening without enforced CSP rollout', securityHeaders.includes('X-Content-Type-Options: nosniff') && securityHeaders.includes('Referrer-Policy: strict-origin-when-cross-origin') && securityHeaders.includes('Content-Security-Policy-Report-Only:') && !/^\s*Content-Security-Policy:/m.test(securityHeaders));
+check('admin routes carry noindex response header', /\/admin\/\*[\s\S]*X-Robots-Tag: noindex, nofollow/.test(securityHeaders));
+check('no Google provider secret is exposed through VITE variables', !fs.readdirSync(root, { recursive: true }).filter((name) => typeof name === 'string' && !name.startsWith('.git/') && !name.includes('node_modules/')).some((name) => { try { return fs.statSync(path.join(root, name)).isFile() && /VITE_[A-Z0-9_]*GOOGLE_BUSINESS_(CLIENT_SECRET|REFRESH_TOKEN)/i.test(fs.readFileSync(path.join(root, name), 'utf8')); } catch { return false; } }));
 
 for (const name of passes) console.log(`PASS  ${name}`);
 for (const name of failures) console.error(`FAIL  ${name}`);

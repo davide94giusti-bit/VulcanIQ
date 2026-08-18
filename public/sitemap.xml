@@ -1,22 +1,75 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
-  <url><loc>https://www.vulcaniq.com/</loc><xhtml:link rel="alternate" hreflang="it" href="https://www.vulcaniq.com/?lang=it"/><xhtml:link rel="alternate" hreflang="en" href="https://www.vulcaniq.com/?lang=en"/></url>
-  <url><loc>https://www.vulcaniq.com/home</loc></url>
-  <url><loc>https://www.vulcaniq.com/experiences</loc></url>
-  <url><loc>https://www.vulcaniq.com/contact</loc></url>
-  <url><loc>https://www.vulcaniq.com/about</loc></url>
-  <url><loc>https://www.vulcaniq.com/reviews</loc></url>
-  <url><loc>https://www.vulcaniq.com/partnerships</loc></url>
-  <url><loc>https://www.vulcaniq.com/social</loc></url>
-  <url><loc>https://www.vulcaniq.com/latest-news</loc></url>
-  <url><loc>https://www.vulcaniq.com/gift-card</loc></url>
-  <url><loc>https://www.vulcaniq.com/etna-private-tour</loc></url>
-  <url><loc>https://www.vulcaniq.com/etna-tour-from-catania</loc></url>
-  <url><loc>https://www.vulcaniq.com/mount-etna-family-experience</loc></url>
-  <url><loc>https://www.vulcaniq.com/etna-sunset-excursion</loc></url>
-  <url><loc>https://www.vulcaniq.com/etna-volcano-guide</loc></url>
-  <url><loc>https://www.vulcaniq.com/etna-school-trip</loc></url>
-  <url><loc>https://www.vulcaniq.com/etna-corporate-team-building</loc></url>
-  <url><loc>https://www.vulcaniq.com/etna-live-volcano-tour</loc></url>
-  <url><loc>https://www.vulcaniq.com/etna-cultural-experience</loc></url>
+  <url>
+    <loc>https://vulcaniq.it/</loc>
+    <xhtml:link rel="alternate" hreflang="it" href="https://vulcaniq.it/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vulcaniq.it/?lang=en"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://vulcaniq.it/"/>
+  </url>
+  <url>
+    <loc>https://vulcaniq.it/experiences</loc>
+    <xhtml:link rel="alternate" hreflang="it" href="https://vulcaniq.it/experiences"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vulcaniq.it/experiences?lang=en"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://vulcaniq.it/experiences"/>
+  </url>
+  <url>
+    <loc>https://vulcaniq.it/contact</loc>
+    <xhtml:link rel="alternate" hreflang="it" href="https://vulcaniq.it/contact"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vulcaniq.it/contact?lang=en"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://vulcaniq.it/contact"/>
+  </url>
+  <url>
+    <loc>https://vulcaniq.it/about</loc>
+    <xhtml:link rel="alternate" hreflang="it" href="https://vulcaniq.it/about"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vulcaniq.it/about?lang=en"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://vulcaniq.it/about"/>
+  </url>
+  <url>
+    <loc>https://vulcaniq.it/reviews</loc>
+    <xhtml:link rel="alternate" hreflang="it" href="https://vulcaniq.it/reviews"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vulcaniq.it/reviews?lang=en"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://vulcaniq.it/reviews"/>
+  </url>
+  <url>
+    <loc>https://vulcaniq.it/partnerships</loc>
+    <xhtml:link rel="alternate" hreflang="it" href="https://vulcaniq.it/partnerships"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vulcaniq.it/partnerships?lang=en"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://vulcaniq.it/partnerships"/>
+  </url>
+  <url>
+    <loc>https://vulcaniq.it/social</loc>
+    <xhtml:link rel="alternate" hreflang="it" href="https://vulcaniq.it/social"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vulcaniq.it/social?lang=en"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://vulcaniq.it/social"/>
+  </url>
+  <url>
+    <loc>https://vulcaniq.it/latest-news</loc>
+    <xhtml:link rel="alternate" hreflang="it" href="https://vulcaniq.it/latest-news"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vulcaniq.it/latest-news?lang=en"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://vulcaniq.it/latest-news"/>
+  </url>
+  <url>
+    <loc>https://vulcaniq.it/gift-card</loc>
+    <xhtml:link rel="alternate" hreflang="it" href="https://vulcaniq.it/gift-card"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vulcaniq.it/gift-card?lang=en"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://vulcaniq.it/gift-card"/>
+  </url>
+  <url>
+    <loc>https://vulcaniq.it/privacy-policy</loc>
+    <xhtml:link rel="alternate" hreflang="it" href="https://vulcaniq.it/privacy-policy"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vulcaniq.it/privacy-policy?lang=en"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://vulcaniq.it/privacy-policy"/>
+  </url>
+  <url>
+    <loc>https://vulcaniq.it/terms-and-conditions</loc>
+    <xhtml:link rel="alternate" hreflang="it" href="https://vulcaniq.it/terms-and-conditions"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vulcaniq.it/terms-and-conditions?lang=en"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://vulcaniq.it/terms-and-conditions"/>
+  </url>
+  <url>
+    <loc>https://vulcaniq.it/cookie-policy</loc>
+    <xhtml:link rel="alternate" hreflang="it" href="https://vulcaniq.it/cookie-policy"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vulcaniq.it/cookie-policy?lang=en"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://vulcaniq.it/cookie-policy"/>
+  </url>
 </urlset>

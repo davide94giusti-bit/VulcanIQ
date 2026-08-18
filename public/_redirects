@@ -1,15 +1,9 @@
-/r/ig-bio /experiences?utm_source=instagram&utm_medium=bio&utm_campaign=summer_2026 302
-/r/ig-story /experiences?utm_source=instagram&utm_medium=story&utm_campaign=summer_2026 302
-/r/ig-post /experiences?utm_source=instagram&utm_medium=post&utm_campaign=summer_2026 302
-/r/fb-page /experiences?utm_source=facebook&utm_medium=page&utm_campaign=summer_2026 302
-/r/fb-post /experiences?utm_source=facebook&utm_medium=post&utm_campaign=summer_2026 302
-/r/tt-bio /experiences?utm_source=tiktok&utm_medium=bio&utm_campaign=summer_2026 302
-/r/tt-video /experiences?utm_source=tiktok&utm_medium=video&utm_campaign=summer_2026 302
-/r/wa /experiences?utm_source=whatsapp&utm_medium=share&utm_campaign=direct_contact 302
-/r/partner /experiences?utm_source=partner&utm_medium=referral&utm_campaign=summer_2026 302
-/r/qr /experiences?utm_source=qr&utm_medium=print&utm_campaign=summer_2026 302
-/r/card /experiences?utm_source=business_card&utm_medium=print&utm_campaign=summer_2026 302
-/* /index.html 200
+# Canonical aliases
+/home / 301
+/collaborations /partnerships 301
+/etna-live-news /latest-news 301
+
+# Trackable marketing redirects (one rule per public shortcut)
 /r/google-profile /?utm_source=google_business_profile&utm_medium=organic&utm_campaign=profile 302
 /r/google-booking /experiences?utm_source=google_business_profile&utm_medium=booking&utm_campaign=fixed_excursions 302
 /r/ig-bio /?utm_source=instagram&utm_medium=social&utm_campaign=bio 302
@@ -23,3 +17,22 @@
 /r/partner /?utm_source=partner&utm_medium=referral&utm_campaign=partner 302
 /r/qr /?utm_source=qr&utm_medium=offline&utm_campaign=printed_qr 302
 /r/card /?utm_source=business_card&utm_medium=offline&utm_campaign=card 302
+
+# Customer referral codes are validated inside the application.
+/r/ref/* /index.html 200
+
+# Explicit SPA routes. Deliberately no global /* rewrite: unknown paths fall
+# through to public/404.html with a real 404 response on Cloudflare Pages.
+/experiences /index.html 200
+/contact /index.html 200
+/about /index.html 200
+/reviews /index.html 200
+/partnerships /index.html 200
+/social /index.html 200
+/latest-news /index.html 200
+/gift-card /index.html 200
+/privacy-policy /index.html 200
+/terms-and-conditions /index.html 200
+/cookie-policy /index.html 200
+/admin /index.html 200
+/admin/* /index.html 200
