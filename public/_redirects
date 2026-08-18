@@ -34,5 +34,4 @@
 /privacy-policy /index.html 200
 /terms-and-conditions /index.html 200
 /cookie-policy /index.html 200
-/admin /index.html 200
-/admin/* /index.html 200
+# Admin SPA routes are served by Pages Functions under functions/admin/.

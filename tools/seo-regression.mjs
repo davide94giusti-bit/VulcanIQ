@@ -20,6 +20,10 @@ const site = read('src/config/site.js');
 const sitemap = read('public/sitemap.xml');
 const robots = read('public/robots.txt');
 const redirects = read('public/_redirects');
+const routes = JSON.parse(read('public/_routes.json'));
+const adminSpa = read('functions/_shared/adminSpa.js');
+const adminIndexRoute = read('functions/admin/index.js');
+const adminCatchallRoute = read('functions/admin/[[path]].js');
 const headers = read('public/_headers');
 const index = read('index.html');
 const notFound = read('public/404.html');
@@ -80,6 +84,16 @@ test('admin receives noindex response header and CSP is report-only during rollo
   assert.match(headers, /frame-ancestors 'none'/);
 });
 
+
+test('admin deep links use a dedicated Pages Function SPA fallback', () => {
+  assert.ok(routes.include.includes('/admin'));
+  assert.ok(routes.include.includes('/admin/*'));
+  assert.match(adminIndexRoute, /serveAdminSpa/);
+  assert.match(adminCatchallRoute, /serveAdminSpa/);
+  assert.match(adminSpa, /env\.ASSETS\.fetch/);
+  assert.match(adminSpa, /X-Robots-Tag', 'noindex, nofollow'/);
+  assert.doesNotMatch(redirects, /^\/admin(?:\/\*)? \/index\.html 200$/m);
+});
 test('static social metadata uses absolute image and canonical host', () => {
   assert.match(index, /rel="canonical" href="https:\/\/vulcaniq\.it\/"/);
   assert.match(index, /property="og:image" content="https:\/\/vulcaniq\.it\//);
