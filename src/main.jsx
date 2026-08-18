@@ -7521,30 +7521,117 @@ function WebsiteAdminPage({ lang, session }) {
   }
 
   async function saveMediaItem(item) {
-    if (!isSupabaseConfigured) throw new Error(adminCopy(lang, 'Supabase non è configurato.', 'Supabase is not configured.'));
-    const key = item.media_key || item.key;
-    const cleanFileUrl = String(item.file_url || '').trim();
-    if (!isSupportedMediaUrl(cleanFileUrl)) throw new Error(adminCopy(lang, 'URL media non valido. Usa un URL https:// oppure un percorso che inizia con /.', 'Invalid media URL. Use an https:// URL or a path starting with /.'));
-    const existing = mediaRows.find((row) => row.media_key === key);
-    const uploaded = item.file ? await uploadSiteMediaFile(item.file, key, session.user.id) : {};
-    if (item.file && existing?.file_path) await removeSiteMediaFile(existing.file_path);
-    const keepsExistingStorageFile = !item.file && cleanFileUrl && cleanFileUrl === existing?.file_url;
-    await upsertSiteMedia({
-      media_key: key,
-      label_it: item.label_it || item.it || key,
-      label_en: item.label_en || item.en || key,
-      alt_it: item.alt_it || item.label_it || key,
-      alt_en: item.alt_en || item.label_en || key,
-      file_url: uploaded.file_url || cleanFileUrl || null,
-      file_path: uploaded.file_path || (keepsExistingStorageFile ? existing?.file_path : null),
-      file_name: uploaded.file_name || (keepsExistingStorageFile ? (item.file_name || existing?.file_name) : (item.file_name || null)),
-      file_type: uploaded.file_type || (keepsExistingStorageFile ? (item.file_type || existing?.file_type) : (item.file_type || null)),
-      media_kind: uploaded.media_kind || item.media_kind || mediaUrlKindFromValue(cleanFileUrl, 'image'),
-      active: item.active !== false,
-      updated_by: session.user.id
-    });
-  }
+    if (!isSupabaseConfigured) {
+      throw new Error(
+        adminCopy(
+          lang,
+          'Supabase non è configurato.',
+          'Supabase is not configured.'
+        )
+      );
+    }
 
+    const key = item.media_key || item.key;
+    const existing = mediaRows.find((row) => row.media_key === key);
+
+    let uploaded = {};
+    let saved = false;
+
+    try {
+      // A selected local file uses a temporary blob: URL only for preview.
+      // Upload the real file first, then validate and persist the permanent URL.
+      if (item.file) {
+        uploaded = await uploadSiteMediaFile(
+          item.file,
+          key,
+          session.user.id
+        );
+      }
+
+      const cleanFileUrl = String(
+        uploaded.file_url || item.file_url || ''
+      ).trim();
+
+      if (!isSupportedMediaUrl(cleanFileUrl)) {
+        throw new Error(
+          adminCopy(
+            lang,
+            'URL media non valido. Usa un URL https:// oppure un percorso che inizia con /.',
+            'Invalid media URL. Use an https:// URL or a path starting with /.'
+          )
+        );
+      }
+
+      const keepsExistingStorageFile =
+        !item.file &&
+        cleanFileUrl &&
+        cleanFileUrl === existing?.file_url;
+
+      await upsertSiteMedia({
+        media_key: key,
+        label_it: item.label_it || item.it || key,
+        label_en: item.label_en || item.en || key,
+        alt_it: item.alt_it || item.label_it || key,
+        alt_en: item.alt_en || item.label_en || key,
+        file_url: cleanFileUrl || null,
+        file_path:
+          uploaded.file_path ||
+          (keepsExistingStorageFile ? existing?.file_path : null),
+        file_name:
+          uploaded.file_name ||
+          (
+            keepsExistingStorageFile
+              ? (item.file_name || existing?.file_name)
+              : (item.file_name || null)
+          ),
+        file_type:
+          uploaded.file_type ||
+          (
+            keepsExistingStorageFile
+              ? (item.file_type || existing?.file_type)
+              : (item.file_type || null)
+          ),
+        media_kind:
+          uploaded.media_kind ||
+          item.media_kind ||
+          mediaUrlKindFromValue(cleanFileUrl, 'image'),
+        active: item.active !== false,
+        updated_by: session.user.id
+      });
+
+      saved = true;
+
+      // Once the database points to the new URL (or no URL), clean up the
+      // previous Storage object if it is no longer referenced.
+      const shouldRemoveExistingStorageFile =
+        Boolean(existing?.file_path) &&
+        (
+          (item.file && existing.file_path !== uploaded.file_path) ||
+          (!item.file && cleanFileUrl !== existing?.file_url)
+        );
+
+      if (shouldRemoveExistingStorageFile) {
+        try {
+          await removeSiteMediaFile(existing.file_path);
+        } catch {
+          // The database save succeeded. A failed cleanup must not turn a
+          // successful CMS update into a user-visible save failure.
+        }
+      }
+    } catch (error) {
+      // If a new upload was created but the database save failed, remove the
+      // orphaned upload and keep the previously stored media untouched.
+      if (!saved && uploaded?.file_path) {
+        try {
+          await removeSiteMediaFile(uploaded.file_path);
+        } catch {
+          // Preserve the original save error.
+        }
+      }
+
+      throw error;
+    }
+  }
   async function saveSelected() {
     if (!selected || saving) return;
     setError('');
