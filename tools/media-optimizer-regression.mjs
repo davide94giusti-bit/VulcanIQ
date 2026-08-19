@@ -24,6 +24,7 @@ const mediaService = read('src/services/siteMediaService.js');
 const schema = read('supabase/schema.sql');
 const migration = read('supabase/migrations/20260819150000_admin_media_optimizer.sql');
 const optionalHeroMigration = read('supabase/migrations/20260819160000_home_hero_optional_media.sql');
+const styles = read('src/styles.css');
 
 test('media optimizer accepts MOV MP4 and WEBM sources without uploading raw MOV', () => {
   assert.match(optimizerSource, /SOURCE_EXTENSIONS\s*=\s*\['mov', 'mp4', 'webm'\]/);
@@ -98,6 +99,16 @@ test('optional hero feature media can be removed and the hero collapses to one c
   assert.match(optionalHeroMigration, /active = false and media_key in \('home_hero_feature_image', 'home_hero_video'\)/);
   assert.match(optionalHeroMigration, /^\s*begin;/m);
   assert.match(optionalHeroMigration, /^\s*commit;/m);
+});
+
+
+test('hero can center the entire copy when feature media is absent', () => {
+  assert.match(mainSource, /home\.hero\.layout/);
+  assert.match(mainSource, /heroCenteredWithoutMedia/);
+  assert.match(mainSource, /hero-layout-center/);
+  assert.match(mainSource, /Hero alignment without image\/video/);
+  assert.match(styles, /hero\.hero-no-feature-media[\s\S]*?min-height:\s*auto/);
+  assert.match(styles, /hero-layout-center \.hero-copy \.controlled-text[\s\S]*?text-align:\s*center/);
 });
 
 test('website editor secondary sections start collapsed', () => {
