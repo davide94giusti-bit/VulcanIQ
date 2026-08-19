@@ -3089,7 +3089,11 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
   const mediaSource = editor?.mediaMap || siteMedia || {};
   const backgroundItem = editorMediaItem(mediaSource, 'home_hero_background', '', lang === 'it' ? 'Sfondo hero homepage' : 'Home hero background');
   const heroBackground = backgroundItem.file_url || '';
-  const heroStyle = heroBackground ? { backgroundImage: `linear-gradient(90deg, rgba(5,10,20,0.72), rgba(5,10,20,0.50) 50%, rgba(5,10,20,0.34)), url("${heroBackground}")` } : undefined;
+  const heroBackgroundKind = mediaUrlKindFromValue(heroBackground, backgroundItem.media_kind || 'image');
+  const heroBackgroundVideo = Boolean(heroBackground && heroBackgroundKind === 'video');
+  const heroPoster = mediaUrl(mediaSource, 'home_hero_feature_image', MEDIA.premium);
+  const heroStaticBackground = heroBackgroundVideo ? heroPoster : heroBackground;
+  const heroStyle = heroStaticBackground ? { backgroundImage: `linear-gradient(90deg, rgba(5,10,20,0.72), rgba(5,10,20,0.50) 50%, rgba(5,10,20,0.34)), url("${heroStaticBackground}")` } : undefined;
   const backgroundSelected = editor?.selected?.type === 'image' && editor.selected.key === 'home_hero_background';
   const [findExperienceOpen, setFindExperienceOpen] = useState(false);
   const [bookingCodeOpen, setBookingCodeOpen] = useState(false);
@@ -3138,6 +3142,19 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
 
   return (
     <section className={`hero ${editor?.isEditing ? 'editor-hero-editable' : ''} ${backgroundSelected ? 'selected' : ''}`} id="top" style={heroStyle}>
+      {heroBackgroundVideo && (
+        <video
+          className="hero-background-video"
+          src={heroBackground}
+          poster={heroPoster || undefined}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          aria-hidden="true"
+        />
+      )}
       <div className="hero-overlay" />
       {editor?.isEditing && (
         <button
