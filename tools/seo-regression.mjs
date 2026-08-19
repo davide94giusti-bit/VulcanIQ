@@ -28,6 +28,7 @@ const headers = read('public/_headers');
 const index = read('index.html');
 const notFound = read('public/404.html');
 const mainSource = read('src/main.jsx');
+const stylesSource = read('src/styles.css');
 const allSeoFiles = `${seo}\n${site}\n${sitemap}\n${robots}\n${index}`;
 
 function sitemapLocs(xml) {
@@ -140,6 +141,18 @@ test('partnerships and latest-news render helpers remain defined after feature e
   }
   assert.match(mainSource, /normalizeLatestNewsTitle[\s\S]*normalizedKeyText\(clean\)/);
   assert.match(mainSource, /items\.map\(\(item\) => \(\{ \.\.\.item, categoryKey: partnershipCategoryKey\(item\) \}\)\)/);
+});
+
+test('home hero supports a CMS-selected background video with safe fallback', () => {
+  assert.match(mainSource, /heroBackgroundKind\s*=\s*mediaUrlKindFromValue\(heroBackground, backgroundItem\.media_kind \|\| 'image'\)/);
+  assert.match(mainSource, /className="hero-background-video"/);
+  assert.match(mainSource, /poster=\{heroPoster \|\| undefined\}/);
+  for (const prop of ['autoPlay', 'muted', 'loop', 'playsInline']) {
+    assert.match(mainSource, new RegExp(`\\b${prop}\\b`), prop);
+  }
+  assert.match(mainSource, /heroStaticBackground\s*=\s*heroBackgroundVideo \? heroPoster : heroBackground/);
+  assert.match(stylesSource, /\.hero-background-video\s*\{[^}]*position:\s*absolute;[^}]*object-fit:\s*cover;[^}]*\}/);
+  assert.match(stylesSource, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.hero-background-video\s*\{[\s\S]*?display:\s*none/);
 });
 
 for (const name of passes) console.log(`PASS  ${name}`);
