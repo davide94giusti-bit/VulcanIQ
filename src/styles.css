@@ -4534,6 +4534,7 @@ body.modal-scroll-lock { overflow: hidden; }
 
 /* Follow-up mobile visual fixes: home gap, calendar dots, menu centering, date inputs */
 .public-page-shell.public-page-home {
+  min-height: auto;
   background: var(--night);
   padding-bottom: 0;
 }

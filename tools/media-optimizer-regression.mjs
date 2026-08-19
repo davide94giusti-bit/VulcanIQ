@@ -111,6 +111,10 @@ test('hero can center the entire copy when feature media is absent', () => {
   assert.match(styles, /hero-layout-center \.hero-copy \.controlled-text[\s\S]*?text-align:\s*center/);
 });
 
+test('home shell ends with the hero so the footer follows immediately', () => {
+  assert.match(styles, /\.public-page-shell\.public-page-home\s*\{[^}]*min-height:\s*auto;[^}]*padding-bottom:\s*0;/);
+});
+
 test('website editor secondary sections start collapsed', () => {
   assert.doesNotMatch(mainSource, /latest-news-editor" open/);
   assert.doesNotMatch(mainSource, /social-links-editor" open/);
