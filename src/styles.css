@@ -4539,6 +4539,16 @@ body.modal-scroll-lock { overflow: hidden; }
   padding-bottom: 0;
 }
 
+.public-page-shell.public-page-home .hero.hero-no-feature-media {
+  min-height: calc(100svh - var(--header-height));
+}
+
+@supports (height: 100dvh) {
+  .public-page-shell.public-page-home .hero.hero-no-feature-media {
+    min-height: calc(100dvh - var(--header-height));
+  }
+}
+
 @media (max-width: 768px) {
   .public-page-shell.public-page-home {
     padding-bottom: 0 !important;
