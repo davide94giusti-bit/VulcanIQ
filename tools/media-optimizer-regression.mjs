@@ -115,6 +115,11 @@ test('home shell ends with the hero so the footer follows immediately', () => {
   assert.match(styles, /\.public-page-shell\.public-page-home\s*\{[^}]*min-height:\s*auto;[^}]*padding-bottom:\s*0;/);
 });
 
+test('home hero fills the dynamic viewport before the footer on desktop and mobile', () => {
+  assert.match(styles, /\.public-page-shell\.public-page-home \.hero\.hero-no-feature-media\s*\{[^}]*min-height:\s*calc\(100svh - var\(--header-height\)\)/);
+  assert.match(styles, /@supports\s*\(height:\s*100dvh\)[\s\S]*?\.public-page-shell\.public-page-home \.hero\.hero-no-feature-media\s*\{[^}]*min-height:\s*calc\(100dvh - var\(--header-height\)\)/);
+});
+
 test('website editor secondary sections start collapsed', () => {
   assert.doesNotMatch(mainSource, /latest-news-editor" open/);
   assert.doesNotMatch(mainSource, /social-links-editor" open/);
