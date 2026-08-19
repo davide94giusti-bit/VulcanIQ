@@ -366,7 +366,11 @@ The visual editor reuses the existing public asset bucket:
 vulcaniq-public-assets
 ```
 
-Supported upload types for visual media are JPEG, PNG, WEBP, and MP4. Public media can be read publicly. Only active admins should be able to upload or update files.
+Supported upload types for visual media are JPEG, PNG, WEBP, MP4, and WEBM. Public media can be read publicly. Only active admins should be able to upload or update files.
+
+The homepage media editor also includes a browser-local **Website Hero** optimizer. It accepts MOV, MP4, or WEBM source video, removes audio, limits the generated clip to 1280×720 / 30 fps, and creates an MP4 or WEBM plus a WEBP poster (JPEG fallback when browser WEBP encoding is unavailable). The raw MOV source is never uploaded; only the optimized draft is uploaded after an admin chooses **Use in hero** and then **Save all**.
+
+Apply `supabase/migrations/20260819_admin_media_optimizer.sql` before using WEBM output in production so the existing `vulcaniq-public-assets` bucket permits `video/webm`. No new table or secret is required.
 
 ## Logo media key
 

@@ -1378,7 +1378,7 @@ values (
   'vulcaniq-public-assets',
   true,
   10485760,
-  array['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4']
+  array['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm']
 )
 on conflict (id) do update set
   public = excluded.public,

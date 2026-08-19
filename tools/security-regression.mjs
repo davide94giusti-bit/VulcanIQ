@@ -14,6 +14,7 @@ function check(name, condition, detail = '') {
 const packageJson = JSON.parse(read('package.json'));
 const migration = read('supabase/migrations/20260726_automation_notifications_weekly_security.sql');
 const storageMigration = read('supabase/migrations/20260726_storage_security_hardening.sql');
+const mediaOptimizerMigration = read('supabase/migrations/20260819_admin_media_optimizer.sql');
 const bookingService = read('src/services/bookingRequests.js');
 const giftService = read('src/services/giftCards.js');
 const bookingEndpoint = read('functions/api/public/booking-request.js');
@@ -56,7 +57,7 @@ check('server RPC ignores public partner authority', !migration.match(/request_p
 check('direct anonymous operational inserts revoked', migration.includes('revoke insert on public.booking_requests from anon') && migration.includes('revoke insert on public.gift_card_requests from anon'));
 check('analytics direct inserts revoked', migration.includes('revoke insert on public.analytics_events from anon, authenticated'));
 check('private operational tables have RLS', ['request_notification_log', 'admin_weekly_reports', 'endpoint_rate_limits'].every((table) => migration.includes(`alter table public.${table} enable row level security`)));
-check('no globally permissive policy in new migrations', !/using\s*\(\s*true\s*\)|with\s+check\s*\(\s*true\s*\)/i.test(`${migration}\n${storageMigration}\n${analyticsConsolidation}\n${premodernMigration}`));
+check('no globally permissive policy in new migrations', !/using\s*\(\s*true\s*\)|with\s+check\s*\(\s*true\s*\)/i.test(`${migration}\n${storageMigration}\n${mediaOptimizerMigration}\n${analyticsConsolidation}\n${premodernMigration}`));
 check('notification idempotency index exists', migration.includes('request_notification_log_idempotency_unique'));
 check('weekly report idempotency index exists', migration.includes('admin_weekly_reports_idempotency_unique'));
 check('privileged actions restricted to owner/manager', migration.includes("ap.role in ('owner', 'manager')") && migration.includes('is_privileged_admin'));
@@ -71,6 +72,7 @@ check('weekly recap is DST guarded', recapFunction.includes('isRomeMondayEight')
 check('weekly recap manual send is throttled', recapFunction.includes("claimAdminAction('weekly-recap-manual'"));
 check('weekly recap rejects an empty recipient list', recapFunction.includes("if (!targets.length) throw new Error('no_weekly_recap_recipients')"));
 check('migration has one transaction boundary', (migration.match(/^begin;$/gm) || []).length === 1 && (migration.match(/^commit;$/gm) || []).length === 1);
+check('media optimizer storage migration has one transaction boundary', (mediaOptimizerMigration.match(/^begin;$/gm) || []).length === 1 && (mediaOptimizerMigration.match(/^commit;$/gm) || []).length === 1);
 check('Gift Card RPC has no duplicate declaration', !migration.includes('inserted public.gift_card_requests%rowtype;\n  inserted public.gift_card_requests%rowtype;'));
 const repositoryFiles = fs.readdirSync(root, { recursive: true })
   .filter((name) => typeof name === 'string' && !name.startsWith('.git/') && !name.includes('node_modules/'));

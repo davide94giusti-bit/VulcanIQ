@@ -25,6 +25,7 @@ import { formatCurrencyAmount, normalizeCurrency, parseMoneyAmount } from './uti
 import { applySeo } from './seo.js';
 import { ADMIN_ROLES, listAdminUsers, updateAdminUser } from './services/adminUsers.js';
 import OperationalSafeguardsBanner from './features/admin/OperationalSafeguardsBanner.jsx';
+import VideoOptimizer from './features/admin/media/VideoOptimizer.jsx';
 import WeeklyReportsAdminPanel from './features/system/WeeklyReportsAdminPanel.jsx';
 import { CURRENT_TRACKING_ACTIVATION_MS, SMALL_SAMPLE_VISITOR_THRESHOLD, isCurrentTrackingRecord } from './features/analytics/integrity.js';
 import { ANALYTICS_PERIODS as CANONICAL_ANALYTICS_PERIODS, analyticsPeriodLabel as canonicalAnalyticsPeriodLabel, analyticsDateRange as canonicalAnalyticsDateRange, summaryToAdminModelPatch, defaultAnalyticsCustomRange } from './features/analytics/contract.js';
@@ -3091,7 +3092,7 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
   const heroBackground = backgroundItem.file_url || '';
   const heroBackgroundKind = mediaUrlKindFromValue(heroBackground, backgroundItem.media_kind || 'image');
   const heroBackgroundVideo = Boolean(heroBackground && heroBackgroundKind === 'video');
-  const heroPoster = mediaUrl(mediaSource, 'home_hero_feature_image', MEDIA.premium);
+  const heroPoster = mediaUrl(mediaSource, 'home_hero_background_poster', mediaUrl(mediaSource, 'home_hero_feature_image', MEDIA.premium));
   const heroStaticBackground = heroBackgroundVideo ? heroPoster : heroBackground;
   const heroStyle = heroStaticBackground ? { backgroundImage: `linear-gradient(90deg, rgba(5,10,20,0.72), rgba(5,10,20,0.50) 50%, rgba(5,10,20,0.34)), url("${heroStaticBackground}")` } : undefined;
   const backgroundSelected = editor?.selected?.type === 'image' && editor.selected.key === 'home_hero_background';
@@ -6819,6 +6820,7 @@ function CalendarFixedModal({ lang, item, onClose, onSave }) {
 const MEDIA_ADMIN_ITEMS = [
   { key: 'brand_logo_main', it: 'Logo principale vulcanIQ', en: 'Main vulcanIQ logo', fallback: BRAND.logo, alt_it: 'Logo vulcanIQ — esperienze premium sull’Etna', alt_en: 'vulcanIQ logo — premium Etna experiences' },
   { key: 'home_hero_background', it: 'Sfondo hero homepage', en: 'Home hero background', media_kind: 'image', alt_it: 'Sfondo hero homepage', alt_en: 'Home hero background' },
+  { key: 'home_hero_background_poster', it: 'Poster sfondo hero', en: 'Hero background poster', media_kind: 'image', alt_it: 'Poster sfondo hero homepage', alt_en: 'Home hero background poster' },
   { key: 'home_hero_feature_image', it: 'Immagine hero homepage', en: 'Home hero image', fallback: MEDIA.premium, media_kind: 'image', alt_it: 'Immagine hero homepage', alt_en: 'Home hero image' },
   { key: 'home_hero_video', it: 'Video homepage', en: 'Home video', fallback: MEDIA.introVideo, media_kind: 'video', alt_it: 'Video introduttivo vulcanIQ', alt_en: 'vulcanIQ introductory video' },
   { key: 'mission_main_image', it: 'Immagine missione', en: 'Mission image' },
@@ -7085,15 +7087,38 @@ function mediaUrlKindFromValue(value, fallback = 'image') {
 
 function MediaQuickEditorPanel({ lang, mediaMap, updateMediaDraft, page }) {
   const keys = page === 'home'
-    ? ['home_hero_background', 'home_hero_feature_image', 'home_hero_video']
+    ? ['home_hero_background', 'home_hero_background_poster', 'home_hero_feature_image', 'home_hero_video']
     : MEDIA_ADMIN_ITEMS.map((item) => item.key).filter((key) => !['brand_logo_main'].includes(key));
   const visibleKeys = page === 'home' ? keys : keys.slice(0, 8);
   return (
     <details className="admin-archive-details edit-workspace-section media-quick-editor" open={page === 'home'}>
       <summary>
         <span>{adminCopy(lang, 'Media', 'Media')}</span>
-        <strong>{page === 'home' ? adminCopy(lang, 'Sfondo hero, immagine e video', 'Hero background, image, and video') : adminCopy(lang, 'Immagini e video principali', 'Key images and videos')}</strong>
+        <strong>{page === 'home' ? adminCopy(lang, 'Sfondo hero, poster, immagine e video', 'Hero background, poster, image, and video') : adminCopy(lang, 'Immagini e video principali', 'Key images and videos')}</strong>
       </summary>
+      {page === 'home' && (
+        <VideoOptimizer
+          lang={lang}
+          onApply={({ videoFile, posterFile }) => {
+            updateMediaDraft('home_hero_background', {
+              file: videoFile,
+              file_url: URL.createObjectURL(videoFile),
+              file_name: videoFile.name,
+              file_type: videoFile.type,
+              media_kind: 'video',
+              active: true
+            });
+            updateMediaDraft('home_hero_background_poster', {
+              file: posterFile,
+              file_url: URL.createObjectURL(posterFile),
+              file_name: posterFile.name,
+              file_type: posterFile.type,
+              media_kind: 'image',
+              active: true
+            });
+          }}
+        />
+      )}
       <div className="media-quick-grid">
         {visibleKeys.map((key) => {
           const item = mediaMap[key] || editorMediaItem({}, key);
