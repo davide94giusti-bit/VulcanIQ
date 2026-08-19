@@ -43,7 +43,13 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
   const rating = reviewRating(safeReview);
   const reviewer = reviewBookedBy(safeReview, lang);
   const defaultTargetLanguage = lang === 'it' ? 'it' : 'en';
-  const translationSupported = browserReviewTranslationSupported();
+  const translationApiSupported = browserReviewTranslationSupported();
+  const [desktopTranslationViewport, setDesktopTranslationViewport] = useState(() => (
+    typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(min-width: 768px)').matches
+  ));
+  const translationEnabled = translationApiSupported && desktopTranslationViewport;
   const [translationLanguages, setTranslationLanguages] = useState(() => reviewTranslationFallbackLanguages(lang));
   const [translationTarget, setTranslationTarget] = useState(defaultTargetLanguage);
   const [translationState, setTranslationState] = useState({ loading: false, error: '', text: '', detectedSourceLanguage: '', phase: '', progress: null });
@@ -54,18 +60,34 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
   useDialogFocusTrap(isOpen, panelRef, onClose);
 
   useEffect(() => {
+    if (!isOpen || typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      setDesktopTranslationViewport(false);
+      return undefined;
+    }
+    const query = window.matchMedia('(min-width: 768px)');
+    const syncViewport = () => setDesktopTranslationViewport(query.matches);
+    syncViewport();
+    if (typeof query.addEventListener === 'function') query.addEventListener('change', syncViewport);
+    else query.addListener?.(syncViewport);
+    return () => {
+      if (typeof query.removeEventListener === 'function') query.removeEventListener('change', syncViewport);
+      else query.removeListener?.(syncViewport);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
     setTranslationLanguages(reviewTranslationFallbackLanguages(lang));
     setTranslationTarget(defaultTargetLanguage);
     setTranslationState({ loading: false, error: '', text: '', detectedSourceLanguage: '', phase: '', progress: null });
     setShowTranslated(false);
     translationCacheRef.current = new Map();
-    if (!isOpen) return undefined;
+    if (!isOpen || !translationEnabled) return undefined;
     let alive = true;
     loadReviewTranslationLanguages(lang).then((languages) => {
       if (alive && Array.isArray(languages) && languages.length) setTranslationLanguages(languages);
     });
     return () => { alive = false; };
-  }, [defaultTargetLanguage, isOpen, lang, safeReview.id, safeReview.review_text]);
+  }, [defaultTargetLanguage, isOpen, lang, safeReview.id, safeReview.review_text, translationEnabled]);
 
   async function handleTranslate() {
     const sourceText = String(safeReview.review_text || '').trim();
@@ -73,7 +95,7 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
       setTranslationState((current) => ({ ...current, error: copy.translationTargetRequired }));
       return;
     }
-    if (!translationSupported) {
+    if (!translationEnabled) {
       setTranslationState((current) => ({ ...current, error: copy.translationBrowserUnsupported }));
       return;
     }
@@ -106,7 +128,7 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
     }
   }
 
-  const displayedReviewText = showTranslated && translationState.text ? translationState.text : safeReview.review_text;
+  const displayedReviewText = translationEnabled && showTranslated && translationState.text ? translationState.text : safeReview.review_text;
   const progressText = translationProgressCopy(copy, translationState);
 
   if (!isOpen || typeof document === 'undefined') return null;
@@ -144,25 +166,26 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
           </div>
         )}
 
-        <div className="review-translation-toolbar" aria-label={copy.translateReview}>
-          <label className="review-translation-target">
-            <span>{copy.translateTo}</span>
-            <select value={translationTarget} disabled={!translationSupported || translationState.loading} onChange={(event) => { setTranslationTarget(event.target.value); setTranslationState((current) => ({ ...current, error: '', phase: '', progress: null })); setShowTranslated(false); }}>
-              {translationLanguages.map((item) => <option key={item.language} value={item.language}>{item.name}</option>)}
-            </select>
-          </label>
-          <button className="button secondary review-translate-button" type="button" onClick={handleTranslate} disabled={!translationSupported || translationState.loading}>
-            {progressText || copy.translateReview}
-          </button>
-          {translationState.text && (
-            <button className="review-original-toggle" type="button" onClick={() => setShowTranslated((current) => !current)}>
-              {showTranslated ? copy.showOriginal : copy.showTranslation}
+        {translationEnabled && (
+          <div className="review-translation-toolbar" aria-label={copy.translateReview}>
+            <label className="review-translation-target">
+              <span>{copy.translateTo}</span>
+              <select value={translationTarget} disabled={translationState.loading} onChange={(event) => { setTranslationTarget(event.target.value); setTranslationState((current) => ({ ...current, error: '', phase: '', progress: null })); setShowTranslated(false); }}>
+                {translationLanguages.map((item) => <option key={item.language} value={item.language}>{item.name}</option>)}
+              </select>
+            </label>
+            <button className="button secondary review-translate-button" type="button" onClick={handleTranslate} disabled={translationState.loading}>
+              {progressText || copy.translateReview}
             </button>
-          )}
-          {!translationSupported && <span className="review-translation-error" role="status">{copy.translationBrowserUnsupported}</span>}
-          {(showTranslated && translationState.text) && <span className="review-translation-note">{copy.onDeviceTranslation}{translationState.detectedSourceLanguage ? ` · ${translationState.detectedSourceLanguage.toUpperCase()} → ${translationTarget.toUpperCase()}` : ''}</span>}
-          {translationState.error && <span className="review-translation-error" role="status">{translationState.error}</span>}
-        </div>
+            {translationState.text && (
+              <button className="review-original-toggle" type="button" onClick={() => setShowTranslated((current) => !current)}>
+                {showTranslated ? copy.showOriginal : copy.showTranslation}
+              </button>
+            )}
+            {(showTranslated && translationState.text) && <span className="review-translation-note">{copy.onDeviceTranslation}{translationState.detectedSourceLanguage ? ` · ${translationState.detectedSourceLanguage.toUpperCase()} → ${translationTarget.toUpperCase()}` : ''}</span>}
+            {translationState.error && <span className="review-translation-error" role="status">{translationState.error}</span>}
+          </div>
+        )}
 
         <div className="review-detail-body formatted-review-text">
           {normalizeReviewText(displayedReviewText).map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 12)}`}>{paragraph}</p>)}

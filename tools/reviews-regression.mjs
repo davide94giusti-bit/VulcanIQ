@@ -110,6 +110,15 @@ test('review detail translation is on-demand, browser-local, and preserves the o
   assert.doesNotMatch(translationClient, /translation\.googleapis\.com/);
 });
 
+test('review translation is desktop-only and hidden on mobile or unsupported browsers', () => {
+  assert.match(detail, /window\.matchMedia\('\(min-width: 768px\)'\)/);
+  assert.match(detail, /translationEnabled\s*=\s*translationApiSupported && desktopTranslationViewport/);
+  assert.match(detail, /\{translationEnabled && \(\s*<div className="review-translation-toolbar"/);
+  assert.match(detail, /if \(!isOpen \|\| !translationEnabled\) return undefined/);
+  assert.match(detail, /displayedReviewText = translationEnabled && showTranslated/);
+  assert.doesNotMatch(detail, /!translationSupported && <span className="review-translation-error"/);
+});
+
 test('review detail mobile layout keeps long names clear of the close control and avoids stretched whitespace', () => {
   assert.match(styles, /review-detail-modal[\s\S]*?grid-auto-rows:\s*max-content/);
   assert.match(styles, /review-detail-modal[\s\S]*?align-content:\s*start/);
