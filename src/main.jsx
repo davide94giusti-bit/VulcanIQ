@@ -3098,6 +3098,9 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
   const heroFeatureImage = mediaUrl(mediaSource, 'home_hero_feature_image', MEDIA.premium);
   const heroFeatureVideo = mediaUrl(mediaSource, 'home_hero_video', MEDIA.introVideo);
   const heroFeatureMediaVisible = Boolean(heroFeatureImage || heroFeatureVideo);
+  const contentSource = editor?.contentMap || siteContent || {};
+  const heroLayoutItem = editorContentItem(contentSource, 'home.hero.layout');
+  const heroCenteredWithoutMedia = !heroFeatureMediaVisible && heroLayoutItem.layout_variant === 'center';
   const heroPoster = mediaUrl(mediaSource, 'home_hero_background_poster', heroFeatureImage);
   const heroStaticBackground = heroBackgroundVideo ? heroPoster : heroBackground;
   const heroStyle = heroStaticBackground ? { backgroundImage: `linear-gradient(90deg, rgba(5,10,20,0.72), rgba(5,10,20,0.50) 50%, rgba(5,10,20,0.34)), url("${heroStaticBackground}")` } : undefined;
@@ -3148,7 +3151,7 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
   }
 
   return (
-    <section className={`hero ${editor?.isEditing ? 'editor-hero-editable' : ''} ${backgroundSelected ? 'selected' : ''}`} id="top" style={heroStyle}>
+    <section className={`hero ${editor?.isEditing ? 'editor-hero-editable' : ''} ${backgroundSelected ? 'selected' : ''} ${heroFeatureMediaVisible ? '' : 'hero-no-feature-media'} ${heroCenteredWithoutMedia ? 'hero-layout-center' : ''}`.trim()} id="top" style={heroStyle}>
       {heroBackgroundVideo && (
         <video
           className="hero-background-video"
@@ -7099,17 +7102,30 @@ function mediaUrlKindFromValue(value, fallback = 'image') {
   return fallback || 'image';
 }
 
-function MediaQuickEditorPanel({ lang, mediaMap, updateMediaDraft, page }) {
+function MediaQuickEditorPanel({ lang, mediaMap, updateMediaDraft, contentMap, updateContentDraft, page }) {
   const keys = page === 'home'
     ? ['home_hero_background', 'home_hero_background_poster', 'home_hero_feature_image', 'home_hero_video']
     : MEDIA_ADMIN_ITEMS.map((item) => item.key).filter((key) => !['brand_logo_main'].includes(key));
   const visibleKeys = page === 'home' ? keys : keys.slice(0, 8);
+  const heroLayout = contentMap?.['home.hero.layout'] || editorContentItem({}, 'home.hero.layout');
   return (
     <details className="admin-archive-details edit-workspace-section media-quick-editor">
       <summary>
         <span>{adminCopy(lang, 'Media', 'Media')}</span>
         <strong>{page === 'home' ? adminCopy(lang, 'Sfondo hero, poster, immagine e video', 'Hero background, poster, image, and video') : adminCopy(lang, 'Immagini e video principali', 'Key images and videos')}</strong>
       </summary>
+      {page === 'home' && (
+        <div className="hero-layout-admin-control">
+          <label className="admin-field">
+            <span>{adminCopy(lang, 'Allineamento hero senza immagine/video', 'Hero alignment without image/video')}</span>
+            <select value={heroLayout.layout_variant === 'center' ? 'center' : 'left'} onChange={(event) => updateContentDraft('home.hero.layout', { layout_variant: event.target.value, active: true, visible: true })}>
+              <option value="left">{adminCopy(lang, 'Sinistra', 'Left')}</option>
+              <option value="center">{adminCopy(lang, 'Centro', 'Center')}</option>
+            </select>
+          </label>
+          <p className="small-note">{adminCopy(lang, 'Si applica quando immagine e video hero sono rimossi.', 'Applies when both hero image and video are removed.')}</p>
+        </div>
+      )}
       {page === 'home' && (
         <VideoOptimizer
           lang={lang}
@@ -7537,7 +7553,7 @@ function WebsiteAdminPage({ lang, session }) {
       {!loading && page === 'contact' && <ContactChannelsEditor lang={lang} contentMap={contentMap} onSave={saveContactChannels} disabled={!isSupabaseConfigured || saving} />}
       {!loading && <LatestNewsEditor lang={lang} contentMap={contentMap} updateContentDraft={updateContentDraft} />}
       {!loading && <SocialLinksEditor lang={lang} contentMap={contentMap} updateContentDraft={updateContentDraft} />}
-      {!loading && <MediaQuickEditorPanel lang={lang} mediaMap={mediaMap} updateMediaDraft={updateMediaDraft} page={page} />}
+      {!loading && <MediaQuickEditorPanel lang={lang} mediaMap={mediaMap} updateMediaDraft={updateMediaDraft} contentMap={contentMap} updateContentDraft={updateContentDraft} page={page} />}
       {loading ? <p>{adminCopy(lang, 'Caricamento editor...', 'Loading editor...')}</p> : (
         <>
           <div className="visual-editor-shell">
@@ -7864,6 +7880,7 @@ const SITE_CONTENT_DEFINITIONS = [
   { key: 'home.hero.cta.gift_card', section: 'Homepage', label_it: 'CTA Gift Card', label_en: 'Gift Card CTA', type: 'text', default_it: 'Gift Card', default_en: 'Gift Card', style_variant: 'label' },
   { key: 'home.hero.contact_cta', section: 'Homepage', label_it: 'CTA contatto', label_en: 'Contact CTA', type: 'text', default_it: i18n.it.contact, default_en: i18n.en.contact, style_variant: 'label' },
   { key: 'home.hero.guide_badge', section: 'Homepage', label_it: 'Badge guida', label_en: 'Guide badge', type: 'text', default_it: i18n.it.trust[0], default_en: i18n.en.trust[0], style_variant: 'label' },
+  { key: 'home.hero.layout', section: 'Homepage', label_it: 'Layout hero senza media', label_en: 'Hero layout without media', type: 'text', default_it: '', default_en: '', layout_variant: 'left' },
   { key: 'experiences.page.title', section: 'Esperienze', label_it: 'Titolo pagina esperienze', label_en: 'Experiences page title', type: 'textarea', default_it: i18n.it.experiencesTitle, default_en: i18n.en.experiencesTitle, text_size: 'hero', style_variant: 'display', text_align: 'center' },
   { key: 'experiences.page.intro', section: 'Esperienze', label_it: 'Intro pagina esperienze', label_en: 'Experiences page intro', type: 'textarea', default_it: i18n.it.experiencesIntro, default_en: i18n.en.experiencesIntro, text_size: 'large', text_align: 'center' },
   ...EXPERIENCE_CONTENT_DEFINITIONS,

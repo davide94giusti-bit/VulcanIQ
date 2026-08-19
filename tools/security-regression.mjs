@@ -19,6 +19,7 @@ const bookingService = read('src/services/bookingRequests.js');
 const giftService = read('src/services/giftCards.js');
 const bookingEndpoint = read('functions/api/public/booking-request.js');
 const giftEndpoint = read('functions/api/public/gift-card-request.js');
+const reviewTranslationClient = read('src/features/reviews/reviewTranslation.js');
 const analytics = read('src/analytics.js');
 const backupShared = read('functions/api/admin/backup/_shared.js');
 const backupCreate = read('functions/api/admin/backup/create.js');
@@ -88,6 +89,8 @@ check('operational safeguards exclude historical not-sent rows', followupMigrati
 check('public RPC extension search path is explicit', ['create_public_booking_request(jsonb)', 'create_public_gift_card_request(jsonb)', 'admin_update_gift_card_request(uuid, jsonb)'].every((signature) => followupMigration.includes(`alter function public.${signature}`)) && followupMigration.includes('public, extensions, pg_temp'));
 check('analytics distinguishes current tracking from history', analyticsContract.includes("ANALYTICS_TRACKING_CONTRACT_STARTED_AT = '2026-08-17T00:00:00.000Z'") && analyticsIntegrity.includes('CURRENT_TRACKING_ACTIVATION_ISO') && mainSource.includes('currentRequestsWithoutTrackedSubmit') && mainSource.includes('historicalRequestsWithoutTrackedSubmit'));
 check('analytics traffic dimensions use page views', mainSource.includes('topRows(pageViewEvents, (event) => event.country_name') && mainSource.includes('topRows(pageViewEvents, (event) => event.device_type') && mainSource.includes('Experience detail opens'));
+check('review translation is zero-cost browser-local with no provider endpoint', !fs.existsSync(path.join(root, 'functions/api/public/review-translation.js')) && reviewTranslationClient.includes('globalThis.Translator') && reviewTranslationClient.includes('globalThis.LanguageDetector') && !reviewTranslationClient.includes('fetch('));
+check('review translation exposes no cloud translation credential or provider URL', !reviewTranslationClient.includes('GOOGLE_CLOUD_TRANSLATION_API_KEY') && !reviewTranslationClient.includes('translation.googleapis.com') && !repositoryFiles.some((name) => { if (name.replace(/\\/g, '/') === 'tools/security-regression.mjs') return false; try { return fs.statSync(path.join(root, name)).isFile() && /GOOGLE_CLOUD_TRANSLATION_API_KEY|translation\.googleapis\.com/.test(fs.readFileSync(path.join(root, name), 'utf8')); } catch { return false; } }));
 check('public booking failures expose safe trace ids', bookingEndpoint.includes("'X-Trace-Id': traceId") && bookingEndpoint.includes('trace_id: traceId') && bookingService.includes('error.traceId = traceId'));
 check('system UI is split into feature modules', mainSource.includes("OperationalSafeguardsBanner from './features/admin/OperationalSafeguardsBanner.jsx'") && mainSource.includes("WeeklyReportsAdminPanel from './features/system/WeeklyReportsAdminPanel.jsx'") && safeguardsComponent.includes('admin-operational-chip') && weeklyPanelComponent.includes('weekly-report-table'));
 check('legacy unsent-email count is sanitized client-side', operationsService.includes('notifications_historical_excluded') && operationsService.includes('normalized.notifications_not_sent = 0'));

@@ -23,6 +23,8 @@ const googleEdge = read('supabase/functions/google-reviews-sync/index.ts');
 const googleProvider = read('supabase/functions/_shared/googleBusiness.ts');
 const migration = read('supabase/migrations/20260818150000_reviews_google_session_hardening.sql');
 const browserAnalytics = read('src/analytics.js');
+const translationClient = read('src/features/reviews/reviewTranslation.js');
+const styles = read('src/styles.css');
 
 const fixtures = [
   { id: 'w1', source: 'website', reviewer_name: 'Seby', rating: 5, review_date: '2026-08-08', review_text: 'Long first-party body' },
@@ -88,6 +90,31 @@ test('review detail has one close button in the top-right header only', () => {
   assert.equal(closeButtons.length, 1);
   assert.match(detail, /modal-close-button review-detail-close/);
   assert.doesNotMatch(detail, /review-detail-actions[\s\S]*?<button[^>]*onClick=\{onClose\}/);
+});
+
+
+test('review detail translation is on-demand, browser-local, and preserves the original text', () => {
+  assert.match(detail, /review-translation-toolbar/);
+  assert.match(detail, /translateReviewText/);
+  assert.match(detail, /browserReviewTranslationSupported/);
+  assert.match(detail, /sourceLanguage:\s*safeReview\.language/);
+  assert.match(detail, /showTranslated/);
+  assert.match(detail, /displayedReviewText/);
+  assert.match(detail, /showOriginal/);
+  assert.match(translationClient, /globalThis\.Translator/);
+  assert.match(translationClient, /globalThis\.LanguageDetector/);
+  assert.match(translationClient, /TranslatorApi\.create/);
+  assert.match(translationClient, /detector\.detect/);
+  assert.match(translationClient, /downloadprogress/);
+  assert.doesNotMatch(translationClient, /fetch\s*\(/);
+  assert.doesNotMatch(translationClient, /translation\.googleapis\.com/);
+});
+
+test('review detail mobile layout keeps long names clear of the close control and avoids stretched whitespace', () => {
+  assert.match(styles, /review-detail-modal[\s\S]*?grid-auto-rows:\s*max-content/);
+  assert.match(styles, /review-detail-modal[\s\S]*?align-content:\s*start/);
+  assert.match(styles, /review-detail-header h2[\s\S]*?overflow-wrap:\s*anywhere/);
+  assert.match(styles, /review-detail-close[\s\S]*?position:\s*absolute/);
 });
 
 test('review detail and submission modal have separate state', () => {
