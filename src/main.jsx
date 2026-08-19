@@ -176,13 +176,15 @@ function motionScrollBehavior() {
 
 function buildMediaMap(items = []) {
   return (items || []).reduce((acc, item) => {
-    if (item?.media_key && item?.file_url) acc[item.media_key] = item;
+    if (item?.media_key && (item?.file_url || item?.active === false)) acc[item.media_key] = item;
     return acc;
   }, {});
 }
 
 function mediaUrl(siteMedia, key, fallback) {
-  return siteMedia?.[key]?.file_url || fallback;
+  const item = siteMedia?.[key];
+  if (item?.active === false) return '';
+  return item?.file_url || fallback;
 }
 
 function mediaAlt(siteMedia, key, lang, fallback) {
@@ -1281,6 +1283,7 @@ function editorContentItem(siteContent, key, fallback = '') {
 function editorMediaItem(siteMedia, key, fallbackSrc = '', fallbackAlt = '') {
   const definition = getMediaDefinition(key);
   const stored = siteMedia?.[key] || {};
+  const explicitlyInactive = stored.active === false;
   return {
     ...definition,
     ...stored,
@@ -1288,7 +1291,7 @@ function editorMediaItem(siteMedia, key, fallbackSrc = '', fallbackAlt = '') {
     media_key: key,
     label_it: stored.label_it || definition.it || key,
     label_en: stored.label_en || definition.en || key,
-    file_url: stored.file_url || fallbackSrc || definition.fallback || '',
+    file_url: explicitlyInactive ? (stored.file_url || '') : (stored.file_url || fallbackSrc || definition.fallback || ''),
     alt_it: stored.alt_it || definition.alt_it || fallbackAlt || definition.it || key,
     alt_en: stored.alt_en || definition.alt_en || fallbackAlt || definition.en || key,
     active: stored.active !== false,
@@ -3092,7 +3095,10 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
   const heroBackground = backgroundItem.file_url || '';
   const heroBackgroundKind = mediaUrlKindFromValue(heroBackground, backgroundItem.media_kind || 'image');
   const heroBackgroundVideo = Boolean(heroBackground && heroBackgroundKind === 'video');
-  const heroPoster = mediaUrl(mediaSource, 'home_hero_background_poster', mediaUrl(mediaSource, 'home_hero_feature_image', MEDIA.premium));
+  const heroFeatureImage = mediaUrl(mediaSource, 'home_hero_feature_image', MEDIA.premium);
+  const heroFeatureVideo = mediaUrl(mediaSource, 'home_hero_video', MEDIA.introVideo);
+  const heroFeatureMediaVisible = Boolean(heroFeatureImage || heroFeatureVideo);
+  const heroPoster = mediaUrl(mediaSource, 'home_hero_background_poster', heroFeatureImage);
   const heroStaticBackground = heroBackgroundVideo ? heroPoster : heroBackground;
   const heroStyle = heroStaticBackground ? { backgroundImage: `linear-gradient(90deg, rgba(5,10,20,0.72), rgba(5,10,20,0.50) 50%, rgba(5,10,20,0.34)), url("${heroStaticBackground}")` } : undefined;
   const backgroundSelected = editor?.selected?.type === 'image' && editor.selected.key === 'home_hero_background';
@@ -3170,7 +3176,7 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
           {lang === 'it' ? 'Modifica sfondo hero' : 'Edit hero background'}
         </button>
       )}
-      <div className="container hero-grid">
+      <div className={`container hero-grid ${heroFeatureMediaVisible ? '' : 'hero-grid-no-media'}`.trim()}>
         <div className="hero-copy">
           <EditableText as="h1" className="hero-title" itemKey="home.hero.title" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroTitle')} />
           <EditableText as="p" className="lead" itemKey="home.hero.subtitle" lang={lang} siteContent={siteContent} editor={editor} fallback={text(lang, 'heroLead')} />
@@ -3192,20 +3198,28 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
             </a>
           </div>
         </div>
-        <div className="hero-media" aria-hidden="false">
-          {editor?.isEditing && (
-            <div className="hero-media-edit-actions">
-              <button className="editor-badge editor-selectable" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); editor.select({ type: 'image', key: 'home_hero_video', label: lang === 'it' ? 'Video hero' : 'Hero video', section: 'Media', fallbackSrc: MEDIA.introVideo, fallbackAlt: lang === 'it' ? 'Video introduttivo vulcanIQ' : 'vulcanIQ introductory video' }); }}>{lang === 'it' ? 'Modifica video' : 'Edit video'}</button>
-              <button className="editor-badge editor-selectable" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); editor.select({ type: 'image', key: 'home_hero_feature_image', label: lang === 'it' ? 'Immagine hero' : 'Hero image', section: 'Media', fallbackSrc: MEDIA.premium, fallbackAlt: lang === 'it' ? 'Immagine hero homepage' : 'Home hero image' }); }}>{lang === 'it' ? 'Modifica immagine' : 'Edit image'}</button>
-            </div>
-          )}
-          <VideoSlot
-            src={mediaUrl(mediaSource, 'home_hero_video', MEDIA.introVideo)}
-            poster={mediaUrl(mediaSource, 'home_hero_feature_image', MEDIA.premium)}
-            label={lang === 'it' ? 'Video introduttivo vulcanIQ' : 'vulcanIQ introductory video'}
-            lang={lang}
-          />
-        </div>
+        {heroFeatureMediaVisible && (
+          <div className="hero-media" aria-hidden="false">
+            {editor?.isEditing && (
+              <div className="hero-media-edit-actions">
+                <button className="editor-badge editor-selectable" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); editor.select({ type: 'image', key: 'home_hero_video', label: lang === 'it' ? 'Video hero' : 'Hero video', section: 'Media', fallbackSrc: MEDIA.introVideo, fallbackAlt: lang === 'it' ? 'Video introduttivo vulcanIQ' : 'vulcanIQ introductory video' }); }}>{lang === 'it' ? 'Modifica video' : 'Edit video'}</button>
+                <button className="editor-badge editor-selectable" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); editor.select({ type: 'image', key: 'home_hero_feature_image', label: lang === 'it' ? 'Immagine hero' : 'Hero image', section: 'Media', fallbackSrc: MEDIA.premium, fallbackAlt: lang === 'it' ? 'Immagine hero homepage' : 'Home hero image' }); }}>{lang === 'it' ? 'Modifica immagine' : 'Edit image'}</button>
+              </div>
+            )}
+            {heroFeatureVideo ? (
+              <VideoSlot
+                src={heroFeatureVideo}
+                poster={heroFeatureImage || undefined}
+                label={lang === 'it' ? 'Video introduttivo vulcanIQ' : 'vulcanIQ introductory video'}
+                lang={lang}
+              />
+            ) : (
+              <figure className="video-slot hero-static-media">
+                <img src={heroFeatureImage} alt={mediaAlt(mediaSource, 'home_hero_feature_image', lang, lang === 'it' ? 'Immagine hero homepage' : 'Home hero image')} loading="eager" decoding="async" />
+              </figure>
+            )}
+          </div>
+        )}
       </div>
       {bookingCodeOpen && <BookingCodeModal lang={lang} onClose={() => setBookingCodeOpen(false)} siteContent={siteContent} />}
       {fastRequestOpen && <FastRequestModal lang={lang} siteContent={siteContent} sourceSection="hero" sourceCta="book_now" ctaLocation="hero_book_now" flowType="fast_request" onClose={() => setFastRequestOpen(false)} />}
@@ -6960,7 +6974,7 @@ function LatestNewsEditor({ lang, contentMap, updateContentDraft }) {
   }
 
   return (
-    <details className="admin-archive-details edit-workspace-section latest-news-editor" open>
+    <details className="admin-archive-details edit-workspace-section latest-news-editor">
       <summary>
         <span>{adminCopy(lang, 'Notizie live sull’Etna', 'Etna live news')}</span>
         <strong>{adminCopy(lang, 'Link notizie live sull’Etna', 'Etna live news link')}</strong>
@@ -7035,7 +7049,7 @@ function SocialLinksEditor({ lang, contentMap, updateContentDraft }) {
   }
 
   return (
-    <details className="admin-archive-details edit-workspace-section social-links-editor" open>
+    <details className="admin-archive-details edit-workspace-section social-links-editor">
       <summary>
         <span>{adminCopy(lang, 'Social', 'Social')}</span>
         <strong>{adminCopy(lang, 'Pagine social', 'Social pages')}</strong>
@@ -7091,7 +7105,7 @@ function MediaQuickEditorPanel({ lang, mediaMap, updateMediaDraft, page }) {
     : MEDIA_ADMIN_ITEMS.map((item) => item.key).filter((key) => !['brand_logo_main'].includes(key));
   const visibleKeys = page === 'home' ? keys : keys.slice(0, 8);
   return (
-    <details className="admin-archive-details edit-workspace-section media-quick-editor" open={page === 'home'}>
+    <details className="admin-archive-details edit-workspace-section media-quick-editor">
       <summary>
         <span>{adminCopy(lang, 'Media', 'Media')}</span>
         <strong>{page === 'home' ? adminCopy(lang, 'Sfondo hero, poster, immagine e video', 'Hero background, poster, image, and video') : adminCopy(lang, 'Immagini e video principali', 'Key images and videos')}</strong>

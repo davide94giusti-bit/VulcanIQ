@@ -1318,8 +1318,8 @@ select
   image_size,
   active
 from public.site_media
-where active = true
-  and file_url is not null;
+where (active = true and file_url is not null)
+   or (active = false and media_key in ('home_hero_feature_image', 'home_hero_video'));
 
 
 drop view if exists public.public_site_content;

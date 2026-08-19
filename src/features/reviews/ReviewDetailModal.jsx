@@ -65,12 +65,11 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
           </div>
         )}
 
-        <footer className="review-detail-actions">
-          {source === 'google' && safeReview.external_review_url && (
+        {source === 'google' && safeReview.external_review_url && (
+          <footer className="review-detail-actions">
             <a className="button primary" href={safeReview.external_review_url} target="_blank" rel="noopener noreferrer" onClick={() => onGoogleOpen?.(safeReview)}>{copy.openGoogle}</a>
-          )}
-          <button className="button secondary" type="button" onClick={onClose}>{copy.close}</button>
-        </footer>
+          </footer>
+        )}
       </article>
     </div>,
     document.body

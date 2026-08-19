@@ -553,6 +553,22 @@ button:not(:disabled):active,
 
 .hero-media { align-self: stretch; min-height: 460px; position: relative; z-index: 2; }
 
+.hero-grid-no-media {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.hero-grid-no-media .hero-copy {
+  max-width: 900px;
+}
+
+.hero-static-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+  object-fit: cover;
+}
+
 .image-slot {
   position: relative;
   width: 100%;
