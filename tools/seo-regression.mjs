@@ -147,6 +147,7 @@ test('home hero supports a CMS-selected background video with safe fallback', ()
   assert.match(mainSource, /heroBackgroundKind\s*=\s*mediaUrlKindFromValue\(heroBackground, backgroundItem\.media_kind \|\| 'image'\)/);
   assert.match(mainSource, /className="hero-background-video"/);
   assert.match(mainSource, /poster=\{heroPoster \|\| undefined\}/);
+  assert.match(mainSource, /heroPoster\s*=\s*mediaUrl\(mediaSource, 'home_hero_background_poster', mediaUrl\(mediaSource, 'home_hero_feature_image', MEDIA\.premium\)\)/);
   for (const prop of ['autoPlay', 'muted', 'loop', 'playsInline']) {
     assert.match(mainSource, new RegExp(`\\b${prop}\\b`), prop);
   }
