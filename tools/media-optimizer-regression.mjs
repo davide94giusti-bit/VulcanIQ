@@ -22,7 +22,7 @@ const optimizerUi = read('src/features/admin/media/VideoOptimizer.jsx');
 const optimizerCss = read('src/features/admin/media/videoOptimizer.css');
 const mediaService = read('src/services/siteMediaService.js');
 const schema = read('supabase/schema.sql');
-const migration = read('supabase/migrations/20260819_admin_media_optimizer.sql');
+const migration = read('supabase/migrations/20260819150000_admin_media_optimizer.sql');
 const optionalHeroMigration = read('supabase/migrations/20260819160000_home_hero_optional_media.sql');
 
 test('media optimizer accepts MOV MP4 and WEBM sources without uploading raw MOV', () => {
