@@ -76,7 +76,20 @@
 }
 @media (max-width: 680px) {
   html, body, #root { max-width: 100%; overflow-x: hidden; }
-  .admin-main,
+  .admin-main {
+    width: calc(100% - 28px);
+    max-width: 1380px;
+    margin-inline: auto;
+    overflow-x: clip;
+  }
+  .admin-main > *,
+  .admin-page,
+  .admin-subpage,
+  .admin-page-header,
+  .admin-page-header > * {
+    min-width: 0;
+    max-width: 100%;
+  }
   .backup-admin-page { width: 100%; max-width: 100%; overflow-x: clip; }
   .admin-operational-banner { padding: .68rem .75rem; }
   .admin-operational-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
