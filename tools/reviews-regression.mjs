@@ -82,6 +82,14 @@ test('full review detail renders body, replies, Google source link and dialog se
   assert.match(dialogTrap, /openerRef\.current\?\.focus/);
 });
 
+
+test('review detail has one close button in the top-right header only', () => {
+  const closeButtons = detail.match(/<button[^>]*onClick=\{onClose\}[^>]*>/g) || [];
+  assert.equal(closeButtons.length, 1);
+  assert.match(detail, /modal-close-button review-detail-close/);
+  assert.doesNotMatch(detail, /review-detail-actions[\s\S]*?<button[^>]*onClick=\{onClose\}/);
+});
+
 test('review detail and submission modal have separate state', () => {
   assert.match(page, /selectedReview/);
   assert.match(page, /reviewSubmissionOpen/);

@@ -22,7 +22,8 @@ const optimizerUi = read('src/features/admin/media/VideoOptimizer.jsx');
 const optimizerCss = read('src/features/admin/media/videoOptimizer.css');
 const mediaService = read('src/services/siteMediaService.js');
 const schema = read('supabase/schema.sql');
-const migration = read('supabase/migrations/20260819_admin_media_optimizer.sql');
+const migration = read('supabase/migrations/20260819150000_admin_media_optimizer.sql');
+const optionalHeroMigration = read('supabase/migrations/20260819160000_home_hero_optional_media.sql');
 
 test('media optimizer accepts MOV MP4 and WEBM sources without uploading raw MOV', () => {
   assert.match(optimizerSource, /SOURCE_EXTENSIONS\s*=\s*\['mov', 'mp4', 'webm'\]/);
@@ -62,7 +63,8 @@ test('admin optimizer only updates drafts until the existing save flow runs', ()
 });
 
 test('hero uses dedicated background poster with backwards-compatible fallback', () => {
-  assert.match(mainSource, /heroPoster\s*=\s*mediaUrl\(mediaSource, 'home_hero_background_poster', mediaUrl\(mediaSource, 'home_hero_feature_image', MEDIA\.premium\)\)/);
+  assert.match(mainSource, /heroFeatureImage\s*=\s*mediaUrl\(mediaSource, 'home_hero_feature_image', MEDIA\.premium\)/);
+  assert.match(mainSource, /heroPoster\s*=\s*mediaUrl\(mediaSource, 'home_hero_background_poster', heroFeatureImage\)/);
   assert.match(mainSource, /home_hero_background_poster/);
 });
 
@@ -82,6 +84,26 @@ test('optimizer UI is responsive and exposes cancel/apply actions', () => {
   assert.match(optimizerUi, /Use in hero/);
   assert.match(optimizerCss, /@media \(max-width: 760px\)/);
   assert.match(optimizerCss, /grid-template-columns: 1fr/);
+});
+
+
+test('optional hero feature media can be removed and the hero collapses to one column', () => {
+  assert.match(mainSource, /const explicitlyInactive = stored\.active === false/);
+  assert.match(mainSource, /file_url: explicitlyInactive \? \(stored\.file_url \|\| ''\)/);
+  assert.match(mainSource, /if \(item\?\.active === false\) return '';/);
+  assert.match(mainSource, /heroFeatureMediaVisible\s*=\s*Boolean\(heroFeatureImage \|\| heroFeatureVideo\)/);
+  assert.match(mainSource, /hero-grid-no-media/);
+  assert.match(mainSource, /heroFeatureMediaVisible && \(/);
+  assert.match(mainSource, /heroFeatureVideo \? \(/);
+  assert.match(optionalHeroMigration, /active = false and media_key in \('home_hero_feature_image', 'home_hero_video'\)/);
+  assert.match(optionalHeroMigration, /^\s*begin;/m);
+  assert.match(optionalHeroMigration, /^\s*commit;/m);
+});
+
+test('website editor secondary sections start collapsed', () => {
+  assert.doesNotMatch(mainSource, /latest-news-editor" open/);
+  assert.doesNotMatch(mainSource, /social-links-editor" open/);
+  assert.doesNotMatch(mainSource, /media-quick-editor" open=/);
 });
 
 for (const name of passes) console.log(`PASS  ${name}`);
