@@ -1,6 +1,7 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 import { createAvailabilityBlock } from './availabilityService.js';
-import { cancelUnpaidPartnerCommissionsForSource } from './partnerCommissions.js';
+import { cancelUnpaidPartnerCommissionsForSource, upsertPartnerCommissionForSource } from './partnerCommissions.js';
+import { createFinanceEntry, updateFinanceEntry } from './financeService.js';
 import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
 
 const requestFields = `
@@ -154,6 +155,143 @@ async function reverseOrVoidFinanceForRequest(request, userId = null, reason = '
       if (updateError) throw updateError;
     }
   }
+}
+
+
+const CONFIRMED_INCOME_REQUEST_STATUSES = new Set(['accepted', 'confirmed', 'completed']);
+const CONFIRMED_INCOME_LEAD_STATUSES = new Set(['deposit_paid', 'confirmed', 'completed', 'review_requested', 'review_received']);
+const NON_CURRENT_FINANCE_STATUSES = new Set(['cancelled', 'void', 'voided', 'reversed', 'reversal']);
+
+function financeIncomeStatus(value) {
+  return String(value || 'confirmed').trim().toLowerCase() || 'confirmed';
+}
+
+export function bookingRequestCanConfirmIncome(request = {}) {
+  if (!request?.id || request.source === 'booking_code') return false;
+  const requestStatus = String(request.status || '').trim().toLowerCase();
+  const leadStatus = String(request.lead_status || '').trim().toLowerCase();
+  return CONFIRMED_INCOME_REQUEST_STATUSES.has(requestStatus) || CONFIRMED_INCOME_LEAD_STATUSES.has(leadStatus);
+}
+
+export async function getBookingRequestIncomeState(requestId) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  if (!requestId) throw new Error('Booking request is required.');
+  const { data, error } = await supabase
+    .from('finance_entries')
+    .select('id, created_at, updated_at, entry_date, type, amount, currency, title, description, category, payment_method, status, source_type, source_id, booking_request_id, booking_code_id, fixed_excursion_id, leaflet_id, recognized_at, cancelled_at, reversed_at, reversal_of, admin_confirmed_by, admin_confirmed_at, active')
+    .eq('booking_request_id', requestId)
+    .eq('type', 'income')
+    .eq('active', true)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+
+  const current = (data || []).filter((entry) => !entry.reversal_of && !NON_CURRENT_FINANCE_STATUSES.has(financeIncomeStatus(entry.status)));
+  const confirmed = current.filter((entry) => financeIncomeStatus(entry.status) === 'confirmed');
+  const pending = current.filter((entry) => ['expected', 'pending'].includes(financeIncomeStatus(entry.status)));
+  return { entries: current, confirmed, pending };
+}
+
+function bookingIncomeTitle(request = {}) {
+  const identity = request.booking_code || request.customer_name || 'booking request';
+  return `Booking payment - ${identity}`;
+}
+
+function bookingIncomeDescription(request = {}) {
+  return [request.customer_name, request.experience_id, request.requested_date, request.booking_code].filter(Boolean).join(' · ') || 'Booking payment';
+}
+
+export async function confirmBookingRequestIncome({ request, amount, currency = 'EUR', entryDate, paymentMethod = '', userId = null } = {}) {
+  if (!bookingRequestCanConfirmIncome(request)) {
+    const error = new Error('Only confirmed non-booking-code requests can confirm income.');
+    error.code = 'BOOKING_INCOME_NOT_ELIGIBLE';
+    throw error;
+  }
+  const normalizedAmount = parseMoneyAmount(amount);
+  if (!(normalizedAmount > 0)) {
+    const error = new Error('A positive income amount is required.');
+    error.code = 'BOOKING_INCOME_AMOUNT_REQUIRED';
+    throw error;
+  }
+  const normalizedDate = String(entryDate || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+    const error = new Error('A valid income date is required.');
+    error.code = 'BOOKING_INCOME_DATE_REQUIRED';
+    throw error;
+  }
+  const normalizedPaymentMethod = String(paymentMethod || '').trim();
+  if (!normalizedPaymentMethod) {
+    const error = new Error('Payment method is required.');
+    error.code = 'BOOKING_INCOME_PAYMENT_METHOD_REQUIRED';
+    throw error;
+  }
+
+  const state = await getBookingRequestIncomeState(request.id);
+  if (state.confirmed.length) {
+    return { status: 'already_confirmed', entry: state.confirmed[0], entries: state.confirmed };
+  }
+  if (state.pending.length > 1) {
+    const error = new Error('Multiple pending income entries are linked to this booking. Reconcile them in Finance before confirming income.');
+    error.code = 'BOOKING_INCOME_MULTIPLE_PENDING';
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  const shared = {
+    entry_date: normalizedDate,
+    type: 'income',
+    amount: normalizedAmount,
+    currency: normalizeCurrency(currency),
+    payment_method: normalizedPaymentMethod,
+    booking_request_id: request.id,
+    fixed_excursion_id: request.fixed_excursion_id || null,
+    status: 'confirmed',
+    recognized_at: now,
+    admin_confirmed_by: userId || null,
+    admin_confirmed_at: now
+  };
+
+  let entry;
+  let status;
+  if (state.pending.length === 1) {
+    const pending = state.pending[0];
+    entry = await updateFinanceEntry(pending.id, {
+      ...shared,
+      title: pending.title || bookingIncomeTitle(request),
+      description: pending.description || bookingIncomeDescription(request),
+      category: pending.category || 'booking_payment',
+      source_type: pending.source_type || 'booking_request',
+      source_id: pending.source_id || request.id
+    }, userId);
+    status = 'confirmed_existing';
+  } else {
+    entry = await createFinanceEntry({
+      ...shared,
+      title: bookingIncomeTitle(request),
+      description: bookingIncomeDescription(request),
+      category: 'booking_payment',
+      source_type: 'booking_request',
+      source_id: request.id,
+      active: true
+    }, userId);
+    status = 'created_confirmed';
+  }
+
+  let commissionWarning = '';
+  try {
+    await upsertPartnerCommissionForSource({
+      sourceType: 'booking_request',
+      source: request,
+      partnerId: request.partner_id || null,
+      grossAmount: normalizedAmount,
+      financeEntryId: entry.id,
+      userId,
+      statusNotes: 'Revenue confirmed from booking request'
+    });
+  } catch (error) {
+    commissionWarning = error?.message || 'Partner commission sync failed.';
+  }
+
+  return { status, entry, commissionWarning };
 }
 
 
