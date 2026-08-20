@@ -69,6 +69,20 @@ test('booking-code income remains on its existing dedicated workflow', () => {
   assertNotMatch(mainSource, /RequestIncomeConfirmAction[^\n]*booking_code/);
 });
 
+
+test('booking-code requests route to the dedicated income workflow', () => {
+  assertMatch(mainSource, /request\.source === 'booking_code'[\s\S]*Gestisci codice \/ conferma entrata[\s\S]*Manage code \/ confirm income/);
+  assertMatch(mainSource, /openBookingCodeFromRequest\(request, navigate\)/);
+  assertMatch(mainSource, /navigate\('\/admin\/booking-codes'\)/);
+});
+
+test('booking-code request navigation carries the exact code into the booking-code search', () => {
+  assertMatch(mainSource, /sessionStorage\.setItem\('vulcaniq\.admin\.bookingCodeSearch', code\)/);
+  assertMatch(mainSource, /consumeBookingCodeRequestSearch\(\)/);
+  assertMatch(mainSource, /search: consumeBookingCodeRequestSearch\(\)/);
+  assertMatch(mainSource, /sessionStorage\.removeItem\('vulcaniq\.admin\.bookingCodeSearch'\)/);
+});
+
 for (const name of passes) console.log(`PASS  ${name}`);
 for (const failure of failures) console.error(`FAIL  ${failure}`);
 console.log(`\n${passes.length} passed, ${failures.length} failed.`);

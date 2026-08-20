@@ -6552,7 +6552,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
         ) : normalizedPath.includes('/gift-cards') ? (
           <GiftCardsAdminPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/requests') ? (
-          <RequestsPage lang={lang} session={session} adminContent={adminContent} />
+          <RequestsPage lang={lang} session={session} navigate={navigate} adminContent={adminContent} />
         ) : normalizedPath.includes('/availability') ? (
           <AvailabilityPage lang={lang} session={session} adminContent={adminContent} />
         ) : (
@@ -13143,7 +13143,18 @@ function PartnerSourceControl({ request, lang, session, onUpdated }) {
   );
 }
 
-function RequestCard({ request, lang, session = null, onApprove, onDecline, onRemove, onUpdated, compact = false }) {
+function openBookingCodeFromRequest(request, navigate) {
+  const code = String(request?.booking_code || '').trim();
+  if (!code || typeof navigate !== 'function') return;
+  try {
+    window.sessionStorage.setItem('vulcaniq.admin.bookingCodeSearch', code);
+  } catch {
+    // Navigation remains useful even when storage is unavailable.
+  }
+  navigate('/admin/booking-codes');
+}
+
+function RequestCard({ request, lang, session = null, navigate = null, onApprove, onDecline, onRemove, onUpdated, compact = false }) {
   return (
     <article className={`request-card ${compact ? 'compact' : ''}`}>
       <div className="request-card-head">
@@ -13179,6 +13190,12 @@ function RequestCard({ request, lang, session = null, onApprove, onDecline, onRe
       <PartnerSourceControl request={request} lang={lang} session={session} onUpdated={onUpdated} />
       <RequestCrmControls request={request} lang={lang} onUpdated={onUpdated} />
       <RequestIncomeConfirmAction request={request} lang={lang} session={session} onUpdated={onUpdated} />
+      {session && request.source === 'booking_code' && request.booking_code && navigate && (
+        <div className="request-actions request-income-actions">
+          <button className="button primary" type="button" onClick={() => openBookingCodeFromRequest(request, navigate)}>{adminCopy(lang, 'Gestisci codice / conferma entrata', 'Manage code / confirm income')}</button>
+          <span className="small-note">{adminCopy(lang, 'Usa il flusso dedicato del codice prenotazione per evitare entrate duplicate.', 'Use the dedicated booking-code workflow to avoid duplicate income entries.')}</span>
+        </div>
+      )}
       {session && <ReviewRequestActions record={request} type="request" lang={lang} session={session} onUpdated={onUpdated} />}
       {session && <ReferralActions record={request} type="request" lang={lang} session={session} onUpdated={onUpdated} />}
       <ReplyTools request={request} lang={lang}>
@@ -13575,7 +13592,7 @@ function AdminSelect({ label, value, onChange, options, formatter = (item) => it
 }
 
 
-function RequestStatusAccordions({ requests, lang, session = null, onApprove, onDecline, onRemove, onUpdated }) {
+function RequestStatusAccordions({ requests, lang, session = null, navigate = null, onApprove, onDecline, onRemove, onUpdated }) {
   const groups = [
     { status: 'pending', label: adminCopy(lang, 'In attesa', 'Pending'), defaultOpen: true },
     { status: 'accepted', label: adminCopy(lang, 'Approvate / accettate', 'Approved / accepted'), defaultOpen: false },
@@ -13598,6 +13615,7 @@ function RequestStatusAccordions({ requests, lang, session = null, onApprove, on
                   request={request}
                   lang={lang}
                   session={session}
+                  navigate={navigate}
                   compact
                   onApprove={() => onApprove(request)}
                   onDecline={() => onDecline(request)}
@@ -13929,8 +13947,18 @@ function adminMoney(value, currency = 'EUR', lang = 'it') {
   return formatMoney(value, currency, lang);
 }
 
+function consumeBookingCodeRequestSearch() {
+  try {
+    const code = String(window.sessionStorage.getItem('vulcaniq.admin.bookingCodeSearch') || '').trim();
+    window.sessionStorage.removeItem('vulcaniq.admin.bookingCodeSearch');
+    return code;
+  } catch {
+    return '';
+  }
+}
+
 function BookingCodesPage({ lang, session, adminContent = {} }) {
-  const [filters, setFilters] = useState({ status: 'all', search: '', limit: 250 });
+  const [filters, setFilters] = useState(() => ({ status: 'all', search: consumeBookingCodeRequestSearch(), limit: 250 }));
   const { codes, loading, error, refresh } = useAdminBookingCodes(filters);
   const [bookingCodeOpen, setBookingCodeOpen] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -14087,7 +14115,7 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
   );
 }
 
-function RequestsPage({ lang, session, adminContent = {} }) {
+function RequestsPage({ lang, session, navigate, adminContent = {} }) {
   const [filters, setFilters] = useState({ status: 'pending', experience_id: 'all', source: 'all', search: '', fromDate: '', toDate: '', limit: 250 });
   const { requests, loading, error, refresh } = useAdminRequests(filters);
   const [manualOpen, setManualOpen] = useState(false);
@@ -14139,6 +14167,7 @@ function RequestsPage({ lang, session, adminContent = {} }) {
             onRemove={(request) => setDecision({ type: 'remove', request })}
             onUpdated={(message) => refreshWithFeedback(message)}
             session={session}
+            navigate={navigate}
           />
         )}
       </section>
