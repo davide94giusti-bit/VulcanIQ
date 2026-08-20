@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { blockedDates, defaultExperienceAvailability } from './data/availability.js';
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
-import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest, markBookingRequestReviewRequested, markBookingRequestReviewReceived, markBookingRequestReviewLinkCopied } from './services/bookingRequests.js';
+import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest, markBookingRequestReviewRequested, markBookingRequestReviewReceived, markBookingRequestReviewLinkCopied, bookingRequestCanConfirmIncome, getBookingRequestIncomeState, confirmBookingRequestIncome } from './services/bookingRequests.js';
 import { listBookingCodes, createBookingCode, cancelBookingCode, redeemBookingCode, markBookingCodeCompleted, confirmBookingCodeIncome, markBookingCodeNoShow, markBookingCodeReviewRequested, markBookingCodeReviewReceived, markBookingCodeReviewLinkCopied } from './services/bookingCodes.js';
 import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadFixedExcursionLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
@@ -12506,6 +12506,157 @@ function RequestCrmControls({ request, lang, onUpdated }) {
   );
 }
 
+
+function RequestIncomeConfirmAction({ request, lang, session, onUpdated }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
+  const [incomeState, setIncomeState] = useState(null);
+  const [form, setForm] = useState(() => ({
+    entry_date: todayIso(),
+    amount: requestMoneyValue(request) > 0 ? String(requestMoneyValue(request)) : '',
+    currency: 'EUR',
+    payment_method: ''
+  }));
+
+  useBodyScrollLock(open);
+
+  useEffect(() => {
+    setForm({
+      entry_date: todayIso(),
+      amount: requestMoneyValue(request) > 0 ? String(requestMoneyValue(request)) : '',
+      currency: 'EUR',
+      payment_method: ''
+    });
+    setIncomeState(null);
+    setError('');
+    setWarning('');
+  }, [request.id, request.expected_value, request.quoted_amount]);
+
+  async function loadIncomeState() {
+    setLoading(true);
+    setError('');
+    try {
+      const state = await getBookingRequestIncomeState(request.id);
+      setIncomeState(state);
+      if (state.pending.length === 1 && parseMoneyAmount(form.amount) <= 0) {
+        setForm((current) => ({ ...current, amount: String(parseMoneyAmount(state.pending[0].amount) || '') }));
+      }
+    } catch (err) {
+      setError(err?.message || adminCopy(lang, 'Stato entrata non disponibile.', 'Income status unavailable.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openModal() {
+    setOpen(true);
+    setWarning('');
+    window.setTimeout(() => { loadIncomeState(); }, 0);
+  }
+
+  function closeModal() {
+    if (saving) return;
+    setOpen(false);
+    setError('');
+    setWarning('');
+  }
+
+  async function confirmIncome() {
+    setSaving(true);
+    setError('');
+    setWarning('');
+    try {
+      const result = await confirmBookingRequestIncome({
+        request,
+        amount: form.amount,
+        currency: form.currency,
+        entryDate: form.entry_date,
+        paymentMethod: form.payment_method,
+        userId: session?.user?.id || null
+      });
+      if (result.commissionWarning) {
+        setWarning(adminCopy(lang, `Entrata confermata. Commissione partner da verificare: ${result.commissionWarning}`, `Income confirmed. Partner commission needs review: ${result.commissionWarning}`));
+      }
+      const state = await getBookingRequestIncomeState(request.id);
+      setIncomeState(state);
+      onUpdated?.(result.status === 'already_confirmed'
+        ? adminCopy(lang, 'Entrata già confermata per questa prenotazione.', 'Income was already confirmed for this booking.')
+        : adminCopy(lang, 'Entrata confermata e collegata alla prenotazione.', 'Income confirmed and linked to the booking.'));
+    } catch (err) {
+      const code = err?.code || '';
+      const message = code === 'BOOKING_INCOME_MULTIPLE_PENDING'
+        ? adminCopy(lang, 'Ci sono più entrate attese collegate. Apri Finanze e riconciliale prima di confermare.', 'Multiple expected income entries are linked. Reconcile them in Finance before confirming.')
+        : code === 'BOOKING_INCOME_PAYMENT_METHOD_REQUIRED'
+          ? adminCopy(lang, 'Indica il metodo di pagamento.', 'Enter the payment method.')
+          : code === 'BOOKING_INCOME_AMOUNT_REQUIRED'
+            ? adminCopy(lang, 'Inserisci un importo positivo.', 'Enter a positive amount.')
+            : err?.message || adminCopy(lang, 'Entrata non confermata.', 'Income was not confirmed.');
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!session || !bookingRequestCanConfirmIncome(request)) return null;
+
+  const confirmedEntries = incomeState?.confirmed || [];
+  const pendingEntries = incomeState?.pending || [];
+  const confirmedTotal = confirmedEntries.reduce((sum, entry) => sum + parseMoneyAmount(entry.amount), 0);
+  const hasAmbiguousPending = pendingEntries.length > 1;
+
+  return (
+    <>
+      <div className="request-actions request-income-actions">
+        <button className="button primary" type="button" onClick={openModal}>{adminCopy(lang, 'Conferma entrata', 'Confirm income')}</button>
+      </div>
+      {open && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="admin-modal" role="dialog" aria-modal="true" aria-labelledby={`confirmIncomeTitle-${request.id}`}>
+            <div className="admin-modal-header">
+              <div>
+                <h2 id={`confirmIncomeTitle-${request.id}`}>{adminCopy(lang, 'Conferma entrata', 'Confirm income')}</h2>
+                <p>{request.customer_name || adminCopy(lang, 'Cliente senza nome', 'Unnamed customer')} · {adminExperienceLabel(request.experience_id, lang)} · {formatDateForMessage(request.requested_date, lang) || '-'}</p>
+              </div>
+              <button type="button" className="icon-button" onClick={closeModal} aria-label={text(lang, 'close')}>×</button>
+            </div>
+
+            {loading ? <p>{adminCopy(lang, 'Controllo movimenti collegati...', 'Checking linked finance entries...')}</p> : confirmedEntries.length > 0 ? (
+              <div className="admin-alert success" role="status">
+                <strong>{adminCopy(lang, 'Entrata già confermata.', 'Income already confirmed.')}</strong>
+                <p>{adminCopy(lang, 'Totale confermato', 'Confirmed total')}: {formatMoney(confirmedTotal, confirmedEntries[0]?.currency || 'EUR', lang)}</p>
+                <p>{adminCopy(lang, 'Data', 'Date')}: {formatDateForMessage(confirmedEntries[0]?.entry_date, lang) || '-'} · {adminCopy(lang, 'Metodo', 'Method')}: {confirmedEntries[0]?.payment_method || '-'}</p>
+              </div>
+            ) : (
+              <>
+                {pendingEntries.length === 1 && <div className="admin-alert info compact-alert">{adminCopy(lang, 'Esiste già un’entrata attesa collegata: verrà aggiornata a confermata, senza creare un duplicato.', 'One expected income entry is already linked: it will be updated to confirmed instead of creating a duplicate.')}</div>}
+                {hasAmbiguousPending && <div className="admin-alert warning" role="alert">{adminCopy(lang, 'Sono presenti più entrate attese collegate. Riconciliale nella pagina Finanze prima di confermare.', 'Multiple expected income entries are linked. Reconcile them in Finance before confirming.')}</div>}
+                {!hasAmbiguousPending && (
+                  <div className="admin-form-grid request-income-confirm-grid">
+                    <AdminInput label={adminCopy(lang, 'Data incasso', 'Income date')} type="date" value={form.entry_date} onChange={(value) => setForm((current) => ({ ...current, entry_date: value }))} />
+                    <AdminInput label={adminCopy(lang, 'Importo effettivo', 'Actual amount')} type="number" inputMode="decimal" value={form.amount} onChange={(value) => setForm((current) => ({ ...current, amount: value }))} />
+                    <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => setForm((current) => ({ ...current, currency: normalizeCurrency(value) }))} />
+                    <AdminInput label={adminCopy(lang, 'Metodo di pagamento', 'Payment method')} value={form.payment_method} placeholder={adminCopy(lang, 'Contanti, bonifico, carta...', 'Cash, bank transfer, card...')} onChange={(value) => setForm((current) => ({ ...current, payment_method: value }))} />
+                  </div>
+                )}
+              </>
+            )}
+
+            {warning && <div className="admin-alert warning" role="status">{warning}</div>}
+            {error && <div className="admin-alert error" role="alert">{error}</div>}
+            <div className="modal-actions">
+              {!loading && confirmedEntries.length === 0 && !hasAmbiguousPending && <button className="button primary" type="button" onClick={confirmIncome} disabled={saving}>{saving ? adminCopy(lang, 'Conferma...', 'Confirming...') : adminCopy(lang, 'Conferma entrata', 'Confirm income')}</button>}
+              <button className="button secondary" type="button" onClick={closeModal} disabled={saving}>{adminCopy(lang, 'Chiudi', 'Close')}</button>
+            </div>
+          </section>
+        </div>
+      )}
+    </>
+  );
+}
+
 function RequestsCrmDashboard({ requests, lang }) {
   const summary = useMemo(() => buildRequestsCrmSummary(requests, lang), [requests, lang]);
   return (
@@ -13027,6 +13178,7 @@ function RequestCard({ request, lang, session = null, onApprove, onDecline, onRe
       )}
       <PartnerSourceControl request={request} lang={lang} session={session} onUpdated={onUpdated} />
       <RequestCrmControls request={request} lang={lang} onUpdated={onUpdated} />
+      <RequestIncomeConfirmAction request={request} lang={lang} session={session} onUpdated={onUpdated} />
       {session && <ReviewRequestActions record={request} type="request" lang={lang} session={session} onUpdated={onUpdated} />}
       {session && <ReferralActions record={request} type="request" lang={lang} session={session} onUpdated={onUpdated} />}
       <ReplyTools request={request} lang={lang}>
