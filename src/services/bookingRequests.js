@@ -104,59 +104,24 @@ async function reverseOrVoidFinanceForRequest(request, userId = null, reason = '
   const now = new Date().toISOString();
   const { data: entries, error } = await supabase
     .from('finance_entries')
-    .select('id, entry_date, type, amount, currency, title, description, category, payment_method, status, active, reversal_of, booking_request_id, booking_code_id, source_type, source_id')
+    .select('id, status, active, reversal_of')
     .eq('booking_request_id', request.id);
   if (error) throw error;
 
+  // Reservation cancellation/decline is not evidence that a refund was actually paid.
+  // Preserve recognized money and only void outstanding expectations. Actual refunds are
+  // explicit Finance reversals that capture amount, date, method, and audit metadata.
   for (const entry of entries || []) {
-    const status = String(entry.status || 'confirmed');
-    if (entry.reversal_of || ['cancelled', 'void', 'voided', 'reversed', 'reversal'].includes(status)) continue;
-    if (status === 'confirmed') {
-      const { data: existingReversal, error: existingError } = await supabase
-        .from('finance_entries')
-        .select('id')
-        .eq('reversal_of', entry.id)
-        .limit(1);
-      if (existingError) throw existingError;
-      if (!existingReversal?.length && Number(entry.amount || 0) !== 0) {
-        const reversalPayload = {
-          entry_date: new Date().toISOString().slice(0, 10),
-          type: entry.type || 'income',
-          amount: -Math.abs(parseMoneyAmount(entry.amount)),
-          currency: normalizeCurrency(entry.currency),
-          title: `Reversal - ${entry.title || request.booking_code || request.customer_name || 'booking request'}`,
-          description: reason || 'Booking request declined/cancelled',
-          category: entry.category || 'booking_reversal',
-          payment_method: entry.payment_method || null,
-          booking_request_id: request.id,
-          booking_code_id: entry.booking_code_id || null,
-          source_type: entry.source_type || 'booking_request',
-          source_id: entry.source_id || request.id,
-          status: 'reversal',
-          reversal_of: entry.id,
-          active: true,
-          recognized_at: now,
-          created_by: userId || null,
-          updated_by: userId || null
-        };
-        const { error: insertError } = await supabase.from('finance_entries').insert(reversalPayload);
-        if (insertError) throw insertError;
-      }
-      const { error: updateError } = await supabase
-        .from('finance_entries')
-        .update({ status: 'reversed', reversed_at: now, updated_by: userId || null })
-        .eq('id', entry.id);
-      if (updateError) throw updateError;
-    } else {
-      const { error: updateError } = await supabase
-        .from('finance_entries')
-        .update({ status: 'cancelled', active: false, cancelled_at: now, updated_by: userId || null, archive_reason: reason || 'Booking request declined/cancelled' })
-        .eq('id', entry.id);
-      if (updateError) throw updateError;
-    }
+    const status = String(entry.status || '').toLowerCase();
+    if (entry.reversal_of || entry.active === false || ['cancelled', 'void', 'voided', 'reversal'].includes(status)) continue;
+    if (!['pending', 'expected'].includes(status)) continue;
+    const { error: updateError } = await supabase
+      .from('finance_entries')
+      .update({ status: 'cancelled', active: false, cancelled_at: now, updated_by: userId || null, archive_reason: reason || 'Booking request cancelled' })
+      .eq('id', entry.id);
+    if (updateError) throw updateError;
   }
 }
-
 
 const CONFIRMED_INCOME_REQUEST_STATUSES = new Set(['accepted', 'confirmed', 'completed']);
 const CONFIRMED_INCOME_LEAD_STATUSES = new Set(['deposit_paid', 'confirmed', 'completed', 'review_requested', 'review_received']);
@@ -178,17 +143,17 @@ export async function getBookingRequestIncomeState(requestId) {
   if (!requestId) throw new Error('Booking request is required.');
   const { data, error } = await supabase
     .from('finance_entries')
-    .select('id, created_at, updated_at, entry_date, type, amount, currency, title, description, category, payment_method, status, source_type, source_id, booking_request_id, booking_code_id, fixed_excursion_id, leaflet_id, recognized_at, cancelled_at, reversed_at, reversal_of, admin_confirmed_by, admin_confirmed_at, active')
+    .select('id, created_at, updated_at, entry_date, type, amount, currency, title, description, category, payment_method, status, source_type, source_id, booking_request_id, booking_code_id, fixed_excursion_id, leaflet_id, idempotency_key, recognized_at, cancelled_at, reversed_at, reversal_of, admin_confirmed_by, admin_confirmed_at, active')
     .eq('booking_request_id', requestId)
     .eq('type', 'income')
     .eq('active', true)
     .order('created_at', { ascending: true });
   if (error) throw error;
 
-  const current = (data || []).filter((entry) => !entry.reversal_of && !NON_CURRENT_FINANCE_STATUSES.has(financeIncomeStatus(entry.status)));
-  const confirmed = current.filter((entry) => financeIncomeStatus(entry.status) === 'confirmed');
-  const pending = current.filter((entry) => ['expected', 'pending'].includes(financeIncomeStatus(entry.status)));
-  return { entries: current, confirmed, pending };
+  const entries = (data || []).filter((entry) => entry.active !== false && !['cancelled', 'void', 'voided'].includes(financeIncomeStatus(entry.status)));
+  const confirmed = entries.filter((entry) => ['confirmed', 'reversed', 'reversal'].includes(financeIncomeStatus(entry.status)));
+  const pending = entries.filter((entry) => !entry.reversal_of && ['expected', 'pending'].includes(financeIncomeStatus(entry.status)));
+  return { entries, confirmed, pending };
 }
 
 function bookingIncomeTitle(request = {}) {
@@ -200,7 +165,7 @@ function bookingIncomeDescription(request = {}) {
   return [request.customer_name, request.experience_id, request.requested_date, request.booking_code].filter(Boolean).join(' · ') || 'Booking payment';
 }
 
-export async function confirmBookingRequestIncome({ request, amount, currency = 'EUR', entryDate, paymentMethod = '', userId = null } = {}) {
+export async function confirmBookingRequestIncome({ request, amount, currency = 'EUR', entryDate, paymentMethod = '', idempotencyKey = '', userId = null } = {}) {
   if (!bookingRequestCanConfirmIncome(request)) {
     const error = new Error('Only confirmed non-booking-code requests can confirm income.');
     error.code = 'BOOKING_INCOME_NOT_ELIGIBLE';
@@ -226,8 +191,10 @@ export async function confirmBookingRequestIncome({ request, amount, currency = 
   }
 
   const state = await getBookingRequestIncomeState(request.id);
-  if (state.confirmed.length) {
-    return { status: 'already_confirmed', entry: state.confirmed[0], entries: state.confirmed };
+  const cleanIdempotencyKey = String(idempotencyKey || '').trim();
+  if (cleanIdempotencyKey) {
+    const existing = state.entries.find((entry) => entry.idempotency_key === cleanIdempotencyKey);
+    if (existing) return { status: 'already_recorded', entry: existing, entries: state.confirmed };
   }
   if (state.pending.length > 1) {
     const error = new Error('Multiple pending income entries are linked to this booking. Reconcile them in Finance before confirming income.');
@@ -254,15 +221,36 @@ export async function confirmBookingRequestIncome({ request, amount, currency = 
   let status;
   if (state.pending.length === 1) {
     const pending = state.pending[0];
-    entry = await updateFinanceEntry(pending.id, {
-      ...shared,
-      title: pending.title || bookingIncomeTitle(request),
-      description: pending.description || bookingIncomeDescription(request),
-      category: pending.category || 'booking_payment',
-      source_type: pending.source_type || 'booking_request',
-      source_id: pending.source_id || request.id
-    }, userId);
-    status = 'confirmed_existing';
+    const pendingAmount = parseMoneyAmount(pending.amount);
+    if (pendingAmount > normalizedAmount) {
+      await updateFinanceEntry(pending.id, {
+        amount: Number((pendingAmount - normalizedAmount).toFixed(2)),
+        status: 'expected',
+        updated_at: now
+      }, userId);
+      entry = await createFinanceEntry({
+        ...shared,
+        title: bookingIncomeTitle(request),
+        description: bookingIncomeDescription(request),
+        category: 'booking_payment',
+        source_type: 'booking_request',
+        source_id: request.id,
+        idempotency_key: cleanIdempotencyKey || null,
+        active: true
+      }, userId);
+      status = 'created_partial_payment';
+    } else {
+      entry = await updateFinanceEntry(pending.id, {
+        ...shared,
+        title: pending.title || bookingIncomeTitle(request),
+        description: pending.description || bookingIncomeDescription(request),
+        category: pending.category || 'booking_payment',
+        source_type: pending.source_type || 'booking_request',
+        source_id: pending.source_id || request.id,
+        idempotency_key: cleanIdempotencyKey || pending.idempotency_key || null
+      }, userId);
+      status = 'confirmed_existing';
+    }
   } else {
     entry = await createFinanceEntry({
       ...shared,
@@ -271,6 +259,7 @@ export async function confirmBookingRequestIncome({ request, amount, currency = 
       category: 'booking_payment',
       source_type: 'booking_request',
       source_id: request.id,
+      idempotency_key: cleanIdempotencyKey || null,
       active: true
     }, userId);
     status = 'created_confirmed';
@@ -282,10 +271,10 @@ export async function confirmBookingRequestIncome({ request, amount, currency = 
       sourceType: 'booking_request',
       source: request,
       partnerId: request.partner_id || null,
-      grossAmount: normalizedAmount,
+      grossAmount: state.confirmed.reduce((sum, item) => sum + parseMoneyAmount(item.amount), 0) + normalizedAmount,
       financeEntryId: entry.id,
       userId,
-      statusNotes: 'Revenue confirmed from booking request'
+      statusNotes: 'Recorded payments synchronized from booking request'
     });
   } catch (error) {
     commissionWarning = error?.message || 'Partner commission sync failed.';
@@ -449,21 +438,37 @@ export async function listBookingRequests(filters = {}) {
   const { data, error } = await query;
   if (error) throw error;
   const requests = data || [];
+  if (!requests.length) return [];
+
+  const requestIds = requests.map((request) => request.id).filter(Boolean);
   const fixedIds = [...new Set(requests.map((request) => request.fixed_excursion_id).filter(Boolean))];
+  const [fixedResult, financeResult] = await Promise.all([
+    fixedIds.length
+      ? supabase.from('fixed_excursions').select('id, date, start_time, end_time, experience_id, title_it, title_en').in('id', fixedIds)
+      : Promise.resolve({ data: [], error: null }),
+    requestIds.length
+      ? supabase.from('finance_entries')
+          .select('id, created_at, entry_date, type, amount, currency, payment_method, status, reversal_of, booking_request_id, booking_code_id, source_type, source_id, active')
+          .in('booking_request_id', requestIds)
+          .eq('type', 'income')
+          .order('created_at', { ascending: true })
+      : Promise.resolve({ data: [], error: null })
+  ]);
+  if (fixedResult.error) throw fixedResult.error;
+  if (financeResult.error) throw financeResult.error;
 
-  if (!fixedIds.length) return requests;
-
-  const { data: fixedRows, error: fixedError } = await supabase
-    .from('fixed_excursions')
-    .select('id, date, start_time, end_time, experience_id, title_it, title_en')
-    .in('id', fixedIds);
-
-  if (fixedError) throw fixedError;
-  const fixedById = (fixedRows || []).reduce((acc, row) => ({ ...acc, [row.id]: row }), {});
+  const fixedById = (fixedResult.data || []).reduce((acc, row) => ({ ...acc, [row.id]: row }), {});
+  const financeByRequest = (financeResult.data || []).reduce((acc, row) => {
+    if (!row.booking_request_id) return acc;
+    if (!acc[row.booking_request_id]) acc[row.booking_request_id] = [];
+    acc[row.booking_request_id].push(row);
+    return acc;
+  }, {});
 
   return requests.map((request) => ({
     ...request,
-    fixed_excursion: fixedById[request.fixed_excursion_id] || null
+    fixed_excursion: fixedById[request.fixed_excursion_id] || null,
+    finance_entries: financeByRequest[request.id] || []
   }));
 }
 

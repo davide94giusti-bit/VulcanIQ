@@ -1,31 +1,17 @@
 {
-  "name": "vulcanIQ | Esperienze sull'Etna",
-  "short_name": "vulcanIQ",
-  "description": "Esperienze guidate sull'Etna, private, educative e su misura.",
-  "start_url": "/",
+  "id": "/pwa/public",
+  "name": "VulcanIQ",
+  "short_name": "VulcanIQ",
+  "description": "Esperienze guidate sull'Etna e aggiornamenti VulcanIQ.",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#080c14",
   "theme_color": "#080c14",
   "icons": [
-    {
-      "src": "/brand/vulcaniq/app-icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/brand/vulcaniq/app-icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/brand/vulcaniq/app-icon-maskable-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    }
+    { "src": "/brand/vulcaniq/app-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/vulcaniq/app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/vulcaniq/app-icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
