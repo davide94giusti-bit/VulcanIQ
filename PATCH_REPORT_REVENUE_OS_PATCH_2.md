@@ -118,11 +118,11 @@ Implemented the Revenue OS Patch 2 requested in `Pasted text.txt` with targeted 
 - `src/services/bookingCodes.js`
 - `src/services/bookingRequests.js`
 - `src/services/financeService.js`
-- `supabase/migrations/20260706_revenue_os_patch_2.sql`
+- `supabase/migrations/20260706090000_revenue_os_patch_2.sql`
 - `PATCH_REPORT_REVENUE_OS_PATCH_2.md`
 
 ## 19. Database migrations added
-- `supabase/migrations/20260706_revenue_os_patch_2.sql`
+- `supabase/migrations/20260706090000_revenue_os_patch_2.sql`
 
 Run this migration before deploying the updated frontend because the frontend now reads new booking-code and finance columns.
 
@@ -142,7 +142,7 @@ No merge conflict markers found.
 
 ## 22. Manual setup required
 1. Apply the new Supabase migration:
-   `supabase/migrations/20260706_revenue_os_patch_2.sql`
+   `supabase/migrations/20260706090000_revenue_os_patch_2.sql`
 2. Deploy the frontend after migration.
 3. Verify booking-code redemption after schema reload.
 4. Confirm that finance summaries show expected vs confirmed income correctly.

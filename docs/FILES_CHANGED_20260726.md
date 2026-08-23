@@ -22,8 +22,8 @@
 ## Supabase database, Edge Functions, and setup
 
 - `supabase/config.toml` — Edge Function gateway configuration.
-- `supabase/migrations/20260726_automation_notifications_weekly_security.sql` — schema, idempotency, notification/report logs, rate limits, RLS, public RPCs, Gift Card authority, analytics allowlist.
-- `supabase/migrations/20260726_storage_security_hardening.sql` — bucket classification and object policies.
+- `supabase/migrations/20260726090000_automation_notifications_weekly_security.sql` — schema, idempotency, notification/report logs, rate limits, RLS, public RPCs, Gift Card authority, analytics allowlist.
+- `supabase/migrations/20260726100000_storage_security_hardening.sql` — bucket classification and object policies.
 - `supabase/functions/_shared/vulcaniq.ts` — common authorization, database, Resend, validation, and throttling helpers.
 - `supabase/functions/notify-new-request/index.ts` — immediate request notifications and controlled retries.
 - `supabase/functions/send-weekly-admin-recap/index.ts` — weekly report generation, DST-safe scheduling, idempotency, test/resend.

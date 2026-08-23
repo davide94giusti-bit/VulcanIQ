@@ -67,7 +67,7 @@ public/_redirects
 public/robots.txt
 public/sitemap.xml
 supabase/schema.sql
-supabase/migrations/20260705_revenue_os_followup.sql
+supabase/migrations/20260705090000_revenue_os_followup.sql
 PATCH_REPORT_REVENUE_OS_FOLLOWUP.md
 ```
 
@@ -76,7 +76,7 @@ PATCH_REPORT_REVENUE_OS_FOLLOWUP.md
 Added:
 
 ```txt
-supabase/migrations/20260705_revenue_os_followup.sql
+supabase/migrations/20260705090000_revenue_os_followup.sql
 ```
 
 Includes additive changes for:
@@ -168,7 +168,7 @@ Updated:
 ```txt
 src/analytics.js
 functions/api/analytics/event.js
-supabase/migrations/20260705_revenue_os_followup.sql
+supabase/migrations/20260705090000_revenue_os_followup.sql
 ```
 
 Added accepted traffic sources:
@@ -331,7 +331,7 @@ No conflict markers found.
 After deploying code, run this migration in Supabase:
 
 ```txt
-supabase/migrations/20260705_revenue_os_followup.sql
+supabase/migrations/20260705090000_revenue_os_followup.sql
 ```
 
 Then verify:

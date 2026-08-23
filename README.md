@@ -215,7 +215,7 @@ Analytics ingestion order:
 Required Supabase migration:
 
 ```text
-supabase/migrations/20260608_add_analytics_events.sql
+supabase/migrations/20260608090000_add_analytics_events.sql
 ```
 
 Required server-side environment variables for the Cloudflare Pages ingestion endpoint:

@@ -102,7 +102,7 @@ test('Europe/Rome date ranges use half-open DST-safe boundaries', () => {
 });
 
 test('server submit incidents respect the effective baseline/range', () => {
-  assert.match(read('supabase/migrations/20260818_analytics_consolidation.sql'), /where occurred_at >= v_funnel_from\s+and occurred_at < v_to/);
+  assert.match(read('supabase/migrations/20260818090000_analytics_consolidation.sql'), /where occurred_at >= v_funnel_from\s+and occurred_at < v_to/);
 });
 
 test('current submit incident is recency aware', () => {
@@ -158,7 +158,7 @@ test('raw sample size cannot alter canonical summary KPI values', () => {
 });
 
 const contract = read('src/features/analytics/contract.js');
-const migration = read('supabase/migrations/20260818_analytics_consolidation.sql');
+const migration = read('supabase/migrations/20260818090000_analytics_consolidation.sql');
 const analyticsService = read('src/services/analyticsService.js');
 const adminSource = read('src/main.jsx') + '\n' + read('src/features/analytics/AnalyticsHealthPanel.jsx');
 const recap = read('supabase/functions/send-weekly-admin-recap/index.ts');

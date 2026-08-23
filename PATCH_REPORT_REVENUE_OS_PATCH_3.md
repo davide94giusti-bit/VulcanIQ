@@ -310,7 +310,7 @@ New files added:
 ```txt
 src/services/giftCards.js
 src/services/referrals.js
-supabase/migrations/20260706_revenue_os_patch_3.sql
+supabase/migrations/20260706100000_revenue_os_patch_3.sql
 PATCH_REPORT_REVENUE_OS_PATCH_3.md
 ```
 
@@ -319,7 +319,7 @@ PATCH_REPORT_REVENUE_OS_PATCH_3.md
 Created:
 
 ```txt
-supabase/migrations/20260706_revenue_os_patch_3.sql
+supabase/migrations/20260706100000_revenue_os_patch_3.sql
 ```
 
 The migration is additive/idempotent where possible and includes:
@@ -379,7 +379,7 @@ PASS - no service-role/private key references in frontend src
 Before deploying the frontend, apply this migration in Supabase:
 
 ```txt
-supabase/migrations/20260706_revenue_os_patch_3.sql
+supabase/migrations/20260706100000_revenue_os_patch_3.sql
 ```
 
 After applying the migration:

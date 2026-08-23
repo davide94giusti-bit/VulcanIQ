@@ -12,8 +12,8 @@ function check(name, condition, detail = '') {
 }
 
 const packageJson = JSON.parse(read('package.json'));
-const migration = read('supabase/migrations/20260726_automation_notifications_weekly_security.sql');
-const storageMigration = read('supabase/migrations/20260726_storage_security_hardening.sql');
+const migration = read('supabase/migrations/20260726090000_automation_notifications_weekly_security.sql');
+const storageMigration = read('supabase/migrations/20260726100000_storage_security_hardening.sql');
 const mediaOptimizerMigration = read('supabase/migrations/20260819150000_admin_media_optimizer.sql');
 const bookingService = read('src/services/bookingRequests.js');
 const giftService = read('src/services/giftCards.js');
@@ -25,13 +25,13 @@ const backupShared = read('functions/api/admin/backup/_shared.js');
 const backupCreate = read('functions/api/admin/backup/create.js');
 const notifyFunction = read('supabase/functions/notify-new-request/index.ts');
 const recapFunction = read('supabase/functions/send-weekly-admin-recap/index.ts');
-const followupMigration = read('supabase/migrations/20260817_operational_analytics_reporting_fix.sql');
+const followupMigration = read('supabase/migrations/20260817090000_operational_analytics_reporting_fix.sql');
 const weeklyEmail = read('supabase/functions/_shared/weeklyRecapEmail.ts');
 const operationsService = read('src/services/operationsService.js');
 const mainSource = read('src/main.jsx');
 const analyticsIntegrity = read('src/features/analytics/integrity.js');
 const analyticsContract = read('src/features/analytics/contract.js');
-const analyticsConsolidation = read('supabase/migrations/20260818_analytics_consolidation.sql');
+const analyticsConsolidation = read('supabase/migrations/20260818090000_analytics_consolidation.sql');
 const analyticsService = read('src/services/analyticsService.js');
 const analyticsIngestion = read('functions/api/analytics/event.js');
 const safeguardsComponent = read('src/features/admin/OperationalSafeguardsBanner.jsx');
