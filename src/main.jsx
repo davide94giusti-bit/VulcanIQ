@@ -5,13 +5,13 @@ import { blockedDates, defaultExperienceAvailability } from './data/availability
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
 import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest, markBookingRequestReviewRequested, markBookingRequestReviewReceived, markBookingRequestReviewLinkCopied, bookingRequestCanConfirmIncome, getBookingRequestIncomeState, confirmBookingRequestIncome } from './services/bookingRequests.js';
-import { listBookingCodes, createBookingCode, cancelBookingCode, redeemBookingCode, markBookingCodeCompleted, getBookingCodePaymentState, recordBookingCodePayment, markBookingCodeNoShow, markBookingCodeReviewRequested, markBookingCodeReviewReceived, markBookingCodeReviewLinkCopied } from './services/bookingCodes.js';
+import { listBookingCodes, createBookingCode, cancelBookingCode, redeemBookingCode, markBookingCodeCompleted, confirmBookingCodeIncome, markBookingCodeNoShow, markBookingCodeReviewRequested, markBookingCodeReviewReceived, markBookingCodeReviewLinkCopied } from './services/bookingCodes.js';
 import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadFixedExcursionLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
 import { loadPublicReviews, submitPublicReview, listReviews, createManualReview, updateReviewDetails, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply, deleteReview } from './services/reviewsService.js';
 import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFile } from './services/siteMediaService.js';
 import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
-import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry, reverseFinanceEntry } from './services/financeService.js';
+import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry } from './services/financeService.js';
 import { assignPartnerToBookingRequest, calculatePartnerCommission, listPartnerCommissions, listPartnerCommissionSummary, updatePartnerCommissionStatus, upsertPartnerCommissionForSource } from './services/partnerCommissions.js';
 import { getAdminAnalyticsSummary, listAnalyticsEventPage, listAnalyticsSessionPage, setAnalyticsReportingBaseline, clearAnalyticsReportingBaseline } from './services/analyticsService.js';
 import { createDatabaseBackup, downloadLatestDatabaseBackup, getBackupSchedule, getBackupStatus, saveBackupSchedule } from './services/backupService.js';
@@ -22,7 +22,6 @@ import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperience
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import { submitPublicBookingRequestWithTracking } from './services/publicBookingSubmit.js';
 import { formatCurrencyAmount, normalizeCurrency, parseMoneyAmount } from './utils/money.js';
-import { paymentSummary, financeEntryHasBusinessSource, financeEntryIsRecognized, calculateLedgerSummary, buildFinancialReconciliation } from './domain/financeModel.js';
 import { applySeo } from './seo.js';
 import { ADMIN_ROLES, listAdminUsers, updateAdminUser } from './services/adminUsers.js';
 import OperationalSafeguardsBanner from './features/admin/OperationalSafeguardsBanner.jsx';
@@ -34,7 +33,6 @@ import AnalyticsHealthPanel from './features/analytics/AnalyticsHealthPanel.jsx'
 import AnalyticsCanonicalFunnels from './features/analytics/AnalyticsCanonicalFunnels.jsx';
 import ReviewsPage from './features/reviews/ReviewsPage.jsx';
 import GoogleReviewsAdminStatus from './features/reviews/GoogleReviewsAdminStatus.jsx';
-import NotificationsPage from './features/notifications/NotificationsPage.jsx';
 import { normalizeReviewText, reviewSourceLabel } from './features/reviews/reviewModel.js';
 import useBodyScrollLock from './hooks/useBodyScrollLock.js';
 import { publicPageFromPathname, legalPageFromPathname, routeDefinitionFromPathname, canonicalPathForPage, isReferralPath } from './app/publicRoutes.js';
@@ -62,7 +60,6 @@ const ADMIN_NAV_SECTIONS = [
   { key: 'requests', path: '/admin/requests', labelIt: 'Richieste prenotazione', labelEn: 'Booking requests', editable: true },
   { key: 'bookingCodes', path: '/admin/booking-codes', labelIt: 'Codici prenotazione', labelEn: 'Booking codes', editable: true },
   { key: 'giftCards', path: '/admin/gift-cards', labelIt: 'Gift Card', labelEn: 'Gift Cards', editable: true },
-  { key: 'notifications', path: '/admin/notifications', labelIt: 'Installazione e notifiche', labelEn: 'Install & notifications', editable: false },
   { key: 'availability', path: '/admin/availability', labelIt: 'Disponibilità', labelEn: 'Availability', editable: true },
   { key: 'partnerships', path: '/admin/partnerships', labelIt: 'Collaborazioni', labelEn: 'Collaborations', editable: true },
   { key: 'edit', path: '/admin/edit', labelIt: 'Modifica sito e recensioni', labelEn: 'Edit website & reviews', editable: true },
@@ -75,7 +72,7 @@ const ADMIN_NAV_SECTIONS = [
 
 const ADMIN_NAV_GROUPS = [
   { key: 'operations', labelIt: 'Operazioni', labelEn: 'Operations', items: ['today', 'upcoming', 'calendar'] },
-  { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'bookingCodes', 'giftCards', 'availability', 'notifications'] },
+  { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'bookingCodes', 'giftCards', 'availability'] },
   { key: 'website', labelIt: 'Gestione sito', labelEn: 'Website management', items: ['edit', 'publicSite'] },
   { key: 'business', labelIt: 'Business', labelEn: 'Business', items: ['partnerships', 'finance', 'analytics'] },
   { key: 'system', labelIt: 'Sistema', labelEn: 'System', items: ['backup', 'users'] }
@@ -2212,7 +2209,6 @@ function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor })
           {publicPages.map((page, index) => (
             <button key={page} type="button" className={activePage === page ? 'active' : ''} onClick={() => choose(page)}>{i18n[lang].nav[index]}</button>
           ))}
-          <button type="button" className={activePage === 'install' ? 'active' : ''} onClick={() => choose('install')}>{lang === 'it' ? 'Installazione e notifiche' : 'Install & Notifications'}</button>
           <button className="language-toggle desktop-language-toggle" type="button" onClick={switchLanguage} aria-label={languageAria}>{i18n[lang].switchLabel}</button>
         </nav>
         <button className="mobile-language-switch" type="button" onClick={switchLanguage} aria-label={languageAria}>{i18n[lang].switchLabel}</button>
@@ -3093,14 +3089,14 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   ), document.body);
 }
 
-function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteContent, editor, cmsStatus = 'ready' }) {
+function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteContent, editor }) {
   const mediaSource = editor?.mediaMap || siteMedia || {};
   const backgroundItem = editorMediaItem(mediaSource, 'home_hero_background', '', lang === 'it' ? 'Sfondo hero homepage' : 'Home hero background');
   const heroBackground = backgroundItem.file_url || '';
   const heroBackgroundKind = mediaUrlKindFromValue(heroBackground, backgroundItem.media_kind || 'image');
   const heroBackgroundVideo = Boolean(heroBackground && heroBackgroundKind === 'video');
-  const heroFeatureImage = mediaUrl(mediaSource, 'home_hero_feature_image', '');
-  const heroFeatureVideo = mediaUrl(mediaSource, 'home_hero_video', '');
+  const heroFeatureImage = mediaUrl(mediaSource, 'home_hero_feature_image', MEDIA.premium);
+  const heroFeatureVideo = mediaUrl(mediaSource, 'home_hero_video', MEDIA.introVideo);
   const heroFeatureMediaVisible = Boolean(heroFeatureImage || heroFeatureVideo);
   const contentSource = editor?.contentMap || siteContent || {};
   const heroLayoutItem = editorContentItem(contentSource, 'home.hero.layout');
@@ -3113,21 +3109,6 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
   const [bookingCodeOpen, setBookingCodeOpen] = useState(false);
   const [supportContactOpen, setSupportContactOpen] = useState(false);
   const [fastRequestOpen, setFastRequestOpen] = useState(false);
-
-  if (!editor?.isEditing && cmsStatus === 'loading') {
-    return (
-      <section className="hero hero-no-feature-media hero-layout-center hero-cms-loading" id="top" aria-busy="true" aria-label={lang === 'it' ? 'Caricamento contenuti' : 'Loading content'}>
-        <div className="hero-overlay" />
-        <div className="container hero-grid hero-grid-no-media">
-          <div className="hero-copy hero-cms-loading-copy" aria-hidden="true">
-            <span className="hero-cms-loading-line hero-cms-loading-title" />
-            <span className="hero-cms-loading-line hero-cms-loading-lead" />
-            <span className="hero-cms-loading-line hero-cms-loading-action" />
-          </div>
-        </div>
-      </section>
-    );
-  }
 
   function handleBookNow() {
     setFastRequestOpen(true);
@@ -3224,8 +3205,8 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
           <div className="hero-media" aria-hidden="false">
             {editor?.isEditing && (
               <div className="hero-media-edit-actions">
-                <button className="editor-badge editor-selectable" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); editor.select({ type: 'image', key: 'home_hero_video', label: lang === 'it' ? 'Video hero' : 'Hero video', section: 'Media', fallbackSrc: '', fallbackAlt: lang === 'it' ? 'Video introduttivo vulcanIQ' : 'vulcanIQ introductory video' }); }}>{lang === 'it' ? 'Modifica video' : 'Edit video'}</button>
-                <button className="editor-badge editor-selectable" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); editor.select({ type: 'image', key: 'home_hero_feature_image', label: lang === 'it' ? 'Immagine hero' : 'Hero image', section: 'Media', fallbackSrc: '', fallbackAlt: lang === 'it' ? 'Immagine hero homepage' : 'Home hero image' }); }}>{lang === 'it' ? 'Modifica immagine' : 'Edit image'}</button>
+                <button className="editor-badge editor-selectable" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); editor.select({ type: 'image', key: 'home_hero_video', label: lang === 'it' ? 'Video hero' : 'Hero video', section: 'Media', fallbackSrc: MEDIA.introVideo, fallbackAlt: lang === 'it' ? 'Video introduttivo vulcanIQ' : 'vulcanIQ introductory video' }); }}>{lang === 'it' ? 'Modifica video' : 'Edit video'}</button>
+                <button className="editor-badge editor-selectable" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); editor.select({ type: 'image', key: 'home_hero_feature_image', label: lang === 'it' ? 'Immagine hero' : 'Hero image', section: 'Media', fallbackSrc: MEDIA.premium, fallbackAlt: lang === 'it' ? 'Immagine hero homepage' : 'Home hero image' }); }}>{lang === 'it' ? 'Modifica immagine' : 'Edit image'}</button>
               </div>
             )}
             {heroFeatureVideo ? (
@@ -5675,7 +5656,7 @@ const PARTNER_COMMISSION_TYPE_LABELS = {
 const PARTNER_COMMISSION_APPLIES_TO_LABELS = {
   request_created: { it: 'Richiesta creata', en: 'Request created' },
   booking_confirmed: { it: 'Prenotazione confermata', en: 'Booking confirmed' },
-  revenue_confirmed: { it: 'Pagamento registrato', en: 'Recorded payment' }
+  revenue_confirmed: { it: 'Revenue confermata', en: 'Revenue confirmed' }
 };
 function partnerCommissionStatusLabel(status, lang) { return PARTNER_COMMISSION_STATUS_LABELS[status]?.[lang] || status || '-'; }
 function partnerCommissionTypeLabel(type, lang) { return PARTNER_COMMISSION_TYPE_LABELS[type]?.[lang] || type || '-'; }
@@ -6552,8 +6533,6 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
       <main className="admin-main">
         {normalizedPath.includes('/calendar') ? (
           <AdminCalendarPage lang={lang} session={session} navigate={navigate} adminContent={adminContent} />
-        ) : normalizedPath.includes('/notifications') || normalizedPath.includes('/install') ? (
-          <NotificationsPage variant="admin" lang={lang} adminRole={profile?.role || ''} />
         ) : normalizedPath.includes('/finance') ? (
           <FinanceAdminPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/analytics') || normalizedPath.includes('/data') ? (
@@ -6859,8 +6838,8 @@ const MEDIA_ADMIN_ITEMS = [
   { key: 'brand_logo_main', it: 'Logo principale vulcanIQ', en: 'Main vulcanIQ logo', fallback: BRAND.logo, alt_it: 'Logo vulcanIQ — esperienze premium sull’Etna', alt_en: 'vulcanIQ logo — premium Etna experiences' },
   { key: 'home_hero_background', it: 'Sfondo hero homepage', en: 'Home hero background', media_kind: 'image', alt_it: 'Sfondo hero homepage', alt_en: 'Home hero background' },
   { key: 'home_hero_background_poster', it: 'Poster sfondo hero', en: 'Hero background poster', media_kind: 'image', alt_it: 'Poster sfondo hero homepage', alt_en: 'Home hero background poster' },
-  { key: 'home_hero_feature_image', it: 'Immagine hero homepage', en: 'Home hero image', media_kind: 'image', alt_it: 'Immagine hero homepage', alt_en: 'Home hero image' },
-  { key: 'home_hero_video', it: 'Video homepage', en: 'Home video', media_kind: 'video', alt_it: 'Video introduttivo vulcanIQ', alt_en: 'vulcanIQ introductory video' },
+  { key: 'home_hero_feature_image', it: 'Immagine hero homepage', en: 'Home hero image', fallback: MEDIA.premium, media_kind: 'image', alt_it: 'Immagine hero homepage', alt_en: 'Home hero image' },
+  { key: 'home_hero_video', it: 'Video homepage', en: 'Home video', fallback: MEDIA.introVideo, media_kind: 'video', alt_it: 'Video introduttivo vulcanIQ', alt_en: 'vulcanIQ introductory video' },
   { key: 'mission_main_image', it: 'Immagine missione', en: 'Mission image' },
   { key: 'about_leonardo_image', it: 'Foto Leonardo', en: 'Leonardo photo' },
   { key: 'about_deborah_image', it: 'Foto Deborah', en: 'Deborah photo' },
@@ -8783,7 +8762,7 @@ function resolveFinanceDateRange(filters, lang) {
 }
 
 function financeEntryIsLinked(entry) {
-  return financeEntryHasBusinessSource(entry) || Boolean(entry.linkedBooking || entry.linkedFixedExcursion || entry.linkedLeaflet);
+  return Boolean(entry.booking_request_id || entry.fixed_excursion_id || entry.leaflet_id || entry.linkedBooking || entry.linkedFixedExcursion || entry.linkedLeaflet);
 }
 
 function financeEntryCustomerName(entry) {
@@ -8806,19 +8785,18 @@ function enrichFinanceEntry(entry, { requestById, fixedById, leafletById }) {
 
 function groupFinanceEntriesByCategory(entries, type) {
   const filtered = entries.filter((entry) => entry.type === type);
-  const totalsByCurrency = new Map();
-  filtered.forEach((entry) => { const currency = normalizeCurrency(entry.currency); totalsByCurrency.set(currency, (totalsByCurrency.get(currency) || 0) + Number(entry.amount || 0)); });
+  const total = filtered.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   const map = new Map();
   filtered.forEach((entry) => {
-    const categoryKey = entry.category || (type === 'income' ? 'other_income' : 'other_expense');
-    const currency = normalizeCurrency(entry.currency);
-    const key = `${categoryKey}::${currency}`;
-    const current = map.get(key) || { key, categoryKey, currency, type, entries: [], total: 0 };
+    const key = entry.category || (type === 'income' ? 'other_income' : 'other_expense');
+    const current = map.get(key) || { key, type, entries: [], total: 0 };
     current.entries.push(entry);
     current.total += Number(entry.amount || 0);
     map.set(key, current);
   });
-  return [...map.values()].sort((a, b) => b.total - a.total).map((item) => ({ ...item, percentage: (totalsByCurrency.get(item.currency) || 0) > 0 ? Math.round((item.total / totalsByCurrency.get(item.currency)) * 100) : 0 }));
+  return [...map.values()]
+    .sort((a, b) => b.total - a.total)
+    .map((item) => ({ ...item, percentage: total > 0 ? Math.round((item.total / total) * 100) : 0 }));
 }
 
 function isVoidedFinanceEntry(entry) {
@@ -8831,30 +8809,30 @@ function isExpectedFinanceEntry(entry) {
 
 function calculateFinanceSummary(entries) {
   const activeEntries = entries.filter((entry) => !isVoidedFinanceEntry(entry));
-  const ledger = calculateLedgerSummary(entries);
+  const expectedEntries = activeEntries.filter((entry) => entry.type === 'income' && isExpectedFinanceEntry(entry));
+  const confirmedEntries = activeEntries.filter((entry) => !isExpectedFinanceEntry(entry));
+  const incomeEntries = confirmedEntries.filter((entry) => entry.type === 'income' || String(entry.status || '').toLowerCase() === 'reversal');
+  const expenseEntries = confirmedEntries.filter((entry) => entry.type === 'expense');
   const linkedBookingEntries = activeEntries.filter((entry) => entry.booking_request_id || entry.linkedBooking);
   const linkedFixedEntries = activeEntries.filter((entry) => entry.fixed_excursion_id || entry.linkedFixedExcursion);
   const unlinkedEntries = activeEntries.filter((entry) => !financeEntryIsLinked(entry));
+  const income = incomeEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const expenses = expenseEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const expectedIncome = expectedEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
   return {
-    income: ledger.income,
-    expenses: ledger.expenses,
-    expectedIncome: ledger.expectedIncome,
-    net: ledger.net,
-    byCurrency: ledger.byCurrency,
-    incomeEntries: ledger.incomeEntries,
-    expectedEntries: ledger.expectedEntries,
-    expenseEntries: ledger.expenseEntries,
+    income,
+    expenses,
+    expectedIncome,
+    net: income - expenses,
+    incomeEntries,
+    expectedEntries,
+    expenseEntries,
     linkedBookingEntries,
     linkedFixedEntries,
     unlinkedEntries,
-    incomeCategories: groupFinanceEntriesByCategory(ledger.incomeEntries, 'income'),
-    expenseCategories: groupFinanceEntriesByCategory(ledger.expenseEntries, 'expense')
+    incomeCategories: groupFinanceEntriesByCategory(incomeEntries, 'income'),
+    expenseCategories: groupFinanceEntriesByCategory(expenseEntries, 'expense')
   };
-}
-
-function formatCurrencyMetricRows(rows = [], key, lang) {
-  if (!rows.length) return formatMoney(0, 'EUR', lang);
-  return rows.map((row) => formatMoney(row?.[key] || 0, row.currency || 'EUR', lang)).join(' · ');
 }
 
 const ANALYTICS_PERIODS = CANONICAL_ANALYTICS_PERIODS;
@@ -11606,9 +11584,6 @@ const [requests, setRequests] = useState([]);
 const [fixedExcursions, setFixedExcursions] = useState([]);
 const [leaflets, setLeaflets] = useState([]);
 const [partnerCommissions, setPartnerCommissions] = useState([]);
-const [reconciliationEntries, setReconciliationEntries] = useState([]);
-const [reconciliationCodes, setReconciliationCodes] = useState([]);
-const [reconciliationGiftCards, setReconciliationGiftCards] = useState([]);
 const [partnerCommissionSummary, setPartnerCommissionSummary] = useState({
   commissions: [],
   pendingAmount: 0,
@@ -11620,8 +11595,7 @@ const [partnerCommissionSummary, setPartnerCommissionSummary] = useState({
   approvedCount: 0,
   paidCount: 0,
   cancelledCount: 0,
-  byPartner: [],
-  byCurrency: []
+  byPartner: []
 });
 const [filters, setFilters] = useState({
     type: 'all',
@@ -11640,7 +11614,6 @@ const [filters, setFilters] = useState({
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [activeFinanceDetail, setActiveFinanceDetail] = useState(null);
-  const [refundTarget, setRefundTarget] = useState(null);
 
   const resolvedDateRange = useMemo(() => resolveFinanceDateRange(filters, lang), [filters, lang]);
 
@@ -11649,15 +11622,12 @@ const [filters, setFilters] = useState({
     setError('');
     const dateRange = resolveFinanceDateRange(filters, lang);
     try {
-      const [entryData, requestData, fixedData, leafletData, commissionSummaryData, allFinanceData, codeData, giftCardData] = await Promise.all([
+      const [entryData, requestData, fixedData, leafletData, commissionSummaryData] = await Promise.all([
         listFinanceEntries({ ...filters, fromDate: dateRange.startDate, toDate: dateRange.endDate }),
         listBookingRequests({ limit: 250 }),
         listFixedExcursions({ activeOnly: false }),
         listMonthlyLeaflets({ activeOnly: false }),
-        listPartnerCommissionSummary({ limit: 1000 }).catch(() => ({ commissions: [], pendingAmount: 0, approvedUnpaidAmount: 0, paidAmount: 0, cancelledAmount: 0, unpaidLiability: 0, pendingCount: 0, approvedCount: 0, paidCount: 0, cancelledCount: 0, byPartner: [], byCurrency: [] })),
-        listFinanceEntries({ limit: 1000, includeArchived: true }),
-        listBookingCodes({ limit: 500 }),
-        listGiftCardRequests({ limit: 500 })
+        listPartnerCommissionSummary({ limit: 1000 }).catch(() => ({ commissions: [], pendingAmount: 0, approvedUnpaidAmount: 0, paidAmount: 0, cancelledAmount: 0, unpaidLiability: 0, pendingCount: 0, approvedCount: 0, paidCount: 0, cancelledCount: 0, byPartner: [] }))
       ]);
       setEntries(entryData);
       setRequests(requestData);
@@ -11665,9 +11635,6 @@ const [filters, setFilters] = useState({
       setLeaflets(leafletData);
       setPartnerCommissions(commissionSummaryData.commissions || []);
       setPartnerCommissionSummary(commissionSummaryData);
-      setReconciliationEntries(allFinanceData);
-      setReconciliationCodes(codeData);
-      setReconciliationGiftCards(giftCardData);
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Finanze non caricate.', 'Finance data not loaded.'));
     } finally {
@@ -11749,13 +11716,9 @@ const [filters, setFilters] = useState({
   const requestById = useMemo(() => new Map(requests.map((request) => [request.id, request])), [requests]);
   const fixedById = useMemo(() => new Map(fixedExcursions.map((item) => [item.id, item])), [fixedExcursions]);
   const leafletById = useMemo(() => new Map(leaflets.map((item) => [item.id, item])), [leaflets]);
-  const financeById = useMemo(() => new Map(reconciliationEntries.map((entry) => [entry.id, entry])), [reconciliationEntries]);
   const enrichedEntries = useMemo(() => entries.map((entry) => enrichFinanceEntry(entry, { requestById, fixedById, leafletById })), [entries, requestById, fixedById, leafletById]);
   const reportEntries = filters.includeArchived ? enrichedEntries : enrichedEntries.filter((entry) => entry.active !== false);
   const financeSummary = calculateFinanceSummary(reportEntries);
-  const reconciliation = useMemo(() => buildFinancialReconciliation({ bookings: requests, bookingCodes: reconciliationCodes, giftCards: reconciliationGiftCards, partnerCommissions, financeEntries: reconciliationEntries }), [requests, reconciliationCodes, reconciliationGiftCards, partnerCommissions, reconciliationEntries]);
-  const aggregateCurrency = financeSummary.byCurrency?.length === 1 ? financeSummary.byCurrency[0].currency : null;
-  const aggregateMoney = (key) => aggregateCurrency ? formatMoney(financeSummary[key] || 0, aggregateCurrency, lang) : financeSummary.byCurrency?.length > 1 ? adminCopy(lang, 'Più valute', 'Multiple currencies') : formatMoney(0, 'EUR', lang);
   const linkedEntries = reportEntries.filter(financeEntryIsLinked);
   const unlinkedExpenseEntries = financeSummary.expenseEntries.filter((entry) => !financeEntryIsLinked(entry));
   const categories = filters.type === 'expense' ? FINANCE_CATEGORIES.expense : filters.type === 'income' ? FINANCE_CATEGORIES.income : [...FINANCE_CATEGORIES.income, ...FINANCE_CATEGORIES.expense];
@@ -11771,14 +11734,14 @@ const [filters, setFilters] = useState({
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
       <div className="admin-summary-grid finance-summary-grid">
-        <SummaryCard label={adminCopy(lang, 'Incassato', 'Recorded payments')} value={aggregateMoney('income')} onClick={() => setActiveFinanceDetail({ key: 'income', title: adminCopy(lang, 'Entrate', 'Income'), entries: financeSummary.incomeEntries, total: financeSummary.income })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
-        <SummaryCard label={adminCopy(lang, 'Entrate attese', 'Expected revenue')} value={aggregateMoney('expectedIncome')} onClick={() => setActiveFinanceDetail({ key: 'expected-income', title: adminCopy(lang, 'Entrate attese', 'Expected income'), entries: financeSummary.expectedEntries, total: financeSummary.expectedIncome })} helper={adminCopy(lang, 'Non confermate', 'Not confirmed')} />
-        <SummaryCard label={adminCopy(lang, 'Uscite', 'Expenses')} value={aggregateMoney('expenses')} onClick={() => setActiveFinanceDetail({ key: 'expenses', title: adminCopy(lang, 'Uscite', 'Expenses'), entries: financeSummary.expenseEntries, total: financeSummary.expenses })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
-        <SummaryCard label={adminCopy(lang, 'Risultato netto', 'Net result')} value={aggregateMoney('net')} onClick={() => setActiveFinanceDetail({ key: 'net', title: adminCopy(lang, 'Utile netto', 'Net profit'), entries: reportEntries, total: financeSummary.net })} helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
+        <SummaryCard label={adminCopy(lang, 'Entrate confermate', 'Confirmed earnings')} value={formatMoney(financeSummary.income)} onClick={() => setActiveFinanceDetail({ key: 'income', title: adminCopy(lang, 'Entrate', 'Income'), entries: financeSummary.incomeEntries, total: financeSummary.income })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Entrate attese', 'Expected income')} value={formatMoney(financeSummary.expectedIncome)} onClick={() => setActiveFinanceDetail({ key: 'expected-income', title: adminCopy(lang, 'Entrate attese', 'Expected income'), entries: financeSummary.expectedEntries, total: financeSummary.expectedIncome })} helper={adminCopy(lang, 'Non confermate', 'Not confirmed')} />
+        <SummaryCard label={adminCopy(lang, 'Uscite totali', 'Total expenses')} value={formatMoney(financeSummary.expenses)} onClick={() => setActiveFinanceDetail({ key: 'expenses', title: adminCopy(lang, 'Uscite', 'Expenses'), entries: financeSummary.expenseEntries, total: financeSummary.expenses })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Utile netto', 'Net profit')} value={formatMoney(financeSummary.net)} onClick={() => setActiveFinanceDetail({ key: 'net', title: adminCopy(lang, 'Utile netto', 'Net profit'), entries: reportEntries, total: financeSummary.net })} helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
         <SummaryCard label={adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings')} value={linkedEntries.length} onClick={() => setActiveFinanceDetail({ key: 'linked', title: adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings'), entries: linkedEntries, total: linkedEntries.length })} helper={adminCopy(lang, 'Vedi movimenti', 'View entries')} />
         <SummaryCard label={adminCopy(lang, 'Spese non collegate', 'Unlinked expenses')} value={unlinkedExpenseEntries.length} onClick={() => setActiveFinanceDetail({ key: 'unlinked-expenses', title: adminCopy(lang, 'Spese non collegate', 'Unlinked expenses'), entries: unlinkedExpenseEntries, total: unlinkedExpenseEntries.length })} helper={adminCopy(lang, 'Vedi spese', 'View expenses')} />
-        {Number(partnerCommissionSummary?.unpaidLiability || 0) > 0 && <SummaryCard label={adminCopy(lang, 'Liabilità commissioni partner', 'Partner commission liabilities')} value={formatCurrencyMetricRows(partnerCommissionSummary.byCurrency || [], 'unpaidLiability', lang)} helper={adminCopy(lang, 'In attesa + approvate non pagate', 'Pending + approved unpaid')} />}
-        <SummaryCard label={adminCopy(lang, 'Commissioni pagate', 'Paid commissions')} value={formatCurrencyMetricRows(partnerCommissionSummary?.byCurrency || [], 'paidAmount', lang)} helper={`${partnerCommissionSummary?.paidCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+        {Number(partnerCommissionSummary?.unpaidLiability || 0) > 0 && <SummaryCard label={adminCopy(lang, 'Liabilità commissioni partner', 'Partner commission liabilities')} value={formatMoney(partnerCommissionSummary.unpaidLiability, 'EUR', lang)} helper={adminCopy(lang, 'In attesa + approvate non pagate', 'Pending + approved unpaid')} />}
+        <SummaryCard label={adminCopy(lang, 'Commissioni pagate', 'Paid commissions')} value={formatMoney(partnerCommissionSummary?.paidAmount || 0, 'EUR', lang)} helper={`${partnerCommissionSummary?.paidCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
       </div>
       <div className="admin-filter-bar finance-filter-bar">
         <select value={filters.dateMode} onChange={(event) => updateFilter('dateMode', event.target.value)} aria-label={adminCopy(lang, 'Filtro date', 'Date filter')}>
@@ -11794,7 +11757,6 @@ const [filters, setFilters] = useState({
         <label className="finance-archive-filter"><input type="checkbox" checked={filters.includeArchived} onChange={(event) => updateFilter('includeArchived', event.target.checked)} /><span>{adminCopy(lang, 'Includi archivio', 'Include archive')}</span></label>
         <p className="small-note finance-filter-range-note">{adminCopy(lang, 'Periodo', 'Period')}: {resolvedDateRange.label}</p>
       </div>
-      <FinanceReconciliationPanel lang={lang} reconciliation={reconciliation} requestById={requestById} financeById={financeById} session={session} onChanged={refresh} onOpenEntry={(entry) => setActiveFinanceDetail({ key: 'movement', title: adminCopy(lang, 'Dettaglio movimento', 'Movement detail'), entries: [entry], total: Number(entry.amount || 0), selectedEntry: entry })} onRefundEntry={(entry) => setRefundTarget(entry)} />
       <FinanceOverview lang={lang} summary={financeSummary} rangeLabel={resolvedDateRange.label} onOpen={setActiveFinanceDetail} />
       <FinanceProfitLoss lang={lang} summary={financeSummary} adminContent={adminContent} />
       <PartnerCommissionsFinancePanel lang={lang} session={session} commissions={partnerCommissions} summary={partnerCommissionSummary} onChanged={async (message) => { setFeedback(message); await refresh(); }} />
@@ -11804,7 +11766,6 @@ const [filters, setFilters] = useState({
             <strong>{editing ? contentText(adminContent, 'admin.finance.editEntry.title', lang, adminCopy(lang, 'Modifica voce', 'Edit entry')) : contentText(adminContent, 'admin.finance.addEntry.title', lang, adminCopy(lang, 'Aggiungi voce', 'Add entry'))}</strong>
           </summary>
           <div className="finance-collapsible-body">
-          <p className="small-note">{adminCopy(lang, 'Per le prenotazioni usa normalmente Prenotazione → Registra pagamento. Questa voce manuale resta per carburante, attrezzatura, pubblicità, assicurazione, parcheggi, costi guida e movimenti reali fuori sistema.', 'For bookings, normally use Booking → Record payment. Manual Finance remains for fuel, equipment, advertising, insurance, parking, guide costs, and genuine off-system transactions.')}</p>
           <form className="admin-form-grid" onSubmit={submit}>
             <AdminSelect label={adminCopy(lang, 'Tipo', 'Type')} value={form.type} onChange={(value) => update('type', value)} options={['income', 'expense']} formatter={(value) => value === 'income' ? adminCopy(lang, 'Entrata', 'Income') : adminCopy(lang, 'Uscita', 'Expense')} />
             <AdminInput label={adminCopy(lang, 'Data', 'Date')} type="date" value={form.entry_date} onChange={(value) => update('entry_date', value)} />
@@ -11829,13 +11790,12 @@ const [filters, setFilters] = useState({
           <div className="finance-collapsible-body">
           {loading ? <p>{adminCopy(lang, 'Caricamento...', 'Loading...')}</p> : enrichedEntries.length === 0 ? <p>{adminCopy(lang, 'Nessuna voce trovata.', 'No entries found.')}</p> : (
             <div className="finance-entry-list">
-              {enrichedEntries.map((entry) => <FinanceEntryCard key={entry.id} entry={entry} lang={lang} onOpen={() => setActiveFinanceDetail({ key: 'movement', title: adminCopy(lang, 'Dettaglio movimento', 'Movement detail'), entries: [entry], total: Number(entry.amount || 0), selectedEntry: entry })} onEdit={() => startEdit(entry)} onArchive={() => archive(entry)} onRefund={() => setRefundTarget(entry)} />)}
+              {enrichedEntries.map((entry) => <FinanceEntryCard key={entry.id} entry={entry} lang={lang} onOpen={() => setActiveFinanceDetail({ key: 'movement', title: adminCopy(lang, 'Dettaglio movimento', 'Movement detail'), entries: [entry], total: Number(entry.amount || 0), selectedEntry: entry })} onEdit={() => startEdit(entry)} onArchive={() => archive(entry)} />)}
             </div>
           )}
           </div>
         </details>
       </div>
-      {refundTarget && <FinanceRefundDialog entry={refundTarget} lang={lang} onClose={() => setRefundTarget(null)} onSaved={async () => { setRefundTarget(null); setFeedback(adminCopy(lang, 'Rimborso/storno registrato.', 'Refund/reversal recorded.')); await refresh(); }} />}
       {activeFinanceDetail && <FinanceDetailModal detail={activeFinanceDetail} lang={lang} onClose={() => setActiveFinanceDetail(null)} />}
     </section>
   );
@@ -11846,7 +11806,7 @@ function PartnerCommissionsFinancePanel({ lang, session, commissions = [], summa
   const [statusFilter, setStatusFilter] = useState('all');
   const [busyId, setBusyId] = useState('');
   const [error, setError] = useState('');
-  const data = summary || { pendingAmount: 0, approvedUnpaidAmount: 0, paidAmount: 0, cancelledAmount: 0, unpaidLiability: 0, pendingCount: 0, approvedCount: 0, paidCount: 0, cancelledCount: 0, byPartner: [], byCurrency: [] };
+  const data = summary || { pendingAmount: 0, approvedUnpaidAmount: 0, paidAmount: 0, cancelledAmount: 0, unpaidLiability: 0, pendingCount: 0, approvedCount: 0, paidCount: 0, cancelledCount: 0, byPartner: [] };
   const visible = statusFilter === 'all' ? commissions : commissions.filter((item) => item.status === statusFilter);
 
   async function setStatus(item, status) {
@@ -11867,17 +11827,17 @@ function PartnerCommissionsFinancePanel({ lang, session, commissions = [], summa
     <details className="admin-panel finance-collapsible-panel partner-commissions-panel" open>
       <summary className="finance-collapsible-summary">
         <strong>{adminCopy(lang, 'Commissioni partner', 'Partner commissions')}</strong>
-        {data.byCurrency?.some((row) => Number(row.unpaidLiability || 0) > 0) && <em>{formatCurrencyMetricRows(data.byCurrency, 'unpaidLiability', lang)} {adminCopy(lang, 'non pagate', 'unpaid')}</em>}
+        {Number(data.unpaidLiability || 0) > 0 && <em>{formatMoney(data.unpaidLiability || 0, 'EUR', lang)} {adminCopy(lang, 'non pagate', 'unpaid')}</em>}
       </summary>
       <div className="finance-collapsible-body">
         <p className="small-note">{adminCopy(lang, 'Le commissioni sono interne, non pubbliche, e vengono conteggiate come liabilità fino al pagamento manuale.', 'Commissions are internal, non-public, and counted as liabilities until manually paid.')}</p>
         {error && <div className="admin-alert error compact-alert">{error}</div>}
         <div className="admin-summary-grid partner-commission-summary-grid">
-          <SummaryCard label={adminCopy(lang, 'In attesa', 'Pending')} value={formatCurrencyMetricRows(data.byCurrency || [], 'pendingAmount', lang)} helper={`${data.pendingCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
-          <SummaryCard label={adminCopy(lang, 'Approvate non pagate', 'Approved unpaid')} value={formatCurrencyMetricRows(data.byCurrency || [], 'approvedUnpaidAmount', lang)} helper={`${data.approvedCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
-          {data.byCurrency?.some((row) => Number(row.unpaidLiability || 0) > 0) && <SummaryCard label={adminCopy(lang, 'Totale non pagato', 'Total unpaid')} value={formatCurrencyMetricRows(data.byCurrency || [], 'unpaidLiability', lang)} helper={adminCopy(lang, 'Liabilità finance', 'Finance liability')} />}
-          <SummaryCard label={adminCopy(lang, 'Pagate', 'Paid')} value={formatCurrencyMetricRows(data.byCurrency || [], 'paidAmount', lang)} helper={`${data.paidCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
-          <SummaryCard label={adminCopy(lang, 'Annullate', 'Cancelled')} value={formatCurrencyMetricRows(data.byCurrency || [], 'cancelledAmount', lang)} helper={`${data.cancelledCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+          <SummaryCard label={adminCopy(lang, 'In attesa', 'Pending')} value={formatMoney(data.pendingAmount || 0, 'EUR', lang)} helper={`${data.pendingCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+          <SummaryCard label={adminCopy(lang, 'Approvate non pagate', 'Approved unpaid')} value={formatMoney(data.approvedUnpaidAmount || 0, 'EUR', lang)} helper={`${data.approvedCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+          {Number(data.unpaidLiability || 0) > 0 && <SummaryCard label={adminCopy(lang, 'Totale non pagato', 'Total unpaid')} value={formatMoney(data.unpaidLiability || 0, 'EUR', lang)} helper={adminCopy(lang, 'Liabilità finance', 'Finance liability')} />}
+          <SummaryCard label={adminCopy(lang, 'Pagate', 'Paid')} value={formatMoney(data.paidAmount || 0, 'EUR', lang)} helper={`${data.paidCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+          <SummaryCard label={adminCopy(lang, 'Annullate', 'Cancelled')} value={formatMoney(data.cancelledAmount || 0, 'EUR', lang)} helper={`${data.cancelledCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
         </div>
         <div className="admin-two-column partner-commission-layout">
           <section className="partner-settlement-section">
@@ -11886,7 +11846,7 @@ function PartnerCommissionsFinancePanel({ lang, session, commissions = [], summa
               <div className="admin-table-wrap">
                 <table className="admin-table compact-table">
                   <thead><tr><th>Partner</th><th>{adminCopy(lang, 'In attesa', 'Pending')}</th><th>{adminCopy(lang, 'Approvate', 'Approved')}</th><th>{adminCopy(lang, 'Pagate', 'Paid')}</th><th>{adminCopy(lang, 'Record', 'Records')}</th><th>{adminCopy(lang, 'Ultima', 'Last')}</th></tr></thead>
-                  <tbody>{data.byPartner.map((row) => <tr key={`${row.partner_id || row.partner_name}:${row.currency || 'EUR'}`}><td>{row.partner_name || '—'}</td><td>{formatMoney(row.pendingAmount || 0, row.currency || 'EUR', lang)}</td><td>{formatMoney(row.approvedUnpaidAmount || 0, row.currency || 'EUR', lang)}</td><td>{formatMoney(row.paidAmount || 0, row.currency || 'EUR', lang)}</td><td>{row.count}</td><td>{row.lastCommissionDate ? formatLocalDateTime(row.lastCommissionDate, lang, '') : '—'}</td></tr>)}</tbody>
+                  <tbody>{data.byPartner.map((row) => <tr key={row.partner_id || row.partner_name}><td>{row.partner_name || '—'}</td><td>{formatMoney(row.pendingAmount || 0, 'EUR', lang)}</td><td>{formatMoney(row.approvedUnpaidAmount || 0, 'EUR', lang)}</td><td>{formatMoney(row.paidAmount || 0, 'EUR', lang)}</td><td>{row.count}</td><td>{row.lastCommissionDate ? formatLocalDateTime(row.lastCommissionDate, lang, '') : '—'}</td></tr>)}</tbody>
                 </table>
               </div>
             )}
@@ -11925,100 +11885,79 @@ function PartnerCommissionsFinancePanel({ lang, session, commissions = [], summa
   );
 }
 
-function reconciliationIssueLabel(type, lang) {
-  const labels = {
-    booking_no_payment: ['Prenotazione accettata senza pagamento registrato', 'Accepted booking with no recorded payment'],
-    booking_balance_due: ['Saldo prenotazione da incassare', 'Booking balance due'],
-    ambiguous_expected: ['Più entrate attese ambigue sulla prenotazione', 'Multiple ambiguous expected entries on booking'],
-    suspected_duplicate_payment: ['Possibile pagamento duplicato', 'Possible duplicate payment'],
-    cancelled_booking_with_net_payment: ['Prenotazione annullata con incasso netto non rimborsato', 'Cancelled booking with unrefunded net payment'],
-    cancelled_booking_code_with_net_payment: ['Codice annullato con incasso netto non rimborsato', 'Cancelled booking code with unrefunded net payment'],
-    booking_code_no_payment: ['Codice usato senza pagamento registrato', 'Redeemed code with no recorded payment'],
-    booking_code_balance_due: ['Saldo codice prenotazione da incassare', 'Booking-code balance due'],
-    booking_code_ambiguous_expected: ['Entrate attese ambigue per codice', 'Ambiguous expected entries for booking code'],
-    booking_code_duplicate_payment: ['Possibile pagamento codice duplicato', 'Possible duplicate booking-code payment'],
-    gift_card_paid_missing_income: ['Gift Card pagata senza entrata registrata', 'Paid Gift Card without recorded income'],
-    gift_card_issued_with_income_review: ['Gift Card emessa con entrata storica da verificare', 'Issued Gift Card with historical income to review'],
-    gift_card_issued_unpaid: ['Gift Card emessa ma non pagata', 'Issued Gift Card but unpaid'],
-    gift_card_duplicate_income: ['Possibile entrata Gift Card duplicata', 'Possible duplicate Gift Card income'],
-    cancelled_gift_card_with_net_payment: ['Gift Card annullata con incasso netto non rimborsato', 'Cancelled Gift Card with unrefunded net payment'],
-    paid_commission_missing_expense: ['Commissione pagata senza uscita Finance', 'Paid commission without Finance expense'],
-    duplicate_commission_expense: ['Possibile uscita commissione duplicata', 'Possible duplicate commission expense'],
-    unlinked_business_finance_entry: ['Movimento business senza fonte identificabile', 'Business transaction without identifiable source']
-  };
-  const pair = labels[type] || ['Movimento da verificare', 'Transaction requires review'];
-  return lang === 'it' ? pair[0] : pair[1];
-}
-
-function FinanceReconciliationPanel({ lang, reconciliation, requestById, financeById, session, onChanged, onOpenEntry, onRefundEntry }) {
-  const issues = reconciliation?.issues || [];
-  return (
-    <details className="admin-panel finance-collapsible-panel finance-reconciliation-panel" open={issues.length > 0}>
-      <summary className="finance-collapsible-summary"><strong>{adminCopy(lang, 'Da riconciliare', 'Money to reconcile')}</strong><em>{issues.length}</em></summary>
-      <div className="finance-collapsible-body">
-        <p className="small-note">{adminCopy(lang, 'Saldi dovuti, record ambigui e incoerenze vengono segnalati senza modificare automaticamente lo storico.', 'Balances due, ambiguous records and inconsistencies are surfaced without automatically changing history.')}</p>
-        {Object.keys(reconciliation?.totalsByCurrency || {}).length > 0 && <p className="small-note"><strong>{adminCopy(lang, 'Importi coinvolti per valuta', 'Amounts involved by currency')}:</strong> {Object.entries(reconciliation.totalsByCurrency).map(([currency, amount]) => formatMoney(amount, currency, lang)).join(' · ')}</p>}
-        {!issues.length ? <p className="notification-status success">{adminCopy(lang, 'Nessuna anomalia deterministica rilevata nei record caricati.', 'No deterministic anomalies found in the loaded records.')}</p> : <div className="finance-reconciliation-list">
-          {issues.map((issue, index) => {
-            const request = issue.sourceType === 'booking_request' ? requestById.get(issue.sourceId) : null;
-            return <article className="finance-reconciliation-item" key={`${issue.type}:${issue.sourceId}:${index}`}>
-              <div><strong>{reconciliationIssueLabel(issue.type, lang)}</strong><p className="small-note">{issue.sourceType} · {String(issue.sourceId || '').slice(0, 8)}… · {formatMoney(issue.amount || 0, issue.currency || 'EUR', lang)}</p></div>
-              <div className="request-actions-row">
-                {request && ['booking_no_payment','booking_balance_due'].includes(issue.type) && <RequestIncomeConfirmAction request={request} lang={lang} session={session} onUpdated={() => onChanged?.()} />}
-                {issue.financeEntryId && financeById?.get(issue.financeEntryId) && <button className="button secondary" type="button" onClick={() => onOpenEntry?.(financeById.get(issue.financeEntryId))}>{adminCopy(lang, 'Rivedi movimento', 'Review transaction')}</button>}
-                {issue.financeEntryId && financeById?.get(issue.financeEntryId) && ['cancelled_booking_with_net_payment','cancelled_booking_code_with_net_payment','cancelled_gift_card_with_net_payment'].includes(issue.type) && <button className="button secondary" type="button" onClick={() => onRefundEntry?.(financeById.get(issue.financeEntryId))}>{adminCopy(lang, 'Registra rimborso', 'Record refund')}</button>}
-                {issue.route && !request && <a className="button secondary" href={issue.route}>{adminCopy(lang, 'Apri record', 'Open record')}</a>}
-                {request && !['booking_no_payment','booking_balance_due'].includes(issue.type) && <a className="button secondary" href="/admin/requests">{adminCopy(lang, 'Rivedi prenotazione', 'Review booking')}</a>}
-              </div>
-            </article>;
-          })}
-        </div>}
-      </div>
-    </details>
-  );
-}
-
 function FinanceOverview({ lang, summary, rangeLabel, onOpen }) {
   const empty = adminCopy(lang, 'Nessun movimento per questo periodo.', 'No movements for this period.');
   return (
     <details className="admin-panel finance-collapsible-panel finance-overview-panel">
-      <summary className="finance-collapsible-summary"><strong>{rangeLabel}</strong></summary>
+      <summary className="finance-collapsible-summary">
+        <strong>{rangeLabel}</strong>
+      </summary>
       <div className="finance-collapsible-body">
-        <div className="finance-overview-grid">
-          <article className="finance-overview-metric"><span>{adminCopy(lang, 'Risultato netto periodo', 'Period net result')}</span><strong>{formatCurrencyMetricRows(summary.byCurrency || [], 'net', lang)}</strong></article>
-          <button type="button" className="finance-overview-metric clickable" onClick={() => onOpen({ key: 'linked-bookings', title: adminCopy(lang, 'Movimenti collegati a prenotazioni', 'Movements linked to bookings'), entries: summary.linkedBookingEntries, total: summary.linkedBookingEntries.length })}><span>{adminCopy(lang, 'Movimenti collegati a prenotazioni', 'Movements linked to bookings')}</span><strong>{summary.linkedBookingEntries.length}</strong></button>
-          <button type="button" className="finance-overview-metric clickable" onClick={() => onOpen({ key: 'linked-fixed', title: adminCopy(lang, 'Movimenti collegati a escursioni fisse', 'Movements linked to fixed excursions'), entries: summary.linkedFixedEntries, total: summary.linkedFixedEntries.length })}><span>{adminCopy(lang, 'Movimenti collegati a escursioni fisse', 'Movements linked to fixed excursions')}</span><strong>{summary.linkedFixedEntries.length}</strong></button>
-          <button type="button" className="finance-overview-metric clickable" onClick={() => onOpen({ key: 'unlinked', title: adminCopy(lang, 'Movimenti non collegati', 'Unlinked movements'), entries: summary.unlinkedEntries, total: summary.unlinkedEntries.length })}><span>{adminCopy(lang, 'Movimenti non collegati', 'Unlinked movements')}</span><strong>{summary.unlinkedEntries.length}</strong></button>
-        </div>
-        {(summary.byCurrency || []).length > 1 && <p className="small-note">{adminCopy(lang, 'Le valute restano separate: nessuna conversione FX o somma tra valute viene applicata.', 'Currencies remain separate: no FX conversion or cross-currency sum is applied.')}</p>}
-        <div className="finance-category-breakdown-grid">
-          <FinanceCategoryBreakdown lang={lang} title={adminCopy(lang, 'Entrate per categoria', 'Income by category')} empty={empty} categories={summary.incomeCategories} onOpen={(category) => onOpen({ key: `income-${category.key}`, title: `${adminCopy(lang, 'Entrate', 'Income')} · ${financeCategoryLabel(category.categoryKey || category.key, lang)}`, entries: category.entries, total: category.total })} />
-          <FinanceCategoryBreakdown lang={lang} title={adminCopy(lang, 'Uscite per categoria', 'Expenses by category')} empty={empty} categories={summary.expenseCategories} onOpen={(category) => onOpen({ key: `expense-${category.key}`, title: `${adminCopy(lang, 'Uscite', 'Expenses')} · ${financeCategoryLabel(category.categoryKey || category.key, lang)}`, entries: category.entries, total: category.total })} />
-        </div>
+      <div className="finance-overview-grid">
+        <article className="finance-overview-metric"><span>{adminCopy(lang, 'Utile netto periodo', 'Period net profit')}</span><strong className={`finance-amount ${summary.net < 0 ? 'expense' : 'income'}`}>{formatMoney(summary.net)}</strong></article>
+        <button type="button" className="finance-overview-metric clickable" onClick={() => onOpen({ key: 'linked-bookings', title: adminCopy(lang, 'Movimenti collegati a prenotazioni', 'Movements linked to bookings'), entries: summary.linkedBookingEntries, total: summary.linkedBookingEntries.length })}><span>{adminCopy(lang, 'Movimenti collegati a prenotazioni', 'Movements linked to bookings')}</span><strong>{summary.linkedBookingEntries.length}</strong></button>
+        <button type="button" className="finance-overview-metric clickable" onClick={() => onOpen({ key: 'linked-fixed', title: adminCopy(lang, 'Movimenti collegati a escursioni fisse', 'Movements linked to fixed excursions'), entries: summary.linkedFixedEntries, total: summary.linkedFixedEntries.length })}><span>{adminCopy(lang, 'Movimenti collegati a escursioni fisse', 'Movements linked to fixed excursions')}</span><strong>{summary.linkedFixedEntries.length}</strong></button>
+        <button type="button" className="finance-overview-metric clickable" onClick={() => onOpen({ key: 'unlinked', title: adminCopy(lang, 'Movimenti non collegati', 'Unlinked movements'), entries: summary.unlinkedEntries, total: summary.unlinkedEntries.length })}><span>{adminCopy(lang, 'Movimenti non collegati', 'Unlinked movements')}</span><strong>{summary.unlinkedEntries.length}</strong></button>
+      </div>
+      <div className="finance-category-breakdown-grid">
+        <FinanceCategoryBreakdown
+          lang={lang}
+          title={adminCopy(lang, 'Entrate per categoria', 'Income by category')}
+          empty={empty}
+          categories={summary.incomeCategories}
+          onOpen={(category) => onOpen({ key: `income-${category.key}`, title: `${adminCopy(lang, 'Entrate', 'Income')} · ${financeCategoryLabel(category.key, lang)}`, entries: category.entries, total: category.total })}
+        />
+        <FinanceCategoryBreakdown
+          lang={lang}
+          title={adminCopy(lang, 'Uscite per categoria', 'Expenses by category')}
+          empty={empty}
+          categories={summary.expenseCategories}
+          onOpen={(category) => onOpen({ key: `expense-${category.key}`, title: `${adminCopy(lang, 'Uscite', 'Expenses')} · ${financeCategoryLabel(category.key, lang)}`, entries: category.entries, total: category.total })}
+        />
+      </div>
       </div>
     </details>
   );
 }
 
 function FinanceProfitLoss({ lang, summary, adminContent = {} }) {
-  const rows = summary.byCurrency?.length ? summary.byCurrency : [{ currency: 'EUR', income: 0, expenses: 0, net: 0 }];
+  const volume = Math.max(summary.income, summary.expenses, 1);
+  const incomeWidth = Math.max(6, Math.round((summary.income / volume) * 100));
+  const expenseWidth = Math.max(6, Math.round((summary.expenses / volume) * 100));
+  const margin = summary.income > 0 ? Math.round((summary.net / summary.income) * 100) : 0;
   return (
     <details className="admin-panel finance-collapsible-panel finance-pl-panel">
-      <summary className="finance-collapsible-summary"><AdminEditableText as="strong" itemKey="admin.finance.profitLoss.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Profitti e perdite', 'Profit & Loss')} /></summary>
+      <summary className="finance-collapsible-summary">
+        <AdminEditableText as="strong" itemKey="admin.finance.profitLoss.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Profitti e perdite', 'Profit & Loss')} />
+      </summary>
       <div className="finance-collapsible-body">
-        {rows.map((row) => {
-          const volume = Math.max(Math.abs(row.income), Math.abs(row.expenses), 1);
-          const incomeWidth = Math.max(6, Math.round((Math.abs(row.income) / volume) * 100));
-          const expenseWidth = Math.max(6, Math.round((Math.abs(row.expenses) / volume) * 100));
-          const margin = row.income > 0 ? Math.round((row.net / row.income) * 100) : 0;
-          return <section className="finance-pl-currency" key={row.currency} aria-label={`${adminCopy(lang, 'Valuta', 'Currency')} ${row.currency}`}>
-            <h3>{row.currency}</h3>
-            <div className="finance-pl-grid"><article className="finance-pl-total"><span>{adminCopy(lang, 'Incassato', 'Recorded payments')}</span><strong className="finance-amount income">{formatMoney(row.income, row.currency, lang)}</strong></article><article className="finance-pl-total"><span>{adminCopy(lang, 'Uscite', 'Expenses')}</span><strong className="finance-amount expense">{formatMoney(row.expenses, row.currency, lang)}</strong></article><article className="finance-pl-total highlighted"><span>{adminCopy(lang, 'Risultato netto', 'Net result')}</span><strong className={`finance-amount ${row.net < 0 ? 'expense' : 'income'}`}>{formatMoney(row.net, row.currency, lang)}</strong></article></div>
-            <div className="finance-pl-bars" aria-label={adminCopy(lang, 'Confronto entrate e uscite', 'Income versus expenses comparison')}><div className="finance-pl-bar-row"><span>{adminCopy(lang, 'Entrate', 'Income')}</span><div className="finance-pl-bar-track"><i className="income" style={{ width: `${incomeWidth}%` }} /></div><strong>{formatMoney(row.income, row.currency, lang)}</strong></div><div className="finance-pl-bar-row"><span>{adminCopy(lang, 'Uscite', 'Expenses')}</span><div className="finance-pl-bar-track"><i className="expense" style={{ width: `${expenseWidth}%` }} /></div><strong>{formatMoney(row.expenses, row.currency, lang)}</strong></div></div>
-            <p className="small-note finance-pl-note">{adminCopy(lang, 'Margine netto sul periodo', 'Net margin for the period')}: <strong>{margin}%</strong></p>
-          </section>;
-        })}
-        {rows.length > 1 && <p className="small-note">{adminCopy(lang, 'Nessun totale consolidato viene mostrato senza un motore FX.', 'No consolidated total is shown without an FX engine.')}</p>}
+      <div className="finance-pl-grid">
+        <article className="finance-pl-total">
+          <span>{adminCopy(lang, 'Entrate', 'Earnings')}</span>
+          <strong className="finance-amount income">{formatMoney(summary.income)}</strong>
+        </article>
+        <article className="finance-pl-total">
+          <span>{adminCopy(lang, 'Uscite', 'Expenses')}</span>
+          <strong className="finance-amount expense">{formatMoney(summary.expenses)}</strong>
+        </article>
+        <article className="finance-pl-total highlighted">
+          <span>{adminCopy(lang, 'Risultato netto', 'Net result')}</span>
+          <strong className={`finance-amount ${summary.net < 0 ? 'expense' : 'income'}`}>{formatMoney(summary.net)}</strong>
+        </article>
+      </div>
+      <div className="finance-pl-bars" aria-label={adminCopy(lang, 'Confronto entrate e uscite', 'Earnings versus expenses comparison')}>
+        <div className="finance-pl-bar-row">
+          <span>{adminCopy(lang, 'Entrate', 'Earnings')}</span>
+          <div className="finance-pl-bar-track"><i className="income" style={{ width: `${incomeWidth}%` }} /></div>
+          <strong>{formatMoney(summary.income)}</strong>
+        </div>
+        <div className="finance-pl-bar-row">
+          <span>{adminCopy(lang, 'Uscite', 'Expenses')}</span>
+          <div className="finance-pl-bar-track"><i className="expense" style={{ width: `${expenseWidth}%` }} /></div>
+          <strong>{formatMoney(summary.expenses)}</strong>
+        </div>
+      </div>
+      <p className="small-note finance-pl-note">{adminCopy(lang, 'Margine netto sul periodo', 'Net margin for the period')}: <strong>{margin}%</strong></p>
       </div>
     </details>
   );
@@ -12036,7 +11975,7 @@ function FinanceCategoryBreakdown({ lang, title, categories, empty, onOpen }) {
                 <strong>{financeCategoryLabel(category.key, lang)}</strong>
                 <small>{category.entries.length} {category.entries.length === 1 ? adminCopy(lang, 'movimento', 'movement') : adminCopy(lang, 'movimenti', 'movements')} · {category.percentage}%</small>
               </span>
-              <strong className={`finance-amount ${category.type}`}>{formatMoney(category.total, category.currency || 'EUR', lang)}</strong>
+              <strong className={`finance-amount ${category.type}`}>{formatMoney(category.total)}</strong>
             </button>
           ))}
         </div>
@@ -12048,8 +11987,6 @@ function FinanceCategoryBreakdown({ lang, title, categories, empty, onOpen }) {
 function FinanceDetailModal({ detail, lang, onClose }) {
   const [selectedEntry, setSelectedEntry] = useState(detail.selectedEntry || null);
   const numericTotal = typeof detail.total === 'number' ? detail.total : 0;
-  const detailLedger = calculateLedgerSummary(detail.entries || []);
-  const detailCurrencies = detailLedger.byCurrency || [];
   const isCountOnly = detail.key === 'linked' || detail.key === 'linked-bookings' || detail.key === 'linked-fixed' || detail.key === 'unlinked' || detail.key === 'unlinked-expenses';
   useBodyScrollLock(true);
   useEffect(() => { setSelectedEntry(detail.selectedEntry || null); }, [detail]);
@@ -12060,7 +11997,7 @@ function FinanceDetailModal({ detail, lang, onClose }) {
           <div>
             <span className="kicker">{selectedEntry ? adminCopy(lang, 'Dettaglio movimento', 'Movement detail') : adminCopy(lang, 'Dettaglio finanze', 'Finance details')}</span>
             <h2 id="financeDetailTitle">{selectedEntry ? selectedEntry.title || detail.title : detail.title}</h2>
-            {!selectedEntry && <p>{isCountOnly ? `${detail.entries.length} ${adminCopy(lang, 'movimenti', 'entries')}` : detailCurrencies.length === 1 ? formatMoney(numericTotal, detailCurrencies[0].currency, lang) : detailCurrencies.length > 1 ? adminCopy(lang, 'Più valute — vedi movimenti', 'Multiple currencies — see entries') : formatMoney(0, 'EUR', lang)}</p>}
+            {!selectedEntry && <p>{isCountOnly ? `${detail.entries.length} ${adminCopy(lang, 'movimenti', 'entries')}` : formatMoney(numericTotal)}</p>}
           </div>
           <div className="modal-actions inline-actions">
             {selectedEntry && detail.entries.length > 1 && <button className="button secondary" type="button" onClick={() => setSelectedEntry(null)}>{adminCopy(lang, 'Indietro', 'Back')}</button>}
@@ -12190,9 +12127,7 @@ function requestFinanceLabel(request, lang) {
   return `${formatDateForMessage(request.requested_date, lang) || '-'} · ${request.customer_name || '-'} · ${adminExperienceLabel(request.experience_id, lang)}${request.booking_code ? ` · ${request.booking_code}` : ''}`;
 }
 
-function FinanceEntryCard({ entry, lang, onOpen, onEdit, onArchive, onRefund }) {
-  const immutableBusinessTransaction = financeEntryIsRecognized(entry) && financeEntryHasBusinessSource(entry);
-  const refundable = entry.type === 'income' && !entry.reversal_of && String(entry.status || '').toLowerCase() === 'confirmed' && parseMoneyAmount(entry.amount) > 0;
+function FinanceEntryCard({ entry, lang, onOpen, onEdit, onArchive }) {
   return (
     <article className={`finance-entry-card ${entry.active === false ? 'inactive' : ''}`}>
       <div className="request-card-head">
@@ -12201,41 +12136,13 @@ function FinanceEntryCard({ entry, lang, onOpen, onEdit, onArchive, onRefund }) 
       </div>
       {entry.description && <p>{entry.description}</p>}
       <p className="small-note">{entry.payment_method || adminCopy(lang, 'Metodo non indicato', 'No payment method')} · {financeEntryIsLinked(entry) ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Unlinked')}{financeEntryCustomerName(entry) ? ` · ${financeEntryCustomerName(entry)}` : ''}</p>
-      {immutableBusinessTransaction && <p className="small-note">{adminCopy(lang, 'Movimento riconosciuto collegato: correggere con uno storno/rimborso, non modificando lo storico.', 'Recognized linked transaction: correct it with a refund/reversal rather than rewriting history.')}</p>}
       <div className="request-actions">
         <button className="button secondary" type="button" onClick={onOpen}>{adminCopy(lang, 'Dettaglio', 'Details')}</button>
-        {!immutableBusinessTransaction && <button className="button secondary" type="button" onClick={onEdit}>{adminCopy(lang, 'Modifica', 'Edit')}</button>}
-        {refundable && <button className="button secondary" type="button" onClick={onRefund}>{adminCopy(lang, 'Registra rimborso', 'Record refund')}</button>}
-        {entry.active !== false && !immutableBusinessTransaction && <button className="button secondary danger" type="button" onClick={onArchive}>{adminCopy(lang, 'Archivia', 'Archive')}</button>}
+        <button className="button secondary" type="button" onClick={onEdit}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
+        {entry.active !== false && <button className="button secondary danger" type="button" onClick={onArchive}>{adminCopy(lang, 'Archivia', 'Archive')}</button>}
       </div>
     </article>
   );
-}
-
-function FinanceRefundDialog({ entry, lang, onClose, onSaved }) {
-  const [form, setForm] = useState({ amount: String(Math.abs(parseMoneyAmount(entry.amount))), entry_date: todayIso(), payment_method: '', reason: '' });
-  const [idempotencyKey] = useState(() => createPaymentIdempotencyKey(`refund:${entry.id}`));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  useBodyScrollLock(true);
-
-  async function save() {
-    setSaving(true); setError('');
-    try {
-      await reverseFinanceEntry(entry.id, { amount: form.amount, entry_date: form.entry_date, payment_method: form.payment_method, reason: form.reason, idempotency_key: idempotencyKey });
-      await onSaved?.();
-    } catch (err) {
-      setError(err?.message || adminCopy(lang, 'Rimborso non registrato.', 'Refund was not recorded.'));
-    } finally { setSaving(false); }
-  }
-
-  return <div className="modal-backdrop" role="presentation"><section className="admin-modal" role="dialog" aria-modal="true" aria-labelledby={`refund-${entry.id}`}>
-    <div className="admin-modal-header"><div><h2 id={`refund-${entry.id}`}>{adminCopy(lang, 'Registra rimborso / storno', 'Record refund / reversal')}</h2><p>{entry.title} · {formatMoney(entry.amount, entry.currency, lang)}</p></div><button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>×</button></div>
-    <p className="small-note">{adminCopy(lang, 'Il pagamento originale resta nello storico. Questo crea un movimento negativo collegato con data e metodo reali.', 'The original payment remains in history. This creates a linked negative transaction with the actual date and method.')}</p>
-    <div className="admin-form-grid request-income-confirm-grid"><AdminInput label={adminCopy(lang, 'Importo rimborsato', 'Refund amount')} type="number" inputMode="decimal" value={form.amount} onChange={(value) => setForm((current) => ({ ...current, amount: value }))} /><AdminInput label={adminCopy(lang, 'Data rimborso', 'Refund date')} type="date" value={form.entry_date} onChange={(value) => setForm((current) => ({ ...current, entry_date: value }))} /><AdminInput label={adminCopy(lang, 'Metodo rimborso', 'Refund method')} value={form.payment_method} onChange={(value) => setForm((current) => ({ ...current, payment_method: value }))} /><AdminInput label={adminCopy(lang, 'Motivo / riferimento', 'Reason / reference')} value={form.reason} onChange={(value) => setForm((current) => ({ ...current, reason: value }))} /></div>
-    {error && <div className="admin-alert error" role="alert">{error}</div>}
-    <div className="modal-actions"><button className="button primary" type="button" onClick={save} disabled={saving}>{saving ? adminCopy(lang, 'Registrazione...', 'Recording...') : adminCopy(lang, 'Registra rimborso', 'Record refund')}</button><button className="button secondary" type="button" onClick={onClose} disabled={saving}>{adminCopy(lang, 'Chiudi', 'Close')}</button></div>
-  </section></div>;
 }
 
 function TodayDashboard({ lang, session, navigate, adminContent = {} }) {
@@ -12600,30 +12507,6 @@ function RequestCrmControls({ request, lang, onUpdated }) {
 }
 
 
-function createPaymentIdempotencyKey(prefix = 'payment') {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return `${prefix}:${crypto.randomUUID()}`;
-  return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
-}
-
-function BookingPaymentSummary({ request, lang }) {
-  const agreed = requestMoneyValue(request);
-  const currency = request.currency || request.finance_entries?.find((entry) => entry.currency)?.currency || 'EUR';
-  const summary = paymentSummary(request.finance_entries || [], agreed, currency);
-  const history = (request.finance_entries || []).filter((entry) => ['confirmed', 'reversed', 'reversal'].includes(String(entry.status || '').toLowerCase()));
-  if (!(agreed > 0) && history.length === 0) return null;
-  return (
-    <section className="booking-payment-summary" aria-label={adminCopy(lang, 'Riepilogo pagamento', 'Payment summary')}>
-      <div className="booking-payment-summary-grid">
-        <span><small>{adminCopy(lang, 'Preventivo', 'Quoted')}</small><strong>{formatMoney(summary.agreed, summary.currency, lang)}</strong></span>
-        <span><small>{adminCopy(lang, 'Incassato', 'Paid')}</small><strong>{formatMoney(summary.paid, summary.currency, lang)}</strong></span>
-        <span><small>{adminCopy(lang, 'Saldo', 'Balance')}</small><strong>{formatMoney(summary.balance, summary.currency, lang)}</strong></span>
-        <span><small>{adminCopy(lang, 'Stato pagamento', 'Payment status')}</small><strong>{summary.status}</strong></span>
-      </div>
-      {history.length > 0 && <details className="booking-payment-history"><summary>{adminCopy(lang, 'Pagamenti', 'Payments')} · {history.length}</summary>{history.map((entry) => <p className="small-note" key={entry.id}>{formatDateForMessage(entry.entry_date, lang) || '-'} · {entry.status === 'reversal' ? adminCopy(lang, 'Rimborso/storno', 'Refund/reversal') : adminCopy(lang, 'Pagamento', 'Payment')} · {formatMoney(entry.amount, entry.currency || summary.currency, lang)} · {entry.payment_method || '-'}</p>)}</details>}
-    </section>
-  );
-}
-
 function RequestIncomeConfirmAction({ request, lang, session, onUpdated }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -12631,19 +12514,22 @@ function RequestIncomeConfirmAction({ request, lang, session, onUpdated }) {
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [incomeState, setIncomeState] = useState(null);
-  const [idempotencyKey, setIdempotencyKey] = useState(() => createPaymentIdempotencyKey(`booking:${request.id}`));
   const [form, setForm] = useState(() => ({
     entry_date: todayIso(),
     amount: requestMoneyValue(request) > 0 ? String(requestMoneyValue(request)) : '',
-    currency: request.currency || request.finance_entries?.find((entry) => entry.currency)?.currency || 'EUR',
+    currency: 'EUR',
     payment_method: ''
   }));
 
   useBodyScrollLock(open);
 
   useEffect(() => {
-    setForm({ entry_date: todayIso(), amount: requestMoneyValue(request) > 0 ? String(requestMoneyValue(request)) : '', currency: request.currency || request.finance_entries?.find((entry) => entry.currency)?.currency || 'EUR', payment_method: '' });
-    setIdempotencyKey(createPaymentIdempotencyKey(`booking:${request.id}`));
+    setForm({
+      entry_date: todayIso(),
+      amount: requestMoneyValue(request) > 0 ? String(requestMoneyValue(request)) : '',
+      currency: 'EUR',
+      payment_method: ''
+    });
     setIncomeState(null);
     setError('');
     setWarning('');
@@ -12655,24 +12541,33 @@ function RequestIncomeConfirmAction({ request, lang, session, onUpdated }) {
     try {
       const state = await getBookingRequestIncomeState(request.id);
       setIncomeState(state);
-      const existingCurrency = state.entries.find((entry) => entry.currency)?.currency;
-      if (existingCurrency) setForm((current) => ({ ...current, currency: existingCurrency }));
-      const recorded = state.confirmed.reduce((sum, entry) => sum + parseMoneyAmount(entry.amount), 0);
-      const remaining = Math.max(0, requestMoneyValue(request) - recorded);
-      if (remaining > 0) setForm((current) => ({ ...current, amount: String(remaining) }));
-      else if (state.pending.length === 1 && parseMoneyAmount(state.pending[0].amount) > 0) setForm((current) => ({ ...current, amount: String(parseMoneyAmount(state.pending[0].amount)) }));
+      if (state.pending.length === 1 && parseMoneyAmount(form.amount) <= 0) {
+        setForm((current) => ({ ...current, amount: String(parseMoneyAmount(state.pending[0].amount) || '') }));
+      }
     } catch (err) {
-      setError(err?.message || adminCopy(lang, 'Stato pagamento non disponibile.', 'Payment status unavailable.'));
+      setError(err?.message || adminCopy(lang, 'Stato entrata non disponibile.', 'Income status unavailable.'));
     } finally {
       setLoading(false);
     }
   }
 
-  function openModal() { setOpen(true); setWarning(''); window.setTimeout(loadIncomeState, 0); }
-  function closeModal() { if (saving) return; setOpen(false); setError(''); setWarning(''); }
+  function openModal() {
+    setOpen(true);
+    setWarning('');
+    window.setTimeout(() => { loadIncomeState(); }, 0);
+  }
 
-  async function recordPayment() {
-    setSaving(true); setError(''); setWarning('');
+  function closeModal() {
+    if (saving) return;
+    setOpen(false);
+    setError('');
+    setWarning('');
+  }
+
+  async function confirmIncome() {
+    setSaving(true);
+    setError('');
+    setWarning('');
     try {
       const result = await confirmBookingRequestIncome({
         request,
@@ -12680,59 +12575,84 @@ function RequestIncomeConfirmAction({ request, lang, session, onUpdated }) {
         currency: form.currency,
         entryDate: form.entry_date,
         paymentMethod: form.payment_method,
-        idempotencyKey,
         userId: session?.user?.id || null
       });
-      if (result.commissionWarning) setWarning(adminCopy(lang, `Pagamento registrato. Commissione partner da verificare: ${result.commissionWarning}`, `Payment recorded. Partner commission needs review: ${result.commissionWarning}`));
+      if (result.commissionWarning) {
+        setWarning(adminCopy(lang, `Entrata confermata. Commissione partner da verificare: ${result.commissionWarning}`, `Income confirmed. Partner commission needs review: ${result.commissionWarning}`));
+      }
       const state = await getBookingRequestIncomeState(request.id);
       setIncomeState(state);
-      const recorded = state.confirmed.reduce((sum, entry) => sum + parseMoneyAmount(entry.amount), 0);
-      const remaining = Math.max(0, requestMoneyValue(request) - recorded);
-      setForm((current) => ({ ...current, amount: remaining > 0 ? String(remaining) : '', payment_method: '' }));
-      setIdempotencyKey(createPaymentIdempotencyKey(`booking:${request.id}`));
-      onUpdated?.(result.status === 'already_recorded'
-        ? adminCopy(lang, 'Questo pagamento era già stato registrato.', 'This payment was already recorded.')
-        : adminCopy(lang, 'Pagamento registrato e collegato alla prenotazione.', 'Payment recorded and linked to the booking.'));
+      onUpdated?.(result.status === 'already_confirmed'
+        ? adminCopy(lang, 'Entrata già confermata per questa prenotazione.', 'Income was already confirmed for this booking.')
+        : adminCopy(lang, 'Entrata confermata e collegata alla prenotazione.', 'Income confirmed and linked to the booking.'));
     } catch (err) {
       const code = err?.code || '';
       const message = code === 'BOOKING_INCOME_MULTIPLE_PENDING'
-        ? adminCopy(lang, 'Ci sono più entrate attese collegate. Riconciliale in Finanze prima di registrare il pagamento.', 'Multiple expected income entries are linked. Reconcile them in Finance before recording the payment.')
-        : code === 'BOOKING_INCOME_PAYMENT_METHOD_REQUIRED' ? adminCopy(lang, 'Indica il metodo di pagamento.', 'Enter the payment method.')
-          : code === 'BOOKING_INCOME_AMOUNT_REQUIRED' ? adminCopy(lang, 'Inserisci un importo positivo.', 'Enter a positive amount.')
-            : err?.message || adminCopy(lang, 'Pagamento non registrato.', 'Payment was not recorded.');
+        ? adminCopy(lang, 'Ci sono più entrate attese collegate. Apri Finanze e riconciliale prima di confermare.', 'Multiple expected income entries are linked. Reconcile them in Finance before confirming.')
+        : code === 'BOOKING_INCOME_PAYMENT_METHOD_REQUIRED'
+          ? adminCopy(lang, 'Indica il metodo di pagamento.', 'Enter the payment method.')
+          : code === 'BOOKING_INCOME_AMOUNT_REQUIRED'
+            ? adminCopy(lang, 'Inserisci un importo positivo.', 'Enter a positive amount.')
+            : err?.message || adminCopy(lang, 'Entrata non confermata.', 'Income was not confirmed.');
       setError(message);
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (!session || !bookingRequestCanConfirmIncome(request)) return null;
+
   const confirmedEntries = incomeState?.confirmed || [];
   const pendingEntries = incomeState?.pending || [];
   const confirmedTotal = confirmedEntries.reduce((sum, entry) => sum + parseMoneyAmount(entry.amount), 0);
-  const agreed = requestMoneyValue(request);
-  const balance = Math.max(0, agreed - confirmedTotal);
-  const status = confirmedTotal === 0 ? 'UNPAID' : agreed > 0 && confirmedTotal < agreed ? 'PART-PAID' : agreed > 0 && confirmedTotal > agreed ? 'OVERPAID' : 'PAID';
   const hasAmbiguousPending = pendingEntries.length > 1;
 
   return (
     <>
       <div className="request-actions request-income-actions">
-        <button className="button primary" type="button" onClick={openModal}>{adminCopy(lang, 'Registra pagamento', 'Record payment')}</button>
+        <button className="button primary" type="button" onClick={openModal}>{adminCopy(lang, 'Conferma entrata', 'Confirm income')}</button>
       </div>
-      {open && <div className="modal-backdrop" role="presentation">
-        <section className="admin-modal" role="dialog" aria-modal="true" aria-labelledby={`recordPaymentTitle-${request.id}`}>
-          <div className="admin-modal-header"><div><h2 id={`recordPaymentTitle-${request.id}`}>{adminCopy(lang, 'Registra pagamento', 'Record payment')}</h2><p>{request.customer_name || adminCopy(lang, 'Cliente senza nome', 'Unnamed customer')} · {adminExperienceLabel(request.experience_id, lang)}</p></div><button type="button" className="icon-button" onClick={closeModal} aria-label={text(lang, 'close')}>×</button></div>
-          {loading ? <p>{adminCopy(lang, 'Controllo movimenti collegati...', 'Checking linked finance entries...')}</p> : <>
-            <div className="booking-payment-summary-grid modal-payment-summary"><span><small>{adminCopy(lang, 'Concordato', 'Agreed')}</small><strong>{formatMoney(agreed, form.currency, lang)}</strong></span><span><small>{adminCopy(lang, 'Già incassato', 'Already paid')}</small><strong>{formatMoney(confirmedTotal, form.currency, lang)}</strong></span><span><small>{adminCopy(lang, 'Saldo', 'Balance')}</small><strong>{formatMoney(balance, form.currency, lang)}</strong></span><span><small>{adminCopy(lang, 'Stato', 'Status')}</small><strong>{status}</strong></span></div>
-            {confirmedEntries.length > 0 && <div className="payment-history-list"><strong>{adminCopy(lang, 'Pagamenti registrati', 'Recorded payments')}</strong>{confirmedEntries.map((entry) => <p className="small-note" key={entry.id}>{formatDateForMessage(entry.entry_date, lang) || '-'} · {formatMoney(entry.amount, entry.currency || form.currency, lang)} · {entry.payment_method || '-'}</p>)}</div>}
-            {pendingEntries.length === 1 && <div className="admin-alert info compact-alert">{adminCopy(lang, 'L’entrata attesa verrà ridotta del pagamento registrato; l’eventuale saldo resterà atteso.', 'The expected entry will be reduced by the recorded payment; any remaining balance stays expected.')}</div>}
-            {hasAmbiguousPending && <div className="admin-alert warning" role="alert">{adminCopy(lang, 'Più entrate attese sono collegate: riconciliale prima in Finanze.', 'Multiple expected entries are linked: reconcile them in Finance first.')}</div>}
-            {!hasAmbiguousPending && <div className="admin-form-grid request-income-confirm-grid"><AdminInput label={adminCopy(lang, 'Data pagamento', 'Payment date')} type="date" value={form.entry_date} onChange={(value) => setForm((current) => ({ ...current, entry_date: value }))} /><AdminInput label={adminCopy(lang, 'Importo effettivo', 'Actual amount')} type="number" inputMode="decimal" value={form.amount} onChange={(value) => setForm((current) => ({ ...current, amount: value }))} /><AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => setForm((current) => ({ ...current, currency: normalizeCurrency(value) }))} /><AdminInput label={adminCopy(lang, 'Metodo di pagamento', 'Payment method')} value={form.payment_method} placeholder={adminCopy(lang, 'Contanti, bonifico, carta...', 'Cash, bank transfer, card...')} onChange={(value) => setForm((current) => ({ ...current, payment_method: value }))} /></div>}
-            {!hasAmbiguousPending && balance === 0 && <p className="small-note">{adminCopy(lang, 'Il saldo è già zero. Un ulteriore pagamento verrà registrato come sovrappagamento esplicito.', 'Balance is already zero. Any additional payment will be recorded as an explicit overpayment.')}</p>}
-          </>}
-          {warning && <div className="admin-alert warning" role="status">{warning}</div>}{error && <div className="admin-alert error" role="alert">{error}</div>}
-          <div className="modal-actions">{!loading && !hasAmbiguousPending && <button className="button primary" type="button" onClick={recordPayment} disabled={saving}>{saving ? adminCopy(lang, 'Registrazione...', 'Recording...') : adminCopy(lang, 'Registra pagamento', 'Record payment')}</button>}<button className="button secondary" type="button" onClick={closeModal} disabled={saving}>{adminCopy(lang, 'Chiudi', 'Close')}</button></div>
-        </section>
-      </div>}
+      {open && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="admin-modal" role="dialog" aria-modal="true" aria-labelledby={`confirmIncomeTitle-${request.id}`}>
+            <div className="admin-modal-header">
+              <div>
+                <h2 id={`confirmIncomeTitle-${request.id}`}>{adminCopy(lang, 'Conferma entrata', 'Confirm income')}</h2>
+                <p>{request.customer_name || adminCopy(lang, 'Cliente senza nome', 'Unnamed customer')} · {adminExperienceLabel(request.experience_id, lang)} · {formatDateForMessage(request.requested_date, lang) || '-'}</p>
+              </div>
+              <button type="button" className="icon-button" onClick={closeModal} aria-label={text(lang, 'close')}>×</button>
+            </div>
+
+            {loading ? <p>{adminCopy(lang, 'Controllo movimenti collegati...', 'Checking linked finance entries...')}</p> : confirmedEntries.length > 0 ? (
+              <div className="admin-alert success" role="status">
+                <strong>{adminCopy(lang, 'Entrata già confermata.', 'Income already confirmed.')}</strong>
+                <p>{adminCopy(lang, 'Totale confermato', 'Confirmed total')}: {formatMoney(confirmedTotal, confirmedEntries[0]?.currency || 'EUR', lang)}</p>
+                <p>{adminCopy(lang, 'Data', 'Date')}: {formatDateForMessage(confirmedEntries[0]?.entry_date, lang) || '-'} · {adminCopy(lang, 'Metodo', 'Method')}: {confirmedEntries[0]?.payment_method || '-'}</p>
+              </div>
+            ) : (
+              <>
+                {pendingEntries.length === 1 && <div className="admin-alert info compact-alert">{adminCopy(lang, 'Esiste già un’entrata attesa collegata: verrà aggiornata a confermata, senza creare un duplicato.', 'One expected income entry is already linked: it will be updated to confirmed instead of creating a duplicate.')}</div>}
+                {hasAmbiguousPending && <div className="admin-alert warning" role="alert">{adminCopy(lang, 'Sono presenti più entrate attese collegate. Riconciliale nella pagina Finanze prima di confermare.', 'Multiple expected income entries are linked. Reconcile them in Finance before confirming.')}</div>}
+                {!hasAmbiguousPending && (
+                  <div className="admin-form-grid request-income-confirm-grid">
+                    <AdminInput label={adminCopy(lang, 'Data incasso', 'Income date')} type="date" value={form.entry_date} onChange={(value) => setForm((current) => ({ ...current, entry_date: value }))} />
+                    <AdminInput label={adminCopy(lang, 'Importo effettivo', 'Actual amount')} type="number" inputMode="decimal" value={form.amount} onChange={(value) => setForm((current) => ({ ...current, amount: value }))} />
+                    <AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => setForm((current) => ({ ...current, currency: normalizeCurrency(value) }))} />
+                    <AdminInput label={adminCopy(lang, 'Metodo di pagamento', 'Payment method')} value={form.payment_method} placeholder={adminCopy(lang, 'Contanti, bonifico, carta...', 'Cash, bank transfer, card...')} onChange={(value) => setForm((current) => ({ ...current, payment_method: value }))} />
+                  </div>
+                )}
+              </>
+            )}
+
+            {warning && <div className="admin-alert warning" role="status">{warning}</div>}
+            {error && <div className="admin-alert error" role="alert">{error}</div>}
+            <div className="modal-actions">
+              {!loading && confirmedEntries.length === 0 && !hasAmbiguousPending && <button className="button primary" type="button" onClick={confirmIncome} disabled={saving}>{saving ? adminCopy(lang, 'Conferma...', 'Confirming...') : adminCopy(lang, 'Conferma entrata', 'Confirm income')}</button>}
+              <button className="button secondary" type="button" onClick={closeModal} disabled={saving}>{adminCopy(lang, 'Chiudi', 'Close')}</button>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }
@@ -12741,9 +12661,9 @@ function RequestsCrmDashboard({ requests, lang }) {
   const summary = useMemo(() => buildRequestsCrmSummary(requests, lang), [requests, lang]);
   return (
     <section className="admin-panel requests-crm-dashboard">
-      <div className="admin-panel-header"><h2>{adminCopy(lang, 'CRM e valore prenotazioni', 'CRM and booking value')}</h2><small>{formatLocalDateTime(summary.generatedAt, lang, '')}</small></div>
+      <div className="admin-panel-header"><h2>{adminCopy(lang, 'CRM e revenue', 'CRM and revenue')}</h2><small>{formatLocalDateTime(summary.generatedAt, lang, '')}</small></div>
       <div className="admin-summary-grid crm-summary-grid">
-        <SummaryCard label={adminCopy(lang, 'Valore prenotazioni accettate', 'Accepted booking value')} value={formatMoney(summary.confirmedRevenue, 'EUR', lang)} />
+        <SummaryCard label={adminCopy(lang, 'Revenue confermata', 'Confirmed revenue')} value={formatMoney(summary.confirmedRevenue, 'EUR', lang)} />
         <SummaryCard label={adminCopy(lang, 'Pipeline attesa', 'Expected pipeline')} value={formatMoney(summary.expectedPipeline, 'EUR', lang)} />
         <SummaryCard label={adminCopy(lang, 'Valore medio', 'Average booking value')} value={formatMoney(summary.averageBookingValue, 'EUR', lang)} />
         <SummaryCard label={adminCopy(lang, 'Conversione lead', 'Lead conversion')} value={`${summary.leadToConfirmedRate.toFixed(1)}%`} />
@@ -12751,8 +12671,8 @@ function RequestsCrmDashboard({ requests, lang }) {
         <SummaryCard label={adminCopy(lang, 'Alta priorità', 'High priority')} value={summary.highPriority} />
       </div>
       <div className="crm-breakdown-grid">
-        <div><h3>{adminCopy(lang, 'Valore per fonte', 'Value by source')}</h3>{summary.sourceBreakdown.length ? <ul className="admin-mini-list">{summary.sourceBreakdown.map(([key, value]) => <li key={key}><strong>{key}</strong> · {formatMoney(value, 'EUR', lang)}</li>)}</ul> : <p className="small-note">{adminCopy(lang, 'Nessun dato confermato.', 'No confirmed data.')}</p>}</div>
-        <div><h3>{adminCopy(lang, 'Valore per esperienza', 'Value by experience')}</h3>{summary.experienceBreakdown.length ? <ul className="admin-mini-list">{summary.experienceBreakdown.map(([key, value]) => <li key={key}><strong>{key}</strong> · {formatMoney(value, 'EUR', lang)}</li>)}</ul> : <p className="small-note">{adminCopy(lang, 'Nessun dato confermato.', 'No confirmed data.')}</p>}</div>
+        <div><h3>{adminCopy(lang, 'Revenue per fonte', 'Revenue by source')}</h3>{summary.sourceBreakdown.length ? <ul className="admin-mini-list">{summary.sourceBreakdown.map(([key, value]) => <li key={key}><strong>{key}</strong> · {formatMoney(value, 'EUR', lang)}</li>)}</ul> : <p className="small-note">{adminCopy(lang, 'Nessun dato confermato.', 'No confirmed data.')}</p>}</div>
+        <div><h3>{adminCopy(lang, 'Revenue per esperienza', 'Revenue by experience')}</h3>{summary.experienceBreakdown.length ? <ul className="admin-mini-list">{summary.experienceBreakdown.map(([key, value]) => <li key={key}><strong>{key}</strong> · {formatMoney(value, 'EUR', lang)}</li>)}</ul> : <p className="small-note">{adminCopy(lang, 'Nessun dato confermato.', 'No confirmed data.')}</p>}</div>
       </div>
     </section>
   );
@@ -12982,48 +12902,6 @@ function buildGiftCardAdminReply(request, lang) {
     : `Hi ${request.buyer_name || ''},\n\nthank you for your vulcanIQ Gift Card request.\n\nGift Card for: ${request.recipient_name || '-'}\nExperience/interest: ${request.experience_type || '-'}\nIndicative budget: ${budget}\n${request.booking_code ? `Recipient code: ${request.booking_code}\n` : ''}\nWe will confirm availability and proposal as soon as possible.\n\nvulcanIQ team`;
 }
 
-function GiftCardPaymentDialog({ item, lang, onClose, onSaved }) {
-  const [form, setForm] = useState({
-    payment_amount: item.budget ? String(item.budget) : '',
-    payment_date: todayIso(),
-    payment_method: '',
-    currency: item.currency || 'EUR'
-  });
-  const [idempotencyKey] = useState(() => createPaymentIdempotencyKey(`gift-card:${item.id}`));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  useBodyScrollLock(true);
-
-  async function save() {
-    setSaving(true); setError('');
-    try {
-      if (!(parseMoneyAmount(form.payment_amount) > 0) || !form.payment_date || !String(form.payment_method || '').trim()) {
-        throw new Error(adminCopy(lang, 'Importo, data e metodo di pagamento sono obbligatori.', 'Payment amount, date and method are required.'));
-      }
-      const result = await onSaved?.({
-        status: 'paid',
-        currency: normalizeCurrency(form.currency),
-        payment_amount: parseMoneyAmount(form.payment_amount),
-        payment_date: form.payment_date,
-        payment_method: form.payment_method,
-        payment_idempotency_key: idempotencyKey
-      });
-      if (result) onClose();
-    } catch (err) {
-      setError(err?.message || adminCopy(lang, 'Pagamento Gift Card non registrato.', 'Gift Card payment was not recorded.'));
-    } finally { setSaving(false); }
-  }
-
-  return <div className="modal-backdrop" role="presentation"><section className="admin-modal" role="dialog" aria-modal="true" aria-labelledby={`giftCardPayment-${item.id}`}>
-    <div className="admin-modal-header"><div><h2 id={`giftCardPayment-${item.id}`}>{adminCopy(lang, 'Registra pagamento Gift Card', 'Record Gift Card payment')}</h2><p>{item.buyer_name || '-'} · {item.recipient_name || '-'}</p></div><button type="button" className="icon-button" onClick={onClose} aria-label={text(lang, 'close')}>×</button></div>
-    <div className="booking-payment-summary-grid modal-payment-summary"><span><small>{adminCopy(lang, 'Valore concordato', 'Agreed value')}</small><strong>{formatMoney(item.budget || 0, form.currency, lang)}</strong></span><span><small>{adminCopy(lang, 'Stato', 'Status')}</small><strong>{giftCardStatusLabel(item.status, lang)}</strong></span></div>
-    <div className="admin-form-grid request-income-confirm-grid"><AdminInput label={adminCopy(lang, 'Importo effettivo', 'Actual amount')} type="number" inputMode="decimal" value={form.payment_amount} onChange={(value) => setForm((current) => ({ ...current, payment_amount: value }))} /><AdminInput label={adminCopy(lang, 'Data pagamento', 'Payment date')} type="date" value={form.payment_date} onChange={(value) => setForm((current) => ({ ...current, payment_date: value }))} /><AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => setForm((current) => ({ ...current, currency: normalizeCurrency(value) }))} /><AdminInput label={adminCopy(lang, 'Metodo di pagamento', 'Payment method')} value={form.payment_method} placeholder={adminCopy(lang, 'Contanti, bonifico, carta...', 'Cash, bank transfer, card...')} onChange={(value) => setForm((current) => ({ ...current, payment_method: value }))} /></div>
-    <p className="small-note">{adminCopy(lang, 'Segnare Pagato registra denaro reale una sola volta. Emesso genera/consegna il voucher e non crea un’altra entrata.', 'Marking Paid records actual money once. Issued generates/delivers the voucher and does not create another income entry.')}</p>
-    {error && <div className="admin-alert error" role="alert">{error}</div>}
-    <div className="modal-actions"><button className="button primary" type="button" onClick={save} disabled={saving}>{saving ? adminCopy(lang, 'Registrazione...', 'Recording...') : adminCopy(lang, 'Registra pagamento', 'Record payment')}</button><button className="button secondary" type="button" onClick={onClose} disabled={saving}>{adminCopy(lang, 'Chiudi', 'Close')}</button></div>
-  </section></div>;
-}
-
 function useAdminGiftCards(filters = {}) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -13074,7 +12952,6 @@ function GiftCardsAdminPage({ lang, session, adminContent = {} }) {
   const { items, loading, error, refresh } = useAdminGiftCards(filters);
   const [feedback, setFeedback] = useState('');
   const [actionError, setActionError] = useState('');
-  const [paymentTarget, setPaymentTarget] = useState(null);
 
   async function updateItem(item, patch, message = '') {
     setActionError('');
@@ -13145,10 +13022,10 @@ function GiftCardsAdminPage({ lang, session, adminContent = {} }) {
                 {item.message && <p className="request-message">{item.message}</p>}
                 <label className="admin-field full"><span>{adminCopy(lang, 'Nota interna', 'Internal note')}</span><textarea rows={3} defaultValue={item.admin_note || ''} onBlur={(event) => { if (event.target.value !== (item.admin_note || '')) updateItem(item, { admin_note: event.target.value }, adminCopy(lang, 'Nota interna aggiornata.', 'Internal note updated.')); }} /></label>
                 <div className="request-actions-row">
-                  <select value={item.status} onChange={(event) => { const nextStatus = event.target.value; if (nextStatus === 'paid' && item.status !== 'paid') setPaymentTarget(item); else updateItem(item, { status: nextStatus }); }}>{GIFT_CARD_STATUSES.map((status) => <option key={status} value={status}>{giftCardStatusLabel(status, lang)}</option>)}</select>
+                  <select value={item.status} onChange={(event) => updateItem(item, { status: event.target.value })}>{GIFT_CARD_STATUSES.map((status) => <option key={status} value={status}>{giftCardStatusLabel(status, lang)}</option>)}</select>
                   <button className="button secondary" type="button" onClick={() => copyReply(item, 'whatsapp')}>{adminCopy(lang, 'Copia risposta WhatsApp', 'Copy WhatsApp reply')}</button>
                   <button className="button secondary" type="button" onClick={() => copyReply(item, 'email')}>{adminCopy(lang, 'Copia risposta email', 'Copy email reply')}</button>
-                  {item.status !== 'paid' && <button className="button secondary" type="button" onClick={() => setPaymentTarget(item)}>{adminCopy(lang, 'Registra pagamento', 'Record payment')}</button>}
+                  <button className="button secondary" type="button" onClick={() => updateItem(item, { status: 'paid' })}>{adminCopy(lang, 'Segna come pagato', 'Mark as paid')}</button>
                   <button className="button secondary" type="button" onClick={() => updateItem(item, { status: 'issued' })}>{adminCopy(lang, 'Segna come emesso', 'Mark as issued')}</button>
                   <button className="button secondary danger" type="button" onClick={() => updateItem(item, { status: 'cancelled' })}>{adminCopy(lang, 'Annulla richiesta', 'Cancel request')}</button>
                 </div>
@@ -13157,7 +13034,6 @@ function GiftCardsAdminPage({ lang, session, adminContent = {} }) {
           </div>
         )}
       </section>
-      {paymentTarget && <GiftCardPaymentDialog item={paymentTarget} lang={lang} onClose={() => setPaymentTarget(null)} onSaved={(patch) => updateItem(paymentTarget, patch, adminCopy(lang, 'Pagamento Gift Card registrato.', 'Gift Card payment recorded.'))} />}
     </section>
   );
 }
@@ -13304,7 +13180,6 @@ function RequestCard({ request, lang, session = null, navigate = null, onApprove
         <div><dt>{adminCopy(lang, 'Privata', 'Private')}</dt><dd>{request.private_experience === true ? adminCopy(lang, 'Sì', 'Yes') : request.private_experience === false ? adminCopy(lang, 'No', 'No') : '-'}</dd></div>
         {request.fixed_excursion_id && <div><dt>{adminCopy(lang, 'Escursione fissa', 'Fixed excursion')}</dt><dd>{request.fixed_excursion_id}</dd></div>}
       </dl>
-      <BookingPaymentSummary request={request} lang={lang} />
       <NotificationStatusControl record={request} table="booking_requests" lang={lang} onUpdated={onUpdated} />
       {request.children_under_3 && <div className="admin-alert warning compact-alert">{adminCopy(lang, 'Attenzione: bambini sotto i 3 anni. Percorso da valutare con particolare cura.', 'Warning: children under 3. Route must be assessed carefully.')}</div>}
       {request.message && <p className="request-message">{request.message}</p>}
@@ -13317,8 +13192,8 @@ function RequestCard({ request, lang, session = null, navigate = null, onApprove
       <RequestIncomeConfirmAction request={request} lang={lang} session={session} onUpdated={onUpdated} />
       {session && request.source === 'booking_code' && request.booking_code && navigate && (
         <div className="request-actions request-income-actions">
-          <button className="button primary" type="button" onClick={() => openBookingCodeFromRequest(request, navigate)}>{adminCopy(lang, 'Gestisci codice / registra pagamento', 'Manage code / record payment')}</button>
-          <span className="small-note">{adminCopy(lang, 'Usa lo stesso flusso di pagamento con importo, data e metodo effettivi.', 'Use the same payment flow with the actual amount, date and method.')}</span>
+          <button className="button primary" type="button" onClick={() => openBookingCodeFromRequest(request, navigate)}>{adminCopy(lang, 'Gestisci codice / conferma entrata', 'Manage code / confirm income')}</button>
+          <span className="small-note">{adminCopy(lang, 'Usa il flusso dedicato del codice prenotazione per evitare entrate duplicate.', 'Use the dedicated booking-code workflow to avoid duplicate income entries.')}</span>
         </div>
       )}
       {session && <ReviewRequestActions record={request} type="request" lang={lang} session={session} onUpdated={onUpdated} />}
@@ -14082,60 +13957,10 @@ function consumeBookingCodeRequestSearch() {
   }
 }
 
-function BookingCodePaymentDialog({ item, lang, session, onClose, onSaved }) {
-  const [state, setState] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [idempotencyKey, setIdempotencyKey] = useState(() => createPaymentIdempotencyKey(`booking-code:${item.id}`));
-  const [form, setForm] = useState({ entry_date: todayIso(), amount: String(item.expected_amount || ''), currency: item.currency || 'EUR', payment_method: '' });
-  useBodyScrollLock(true);
-
-  async function load() {
-    setLoading(true); setError('');
-    try {
-      const next = await getBookingCodePaymentState(item.id);
-      setState(next);
-      setForm((current) => ({ ...current, amount: next.balance > 0 ? String(next.balance) : '', currency: next.code.currency || current.currency }));
-    } catch (err) { setError(err?.message || adminCopy(lang, 'Pagamenti non disponibili.', 'Payments unavailable.')); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { load(); }, [item.id]);
-
-  async function save() {
-    setSaving(true); setError('');
-    try {
-      const result = await recordBookingCodePayment({ id: item.id, amount: form.amount, currency: form.currency, entryDate: form.entry_date, paymentMethod: form.payment_method, idempotencyKey, userId: session?.user?.id || null });
-      trackEvent('booking_code_payment_recorded', { booking_code_id: item.id, code: item.code, payment_status: result.code?.payment_status || '' }, { dedupe: false });
-      setIdempotencyKey(createPaymentIdempotencyKey(`booking-code:${item.id}`));
-      await onSaved?.(adminCopy(lang, 'Pagamento registrato.', 'Payment recorded.'));
-      onClose();
-    } catch (err) { setError(err?.message || adminCopy(lang, 'Pagamento non registrato.', 'Payment not recorded.')); }
-    finally { setSaving(false); }
-  }
-
-  const agreed = state?.agreed ?? Number(item.expected_amount || 0);
-  const paid = state?.paid ?? 0;
-  const balance = state?.balance ?? Math.max(0, agreed - paid);
-  return <div className="modal-backdrop" role="presentation"><section className="admin-modal" role="dialog" aria-modal="true" aria-labelledby={`bookingCodePayment-${item.id}`}>
-    <div className="admin-modal-header"><div><h2 id={`bookingCodePayment-${item.id}`}>{adminCopy(lang, 'Registra pagamento', 'Record payment')}</h2><p>{item.code} · {item.customer_name || '-'}</p></div><button className="icon-button" type="button" onClick={onClose} aria-label={text(lang, 'close')}>×</button></div>
-    {loading ? <p>{adminCopy(lang, 'Caricamento pagamenti...', 'Loading payments...')}</p> : <>
-      <div className="booking-payment-summary-grid modal-payment-summary"><span><small>{adminCopy(lang, 'Concordato', 'Agreed')}</small><strong>{formatMoney(agreed, form.currency, lang)}</strong></span><span><small>{adminCopy(lang, 'Incassato', 'Paid')}</small><strong>{formatMoney(paid, form.currency, lang)}</strong></span><span><small>{adminCopy(lang, 'Saldo', 'Balance')}</small><strong>{formatMoney(balance, form.currency, lang)}</strong></span><span><small>{adminCopy(lang, 'Stato', 'Status')}</small><strong>{state?.paymentStatus?.toUpperCase() || 'UNPAID'}</strong></span></div>
-      {state?.recognized?.length > 0 && <div className="payment-history-list"><strong>{adminCopy(lang, 'Storico pagamenti', 'Payment history')}</strong>{state.recognized.map((entry) => <p className="small-note" key={entry.id}>{formatDateForMessage(entry.entry_date, lang) || '-'} · {entry.status === 'reversal' ? adminCopy(lang, 'Storno', 'Reversal') : adminCopy(lang, 'Pagamento', 'Payment')} · {formatMoney(entry.amount, entry.currency || form.currency, lang)} · {entry.payment_method || '-'}</p>)}</div>}
-      {state?.expected?.length > 1 && <div className="admin-alert warning" role="alert">{adminCopy(lang, 'Più entrate attese sono collegate. Riconciliale in Finanze.', 'Multiple expected entries are linked. Reconcile them in Finance.')}</div>}
-      {state?.expected?.length <= 1 && <div className="admin-form-grid request-income-confirm-grid"><AdminInput label={adminCopy(lang, 'Data pagamento', 'Payment date')} type="date" value={form.entry_date} onChange={(value) => setForm((current) => ({ ...current, entry_date: value }))} /><AdminInput label={adminCopy(lang, 'Importo effettivo', 'Actual amount')} type="number" inputMode="decimal" value={form.amount} onChange={(value) => setForm((current) => ({ ...current, amount: value }))} /><AdminInput label={adminCopy(lang, 'Valuta', 'Currency')} value={form.currency} onChange={(value) => setForm((current) => ({ ...current, currency: normalizeCurrency(value) }))} /><AdminInput label={adminCopy(lang, 'Metodo di pagamento', 'Payment method')} value={form.payment_method} placeholder={adminCopy(lang, 'Contanti, bonifico, carta...', 'Cash, bank transfer, card...')} onChange={(value) => setForm((current) => ({ ...current, payment_method: value }))} /></div>}
-      {balance === 0 && <p className="small-note">{adminCopy(lang, 'Saldo zero: un ulteriore pagamento verrà registrato come sovrappagamento esplicito.', 'Zero balance: an additional payment will be recorded as an explicit overpayment.')}</p>}
-    </>}
-    {error && <div className="admin-alert error" role="alert">{error}</div>}
-    <div className="modal-actions">{!loading && state?.expected?.length <= 1 && <button className="button primary" type="button" onClick={save} disabled={saving}>{saving ? adminCopy(lang, 'Registrazione...', 'Recording...') : adminCopy(lang, 'Registra pagamento', 'Record payment')}</button>}<button className="button secondary" type="button" onClick={onClose} disabled={saving}>{adminCopy(lang, 'Chiudi', 'Close')}</button></div>
-  </section></div>;
-}
-
 function BookingCodesPage({ lang, session, adminContent = {} }) {
   const [filters, setFilters] = useState(() => ({ status: 'all', search: consumeBookingCodeRequestSearch(), limit: 250 }));
   const { codes, loading, error, refresh } = useAdminBookingCodes(filters);
   const [bookingCodeOpen, setBookingCodeOpen] = useState(false);
-  const [paymentTarget, setPaymentTarget] = useState(null);
   const [feedback, setFeedback] = useState('');
   const [actionError, setActionError] = useState('');
 
@@ -14175,6 +14000,11 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
         trackEvent('booking_code_completed', { booking_code_id: item.id, code: item.code }, { dedupe: false });
         await refreshWithFeedback(adminCopy(lang, 'Esperienza segnata come completata.', 'Experience marked completed.'));
       }
+      if (action === 'confirm-income') {
+        await confirmBookingCodeIncome(item.id, session.user.id);
+        trackEvent('booking_code_income_confirmed', { booking_code_id: item.id, code: item.code }, { dedupe: false });
+        await refreshWithFeedback(adminCopy(lang, 'Entrata confermata.', 'Income confirmed.'));
+      }
       if (action === 'no-show') {
         if (!window.confirm(adminCopy(lang, `Segnare ${item.code} come no-show?`, `Mark ${item.code} as no-show?`))) return;
         await markBookingCodeNoShow(item.id, session.user.id);
@@ -14188,9 +14018,12 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
 
   const unusedCount = codes.filter((item) => item.status === 'unused').length;
   const redeemedCount = codes.filter((item) => item.status === 'redeemed').length;
-  const codePaymentSummaries = codes.map((item) => paymentSummary(item.finance_entries || [], item.expected_amount, item.currency));
-  const totalExpected = codePaymentSummaries.reduce((sum, item) => sum + Math.max(0, item.balance), 0);
-  const confirmedIncome = codePaymentSummaries.reduce((sum, item) => sum + item.paid, 0);
+  const totalExpected = codes
+    .filter((item) => item.status !== 'cancelled' && item.income_status !== 'confirmed')
+    .reduce((sum, item) => sum + Number(item.expected_amount || 0), 0);
+  const confirmedIncome = codes
+    .filter((item) => item.income_status === 'confirmed' || item.admin_confirmed_income)
+    .reduce((sum, item) => sum + Number(item.expected_amount || 0), 0);
 
   return (
     <section className="admin-page booking-codes-admin-page">
@@ -14214,7 +14047,7 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
         <SummaryCard label={adminCopy(lang, 'Non usati', 'Unused')} value={unusedCount} />
         <SummaryCard label={adminCopy(lang, 'Usati', 'Redeemed')} value={redeemedCount} />
         <SummaryCard label={adminCopy(lang, 'Importo previsto', 'Expected amount')} value={adminMoney(totalExpected, 'EUR', lang)} />
-        <SummaryCard label={adminCopy(lang, 'Pagamenti registrati', 'Recorded payments')} value={adminMoney(confirmedIncome, 'EUR', lang)} helper={adminCopy(lang, 'Movimenti Finance registrati', 'Recorded Finance transactions')} />
+        <SummaryCard label={adminCopy(lang, 'Entrata confermata', 'Confirmed income')} value={adminMoney(confirmedIncome, 'EUR', lang)} />
       </div>
 
       <div className="admin-filter-bar booking-code-filter-bar">
@@ -14235,8 +14068,6 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
             {codes.map((item) => {
               const title = bookingCodeTitleForAdmin(item, lang);
               const mapsUrl = normalizeGoogleMapsUrl(item.meeting_point_maps_url);
-              const codePayment = paymentSummary(item.finance_entries || [], item.expected_amount, item.currency);
-              const paymentHistory = (item.finance_entries || []).filter((entry) => financeEntryIsRecognized(entry) && entry.type === 'income').sort((a,b) => String(b.entry_date || b.created_at || '').localeCompare(String(a.entry_date || a.created_at || '')));
               return (
                 <article className={`booking-code-admin-card status-${item.status || 'unused'}`} key={item.id}>
                   <div className="booking-code-admin-card-head">
@@ -14256,11 +14087,9 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
                     <div><dt>{adminCopy(lang, 'Punto d’incontro', 'Meeting point')}</dt><dd>{mapsUrl ? <a className="inline-link" href={mapsUrl} target="_blank" rel="noopener noreferrer">{item.meeting_point_name || adminCopy(lang, 'Apri Maps', 'Open Maps')}</a> : (item.meeting_point_name || '-')}</dd></div>
                     <div><dt>{adminCopy(lang, 'Collegamenti', 'Links')}</dt><dd>{item.redeemed_booking_request_id ? adminCopy(lang, 'Richiesta creata', 'Request created') : '-'}{item.redeemed_finance_entry_id ? ` · ${adminCopy(lang, 'Finanza attesa', 'Expected finance')}` : ''}</dd></div>
                     <div><dt>{adminCopy(lang, 'Completamento', 'Completion')}</dt><dd>{bookingCodeStatusLabel(item.completion_status || 'not_completed', lang)}</dd></div>
-                    <div><dt>{adminCopy(lang, 'Pagamento', 'Payment')}</dt><dd>{codePayment.status}</dd></div>
+                    <div><dt>{adminCopy(lang, 'Entrata', 'Income')}</dt><dd>{bookingCodeIncomeStatusLabel(item.income_status || 'expected', lang)}</dd></div>
                   </dl>
-                  <div className="booking-payment-summary compact"><div><span>{adminCopy(lang, 'Preventivo', 'Quoted')}</span><strong>{adminMoney(codePayment.agreed, codePayment.currency, lang)}</strong></div><div><span>{adminCopy(lang, 'Incassato', 'Paid')}</span><strong>{adminMoney(codePayment.paid, codePayment.currency, lang)}</strong></div><div><span>{adminCopy(lang, 'Saldo', 'Balance')}</span><strong>{adminMoney(codePayment.balance, codePayment.currency, lang)}</strong></div><span className={`status-pill ${codePayment.status.toLowerCase()}`}>{codePayment.status}</span></div>
-                  {paymentHistory.length > 0 && <div className="payment-history-list"><strong>{adminCopy(lang, 'Pagamenti', 'Payments')}</strong>{paymentHistory.slice(0,4).map((entry) => <p className="small-note" key={entry.id}>{formatDateForMessage(entry.entry_date, lang) || '-'} · {adminMoney(entry.amount, entry.currency || item.currency, lang)} · {entry.payment_method || '-'}</p>)}</div>}
-                  {item.status === 'redeemed' && codePayment.balance > 0 && <div className="admin-alert warning compact-alert">{adminCopy(lang, 'Codice usato: registra solo pagamenti realmente ricevuti, con data e metodo effettivi.', 'Code redeemed: record only payments actually received, with the actual date and method.')}</div>}
+                  {item.status === 'redeemed' && item.income_status !== 'confirmed' && <div className="admin-alert warning compact-alert">{adminCopy(lang, 'Codice usato: entrata non ancora confermata. Conferma solo dopo completamento/pagamento.', 'Code redeemed: income not confirmed. Confirm only after completion/payment.')}</div>}
                   {item.admin_note && <p className="request-message"><strong>{adminCopy(lang, 'Nota interna', 'Internal note')}:</strong> {item.admin_note}</p>}
                   <ReviewRequestActions record={item} type="booking_code" lang={lang} session={session} onUpdated={(message) => refreshWithFeedback(message)} />
                   <ReferralActions record={item} type="booking_code" lang={lang} session={session} onUpdated={(message) => refreshWithFeedback(message)} />
@@ -14268,7 +14097,7 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
                     <button type="button" onClick={() => copyCode(item.code)}>{adminCopy(lang, 'Copia codice', 'Copy code')}</button>
                     {item.status === 'unused' && <button type="button" onClick={() => cancelCode(item)}>{adminCopy(lang, 'Annulla codice', 'Cancel code')}</button>}
                     {item.status === 'redeemed' && item.completion_status !== 'completed' && <button type="button" onClick={() => runCodeAction(item, 'completed')}>{adminCopy(lang, 'Segna completato', 'Mark completed')}</button>}
-                    {item.status === 'redeemed' && <button type="button" onClick={() => setPaymentTarget(item)}>{adminCopy(lang, 'Registra pagamento', 'Record payment')}</button>}
+                    {item.status === 'redeemed' && item.income_status !== 'confirmed' && <button type="button" onClick={() => runCodeAction(item, 'confirm-income')}>{adminCopy(lang, 'Conferma entrata', 'Confirm income')}</button>}
                     {item.status === 'redeemed' && item.income_status !== 'confirmed' && <button type="button" onClick={() => runCodeAction(item, 'no-show')}>{adminCopy(lang, 'No-show', 'No-show')}</button>}
                     {item.status === 'redeemed' && <button type="button" onClick={() => cancelCode(item)}>{adminCopy(lang, 'Annulla', 'Cancel')}</button>}
                   </div>
@@ -14281,7 +14110,6 @@ function BookingCodesPage({ lang, session, adminContent = {} }) {
 
       <ReferralCodesPanel lang={lang} session={session} />
 
-      {paymentTarget && <BookingCodePaymentDialog item={paymentTarget} lang={lang} session={session} onClose={() => setPaymentTarget(null)} onSaved={refreshWithFeedback} />}
       {bookingCodeOpen && <AdminBookingCodeModal lang={lang} session={session} onClose={() => setBookingCodeOpen(false)} onSaved={(code) => { setBookingCodeOpen(false); refreshWithFeedback(adminCopy(lang, `Codice creato: ${code}`, `Code created: ${code}`)); }} />}
     </section>
   );
@@ -15206,7 +15034,6 @@ function App() {
   const [activePage, setActivePage] = useState(() => publicPageFromPathname(window.location.pathname) || 'home');
   const [siteMedia, setSiteMedia] = useState({});
   const [siteContent, setSiteContent] = useState({});
-  const [cmsStatus, setCmsStatus] = useState(() => isSupabaseConfigured ? 'loading' : 'error');
   const contactRef = useRef(null);
   const analyticsContextRef = useRef({ section: 'home', language: 'it' });
   const analyticsDisabledForRoute = pathname.startsWith('/admin');
@@ -15268,14 +15095,6 @@ function App() {
   }, [pathname]);
 
   useEffect(() => {
-    const adminVariant = pathname.startsWith('/admin');
-    const manifest = document.querySelector('link[rel="manifest"]');
-    if (manifest) manifest.setAttribute('href', adminVariant ? '/admin-manifest.webmanifest' : '/manifest.webmanifest');
-    const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
-    if (appleTitle) appleTitle.setAttribute('content', adminVariant ? 'VulcanIQ Admin' : 'VulcanIQ');
-  }, [pathname]);
-
-  useEffect(() => {
     const token = import.meta.env.VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN;
     if (!token || typeof document === 'undefined' || document.getElementById('cloudflare-web-analytics')) return;
     const script = document.createElement('script');
@@ -15295,20 +15114,13 @@ function App() {
   }, [activePage, lang, pathname]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) {
-      setCmsStatus('error');
-      return undefined;
-    }
+    if (!isSupabaseConfigured) return;
     let active = true;
-    setCmsStatus('loading');
     Promise.allSettled([listSiteMedia({ activeOnly: true }), loadPublicSiteContent()])
       .then(([mediaResult, contentResult]) => {
         if (!active) return;
-        const mediaReady = mediaResult.status === 'fulfilled';
-        const contentReady = contentResult.status === 'fulfilled';
-        setSiteMedia(mediaReady ? buildMediaMap(mediaResult.value) : {});
-        setSiteContent(contentReady ? buildSiteContentMap(contentResult.value) : {});
-        setCmsStatus(mediaReady || contentReady ? 'ready' : 'error');
+        setSiteMedia(mediaResult.status === 'fulfilled' ? buildMediaMap(mediaResult.value) : {});
+        setSiteContent(contentResult.status === 'fulfilled' ? buildSiteContentMap(contentResult.value) : {});
       });
     return () => { active = false; };
   }, []);
@@ -15402,11 +15214,9 @@ function App() {
         return <ContactForm lang={lang} formState={formState} setFormState={setFormState} siteMedia={siteMedia} siteContent={siteContent} />;
       case 'giftCard':
         return <GiftCardPage lang={lang} siteContent={siteContent} onClose={() => { setActivePage('home'); navigatePublicRoute('/', lang); }} />;
-      case 'install':
-        return <NotificationsPage variant="public" lang={lang} />;
       case 'home':
       default:
-        return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} cmsStatus={cmsStatus} />;
+        return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} />;
     }
   }
 

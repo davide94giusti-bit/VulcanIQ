@@ -18,7 +18,7 @@
 - Internal/admin notes and finance data
 - Supabase service-role credential
 - Resend API key
-- notification/cron secrets and VAPID private key
+- notification/cron secrets
 - Google OAuth client secret and refresh token
 - GitHub App/private backup credentials
 
@@ -33,10 +33,7 @@
 - Google review content is never inserted into analytics.
 - Google provider cache is separate, temporary and direct table access is revoked.
 - Analytics session updates are service-role-only and monotonic to prevent stale packets corrupting diagnostics.
-- Browser security headers add nosniff, frame denial, strict referrer policy, HSTS and Permissions-Policy. CSP remains Report-Only during compatibility validation.
-- Public/Admin notification categories are server allowlisted; Admin notification APIs additionally require a valid Supabase session, active Admin profile and per-device ownership.
-- Admin push lock-screen text is generic; customer/Finance details remain inside authenticated Admin UI.
-- Notification device credentials, VAPID private keys and Supabase service-role credentials are never exposed through `VITE_*`.
+- Browser security headers add nosniff, frame denial, strict referrer policy and Permissions-Policy. CSP is Report-Only during compatibility validation.
 
 ## PII boundaries
 
@@ -65,10 +62,7 @@ Admin paths are noindex. API/referral paths are disallowed in robots. Preview de
 ## Remaining hardening items
 
 - Validate CSP Report-Only violations before enforcing CSP.
+- Introduce/commit package-lock and transition CI to deterministic `npm ci` only.
 - Complete public/admin lazy bundle split.
 - Perform a documented disaster-recovery restore drill.
 - Consider centralized error monitoring if operational debugging volume justifies it.
-
-## Notification security boundary — 2026-08-21
-
-Cloudflare D1 stores notification subscriptions/preferences/inbox/audit data; it does not become an authentication authority. Supabase remains authoritative for Admin identity/role. Trusted booking/Gift Card ingestion uses a server-to-server shared secret and only generic deterministic templates. See `docs/NOTIFICATIONS_PWA_20260821.md`.
