@@ -1,7 +1,0 @@
-Excluded from package:
-- node_modules/
-- dist/
-- .git/
-- supabase/.temp/
-- .env* files
-- local logs/temp files

@@ -63,10 +63,9 @@ test('admin optimizer only updates drafts until the existing save flow runs', ()
   assert.doesNotMatch(optimizerSource, /supabase|fetch\(/i);
 });
 
-test('hero uses dedicated background poster without legacy feature-media fallback', () => {
-  assert.match(mainSource, /heroFeatureImage\s*=\s*mediaUrl\(mediaSource, 'home_hero_feature_image', ''\)/);
+test('hero uses dedicated background poster with backwards-compatible fallback', () => {
+  assert.match(mainSource, /heroFeatureImage\s*=\s*mediaUrl\(mediaSource, 'home_hero_feature_image', MEDIA\.premium\)/);
   assert.match(mainSource, /heroPoster\s*=\s*mediaUrl\(mediaSource, 'home_hero_background_poster', heroFeatureImage\)/);
-  assert.doesNotMatch(mainSource, /heroFeatureImage\s*=\s*mediaUrl\(mediaSource, 'home_hero_feature_image', MEDIA\.premium\)/);
   assert.match(mainSource, /home_hero_background_poster/);
 });
 
