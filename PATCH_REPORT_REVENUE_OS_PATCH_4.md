@@ -18,7 +18,7 @@ The implementation adds:
 Added migration:
 
 ```txt
-supabase/migrations/20260706_partner_commissions.sql
+supabase/migrations/20260706110000_partner_commissions.sql
 ```
 
 The migration extends `partnerships` with internal commission settings:
@@ -173,7 +173,7 @@ src/services/bookingRequests.js
 src/services/partnershipService.js
 src/services/partnerCommissions.js
 functions/api/analytics/event.js
-supabase/migrations/20260706_partner_commissions.sql
+supabase/migrations/20260706110000_partner_commissions.sql
 PATCH_REPORT_REVENUE_OS_PATCH_4.md
 ```
 

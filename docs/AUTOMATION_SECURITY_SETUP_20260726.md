@@ -3,8 +3,8 @@
 ## 1. Deployment sequence
 
 1. Deploy the feature branch to Cloudflare Preview (or staging if a separate staging stack exists). If Preview points to production Supabase, treat form submissions as production-data tests.
-2. Apply `supabase/migrations/20260726_automation_notifications_weekly_security.sql`.
-3. Apply `supabase/migrations/20260726_storage_security_hardening.sql` only after reviewing the live bucket classification.
+2. Apply `supabase/migrations/20260726090000_automation_notifications_weekly_security.sql`.
+3. Apply `supabase/migrations/20260726100000_storage_security_hardening.sql` only after reviewing the live bucket classification.
 4. Deploy both Edge Functions.
 5. Add Edge Function secrets.
 6. Add Vault secrets.

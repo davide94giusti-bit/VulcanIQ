@@ -95,7 +95,7 @@ Required result before merge:
 
 1. Apply this patch on a clean branch based on production `4148c78`.
 2. Run the local validation commands above.
-3. Apply `supabase/migrations/20260817_operational_analytics_reporting_fix.sql` to the linked production/staging project.
+3. Apply `supabase/migrations/20260817090000_operational_analytics_reporting_fix.sql` to the linked production/staging project.
 4. Redeploy `send-weekly-admin-recap` (its code and shared email template changed).
 5. Push the frontend/API branch and review the Cloudflare Preview deployment.
 6. Test one real controlled website booking on iPhone Safari and one on Android Chrome.

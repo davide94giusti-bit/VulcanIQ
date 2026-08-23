@@ -68,7 +68,7 @@ The patch focuses on mobile UX, gift-card validation and code generation, admin 
 Created:
 
 ```txt
-supabase/migrations/20260706_gift_card_review_codes.sql
+supabase/migrations/20260706120000_gift_card_review_codes.sql
 ```
 
 Migration adds:
@@ -123,7 +123,7 @@ src/main.jsx
 src/styles.css
 src/services/bookingCodes.js
 src/services/giftCards.js
-supabase/migrations/20260706_gift_card_review_codes.sql
+supabase/migrations/20260706120000_gift_card_review_codes.sql
 PATCH_REPORT_MOBILE_UX_FINANCE_GIFT_CARD_FIXES.md
 ```
 

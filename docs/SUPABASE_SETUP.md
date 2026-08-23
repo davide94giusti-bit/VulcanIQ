@@ -393,7 +393,7 @@ If no Supabase override exists, the website uses the default local logo.
 Run the analytics migration after the base schema:
 
 ```sql
--- supabase/migrations/20260608_add_analytics_events.sql
+-- supabase/migrations/20260608090000_add_analytics_events.sql
 ```
 
 The migration adds:

@@ -7,12 +7,12 @@
 - `src/styles.css`
 - `styles.css`
 - `src/services/bookingCodes.js`
-- `supabase/migrations/20260702_booking_codes.sql`
+- `supabase/migrations/20260702090000_booking_codes.sql`
 - `IMPLEMENTATION_REPORT.md`
 
 ## Migration added
 
-Added `supabase/migrations/20260702_booking_codes.sql`.
+Added `supabase/migrations/20260702090000_booking_codes.sql`.
 
 The migration creates:
 

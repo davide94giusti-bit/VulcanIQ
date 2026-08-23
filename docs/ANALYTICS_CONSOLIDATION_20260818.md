@@ -34,7 +34,7 @@ The weekly recap independently fetched raw analytics with its own limit and reco
 Migration:
 
 ```text
-supabase/migrations/20260818_analytics_consolidation.sql
+supabase/migrations/20260818090000_analytics_consolidation.sql
 ```
 
 The migration creates:
@@ -401,7 +401,7 @@ src/features/analytics/AnalyticsCanonicalFunnels.jsx
 src/features/analytics/AnalyticsHealthPanel.jsx
 src/features/analytics/contract.js
 src/styles/analytics-consolidated.css
-supabase/migrations/20260818_analytics_consolidation.sql
+supabase/migrations/20260818090000_analytics_consolidation.sql
 tools/analytics-regression.mjs
 docs/ANALYTICS_CONSOLIDATION_20260818.md
 ```
@@ -441,7 +441,7 @@ Do **not** try to execute the `.sql` path as a PowerShell command.
 Preferred manual procedure:
 
 1. Open Supabase Dashboard -> SQL Editor.
-2. Open `supabase/migrations/20260818_analytics_consolidation.sql` locally.
+2. Open `supabase/migrations/20260818090000_analytics_consolidation.sql` locally.
 3. Copy the complete SQL file into a new SQL Editor query.
 4. Run it once against the production project.
 5. Run the non-destructive verification queries below.

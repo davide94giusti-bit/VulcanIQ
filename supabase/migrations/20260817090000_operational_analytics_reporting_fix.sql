@@ -1,5 +1,5 @@
 -- vulcanIQ operational status, public RPC search-path and analytics/reporting follow-up.
--- Apply after 20260726_automation_notifications_weekly_security.sql.
+-- Apply after 20260726090000_automation_notifications_weekly_security.sql.
 
 begin;
 

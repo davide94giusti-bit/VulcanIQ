@@ -85,7 +85,7 @@ Only these public frontend variables are allowed:
 Run this migration before using the editable schedule UI:
 
 ```sql
-supabase/migrations/20260626_system_backup_settings.sql
+supabase/migrations/20260626100000_system_backup_settings.sql
 ```
 
 The workflow runs hourly:
