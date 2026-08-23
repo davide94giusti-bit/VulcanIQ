@@ -116,6 +116,10 @@ export async function updateGiftCardRequest(id, input = {}, userId = null) {
   if (input.budget !== undefined) patch.budget = cleanBudget(input.budget);
   if (input.currency !== undefined) patch.currency = normalizeCurrency(input.currency);
   if (input.preferred_delivery_date !== undefined) patch.preferred_delivery_date = cleanText(input.preferred_delivery_date);
+  if (input.payment_amount !== undefined) patch.payment_amount = cleanBudget(input.payment_amount);
+  if (input.payment_date !== undefined) patch.payment_date = cleanText(input.payment_date);
+  if (input.payment_method !== undefined) patch.payment_method = cleanText(input.payment_method);
+  if (input.payment_idempotency_key !== undefined) patch.payment_idempotency_key = cleanText(input.payment_idempotency_key);
   const { data, error } = await supabase.rpc('admin_update_gift_card_request', { p_id: id, p_patch: patch });
   if (error) throw error;
   return normalize(data);

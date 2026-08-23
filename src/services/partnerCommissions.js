@@ -193,9 +193,11 @@ export async function listPartnerCommissionSummary(filters = {}) {
     approvedCount: 0,
     paidCount: 0,
     cancelledCount: 0,
-    byPartner: []
+    byPartner: [],
+    byCurrency: []
   };
   const byPartner = new Map();
+  const byCurrency = new Map();
 
   commissions.forEach((item) => {
     const amount = parseMoneyAmount(item.commission_amount);
@@ -203,10 +205,19 @@ export async function listPartnerCommissionSummary(filters = {}) {
     if (item.status === 'approved') { summary.approvedUnpaidAmount += amount; summary.approvedCount += 1; }
     if (item.status === 'paid') { summary.paidAmount += amount; summary.paidCount += 1; }
     if (item.status === 'cancelled') { summary.cancelledAmount += amount; summary.cancelledCount += 1; }
-    const key = item.partner_id || 'unassigned';
+    const currency = normalizeCurrency(item.currency || DEFAULT_CURRENCY);
+    const currencyRow = byCurrency.get(currency) || { currency, pendingAmount: 0, approvedUnpaidAmount: 0, paidAmount: 0, cancelledAmount: 0, unpaidLiability: 0 };
+    if (item.status === 'pending') currencyRow.pendingAmount += amount;
+    if (item.status === 'approved') currencyRow.approvedUnpaidAmount += amount;
+    if (item.status === 'paid') currencyRow.paidAmount += amount;
+    if (item.status === 'cancelled') currencyRow.cancelledAmount += amount;
+    currencyRow.unpaidLiability = currencyRow.pendingAmount + currencyRow.approvedUnpaidAmount;
+    byCurrency.set(currency, currencyRow);
+    const key = `${item.partner_id || 'unassigned'}:${currency}`;
     const current = byPartner.get(key) || {
       partner_id: item.partner_id || null,
       partner_name: item.partner_name || '—',
+      currency,
       pendingAmount: 0,
       approvedUnpaidAmount: 0,
       paidAmount: 0,
@@ -226,6 +237,7 @@ export async function listPartnerCommissionSummary(filters = {}) {
 
   summary.unpaidLiability = summary.pendingAmount + summary.approvedUnpaidAmount;
   summary.byPartner = [...byPartner.values()].sort((a, b) => (b.pendingAmount + b.approvedUnpaidAmount) - (a.pendingAmount + a.approvedUnpaidAmount));
+  summary.byCurrency = [...byCurrency.values()].sort((a, b) => a.currency.localeCompare(b.currency));
   return { ...summary, commissions };
 }
 
@@ -345,29 +357,15 @@ export async function upsertPartnerCommissionForSource({ sourceType = 'booking_r
 export async function updatePartnerCommissionStatus(id, status, notes = '', userId = null) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
   const normalized = normalizeStatus(status);
-  const now = new Date().toISOString();
-  const payload = {
-    status: normalized,
-    status_notes: cleanText(notes),
-    updated_by: userId || null,
-    updated_at: now
-  };
-  if (normalized === 'approved') payload.approved_at = now;
-  if (normalized === 'paid') {
-    payload.paid_at = now;
-    payload.approved_at = now;
-  }
-  if (normalized === 'cancelled') payload.cancelled_at = now;
-
-  const { data, error } = await supabase
-    .from('partner_commissions')
-    .update(payload)
-    .eq('id', id)
-    .select(COMMISSION_SELECT_FIELDS)
-    .single();
+  const { data, error } = await supabase.rpc('admin_update_partner_commission_status', {
+    p_id: id,
+    p_status: normalized,
+    p_notes: cleanText(notes)
+  });
   if (error) throw error;
-  const partnerMap = await loadPartnersById([data.partner_id]);
-  return normalizeCommission(data, partnerMap.get(data.partner_id));
+  const row = typeof data === 'string' ? JSON.parse(data) : data;
+  const partnerMap = await loadPartnersById([row?.partner_id]);
+  return normalizeCommission(row, partnerMap.get(row?.partner_id));
 }
 
 export async function cancelUnpaidPartnerCommissionsForSource({ sourceType = 'booking_request', sourceId, userId = null, reason = '' } = {}) {
