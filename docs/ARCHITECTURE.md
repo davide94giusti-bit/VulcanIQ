@@ -6,8 +6,9 @@
 - **Edge/API layer:** Cloudflare Pages Functions under `/api/*` for public submissions, analytics ingestion and administrative backup operations.
 - **Primary backend:** Supabase Auth, PostgreSQL, PostgREST/RPC, Storage and Edge Functions.
 - **Email:** Resend through server-side Supabase Edge Functions.
-- **Scheduled jobs:** Supabase cron/pg_net for operational recap and Google review sync; GitHub Actions for backup orchestration.
+- **Scheduled jobs:** Supabase cron/pg_net for operational recap and Google review sync; Cloudflare Cron Worker for notifications/Etna/public excursion checks; GitHub Actions for backup orchestration.
 - **Analytics:** privacy-first custom event/session storage with canonical PostgreSQL aggregation RPC shared by admin reporting and weekly recap.
+- **Notifications/PWA:** distinct Public/Admin manifests and scoped service workers; Cloudflare Pages Functions + D1 own subscription/preferences/inbox/campaign APIs; Supabase Auth remains the Admin identity source.
 - **Google reviews:** official Google Business Profile provider -> server OAuth -> temporary provider cache -> narrow public RPC -> normalized review UI.
 
 ## Trust boundaries
@@ -18,7 +19,7 @@ The browser receives only publishable Supabase configuration and public/admin se
 
 ### Cloudflare Pages Functions
 
-Public API boundary for booking/Gift Card/analytics requests. Functions validate size/content, rate limits and idempotency and use server credentials to invoke controlled database functions.
+Public API boundary for booking/Gift Card/analytics requests plus the notification API. Functions validate size/content, origin, rate limits and idempotency. Notification Admin routes validate Supabase bearer identity, active Admin role and device ownership before D1 access.
 
 ### Supabase database
 
@@ -31,6 +32,8 @@ Own email provider credentials, Google OAuth refresh credentials and scheduled/m
 ### External providers
 
 - Resend: outbound operational email.
+- INGV Osservatorio Etneo: authoritative external source for conservative public Etna update notifications.
+- Web Push browser push services: delivery transport using server-side VAPID credentials.
 - Google Business Profile: provider-owned review content; temporary cache only.
 - GitHub: backup workflow/disaster recovery artifact path.
 
@@ -45,3 +48,7 @@ Static `index.html` provides safe home defaults. `src/seo.js` updates route-spec
 ## Modernization boundary
 
 Business/data services should remain stable while presentation is replaced. The next large extraction is a lazy PublicApp/AdminApp bundle split so public visitors do not eagerly download administrative systems.
+
+## Payment and notification extensions — 2026-08-21
+
+See `docs/FINANCE_PAYMENT_RECONCILIATION_20260821.md` for the ledger/payment boundary and `docs/NOTIFICATIONS_PWA_20260821.md` for the dual-PWA, D1, Web Push, INGV and campaign architecture.

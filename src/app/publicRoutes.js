@@ -8,6 +8,7 @@ export const PUBLIC_ROUTES = Object.freeze([
   { page: 'social', path: '/social', indexable: true },
   { page: 'latestNews', path: '/latest-news', aliases: ['/etna-live-news'], indexable: true },
   { page: 'giftCard', path: '/gift-card', indexable: true },
+  { page: 'install', path: '/install', indexable: false },
   { page: 'privacy', path: '/privacy-policy', legal: true, indexable: true },
   { page: 'terms', path: '/terms-and-conditions', legal: true, indexable: true },
   { page: 'cookies', path: '/cookie-policy', legal: true, indexable: true }

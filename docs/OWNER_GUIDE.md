@@ -322,28 +322,25 @@ If no guests are booked, the panel shows: `Nessun ospite prenotato per questa da
 
 ### Finance / Finanze
 
-The admin dashboard includes a new `Finanze / Finance` section. This is an internal ledger only; it is not a payment processor.
+The Finance ledger records actual money and expected amounts separately. Booking/CRM status is not accounting truth.
 
-Admins can:
+For normal bookings and booking-code bookings, record customer money from the booking surface with **Registra pagamento / Record payment**. Deposits and later balance payments are supported. Booking cards show Quoted, Paid, Balance, payment status and compact payment history.
 
-- add income entries
-- add expense entries
-- edit entries
-- archive entries
-- filter by type, category, date range, and linked/unlinked status
-- link entries to booking requests
-- link entries to fixed excursions
-- link entries to monthly leaflets
+Use manual Finance entries for genuine off-system/business movements such as fuel, equipment, advertising, insurance, parking, guide costs and manual/off-system income. Do not duplicate routine booking revenue manually.
 
-The summary cards calculate:
+Gift Card **Paid** records actual revenue once after amount/date/method are supplied. **Issued** only creates/delivers the voucher and does not add another sale. Paid partner commissions enter Finance as expenses once.
 
-- Entrate totali / Total earnings
-- Uscite totali / Total expenses
-- Utile netto / Net profit
-- Prenotazioni collegate / Linked bookings
-- Spese non collegate / Unlinked expenses
+Refunds use the explicit refund/reversal action. The original payment stays in history and the refund is a negative reversal entry. Cancelling a booking does not silently erase or manufacture a refund.
 
-Finance data is protected by admin-only RLS. Public visitors must never be able to read finance entries.
+**Da riconciliare / Money to reconcile** surfaces balances, missing/ambiguous/duplicate Finance links, historical Gift Card inconsistencies, commission mismatches and genuinely unlinked transactions. Use the contextual action for the specific record; there is intentionally no automatic bulk repair.
+
+When more than one currency exists, Finance displays each currency separately and does not invent an FX-converted consolidated total. Full operating rules are in `docs/FINANCE_PAYMENT_RECONCILIATION_20260821.md`.
+
+### Install & notifications
+
+Public **VulcanIQ** and **VulcanIQ Admin** are separate install identities. Install the Admin variant from the Admin installation page so its Home Screen icon opens `/admin`. Public subscribers can never select Admin operational categories.
+
+Notification language can be Automatic, Italiano or English. Promotional notifications are a separate category preference. The in-app notification center remains usable even when OS push is denied/disabled. Public Etna updates are based on official INGV communications and are not an emergency/civil-protection warning service. Owner/manager Admins can compose/schedule public campaigns. See `docs/NOTIFICATIONS_PWA_20260821.md`.
 
 ### Content / Contenuti
 

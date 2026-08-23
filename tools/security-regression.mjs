@@ -41,6 +41,12 @@ const googleReviewsSync = read('supabase/functions/google-reviews-sync/index.ts'
 const googleBusinessShared = read('supabase/functions/_shared/googleBusiness.ts');
 const googleReviewsClient = read('src/services/googleReviewsService.js');
 const securityHeaders = read('public/_headers');
+const requestNotificationEmail = read('supabase/functions/_shared/requestNotificationEmail.ts');
+const paymentFinanceMigration = read('supabase/migrations/20260821070000_payment_finance_semantics.sql');
+const financeRefundMigration = read('supabase/migrations/20260821073000_finance_refund_rpc.sql');
+const notificationApi = read('functions/api/notifications/[[path]].js');
+const notificationWorker = read('workers/notifications/src/index.js');
+const notificationService = read('src/services/notificationService.js');
 
 check('jose dependency pinned', packageJson.dependencies?.jose === '5.9.6');
 check('GitHub App credentials supported', ['GITHUB_APP_ID', 'GITHUB_APP_INSTALLATION_ID', 'GITHUB_APP_PRIVATE_KEY'].every((key) => backupShared.includes(key)));
@@ -116,6 +122,17 @@ check('premodernization migration has one transaction boundary', (premodernMigra
 check('security headers add browser hardening without enforced CSP rollout', securityHeaders.includes('X-Content-Type-Options: nosniff') && securityHeaders.includes('Referrer-Policy: strict-origin-when-cross-origin') && securityHeaders.includes('Content-Security-Policy-Report-Only:') && !/^\s*Content-Security-Policy:/m.test(securityHeaders));
 check('admin routes carry noindex response header', /\/admin\/\*[\s\S]*X-Robots-Tag: noindex, nofollow/.test(securityHeaders));
 check('no Google provider secret is exposed through VITE variables', !fs.readdirSync(root, { recursive: true }).filter((name) => typeof name === 'string' && !name.startsWith('.git/') && !name.includes('node_modules/')).some((name) => { try { return fs.statSync(path.join(root, name)).isFile() && /VITE_[A-Z0-9_]*GOOGLE_BUSINESS_(CLIENT_SECRET|REFRESH_TOKEN)/i.test(fs.readFileSync(path.join(root, name), 'utf8')); } catch { return false; } }));
+
+check('immediate operational emails use branded responsive template', notifyFunction.includes('buildRequestNotificationEmail') && requestNotificationEmail.includes('VULCANIQ · OPERATIONS') && requestNotificationEmail.includes('@media(max-width:620px)') && requestNotificationEmail.includes('replyTo'));
+check('immediate operational notifications use generic trusted ingest', notifyFunction.includes('ingestAdminNotification') && notifyFunction.includes('NOTIFICATION_INGEST_SECRET') && notifyFunction.includes("category = table === 'booking_requests' ? 'new_bookings'") && !notifyFunction.includes('customer_name:'));
+check('authenticated immediate-email retry CORS is origin-restricted', notifyFunction.includes('REQUEST_NOTIFICATION_ALLOWED_ORIGINS') && !notifyFunction.includes("'Access-Control-Allow-Origin': '*'"));
+check('payment semantics migration is forward-only transactional and privileged', (paymentFinanceMigration.match(/^begin;$/gm) || []).length === 1 && (paymentFinanceMigration.match(/^commit;$/gm) || []).length === 1 && paymentFinanceMigration.includes('if not public.is_privileged_admin()') && paymentFinanceMigration.includes('if not public.is_admin()'));
+check('Gift Card Issued does not recognize revenue', (() => { const block = paymentFinanceMigration.slice(paymentFinanceMigration.indexOf("if next_status = 'issued'"), paymentFinanceMigration.indexOf("elsif next_status = 'cancelled'")); return block && !/insert into public\.finance_entries/i.test(block); })());
+check('refund RPC is transactional, authorized, and preserves original entry', (financeRefundMigration.match(/^begin;$/gm) || []).length === 1 && (financeRefundMigration.match(/^commit;$/gm) || []).length === 1 && financeRefundMigration.includes('if not public.is_admin()') && financeRefundMigration.includes('reversal_of') && !/delete\s+from\s+public\.finance_entries/i.test(financeRefundMigration));
+check('notification API keeps service-role and VAPID private material server-side', notificationApi.includes('SUPABASE_SERVICE_ROLE_KEY') && !notificationService.includes('SUPABASE_SERVICE_ROLE_KEY') && !notificationService.includes('VAPID_PRIVATE_KEY'));
+check('notification API enforces trusted CORS and admin authorization', notificationApi.includes('trustedOrigin') && notificationApi.includes('admin_profiles') && notificationApi.includes('requireAdmin') && !notificationApi.includes("'Access-Control-Allow-Origin': '*'"));
+check('notification Worker degrades dead push subscriptions to in-app delivery', notificationWorker.includes('p256dh=NULL,auth=NULL,enabled=1') && notificationWorker.includes('inapp://${event.audience}'));
+check('security headers include HSTS and CSP remains report-only', securityHeaders.includes('Strict-Transport-Security: max-age=31536000') && securityHeaders.includes('Content-Security-Policy-Report-Only:') && !/^\s*Content-Security-Policy:/m.test(securityHeaders));
 
 for (const name of passes) console.log(`PASS  ${name}`);
 for (const name of failures) console.error(`FAIL  ${name}`);

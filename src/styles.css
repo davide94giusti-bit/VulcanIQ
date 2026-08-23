@@ -15101,3 +15101,46 @@ section#reviews.compact-section,
   display: grid;
   align-items: center;
 }
+
+/* CMS cold-load shell: stable current Hero geometry without legacy media/content. */
+.hero-cms-loading {
+  min-height: 100svh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+.hero-cms-loading-copy {
+  width: min(680px, 100%);
+  display: grid;
+  gap: 1rem;
+  align-content: center;
+}
+.hero-cms-loading-line {
+  display: block;
+  max-width: 100%;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+}
+.hero-cms-loading-title { width: min(620px, 88vw); height: clamp(2.75rem, 7vw, 5.5rem); }
+.hero-cms-loading-lead { width: min(520px, 76vw); height: 1.35rem; }
+.hero-cms-loading-action { width: 12rem; height: 3rem; margin-top: .5rem; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-cms-loading-line { transition: none; animation: none; }
+}
+
+.booking-payment-summary { margin: .9rem 0; padding: .85rem; border: 1px solid rgba(16,27,45,.14); border-radius: 14px; background: rgba(255,255,255,.6); }
+.booking-payment-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: .65rem; }
+.booking-payment-summary-grid span { min-width: 0; display: grid; gap: .2rem; }
+.booking-payment-summary-grid small { opacity: .72; }
+.booking-payment-summary-grid strong { overflow-wrap: anywhere; }
+.booking-payment-history { margin-top: .65rem; }
+.modal-payment-summary { margin-bottom: 1rem; }
+.payment-history-list { margin: .8rem 0; }
+@media (max-width: 680px) { .booking-payment-summary-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+.finance-reconciliation-list { display: grid; gap: .75rem; }
+.finance-reconciliation-item { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: .9rem; border: 1px solid rgba(16,27,45,.14); border-radius: 14px; background: rgba(255,255,255,.7); }
+.finance-reconciliation-item p { margin: .25rem 0 0; }
+@media (max-width: 680px) { .finance-reconciliation-item { align-items: stretch; flex-direction: column; } }
+.finance-reconciliation-list { display: grid; gap: .75rem; }
+.finance-reconciliation-item { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: .9rem; border: 1px solid var(--admin-border, rgba(16,27,45,.14)); border-radius: 14px; background: rgba(255,255,255,.7); }
+.finance-reconciliation-item p { margin: .25rem 0 0; }
+@media (max-width: 680px) { .finance-reconciliation-item { align-items: stretch; flex-direction: column; } }

@@ -1,33 +1,67 @@
-import { corsPreflight, claimAdminAction, clean, dbJson, env, escapeHtml, json, readJson, recipients, requireAdmin, resendEmail, validEmail } from '../_shared/vulcaniq.ts';
+import { claimAdminAction, clean, dbJson, env, readJson, recipients, requireAdmin, resendEmail } from '../_shared/vulcaniq.ts';
+import { buildRequestNotificationEmail } from '../_shared/requestNotificationEmail.ts';
 
 const SUPPORTED = new Set(['booking_requests', 'gift_card_requests']);
 
-type RecordMap = Record<string, unknown>;
+const DEFAULT_ALLOWED_ORIGINS = new Set([
+  'https://vulcaniq.it',
+  'https://www.vulcaniq.it',
+  'https://vulcaniq.pages.dev',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173'
+]);
 
-function row(label: string, value: unknown): string {
-  const text = clean(value, 1200);
-  if (!text) return '';
-  return `<tr><th align="left" style="padding:6px 12px 6px 0;vertical-align:top">${escapeHtml(label)}</th><td style="padding:6px 0">${escapeHtml(text)}</td></tr>`;
+function allowedOrigins(): Set<string> {
+  const configured = env('REQUEST_NOTIFICATION_ALLOWED_ORIGINS', false)
+    .split(',').map((value) => value.trim()).filter(Boolean);
+  return configured.length ? new Set(configured) : DEFAULT_ALLOWED_ORIGINS;
 }
 
-function emailFor(table: string, record: RecordMap): { subject: string; html: string; replyTo?: string } {
-  const id = clean(record.id, 100);
-  const created = clean(record.created_at, 80);
-  if (table === 'gift_card_requests') {
-    const buyer = clean(record.buyer_name, 120) || 'Unknown buyer';
-    return {
-      subject: `New vulcanIQ Gift Card request — ${buyer}`,
-      replyTo: validEmail(record.buyer_email) ? clean(record.buyer_email, 254) : undefined,
-      html: `<h1>New Gift Card request</h1><table>${row('Buyer', buyer)}${row('Email', record.buyer_email)}${row('Phone', record.buyer_phone)}${row('Recipient', record.recipient_name)}${row('Experience', record.experience_type)}${row('Budget', `${clean(record.currency, 8)} ${clean(record.budget, 30)}`)}${row('Preferred delivery', record.preferred_delivery_date)}${row('Message present', clean(record.message) ? 'Yes' : 'No')}${row('Booking code state', clean(record.booking_code) || 'Missing')}${row('Detected source', record.detected_source)}${row('Declared source', record.declared_source)}${row('Request ID', id)}${row('Created', created)}</table>`
-    };
-  }
-  const name = clean(record.customer_name, 120) || 'Unknown customer';
+function corsHeaders(req: Request): HeadersInit {
+  const origin = clean(req.headers.get('origin'), 500);
+  const trusted = origin && allowedOrigins().has(origin);
   return {
-    subject: `New vulcanIQ booking request — ${name}`,
-    replyTo: validEmail(record.customer_email) ? clean(record.customer_email, 254) : undefined,
-    html: `<h1>New booking request</h1><table>${row('Request type', record.request_type)}${row('Customer', name)}${row('Email', record.customer_email)}${row('Phone', record.customer_phone)}${row('Preferred contact', record.preferred_contact)}${row('Experience', record.experience_id)}${row('Date', record.requested_date)}${row('Alternative date', record.alternative_date)}${row('Adults', record.adults)}${row('Children', record.children)}${row('Language', record.language)}${row('Detected source', record.detected_source || record.traffic_source)}${row('Declared source', record.declared_source || record.heard_about_us)}${row('CTA location', record.cta_location)}${row('Request ID', id)}${row('Created', created)}</table>`
+    ...(trusted ? { 'Access-Control-Allow-Origin': origin, 'Vary': 'Origin' } : {}),
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-retry-count, traceparent, tracestate, baggage, x-vulcaniq-webhook-secret',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Max-Age': '86400'
   };
 }
+
+function responseJson(req: Request, status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders(req), 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
+  });
+}
+
+function preflight(req: Request): Response | null {
+  if (req.method !== 'OPTIONS') return null;
+  const origin = clean(req.headers.get('origin'), 500);
+  if (origin && !allowedOrigins().has(origin)) return new Response(null, { status: 403, headers: { 'Vary': 'Origin' } });
+  return new Response(null, { status: 204, headers: corsHeaders(req) });
+}
+
+async function ingestAdminNotification(table: string, id: string): Promise<void> {
+  const endpoint = env('NOTIFICATION_INGEST_URL', false);
+  const secret = env('NOTIFICATION_INGEST_SECRET', false);
+  if (!endpoint || !secret) return;
+  const category = table === 'booking_requests' ? 'new_bookings' : table === 'gift_card_requests' ? 'gift_cards' : '';
+  if (!category) return;
+  const destinationUrl = table === 'booking_requests' ? '/admin/requests' : '/admin/gift-cards';
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Notification-Ingest-Key': secret },
+      body: JSON.stringify({ category, dedupeKey: `request:${table}:${id}`, destinationUrl })
+    });
+    if (!response.ok && response.status !== 409) console.warn('admin_notification_ingest_failed', { status: response.status, table });
+  } catch {
+    console.warn('admin_notification_ingest_failed', { status: 'network_error', table });
+  }
+}
+
+type RecordMap = Record<string, unknown>;
 
 async function fetchRecord(table: string, id: string): Promise<RecordMap | null> {
   const query = new URLSearchParams({ select: '*', id: `eq.${id}`, limit: '1' });
@@ -75,9 +109,9 @@ async function updateParent(table: string, id: string, status: string, error: st
 }
 
 Deno.serve(async (req) => {
-  const preflight = corsPreflight(req);
-  if (preflight) return preflight;
-  if (req.method !== 'POST') return json(405, { ok: false, code: 'method_not_allowed' });
+  const preflightResponse = preflight(req);
+  if (preflightResponse) return preflightResponse;
+  if (req.method !== 'POST') return responseJson(req, 405, { ok: false, code: 'method_not_allowed' });
   try {
     const body = await readJson(req, 65536);
     const retry = body.retry === true;
@@ -90,18 +124,20 @@ Deno.serve(async (req) => {
       if (!await claimAdminAction('notification-retry', userId, 10, 600)) throw new Error('rate_limited');
     } else {
       const expected = env('REQUEST_NOTIFICATION_WEBHOOK_SECRET');
-      if (!expected || clean(req.headers.get('x-vulcaniq-webhook-secret'), 500) !== expected) return json(401, { ok: false, code: 'unauthorized' });
+      if (!expected || clean(req.headers.get('x-vulcaniq-webhook-secret'), 500) !== expected) return responseJson(req, 401, { ok: false, code: 'unauthorized' });
       const operation = clean(body.type || body.operation, 30).toUpperCase();
-      if (operation !== 'INSERT') return json(202, { ok: true, ignored: true });
+      if (operation !== 'INSERT') return responseJson(req, 202, { ok: true, ignored: true });
     }
 
-    if (!SUPPORTED.has(table) || !id) return json(400, { ok: false, code: 'unsupported_request' });
+    if (!SUPPORTED.has(table) || !id) return responseJson(req, 400, { ok: false, code: 'unsupported_request' });
     if (!record) record = await fetchRecord(table, id);
-    if (!record) return json(404, { ok: false, code: 'request_not_found' });
+    if (!record) return responseJson(req, 404, { ok: false, code: 'request_not_found' });
+
+    await ingestAdminNotification(table, id);
 
     const targets = recipients('REQUEST_NOTIFICATION_RECIPIENTS');
     if (!targets.length) throw new Error('no_notification_recipients');
-    const content = emailFor(table, record);
+    const content = buildRequestNotificationEmail(table, record);
     let sent = 0;
     let failed = 0;
     let attempts = Number(record.notification_email_attempts || 0);
@@ -125,7 +161,7 @@ Deno.serve(async (req) => {
       const finalStatus = failed ? 'failed' : 'sent';
       await updateParent(table, id, finalStatus, failed ? `${failed} notification delivery attempt(s) failed.` : null, attempts);
     }
-    return json(failed ? 502 : 200, { ok: failed === 0, sent, failed, skipped });
+    return responseJson(req, failed ? 502 : 200, { ok: failed === 0, sent, failed, skipped });
   } catch (error) {
     const code = clean((error as Error)?.message, 80) || 'notification_failed';
     const status = code === 'unauthorized' ? 401
@@ -136,6 +172,6 @@ Deno.serve(async (req) => {
               : code === 'invalid_json' ? 400
                 : 500;
     console.error('notify_new_request_failed', { code });
-    return json(status, { ok: false, code: status === 500 ? 'notification_failed' : code });
+    return responseJson(req, status, { ok: false, code: status === 500 ? 'notification_failed' : code });
   }
 });
