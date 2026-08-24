@@ -6,7 +6,6 @@ compatibility_date = "2026-08-21"
 binding = "NOTIFICATIONS_DB"
 database_name = "vulcaniq-notifications"
 database_id = "1edcda8a-3faf-4c6c-8c89-a46d424cd844"
-preview_database_id = "8e220c75-2060-4cb9-954e-073a422d5f34"
 migrations_dir = "migrations"
 
 [triggers]
