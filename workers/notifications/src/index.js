@@ -49,7 +49,7 @@ async function pollAdminUpcoming(db,env){
 }
 async function runScheduled(env){const db=env.NOTIFICATIONS_DB;if(!db)throw new Error('notifications_db_not_configured');const cap=Math.max(1,Number(env.NOTIFICATION_CRON_PROCESSING_CAP||100));await increment(db,'cron_runs');const results={};try{results.campaigns=await processCampaigns(db,env);}catch(e){results.campaigns={error:String(e.message||e)};}try{results.etna=await pollEtna(db,env);}catch(e){results.etna={error:String(e.message||e)};await audit(db,'notification_send_failed',{audience:'public',outcome:'etna_source_failure',metadata:{error:String(e.message||e).slice(0,120)}});}if(cap>2){try{results.experiences=await pollPublicExcursions(db,env);}catch(e){results.experiences={error:String(e.message||e)};}try{results.adminUpcoming=await pollAdminUpcoming(db,env);}catch(e){results.adminUpcoming={error:String(e.message||e)};}}return results;}
 
-export { INGV_SOURCE, budgetAllows, classifyEtna, endpointValid, parseEtnaRows, quiet, runScheduled };
+export { budgetAllows, classifyEtna, endpointValid, parseEtnaRows, quiet, runScheduled };
 
 export default {
   async fetch(request,env){const url=new URL(request.url);if(url.pathname==='/health'){const b=env.NOTIFICATIONS_DB?await budget(env.NOTIFICATIONS_DB,env):null;return Response.json({ok:Boolean(env.NOTIFICATIONS_DB),budget:b,source:INGV_SOURCE},{headers:{'Cache-Control':'no-store'}});}return new Response('Not found',{status:404});},
