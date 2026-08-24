@@ -333,7 +333,7 @@ begin
         generated_code,
         coalesce(gift.claimed_recipient_name, gift.recipient_name, gift.buyer_name, 'Gift Card recipient'),
         gift.recipient_email, gift.recipient_phone,
-        'gift-card', coalesce(gift.experience_type, 'Gift Card vulcanIQ'), coalesce(gift.experience_type, 'vulcanIQ Gift Card'), 'gift_card',
+        null, coalesce(gift.experience_type, 'Gift Card vulcanIQ'), coalesce(gift.experience_type, 'vulcanIQ Gift Card'), 'gift_card',
         null, 0, next_currency, 'gift_card',
         'Gift Card request ' || gift.id::text, gift.message,
         'unused', auth.uid(), false, 'not_completed', 'paid', 'none', false, gift.id, auth.uid()
@@ -505,7 +505,12 @@ begin
     'accepted', case when code_row.fixed_excursion_id is not null then 'fixed' else 'private' end,
     code_row.fixed_excursion_id, clean_name, clean_email, clean_phone,
     case when clean_email is not null then 'email' else 'phone' end,
-    coalesce(code_row.experience_id, 'gift-card'), code_row.scheduled_date, clean_language, 1, 0, false,
+    case
+      when code_row.experience_id in ('etna-premium', 'etna-learning', 'etna-live', 'etna-stories', 'unsure')
+        then code_row.experience_id
+      else null
+    end,
+    code_row.scheduled_date, clean_language, 1, 0, false,
     code_row.fixed_excursion_id is null, code_row.customer_note, 'booking_code',
     'gift_card_claim', 'gift_card_claim_confirm', 'booking_code_screen', code_row.scheduled_date,
     code_row.fixed_excursion_id is not null, code_row.admin_note,
