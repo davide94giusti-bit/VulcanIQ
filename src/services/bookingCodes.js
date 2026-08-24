@@ -106,6 +106,8 @@ function parseRpcResult(data) {
   if (!result?.ok) {
     const nextError = new Error(result?.error || 'BOOKING_CODE_INVALID');
     nextError.code = result?.error || 'BOOKING_CODE_INVALID';
+    nextError.requiresRecipientClaim = result?.requires_recipient_claim === true;
+    nextError.result = result || null;
     throw nextError;
   }
   return result;
@@ -434,6 +436,36 @@ export async function redeemBookingCode(code, { language = 'it' } = {}) {
   }
 
   throw first.error;
+}
+
+export async function claimGiftCardBookingCode(code, input = {}) {
+  const cleanCode = normalizeBookingCode(code);
+  if (!cleanCode) {
+    const error = new Error('BOOKING_CODE_REQUIRED');
+    error.code = 'BOOKING_CODE_REQUIRED';
+    throw error;
+  }
+
+  const response = await fetch('/api/public/gift-card-claim', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code: cleanCode,
+      recipient_name: cleanText(input.recipient_name),
+      recipient_email: cleanText(input.recipient_email) || null,
+      recipient_phone: cleanText(input.recipient_phone) || null,
+      language: input.language === 'en' ? 'en' : 'it'
+    })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result?.ok) {
+    const error = new Error(result?.message || 'GIFT_CARD_CLAIM_FAILED');
+    error.code = result?.code || `HTTP_${response.status}`;
+    error.status = response.status;
+    error.traceId = result?.trace_id || response.headers.get('X-Trace-Id') || '';
+    throw error;
+  }
+  return result;
 }
 
 

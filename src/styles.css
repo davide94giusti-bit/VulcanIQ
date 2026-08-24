@@ -10488,6 +10488,58 @@ body.modal-scroll-lock {
   font-size: 1.2rem;
   text-transform: uppercase;
 }
+.gift-card-claim-form {
+  display: grid;
+  gap: 16px;
+}
+.gift-card-claim-intro {
+  display: grid;
+  gap: 8px;
+}
+.gift-card-claim-intro p,
+.gift-card-claim-intro small,
+.gift-card-claim-hint {
+  margin: 0;
+  color: var(--ash);
+  line-height: 1.5;
+}
+.gift-card-claim-intro small {
+  overflow-wrap: anywhere;
+}
+.gift-card-claim-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--night);
+  font-weight: 850;
+}
+.gift-card-claim-form label span {
+  font-size: 0.86rem;
+}
+.gift-card-claim-form input {
+  margin-top: 0;
+  min-width: 0;
+  text-transform: none;
+}
+.gift-card-claim-contact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.gift-card-claim-hint {
+  font-size: 0.84rem;
+}
+.gift-card-claim-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+  gap: 10px;
+}
+.gift-card-claim-actions .button,
+.gift-card-claim-actions .booking-code-submit {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 0;
+}
 .booking-code-submit { width: 100%; margin-top: 16px; min-height: 58px; }
 .booking-code-support-card {
   margin: 0 clamp(24px, 5vw, 48px) clamp(24px, 5vw, 48px);
@@ -10560,6 +10612,8 @@ body.modal-scroll-lock {
   }
   .find-experience-choice-grid,
   .find-experience-choice-grid.compact,
+  .gift-card-claim-contact-grid,
+  .gift-card-claim-actions,
   .booking-code-support-card .contact-actions,
   .find-experience-result dl {
     grid-template-columns: 1fr;
@@ -12057,6 +12111,29 @@ body.modal-scroll-lock {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.70);
   padding: 14px;
+}
+
+.gift-card-identity-label {
+  display: inline-block;
+  margin-bottom: 4px;
+  color: var(--ash, #647084);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gift-card-claim-details {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(79, 163, 112, 0.28);
+  border-radius: 16px;
+  background: rgba(79, 163, 112, 0.08);
+}
+
+.gift-card-claim-details h4 {
+  margin: 0 0 10px;
+  color: var(--night, #0b1528);
 }
 
 .gift-card-admin-head,

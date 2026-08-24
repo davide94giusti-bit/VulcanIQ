@@ -42,13 +42,24 @@ function preflight(req: Request): Response | null {
   return new Response(null, { status: 204, headers: corsHeaders(req) });
 }
 
-async function ingestAdminNotification(table: string, id: string): Promise<void> {
+async function ingestAdminNotification(table: string, id: string, record: Record<string, unknown>): Promise<void> {
   const endpoint = env('NOTIFICATION_INGEST_URL', false);
   const secret = env('NOTIFICATION_INGEST_SECRET', false);
   if (!endpoint || !secret) return;
-  const category = table === 'booking_requests' ? 'new_bookings' : table === 'gift_card_requests' ? 'gift_cards' : '';
+  const source = clean(record.source, 80).toLowerCase();
+  const category = table === 'gift_card_requests'
+    ? 'gift_cards'
+    : table === 'booking_requests' && source === 'website'
+      ? 'new_bookings'
+      : table === 'booking_requests' && source === 'booking_code'
+        ? 'booking_codes'
+        : '';
   if (!category) return;
-  const destinationUrl = table === 'booking_requests' ? '/admin/requests' : '/admin/gift-cards';
+  const destinationUrl = category === 'booking_codes'
+    ? '/admin/booking-codes'
+    : category === 'new_bookings'
+      ? '/admin/requests'
+      : '/admin/gift-cards';
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -116,8 +127,8 @@ Deno.serve(async (req) => {
     const body = await readJson(req, 65536);
     const retry = body.retry === true;
     let table = clean(body.table, 80);
-    let record = (body.record && typeof body.record === 'object' ? body.record : null) as RecordMap | null;
-    let id = clean(body.id || record?.id, 100);
+    const suppliedRecord = (body.record && typeof body.record === 'object' ? body.record : null) as RecordMap | null;
+    let id = clean(body.id || suppliedRecord?.id, 100);
 
     if (retry) {
       const userId = await requireAdmin(req);
@@ -130,10 +141,11 @@ Deno.serve(async (req) => {
     }
 
     if (!SUPPORTED.has(table) || !id) return responseJson(req, 400, { ok: false, code: 'unsupported_request' });
-    if (!record) record = await fetchRecord(table, id);
+    // Classification and email content always use the authoritative database record.
+    const record = await fetchRecord(table, id);
     if (!record) return responseJson(req, 404, { ok: false, code: 'request_not_found' });
 
-    await ingestAdminNotification(table, id);
+    await ingestAdminNotification(table, id, record);
 
     const targets = recipients('REQUEST_NOTIFICATION_RECIPIENTS');
     if (!targets.length) throw new Error('no_notification_recipients');

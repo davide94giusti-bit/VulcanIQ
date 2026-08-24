@@ -5,7 +5,7 @@ import { blockedDates, defaultExperienceAvailability } from './data/availability
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
 import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
 import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest, markBookingRequestReviewRequested, markBookingRequestReviewReceived, markBookingRequestReviewLinkCopied, bookingRequestCanConfirmIncome, getBookingRequestIncomeState, confirmBookingRequestIncome } from './services/bookingRequests.js';
-import { listBookingCodes, createBookingCode, cancelBookingCode, redeemBookingCode, markBookingCodeCompleted, getBookingCodePaymentState, recordBookingCodePayment, markBookingCodeNoShow, markBookingCodeReviewRequested, markBookingCodeReviewReceived, markBookingCodeReviewLinkCopied } from './services/bookingCodes.js';
+import { listBookingCodes, createBookingCode, cancelBookingCode, redeemBookingCode, claimGiftCardBookingCode, markBookingCodeCompleted, getBookingCodePaymentState, recordBookingCodePayment, markBookingCodeNoShow, markBookingCodeReviewRequested, markBookingCodeReviewReceived, markBookingCodeReviewLinkCopied } from './services/bookingCodes.js';
 import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadFixedExcursionLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
 import { loadPublicPartnerships, listPartnerships, createPartnership, updatePartnership, deactivatePartnership, uploadPartnershipImage, removePartnershipImage } from './services/partnershipService.js';
 import { loadPublicReviews, submitPublicReview, listReviews, createManualReview, updateReviewDetails, updateReviewVisibility, updateReviewAdminReply, deleteReviewAdminReply, deleteReview } from './services/reviewsService.js';
@@ -2362,9 +2362,64 @@ function FindExperienceModal({ lang, onClose, onRequestExperience }) {
   ), document.body);
 }
 
+function giftCardClaimCopy(lang, key) {
+  const copy = {
+    it: {
+      intro: 'Questa Gift Card deve essere associata alla persona che vivrà l’esperienza.',
+      code: 'Codice Gift Card',
+      name: 'Nome e cognome del destinatario',
+      email: 'Email del destinatario',
+      phone: 'Telefono del destinatario',
+      contactHint: 'Inserisci almeno un contatto: email o telefono.',
+      submit: 'Conferma Gift Card',
+      submitting: 'Conferma...',
+      back: 'Cambia codice',
+      nameRequired: 'Inserisci il nome del destinatario.',
+      contactRequired: 'Inserisci almeno email o telefono del destinatario.',
+      emailInvalid: 'Inserisci un indirizzo email valido.',
+      phoneInvalid: 'Inserisci un numero di telefono valido.',
+      unavailable: 'Questa Gift Card non può essere riscattata. Contatta direttamente il team.'
+    },
+    en: {
+      intro: 'This Gift Card must be assigned to the person who will attend the experience.',
+      code: 'Gift Card code',
+      name: 'Recipient full name',
+      email: 'Recipient email',
+      phone: 'Recipient phone',
+      contactHint: 'Enter at least one contact method: email or phone.',
+      submit: 'Confirm Gift Card',
+      submitting: 'Confirming...',
+      back: 'Change code',
+      nameRequired: 'Enter the recipient name.',
+      contactRequired: 'Enter at least the recipient email or phone.',
+      emailInvalid: 'Enter a valid email address.',
+      phoneInvalid: 'Enter a valid phone number.',
+      unavailable: 'This Gift Card cannot be redeemed. Contact the team directly.'
+    }
+  };
+  return copy[lang === 'en' ? 'en' : 'it'][key] || '';
+}
+
+function validRecipientEmail(value) {
+  const email = String(value || '').trim();
+  return !email || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email);
+}
+
+function validRecipientPhone(value) {
+  const phone = String(value || '').trim();
+  if (!phone) return true;
+  const digits = phone.replace(/\D/g, '');
+  return digits.length >= 7 && digits.length <= 15 && /^[+()\-\s.0-9]+$/.test(phone);
+}
+
 function bookingCodeErrorMessage(error, lang) {
   const raw = String(error?.code || error?.message || '');
   const code = raw.toUpperCase();
+  if (code.includes('RECIPIENT_NAME')) return giftCardClaimCopy(lang, 'nameRequired');
+  if (code.includes('RECIPIENT_CONTACT')) return giftCardClaimCopy(lang, 'contactRequired');
+  if (code.includes('RECIPIENT_EMAIL')) return giftCardClaimCopy(lang, 'emailInvalid');
+  if (code.includes('RECIPIENT_PHONE')) return giftCardClaimCopy(lang, 'phoneInvalid');
+  if (code.includes('GIFT_CARD')) return giftCardClaimCopy(lang, 'unavailable');
   if (code.includes('REQUIRED')) return text(lang, 'bookingCodeRequired');
   if (code.includes('NOT_FOUND')) return text(lang, 'bookingCodeNotFound');
   if (code.includes('ALREADY') || code.includes('REDEEMED')) return text(lang, 'bookingCodeAlreadyUsed');
@@ -2380,8 +2435,11 @@ function bookingCodeErrorMessage(error, lang) {
 
 function BookingCodeModal({ lang, onClose, siteContent }) {
   const [code, setCode] = useState('');
+  const [claimRequired, setClaimRequired] = useState(false);
+  const [claimForm, setClaimForm] = useState({ recipient_name: '', recipient_email: '', recipient_phone: '' });
   const [state, setState] = useState({ loading: false, error: '', success: null });
   const inputRef = useRef(null);
+  const claimNameRef = useRef(null);
   const redemptionJourneyRef = useRef(`booking_code_journey_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
   useBodyScrollLock(true);
 
@@ -2398,6 +2456,33 @@ function BookingCodeModal({ lang, onClose, siteContent }) {
     };
   }, [lang, onClose]);
 
+  useEffect(() => {
+    if (!claimRequired) return undefined;
+    const timer = window.setTimeout(() => claimNameRef.current?.focus?.(), 0);
+    return () => window.clearTimeout(timer);
+  }, [claimRequired]);
+
+  async function completeRedemption(result, sourceSection = 'booking_code_redemption') {
+    const successMetadata = {
+      language: lang,
+      source: 'booking_code',
+      journey_id: redemptionJourneyRef.current,
+      source_section: sourceSection,
+      source_cta: sourceSection === 'gift_card_claim' ? 'gift_card_claim_confirm' : 'booking_code_confirm',
+      cta_location: 'booking_code_screen',
+      booking_request_id: result.booking_request_id || result.redeemed_booking_request_id || '',
+      finance_entry_id: result.finance_entry_id || result.redeemed_finance_entry_id || '',
+      experience_id: result.experience_id || '',
+      request_type: result.fixed_excursion_id ? 'fixed' : result.experience_type || '',
+      has_scheduled_date: Boolean(result.scheduled_date),
+      selected_date: result.scheduled_date || '',
+      fixed_excursion_id: result.fixed_excursion_id || ''
+    };
+    await trackEvent('booking_code_redeem_success', successMetadata, { dedupe: false });
+    await trackEvent('booking_request_created', successMetadata, { dedupe: false });
+    setState({ loading: false, error: '', success: result });
+  }
+
   async function submit(event) {
     event.preventDefault();
     if (state.loading) return;
@@ -2412,25 +2497,13 @@ function BookingCodeModal({ lang, onClose, siteContent }) {
         cta_location: 'booking_code_screen'
       }, { dedupe: false });
       const result = await redeemBookingCode(code, { language: lang });
-      const successMetadata = {
-        language: lang,
-        source: 'booking_code',
-        journey_id: redemptionJourneyRef.current,
-        source_section: 'booking_code_redemption',
-        source_cta: 'booking_code_confirm',
-        cta_location: 'booking_code_screen',
-        booking_request_id: result.booking_request_id || result.redeemed_booking_request_id || '',
-        finance_entry_id: result.finance_entry_id || result.redeemed_finance_entry_id || '',
-        experience_id: result.experience_id || '',
-        request_type: result.fixed_excursion_id ? 'fixed' : result.experience_type || '',
-        has_scheduled_date: Boolean(result.scheduled_date),
-        selected_date: result.scheduled_date || '',
-        fixed_excursion_id: result.fixed_excursion_id || ''
-      };
-      await trackEvent('booking_code_redeem_success', successMetadata, { dedupe: false });
-      await trackEvent('booking_request_created', successMetadata, { dedupe: false });
-      setState({ loading: false, error: '', success: result });
+      await completeRedemption(result);
     } catch (error) {
+      if (error?.code === 'GIFT_CARD_CLAIM_REQUIRED' || error?.requiresRecipientClaim === true) {
+        setClaimRequired(true);
+        setState({ loading: false, error: '', success: null });
+        return;
+      }
       await trackEvent('booking_code_redeem_error', {
         language: lang,
         source: 'booking_code',
@@ -2442,6 +2515,60 @@ function BookingCodeModal({ lang, onClose, siteContent }) {
       }, { dedupe: false });
       setState({ loading: false, error: bookingCodeErrorMessage(error, lang), success: null });
     }
+  }
+
+  async function submitGiftCardClaim(event) {
+    event.preventDefault();
+    if (state.loading) return;
+    const recipientName = claimForm.recipient_name.trim();
+    const recipientEmail = claimForm.recipient_email.trim();
+    const recipientPhone = claimForm.recipient_phone.trim();
+    if (!recipientName) {
+      setState({ loading: false, error: giftCardClaimCopy(lang, 'nameRequired'), success: null });
+      claimNameRef.current?.focus?.();
+      return;
+    }
+    if (!recipientEmail && !recipientPhone) {
+      setState({ loading: false, error: giftCardClaimCopy(lang, 'contactRequired'), success: null });
+      return;
+    }
+    if (!validRecipientEmail(recipientEmail)) {
+      setState({ loading: false, error: giftCardClaimCopy(lang, 'emailInvalid'), success: null });
+      return;
+    }
+    if (!validRecipientPhone(recipientPhone)) {
+      setState({ loading: false, error: giftCardClaimCopy(lang, 'phoneInvalid'), success: null });
+      return;
+    }
+
+    setState({ loading: true, error: '', success: null });
+    try {
+      const result = await claimGiftCardBookingCode(code, {
+        recipient_name: recipientName,
+        recipient_email: recipientEmail,
+        recipient_phone: recipientPhone,
+        language: lang
+      });
+      await completeRedemption(result, 'gift_card_claim');
+    } catch (error) {
+      await trackEvent('booking_code_redeem_error', {
+        language: lang,
+        source: 'booking_code',
+        journey_id: redemptionJourneyRef.current,
+        source_section: 'gift_card_claim',
+        source_cta: 'gift_card_claim_confirm',
+        cta_location: 'booking_code_screen',
+        reason: String(error?.code || 'gift_card_claim_failed')
+      }, { dedupe: false });
+      setState({ loading: false, error: bookingCodeErrorMessage(error, lang), success: null });
+    }
+  }
+
+  function resetGiftCardClaim() {
+    setClaimRequired(false);
+    setClaimForm({ recipient_name: '', recipient_email: '', recipient_phone: '' });
+    setState({ loading: false, error: '', success: null });
+    window.setTimeout(() => inputRef.current?.focus?.(), 0);
   }
 
   const success = state.success;
@@ -2472,6 +2599,57 @@ function BookingCodeModal({ lang, onClose, siteContent }) {
             <small>{text(lang, 'bookingCodeCelebrationFooter')}</small>
             <a className="button secondary booking-code-review-cta" href="/reviews" onClick={() => trackEvent('booking_code_review_open', { source: 'booking_code', source_section: 'booking_code_success', source_cta: 'leave_review_after_redeem', cta_location: 'booking_code_success_card', language: lang }, { dedupe: false })}>{lang === 'it' ? 'Usa questo codice per una recensione' : 'Use this code for a review'}</a>
           </div>
+        ) : claimRequired ? (
+          <form className="booking-code-form gift-card-claim-form" onSubmit={submitGiftCardClaim}>
+            <div className="gift-card-claim-intro">
+              <span className="kicker">Gift Card</span>
+              <p>{giftCardClaimCopy(lang, 'intro')}</p>
+              <small><strong>{giftCardClaimCopy(lang, 'code')}:</strong> {code}</small>
+            </div>
+            <label htmlFor="giftCardClaimName">
+              <span>{giftCardClaimCopy(lang, 'name')}</span>
+              <input
+                id="giftCardClaimName"
+                ref={claimNameRef}
+                value={claimForm.recipient_name}
+                onChange={(event) => setClaimForm((current) => ({ ...current, recipient_name: event.target.value }))}
+                autoComplete="name"
+                maxLength={120}
+                required
+              />
+            </label>
+            <div className="gift-card-claim-contact-grid">
+              <label htmlFor="giftCardClaimEmail">
+                <span>{giftCardClaimCopy(lang, 'email')}</span>
+                <input
+                  id="giftCardClaimEmail"
+                  type="email"
+                  value={claimForm.recipient_email}
+                  onChange={(event) => setClaimForm((current) => ({ ...current, recipient_email: event.target.value }))}
+                  autoComplete="email"
+                  maxLength={254}
+                />
+              </label>
+              <label htmlFor="giftCardClaimPhone">
+                <span>{giftCardClaimCopy(lang, 'phone')}</span>
+                <input
+                  id="giftCardClaimPhone"
+                  type="tel"
+                  value={claimForm.recipient_phone}
+                  onChange={(event) => setClaimForm((current) => ({ ...current, recipient_phone: event.target.value }))}
+                  autoComplete="tel"
+                  inputMode="tel"
+                  maxLength={40}
+                />
+              </label>
+            </div>
+            <p className="gift-card-claim-hint">{giftCardClaimCopy(lang, 'contactHint')}</p>
+            {state.error && <p className="form-status error" role="alert">{state.error}</p>}
+            <div className="gift-card-claim-actions">
+              <button className="button secondary" type="button" disabled={state.loading} onClick={resetGiftCardClaim}>{giftCardClaimCopy(lang, 'back')}</button>
+              <button className="button primary booking-code-submit" type="submit" disabled={state.loading}>{state.loading ? giftCardClaimCopy(lang, 'submitting') : giftCardClaimCopy(lang, 'submit')}</button>
+            </div>
+          </form>
         ) : (
           <form className="booking-code-form" onSubmit={submit}>
             <input
@@ -13131,9 +13309,9 @@ function GiftCardsAdminPage({ lang, session, adminContent = {} }) {
           <div className="request-card-list gift-card-admin-list">
             {items.map((item) => (
               <article className="request-card gift-card-admin-card" key={item.id}>
-                <div className="request-card-head"><div><h3>{item.buyer_name || adminCopy(lang, 'Acquirente senza nome', 'Unnamed buyer')}</h3><p>{item.buyer_phone || '—'} · {item.buyer_email || '—'}</p></div><span className={`status-pill ${item.status}`}>{giftCardStatusLabel(item.status, lang)}</span></div>
+                <div className="request-card-head"><div><span className="gift-card-identity-label">{adminCopy(lang, 'Acquirente', 'Buyer / Purchaser')}</span><h3>{item.buyer_name || adminCopy(lang, 'Acquirente senza nome', 'Unnamed buyer')}</h3><p>{item.buyer_phone || '—'} · {item.buyer_email || '—'}</p></div><span className={`status-pill ${item.status}`}>{giftCardStatusLabel(item.status, lang)}</span></div>
                 <dl className="request-details-grid">
-                  <div><dt>{adminCopy(lang, 'Destinatario', 'Recipient')}</dt><dd>{item.recipient_name || '-'}</dd></div>
+                  <div><dt>{adminCopy(lang, 'Destinatario indicato', 'Intended recipient')}</dt><dd>{item.recipient_name || '-'}</dd></div>
                   <div><dt>{adminCopy(lang, 'Esperienza', 'Experience')}</dt><dd>{item.experience_type || '-'}</dd></div>
                   <div><dt>{adminCopy(lang, 'Budget', 'Budget')}</dt><dd>{item.budget ? formatMoney(item.budget, item.currency, lang) : '-'}</dd></div>
                   <div><dt>{adminCopy(lang, 'Consegna preferita', 'Preferred delivery')}</dt><dd>{formatDateForMessage(item.preferred_delivery_date, lang) || '-'}</dd></div>
@@ -13141,6 +13319,18 @@ function GiftCardsAdminPage({ lang, session, adminContent = {} }) {
                   <div><dt>{adminCopy(lang, 'Finance', 'Finance')}</dt><dd>{item.finance_entry_id ? adminCopy(lang, 'Collegata', 'Linked') : adminCopy(lang, 'Non collegata', 'Not linked')}</dd></div>
                   <div><dt>{adminCopy(lang, 'Codice destinatario', 'Recipient code')}</dt><dd>{item.booking_code || '-'}</dd></div>
                 </dl>
+                {(item.recipient_claimed_at || item.claimed_recipient_name || item.recipient_email || item.recipient_phone) && (
+                  <section className="gift-card-claim-details" aria-label={adminCopy(lang, 'Dettagli destinatario che ha riscattato la Gift Card', 'Claimed recipient details')}>
+                    <h4>{adminCopy(lang, 'Destinatario / richiedente effettivo', 'Recipient / Claimant')}</h4>
+                    <dl className="request-details-grid">
+                      <div><dt>{adminCopy(lang, 'Nome', 'Name')}</dt><dd>{item.claimed_recipient_name || '-'}</dd></div>
+                      <div><dt>Email</dt><dd>{item.recipient_email || '-'}</dd></div>
+                      <div><dt>{adminCopy(lang, 'Telefono', 'Phone')}</dt><dd>{item.recipient_phone || '-'}</dd></div>
+                      <div><dt>{adminCopy(lang, 'Lingua destinatario', 'Recipient language')}</dt><dd>{item.recipient_preferred_language || '-'}</dd></div>
+                      <div><dt>{adminCopy(lang, 'Riscattata il', 'Claimed at')}</dt><dd>{formatLocalDateTime(item.recipient_claimed_at, lang, '-') || '-'}</dd></div>
+                    </dl>
+                  </section>
+                )}
                 <NotificationStatusControl record={item} table="gift_card_requests" lang={lang} onUpdated={async (message) => { await refresh(); setFeedback(message); }} />
                 {item.message && <p className="request-message">{item.message}</p>}
                 <label className="admin-field full"><span>{adminCopy(lang, 'Nota interna', 'Internal note')}</span><textarea rows={3} defaultValue={item.admin_note || ''} onBlur={(event) => { if (event.target.value !== (item.admin_note || '')) updateItem(item, { admin_note: event.target.value }, adminCopy(lang, 'Nota interna aggiornata.', 'Internal note updated.')); }} /></label>

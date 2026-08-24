@@ -13,6 +13,7 @@ const financeService = read('src/services/financeService.js');
 const paymentMigration = read('supabase/migrations/20260821070000_payment_finance_semantics.sql');
 const refundMigration = read('supabase/migrations/20260821073000_finance_refund_rpc.sql');
 const mainSource = read('src/main.jsx');
+const claimMigration = read('supabase/migrations/20260824100000_booking_code_gift_card_claim_notifications.sql');
 
 const passes = []; const failures = [];
 function test(name, fn) { try { fn(); passes.push(name); } catch (error) { failures.push(`${name}: ${error.message}`); } }
@@ -60,6 +61,21 @@ test('Gift Card Paid and Issued are financially distinct', () => {
   ok(!/insert into public\.finance_entries/i.test(issuedBlock), 'Issued independently recognizes revenue');
   ok(issuedBlock.includes("expected_amount, currency") && issuedBlock.includes("null, 0, next_currency"), 'Gift Card redemption code is not zero-value');
   ok(giftService.includes('payment_idempotency_key'), 'Gift Card payment idempotency not passed');
+});
+
+test('Gift Card claim creates no second revenue or expected-income entry', () => {
+  const claimBlock = claimMigration.slice(claimMigration.indexOf('create or replace function public.redeem_gift_card_booking_code'), claimMigration.indexOf('revoke all on function public.redeem_gift_card_booking_code'));
+  ok(claimBlock.includes("income_status = 'none'"), 'Gift Card claim income state is not none');
+  ok(claimBlock.includes('redeemed_finance_entry_id = null'), 'Gift Card claim links a Finance entry');
+  ok(!/insert into public\.finance_entries/i.test(claimBlock), 'Gift Card claim inserts Finance income');
+  ok(!claimBlock.includes('booking_code_expected'), 'Gift Card claim creates expected income');
+});
+
+test('ordinary booking-code Finance behavior remains unchanged behind the Gift Card guard', () => {
+  const ordinaryBlock = claimMigration.slice(claimMigration.indexOf('create or replace function public.redeem_booking_code'), claimMigration.indexOf('create or replace function public.admin_update_gift_card_request'));
+  ok(ordinaryBlock.includes("'booking_code_expected'"), 'ordinary expected-income behavior missing');
+  ok(ordinaryBlock.includes('insert into public.finance_entries'), 'ordinary Finance insert missing');
+  ok(ordinaryBlock.indexOf('GIFT_CARD_CLAIM_REQUIRED') < ordinaryBlock.indexOf('insert into public.booking_requests'), 'Gift Card guard runs after booking creation');
 });
 
 test('paid partner commission creates one source-linked expense', () => {
