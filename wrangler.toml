@@ -1,3 +1,24 @@
 name = "vulcaniq"
 pages_build_output_dir = "dist"
 compatibility_date = "2026-06-08"
+
+# Preview/local notification infrastructure.
+# Production is explicitly overridden below.
+[[d1_databases]]
+binding = "NOTIFICATIONS_DB"
+database_name = "vulcaniq-notifications-preview"
+database_id = "8e220c75-2060-4cb9-954e-073a422d5f34"
+
+[vars]
+VAPID_PUBLIC_KEY = "BNCTEGkwaiM5SG_GbKUpLRhhupfSbY4rPELPGTWSKPwbAus6IPxQ2OazZTYCPiHYNh7rg_p-cbiVL0Lqz1l7d_k"
+VAPID_SUBJECT = "mailto:notifications@vulcaniq.it"
+
+# Production notification infrastructure.
+[[env.production.d1_databases]]
+binding = "NOTIFICATIONS_DB"
+database_name = "vulcaniq-notifications"
+database_id = "1edcda8a-3faf-4c6c-8c89-a46d424cd844"
+
+[env.production.vars]
+VAPID_PUBLIC_KEY = "BPg4kt7Bg_a5POVFkVL82mhjIuJ59Uq3FVpKwCqxu-jr0Mkoek3_OCD8MLLTj1L4-fO-odTsYupPQhzHNkIBYtg"
+VAPID_SUBJECT = "mailto:notifications@vulcaniq.it"

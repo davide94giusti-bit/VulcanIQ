@@ -41,6 +41,29 @@ const googleReviewsSync = read('supabase/functions/google-reviews-sync/index.ts'
 const googleBusinessShared = read('supabase/functions/_shared/googleBusiness.ts');
 const googleReviewsClient = read('src/services/googleReviewsService.js');
 const securityHeaders = read('public/_headers');
+const requestNotificationEmail = read('supabase/functions/_shared/requestNotificationEmail.ts');
+const paymentFinanceMigration = read('supabase/migrations/20260821070000_payment_finance_semantics.sql');
+const financeRefundMigration = read('supabase/migrations/20260821073000_finance_refund_rpc.sql');
+const notificationApi = read('functions/api/notifications/[[path]].js');
+const notificationWorker = read('workers/notifications/src/index.js');
+const notificationService = read('src/services/notificationService.js');
+const claimMigration = read('supabase/migrations/20260824100000_booking_code_gift_card_claim_notifications.sql');
+const giftClaimEndpoint = read('functions/api/public/gift-card-claim.js');
+const bookingCodeService = read('src/services/bookingCodes.js');
+const claimFunctionBlock = claimMigration.slice(
+  claimMigration.indexOf('create or replace function public.redeem_gift_card_booking_code'),
+  claimMigration.indexOf('revoke all on function public.redeem_gift_card_booking_code')
+);
+const adminGiftFunctionBlock = claimMigration.slice(
+  claimMigration.indexOf('create or replace function public.admin_update_gift_card_request'),
+  claimMigration.indexOf('create or replace function public.redeem_gift_card_booking_code')
+);
+const giftIssuanceBlock = adminGiftFunctionBlock.slice(
+  adminGiftFunctionBlock.indexOf("if next_status = 'issued'"),
+  adminGiftFunctionBlock.indexOf("elsif next_status = 'cancelled'")
+);
+const giftRowLock = /select\s+\*\s+into\s+gift\s+from\s+public\.gift_card_requests\s+where\s+id\s*=\s*code_row\.gift_card_request_id\s+for update;/i.exec(claimFunctionBlock);
+const bookingCodeRowLock = /select\s+\*\s+into\s+code_row\s+from\s+public\.booking_codes\s+where\s+id\s*=\s*code_row\.id\s+for update;/i.exec(claimFunctionBlock);
 
 check('jose dependency pinned', packageJson.dependencies?.jose === '5.9.6');
 check('GitHub App credentials supported', ['GITHUB_APP_ID', 'GITHUB_APP_INSTALLATION_ID', 'GITHUB_APP_PRIVATE_KEY'].every((key) => backupShared.includes(key)));
@@ -52,6 +75,10 @@ check('public booking uses server endpoint', publicBookingSection.includes("fetc
 check('public Gift Card uses server endpoint', giftService.includes("fetch('/api/public/gift-card-request'") && !giftService.includes(".from('gift_card_requests')\n    .insert"));
 check('public endpoints require idempotency', bookingEndpoint.includes('idempotencyKey') && giftEndpoint.includes('idempotencyKey'));
 check('public endpoints apply rate limiting', bookingEndpoint.includes('claimPublicRateLimit') && giftEndpoint.includes('claimPublicRateLimit'));
+check('Gift Card claim uses a trusted rate-limited public endpoint', giftClaimEndpoint.includes('claimPublicRateLimit') && giftClaimEndpoint.includes("supabaseRpc(context.env, 'redeem_gift_card_booking_code'") && bookingCodeService.includes("fetch('/api/public/gift-card-claim'"));
+check('Gift Card claim endpoint validates recipient ownership fields', ['recipientName', 'recipientEmail', 'recipientPhone', 'validEmail', 'validPhone', 'RECIPIENT_CONTACT_REQUIRED', 'ALLOWED_LANGUAGES'].every((value) => giftClaimEndpoint.includes(value)));
+check('Gift Card claim endpoint rejects raw over-limit contact values', giftClaimEndpoint.includes('rawEmail.length > 254') && giftClaimEndpoint.includes('rawPhone.length > 40'));
+check('Gift Card claim service credentials remain server-only', giftClaimEndpoint.includes('supabaseRpc') && !bookingCodeService.includes('SUPABASE_SERVICE_ROLE_KEY'));
 check('public endpoints support Turnstile', bookingEndpoint.includes('verifyTurnstile') && giftEndpoint.includes('verifyTurnstile'));
 check('public booking cannot set partner authority', !bookingEndpoint.includes('partner_id:') && !bookingEndpoint.includes('partner_source_assigned_by:'));
 check('server RPC ignores public partner authority', !migration.match(/request_payload->>'partner_id'/) && !migration.match(/request_payload->>'partner_source_assigned_by'/));
@@ -59,6 +86,21 @@ check('direct anonymous operational inserts revoked', migration.includes('revoke
 check('analytics direct inserts revoked', migration.includes('revoke insert on public.analytics_events from anon, authenticated'));
 check('private operational tables have RLS', ['request_notification_log', 'admin_weekly_reports', 'endpoint_rate_limits'].every((table) => migration.includes(`alter table public.${table} enable row level security`)));
 check('no globally permissive policy in new migrations', !/using\s*\(\s*true\s*\)|with\s+check\s*\(\s*true\s*\)/i.test(`${migration}\n${storageMigration}\n${mediaOptimizerMigration}\n${analyticsConsolidation}\n${premodernMigration}`));
+check('Gift Card claim RPC is hardened and service-role-only', claimMigration.includes('create or replace function public.redeem_gift_card_booking_code') && claimMigration.includes('security definer') && claimMigration.includes('set search_path = public, pg_temp') && claimMigration.includes('from public, anon, authenticated') && claimMigration.includes('to service_role'));
+check('generic booking-code RPC cannot bypass Gift Card claim', claimMigration.includes("code_row.source = 'gift_card' or code_row.gift_card_request_id is not null") && claimMigration.includes("'error', 'GIFT_CARD_CLAIM_REQUIRED'") && claimMigration.includes("'requires_recipient_claim', true"));
+check('Gift Card claim locks Gift Card then booking code inside the claim function', Boolean(giftRowLock) && Boolean(bookingCodeRowLock) && giftRowLock.index < bookingCodeRowLock.index);
+check('Gift Card claim revalidates ownership and rejects repeat claims after locking', claimFunctionBlock.includes('code_row.gift_card_request_id is distinct from gift.id') && claimFunctionBlock.includes("code_row.status = 'redeemed'") && claimFunctionBlock.includes('gift.recipient_claimed_at is not null'));
+check('Gift Card claim rejects malformed contact server-side', claimMigration.includes('RECIPIENT_EMAIL_INVALID') && claimMigration.includes('RECIPIENT_PHONE_INVALID') && claimMigration.includes("clean_language not in ('it', 'en')"));
+check('newly issued Gift Card codes never copy purchaser contact', !giftIssuanceBlock.includes('gift.buyer_email') && !giftIssuanceBlock.includes('gift.buyer_phone') && giftIssuanceBlock.includes('gift.recipient_email, gift.recipient_phone'));
+check('newly issued Gift Card codes use no noncanonical experience id', giftIssuanceBlock.includes("null, coalesce(gift.experience_type, 'Gift Card vulcanIQ')") && !giftIssuanceBlock.includes("'gift-card', coalesce(gift.experience_type"));
+check('Gift Card claim persists every claimant ownership field', ['claimed_recipient_name = clean_name', 'recipient_email = clean_email', 'recipient_phone = clean_phone', 'recipient_preferred_language = clean_language', 'recipient_claimed_at = now()'].every((value) => claimFunctionBlock.includes(value)));
+check('Gift Card claim never mutates purchaser identity', !/\bbuyer_(name|email|phone)\b/.test(claimFunctionBlock));
+check('Gift Card claim booking uses claimant contact', /insert into public\.booking_requests[\s\S]*?code_row\.fixed_excursion_id,\s*clean_name,\s*clean_email,\s*clean_phone,/i.test(claimFunctionBlock));
+check('Gift Card claim only propagates canonical booking experience ids', claimFunctionBlock.includes("code_row.experience_id in ('etna-premium', 'etna-learning', 'etna-live', 'etna-stories', 'unsure')") && claimFunctionBlock.includes('then code_row.experience_id'));
+check('legacy noncanonical Gift Card experience ids degrade to null', /when code_row\.experience_id in \([^)]*\)[\s\S]*?then code_row\.experience_id\s+else null\s+end,/i.test(claimFunctionBlock) && !claimFunctionBlock.includes("coalesce(code_row.experience_id, 'gift-card')"));
+check('changing a Gift Card code clears prior claimant PII', mainSource.includes('function resetGiftCardClaim()') && mainSource.includes("setClaimForm({ recipient_name: '', recipient_email: '', recipient_phone: '' })") && mainSource.includes('onClick={resetGiftCardClaim}'));
+check('Gift Card public claim result excludes purchaser identity and internal UUIDs', !giftClaimEndpoint.includes('buyer_email') && !giftClaimEndpoint.includes('buyer_phone') && !giftClaimEndpoint.includes('booking_request_id') && !giftClaimEndpoint.includes('finance_entry_id'));
+check('new Gift Card claim migration is forward-only with no claimant backfill', !/update\s+public\.gift_card_requests[\s\S]{0,240}claimed_recipient_name\s*=/i.test(claimMigration.slice(0, claimMigration.indexOf('create or replace function public.admin_update_gift_card_request'))));
 check('notification idempotency index exists', migration.includes('request_notification_log_idempotency_unique'));
 check('weekly report idempotency index exists', migration.includes('admin_weekly_reports_idempotency_unique'));
 check('privileged actions restricted to owner/manager', migration.includes("ap.role in ('owner', 'manager')") && migration.includes('is_privileged_admin'));
@@ -116,6 +158,17 @@ check('premodernization migration has one transaction boundary', (premodernMigra
 check('security headers add browser hardening without enforced CSP rollout', securityHeaders.includes('X-Content-Type-Options: nosniff') && securityHeaders.includes('Referrer-Policy: strict-origin-when-cross-origin') && securityHeaders.includes('Content-Security-Policy-Report-Only:') && !/^\s*Content-Security-Policy:/m.test(securityHeaders));
 check('admin routes carry noindex response header', /\/admin\/\*[\s\S]*X-Robots-Tag: noindex, nofollow/.test(securityHeaders));
 check('no Google provider secret is exposed through VITE variables', !fs.readdirSync(root, { recursive: true }).filter((name) => typeof name === 'string' && !name.startsWith('.git/') && !name.includes('node_modules/')).some((name) => { try { return fs.statSync(path.join(root, name)).isFile() && /VITE_[A-Z0-9_]*GOOGLE_BUSINESS_(CLIENT_SECRET|REFRESH_TOKEN)/i.test(fs.readFileSync(path.join(root, name), 'utf8')); } catch { return false; } }));
+
+check('immediate operational emails use branded responsive template', notifyFunction.includes('buildRequestNotificationEmail') && requestNotificationEmail.includes('VULCANIQ · OPERATIONS') && requestNotificationEmail.includes('@media(max-width:620px)') && requestNotificationEmail.includes('replyTo'));
+check('immediate operational notifications use source-aware trusted ingest', notifyFunction.includes('ingestAdminNotification') && notifyFunction.includes('NOTIFICATION_INGEST_SECRET') && notifyFunction.includes("source === 'website'") && notifyFunction.includes("source === 'booking_code'") && !notifyFunction.includes('customer_name:'));
+check('authenticated immediate-email retry CORS is origin-restricted', notifyFunction.includes('REQUEST_NOTIFICATION_ALLOWED_ORIGINS') && !notifyFunction.includes("'Access-Control-Allow-Origin': '*'"));
+check('payment semantics migration is forward-only transactional and privileged', (paymentFinanceMigration.match(/^begin;$/gm) || []).length === 1 && (paymentFinanceMigration.match(/^commit;$/gm) || []).length === 1 && paymentFinanceMigration.includes('if not public.is_privileged_admin()') && paymentFinanceMigration.includes('if not public.is_admin()'));
+check('Gift Card Issued does not recognize revenue', (() => { const block = paymentFinanceMigration.slice(paymentFinanceMigration.indexOf("if next_status = 'issued'"), paymentFinanceMigration.indexOf("elsif next_status = 'cancelled'")); return block && !/insert into public\.finance_entries/i.test(block); })());
+check('refund RPC is transactional, authorized, and preserves original entry', (financeRefundMigration.match(/^begin;$/gm) || []).length === 1 && (financeRefundMigration.match(/^commit;$/gm) || []).length === 1 && financeRefundMigration.includes('if not public.is_admin()') && financeRefundMigration.includes('reversal_of') && !/delete\s+from\s+public\.finance_entries/i.test(financeRefundMigration));
+check('notification API keeps service-role and VAPID private material server-side', notificationApi.includes('SUPABASE_SERVICE_ROLE_KEY') && !notificationService.includes('SUPABASE_SERVICE_ROLE_KEY') && !notificationService.includes('VAPID_PRIVATE_KEY'));
+check('notification API enforces trusted CORS and admin authorization', notificationApi.includes('trustedOrigin') && notificationApi.includes('admin_profiles') && notificationApi.includes('requireAdmin') && !notificationApi.includes("'Access-Control-Allow-Origin': '*'"));
+check('notification Worker degrades dead push subscriptions to in-app delivery', notificationWorker.includes('p256dh=NULL,auth=NULL,enabled=1') && notificationWorker.includes('inapp://${event.audience}'));
+check('security headers include HSTS and CSP remains report-only', securityHeaders.includes('Strict-Transport-Security: max-age=31536000') && securityHeaders.includes('Content-Security-Policy-Report-Only:') && !/^\s*Content-Security-Policy:/m.test(securityHeaders));
 
 for (const name of passes) console.log(`PASS  ${name}`);
 for (const name of failures) console.error(`FAIL  ${name}`);

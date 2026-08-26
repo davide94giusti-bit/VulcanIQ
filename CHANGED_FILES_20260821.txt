@@ -1,0 +1,50 @@
+VulcanIQ release candidate 2026-08-21 - baseline comparison inventory
+
+Modified files: 21
+M  docs/ARCHITECTURE.md
+M  docs/OWNER_GUIDE.md
+M  docs/SECURITY_MODEL.md
+M  index.html
+M  package.json
+M  public/_headers
+M  public/_redirects
+M  public/manifest.webmanifest
+M  src/app/publicRoutes.js
+M  src/main.jsx
+M  src/services/bookingCodes.js
+M  src/services/bookingRequests.js
+M  src/services/financeService.js
+M  src/services/giftCards.js
+M  src/services/partnerCommissions.js
+M  src/styles.css
+M  supabase/functions/notify-new-request/index.ts
+M  tools/finance-regression.mjs
+M  tools/media-optimizer-regression.mjs
+M  tools/security-regression.mjs
+M  tools/seo-regression.mjs
+
+New files: 22
+A  docs/FINANCE_PAYMENT_RECONCILIATION_20260821.md
+A  docs/NOTIFICATIONS_PWA_20260821.md
+A  functions/api/notifications/[[path]].js
+A  public/admin-manifest.webmanifest
+A  public/admin-sw.js
+A  public/manifest-select.js
+A  public/sw.js
+A  shared/webPush.js
+A  src/domain/financeAudit.js
+A  src/domain/financeModel.js
+A  src/features/notifications/NotificationsPage.jsx
+A  src/features/notifications/notifications.css
+A  src/services/notificationService.js
+A  supabase/functions/_shared/requestNotificationEmail.ts
+A  supabase/migrations/20260821070000_payment_finance_semantics.sql
+A  supabase/migrations/20260821073000_finance_refund_rpc.sql
+A  tools/finance-reconciliation-audit.mjs
+A  tools/homepage-cms-regression.mjs
+A  tools/notifications-regression.mjs
+A  workers/notifications/migrations/0001_notifications.sql
+A  workers/notifications/src/index.js
+A  workers/notifications/wrangler.example.toml
+
+Deleted files: 0

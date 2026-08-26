@@ -106,6 +106,8 @@ function parseRpcResult(data) {
   if (!result?.ok) {
     const nextError = new Error(result?.error || 'BOOKING_CODE_INVALID');
     nextError.code = result?.error || 'BOOKING_CODE_INVALID';
+    nextError.requiresRecipientClaim = result?.requires_recipient_claim === true;
+    nextError.result = result || null;
     throw nextError;
   }
   return result;
@@ -127,7 +129,26 @@ export async function listBookingCodes(filters = {}) {
 
   const { data, error } = await query;
   if (error) throw error;
-  return (data || []).map(normalizeBookingCodeRow);
+  const codes = (data || []).map(normalizeBookingCodeRow);
+  if (codes.length === 0) return codes;
+
+  const financeByCode = new Map(codes.map((item) => [item.id, new Map()]));
+  const ids = codes.map((item) => item.id);
+  const chunks = [];
+  for (let index = 0; index < ids.length; index += 100) chunks.push(ids.slice(index, index + 100));
+  for (const chunk of chunks) {
+    const [linked, sourced] = await Promise.all([
+      supabase.from('finance_entries').select('id,type,category,amount,currency,status,entry_date,payment_method,source_type,source_id,booking_code_id,notes,idempotency_key,created_at').in('booking_code_id', chunk),
+      supabase.from('finance_entries').select('id,type,category,amount,currency,status,entry_date,payment_method,source_type,source_id,booking_code_id,notes,idempotency_key,created_at').eq('source_type', 'booking_code').in('source_id', chunk)
+    ]);
+    if (linked.error) throw linked.error;
+    if (sourced.error) throw sourced.error;
+    for (const entry of [...(linked.data || []), ...(sourced.data || [])]) {
+      const codeId = entry.booking_code_id || entry.source_id;
+      if (financeByCode.has(codeId)) financeByCode.get(codeId).set(entry.id, entry);
+    }
+  }
+  return codes.map((item) => ({ ...item, finance_entries: [...financeByCode.get(item.id).values()] }));
 }
 
 export async function createBookingCode(input = {}, userId = null) {
@@ -205,76 +226,147 @@ export async function cancelBookingCode(id, userId = null) {
     .select(BOOKING_CODE_FIELDS)
     .single();
   if (error) throw error;
-  await cancelLinkedExpectedFinance(data, userId, 'booking code cancelled');
+  await reverseOrVoidFinanceForCode(data, userId, 'booking code cancelled');
   return normalizeBookingCodeRow(data);
 }
 
-async function cancelLinkedExpectedFinance(code, userId = null, reason = '') {
+async function reverseOrVoidFinanceForCode(code, userId = null, reason = '') {
   if (!code?.id) return;
   const now = new Date().toISOString();
   const { data, error } = await supabase
     .from('finance_entries')
-    .select('id, status, active')
-    .or(`booking_code_id.eq.${code.id},source_id.eq.${code.id}`);
-  if (error) return;
-  await Promise.all((data || []).map((entry) => {
-    if (['cancelled', 'void', 'voided', 'reversed', 'reversal'].includes(entry.status)) return null;
-    return supabase
+    .select('id, status, active, reversal_of')
+    .or(`booking_code_id.eq.${code.id},and(source_type.eq.booking_code,source_id.eq.${code.id})`);
+  if (error) throw error;
+
+  // Code cancellation/no-show is operational state, not proof of a refund. Preserve recognized
+  // money; only void outstanding expectations. Refunds use admin_reverse_finance_entry.
+  for (const entry of data || []) {
+    const status = String(entry.status || '').toLowerCase();
+    if (entry.reversal_of || entry.active === false || ['cancelled', 'void', 'voided', 'reversal'].includes(status)) continue;
+    if (!['pending', 'expected'].includes(status)) continue;
+    const { error: updateError } = await supabase
       .from('finance_entries')
-      .update({ status: 'cancelled', active: false, cancelled_at: now, updated_by: userId || null, archive_reason: reason || null })
+      .update({ status: 'cancelled', active: false, cancelled_at: now, updated_by: userId || null, archive_reason: reason || 'Booking code cancelled' })
       .eq('id', entry.id);
-  }).filter(Boolean));
+    if (updateError) throw updateError;
+  }
 }
 
-async function ensureConfirmedFinanceForCode(code, userId = null) {
-  if (!code?.id || !Number(code.expected_amount || 0)) return null;
-  const now = new Date().toISOString();
-  if (code.redeemed_finance_entry_id) {
-    const { data, error } = await supabase
-      .from('finance_entries')
-      .update({
-        status: 'confirmed',
-        active: true,
-        admin_confirmed_at: now,
-        admin_confirmed_by: userId || null,
-        recognized_at: now,
-        updated_by: userId || null
-      })
-      .eq('id', code.redeemed_finance_entry_id)
-      .select('*')
-      .single();
-    if (error) throw error;
-    return data;
-  }
-  const title = code.experience_name_it || code.experience_name_en || code.code || 'Booking code income';
+export async function getBookingCodePaymentState(id) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  if (!id) throw new Error('Booking code is required.');
+  const code = await fetchBookingCode(id);
   const { data, error } = await supabase
     .from('finance_entries')
-    .insert({
-      entry_date: new Date().toISOString().slice(0, 10),
-      type: 'income',
-      amount: cleanAmount(code.expected_amount),
-      currency: normalizeCurrency(code.currency),
-      title,
-      description: `Confirmed income from booking code ${code.code}`,
-      category: 'booking_code_confirmed',
-      payment_method: 'external',
-      booking_request_id: code.redeemed_booking_request_id || null,
-      booking_code_id: code.id,
-      source_type: 'booking_code',
-      source_id: code.id,
-      status: 'confirmed',
-      active: true,
-      recognized_at: now,
-      admin_confirmed_at: now,
-      admin_confirmed_by: userId || null,
-      created_by: userId || null,
+    .select('id, created_at, entry_date, type, amount, currency, title, description, category, payment_method, status, source_type, source_id, booking_request_id, booking_code_id, idempotency_key, recognized_at, reversal_of, active')
+    .or(`booking_code_id.eq.${id},and(source_type.eq.booking_code,source_id.eq.${id})`)
+    .eq('type', 'income')
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  const entries = data || [];
+  const expected = entries.filter((entry) => entry.active !== false && !entry.reversal_of && ['expected', 'pending'].includes(String(entry.status || '').toLowerCase()));
+  const recognized = entries.filter((entry) => entry.active !== false && ['confirmed', 'reversed', 'reversal'].includes(String(entry.status || '').toLowerCase()));
+  const paid = recognized.reduce((sum, entry) => sum + parseMoneyAmount(entry.amount), 0);
+  const agreed = cleanAmount(code.expected_amount);
+  const balance = Math.max(0, agreed - paid);
+  const paymentStatus = paid < 0 || (paid === 0 && recognized.some((entry) => entry.status === 'reversal'))
+    ? 'refunded'
+    : paid === 0 ? 'pending' : agreed > 0 && paid < agreed ? 'deposit_paid' : agreed > 0 && paid > agreed ? 'overpaid' : 'paid';
+  return { code, entries, expected, recognized, paid, agreed, balance, paymentStatus };
+}
+
+export async function recordBookingCodePayment({ id, amount, currency, entryDate, paymentMethod, idempotencyKey = '', userId = null } = {}) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const normalizedAmount = parseMoneyAmount(amount);
+  if (!(normalizedAmount > 0)) throw new Error('A positive payment amount is required.');
+  const normalizedDate = cleanText(entryDate);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) throw new Error('A valid payment date is required.');
+  const normalizedMethod = cleanText(paymentMethod);
+  if (!normalizedMethod) throw new Error('Payment method is required.');
+
+  const state = await getBookingCodePaymentState(id);
+  if (state.expected.length > 1) {
+    const error = new Error('Multiple expected Finance entries are linked to this booking code. Reconcile them in Finance first.');
+    error.code = 'BOOKING_CODE_MULTIPLE_EXPECTED';
+    throw error;
+  }
+  const cleanKey = cleanText(idempotencyKey);
+  if (cleanKey) {
+    const existing = state.entries.find((entry) => entry.idempotency_key === cleanKey);
+    if (existing) return { status: 'already_recorded', entry: existing, state };
+  }
+
+  const now = new Date().toISOString();
+  const shared = {
+    entry_date: normalizedDate,
+    type: 'income',
+    amount: normalizedAmount,
+    currency: normalizeCurrency(currency || state.code.currency),
+    title: state.code.experience_name_it || state.code.experience_name_en || state.code.code || 'Booking code payment',
+    description: `Recorded payment for booking code ${state.code.code}`,
+    category: 'booking_code_payment',
+    payment_method: normalizedMethod,
+    booking_request_id: state.code.redeemed_booking_request_id || null,
+    booking_code_id: state.code.id,
+    source_type: 'booking_code',
+    source_id: state.code.id,
+    status: 'confirmed',
+    active: true,
+    recognized_at: now,
+    admin_confirmed_at: now,
+    admin_confirmed_by: userId || null,
+    updated_by: userId || null,
+    idempotency_key: cleanKey || null
+  };
+
+  let entry;
+  let resultStatus = 'created_payment';
+  if (state.expected.length === 1) {
+    const pending = state.expected[0];
+    const pendingAmount = parseMoneyAmount(pending.amount);
+    if (pendingAmount > normalizedAmount) {
+      const { error: remainingError } = await supabase
+        .from('finance_entries')
+        .update({ amount: Number((pendingAmount - normalizedAmount).toFixed(2)), status: 'expected', updated_by: userId || null, updated_at: now })
+        .eq('id', pending.id);
+      if (remainingError) throw remainingError;
+      const { data, error } = await supabase.from('finance_entries').insert({ ...shared, created_by: userId || null }).select('*').single();
+      if (error) throw error;
+      entry = data;
+      resultStatus = 'created_partial_payment';
+    } else {
+      const { data, error } = await supabase.from('finance_entries').update(shared).eq('id', pending.id).select('*').single();
+      if (error) throw error;
+      entry = data;
+      resultStatus = 'confirmed_expected';
+    }
+  } else {
+    const { data, error } = await supabase.from('finance_entries').insert({ ...shared, created_by: userId || null }).select('*').single();
+    if (error) throw error;
+    entry = data;
+  }
+
+  const paid = state.paid + normalizedAmount;
+  const agreed = state.agreed;
+  const paymentStatus = agreed > 0 && paid < agreed ? 'deposit_paid' : 'paid';
+  const fullyPaid = paymentStatus === 'paid';
+  const { data: updatedCode, error: codeError } = await supabase
+    .from('booking_codes')
+    .update({
+      payment_status: paymentStatus,
+      income_status: fullyPaid ? 'confirmed' : 'pending',
+      admin_confirmed_income: fullyPaid,
+      income_confirmed_at: fullyPaid ? now : null,
+      income_confirmed_by: userId || null,
       updated_by: userId || null
     })
-    .select('*')
+    .eq('id', id)
+    .select(BOOKING_CODE_FIELDS)
     .single();
-  if (error) throw error;
-  await supabase.from('booking_codes').update({ redeemed_finance_entry_id: data.id }).eq('id', code.id);
-  return data;
+  if (codeError) throw codeError;
+
+  return { status: resultStatus, entry, code: normalizeBookingCodeRow(updatedCode), paid, balance: Math.max(0, agreed - paid) };
 }
 
 export async function markBookingCodeCompleted(id, userId = null) {
@@ -290,25 +382,10 @@ export async function markBookingCodeCompleted(id, userId = null) {
   return normalizeBookingCodeRow(data);
 }
 
-export async function confirmBookingCodeIncome(id, userId = null) {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-  const code = await fetchBookingCode(id);
-  const now = new Date().toISOString();
-  await ensureConfirmedFinanceForCode(code, userId);
-  const { data, error } = await supabase
-    .from('booking_codes')
-    .update({
-      income_status: 'confirmed',
-      payment_status: 'paid',
-      admin_confirmed_income: true,
-      income_confirmed_at: now,
-      income_confirmed_by: userId || null
-    })
-    .eq('id', id)
-    .select(BOOKING_CODE_FIELDS)
-    .single();
-  if (error) throw error;
-  return normalizeBookingCodeRow(data);
+export async function confirmBookingCodeIncome() {
+  const error = new Error('Use recordBookingCodePayment with the actual amount, date and payment method.');
+  error.code = 'BOOKING_CODE_PAYMENT_DETAILS_REQUIRED';
+  throw error;
 }
 
 export async function markBookingCodeNoShow(id, userId = null) {
@@ -321,7 +398,7 @@ export async function markBookingCodeNoShow(id, userId = null) {
     .select(BOOKING_CODE_FIELDS)
     .single();
   if (error) throw error;
-  await cancelLinkedExpectedFinance(data, userId, 'booking code no-show');
+  await reverseOrVoidFinanceForCode(data, userId, 'booking code no-show');
   return normalizeBookingCodeRow(data);
 }
 
@@ -359,6 +436,36 @@ export async function redeemBookingCode(code, { language = 'it' } = {}) {
   }
 
   throw first.error;
+}
+
+export async function claimGiftCardBookingCode(code, input = {}) {
+  const cleanCode = normalizeBookingCode(code);
+  if (!cleanCode) {
+    const error = new Error('BOOKING_CODE_REQUIRED');
+    error.code = 'BOOKING_CODE_REQUIRED';
+    throw error;
+  }
+
+  const response = await fetch('/api/public/gift-card-claim', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code: cleanCode,
+      recipient_name: cleanText(input.recipient_name),
+      recipient_email: cleanText(input.recipient_email) || null,
+      recipient_phone: cleanText(input.recipient_phone) || null,
+      language: input.language === 'en' ? 'en' : 'it'
+    })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result?.ok) {
+    const error = new Error(result?.message || 'GIFT_CARD_CLAIM_FAILED');
+    error.code = result?.code || `HTTP_${response.status}`;
+    error.status = response.status;
+    error.traceId = result?.trace_id || response.headers.get('X-Trace-Id') || '';
+    throw error;
+  }
+  return result;
 }
 
 

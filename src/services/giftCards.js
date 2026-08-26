@@ -4,6 +4,7 @@ import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
 const GIFT_CARD_FIELDS = `
   id, buyer_name, buyer_email, buyer_phone, buyer_preferred_language,
   recipient_name, experience_type, budget, currency, message, preferred_delivery_date,
+  claimed_recipient_name, recipient_email, recipient_phone, recipient_preferred_language, recipient_claimed_at,
   status, admin_note, finance_entry_id, booking_code_id, booking_code,
   detected_source, declared_source, utm_source, utm_medium, utm_campaign, utm_content, utm_term, referrer, landing_path,
   analytics_session_id, analytics_visitor_id, analytics_journey_id,
@@ -100,7 +101,7 @@ export async function listGiftCardRequests(filters = {}) {
   if (filters.status && filters.status !== 'all') query = query.eq('status', normalizeGiftCardStatus(filters.status));
   const search = cleanText(filters.search)?.replaceAll(',', ' ');
   if (search) {
-    query = query.or(`buyer_name.ilike.%${search}%,buyer_email.ilike.%${search}%,buyer_phone.ilike.%${search}%,recipient_name.ilike.%${search}%,experience_type.ilike.%${search}%`);
+    query = query.or(`buyer_name.ilike.%${search}%,buyer_email.ilike.%${search}%,buyer_phone.ilike.%${search}%,recipient_name.ilike.%${search}%,claimed_recipient_name.ilike.%${search}%,recipient_email.ilike.%${search}%,recipient_phone.ilike.%${search}%,experience_type.ilike.%${search}%`);
   }
   const { data, error } = await query;
   if (error) throw error;
@@ -116,6 +117,10 @@ export async function updateGiftCardRequest(id, input = {}, userId = null) {
   if (input.budget !== undefined) patch.budget = cleanBudget(input.budget);
   if (input.currency !== undefined) patch.currency = normalizeCurrency(input.currency);
   if (input.preferred_delivery_date !== undefined) patch.preferred_delivery_date = cleanText(input.preferred_delivery_date);
+  if (input.payment_amount !== undefined) patch.payment_amount = cleanBudget(input.payment_amount);
+  if (input.payment_date !== undefined) patch.payment_date = cleanText(input.payment_date);
+  if (input.payment_method !== undefined) patch.payment_method = cleanText(input.payment_method);
+  if (input.payment_idempotency_key !== undefined) patch.payment_idempotency_key = cleanText(input.payment_idempotency_key);
   const { data, error } = await supabase.rpc('admin_update_gift_card_request', { p_id: id, p_patch: patch });
   if (error) throw error;
   return normalize(data);
