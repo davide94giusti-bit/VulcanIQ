@@ -5,5 +5,5 @@
   link.href = admin ? '/admin-manifest.webmanifest' : '/manifest.webmanifest';
   document.head.appendChild(link);
   const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
-  if (appleTitle) appleTitle.setAttribute('content', admin ? 'VulcanIQ Admin' : 'VulcanIQ');
+  if (appleTitle) appleTitle.setAttribute('content', admin ? 'vulcanIQ Admin' : 'vulcanIQ');
 })();

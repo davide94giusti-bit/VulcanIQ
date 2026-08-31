@@ -1,8 +1,8 @@
 {
   "id": "/pwa/public",
-  "name": "VulcanIQ",
-  "short_name": "VulcanIQ",
-  "description": "Esperienze guidate sull'Etna e aggiornamenti VulcanIQ.",
+  "name": "vulcanIQ",
+  "short_name": "vulcanIQ",
+  "description": "Esperienze guidate sull'Etna e aggiornamenti vulcanIQ.",
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",

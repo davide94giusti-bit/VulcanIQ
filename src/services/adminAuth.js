@@ -16,6 +16,19 @@ export async function signOutOwner() {
   if (error) throw error;
 }
 
+export async function requestAdminPasswordReset(email, redirectTo) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const { error } = await supabase.auth.resetPasswordForEmail(String(email || '').trim(), { redirectTo });
+  if (error) throw error;
+}
+
+export async function updateCurrentAdminPassword(password) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.auth.updateUser({ password });
+  if (error) throw error;
+  return data;
+}
+
 export async function getCurrentSession() {
   if (!isSupabaseConfigured) return null;
   const { data, error } = await supabase.auth.getSession();

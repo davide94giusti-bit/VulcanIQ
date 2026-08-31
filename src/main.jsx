@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { blockedDates, defaultExperienceAvailability } from './data/availability.js';
 import { isSupabaseConfigured } from './lib/supabaseClient.js';
-import { getAdminAccess, signInOwner, signOutOwner } from './services/adminAuth.js';
+import { getAdminAccess, requestAdminPasswordReset, signInOwner, signOutOwner, updateCurrentAdminPassword } from './services/adminAuth.js';
 import { createManualBookingRequest, listBookingRequests, updateBookingRequest, approveBookingRequest, declineBookingRequest, cancelBookingRequest, markBookingRequestReviewRequested, markBookingRequestReviewReceived, markBookingRequestReviewLinkCopied, bookingRequestCanConfirmIncome, getBookingRequestIncomeState, confirmBookingRequestIncome } from './services/bookingRequests.js';
 import { listBookingCodes, createBookingCode, cancelBookingCode, redeemBookingCode, claimGiftCardBookingCode, markBookingCodeCompleted, getBookingCodePaymentState, recordBookingCodePayment, markBookingCodeNoShow, markBookingCodeReviewRequested, markBookingCodeReviewReceived, markBookingCodeReviewLinkCopied } from './services/bookingCodes.js';
 import { loadPublicAvailability, loadPublicFixedExcursions, listAvailabilityBlocks, createAvailabilityBlock, updateAvailabilityBlock, deactivateAvailabilityBlock, listFixedExcursions, createFixedExcursion, updateFixedExcursion, deactivateFixedExcursion, listMonthlyLeaflets, loadPublicMonthlyLeaflets, createMonthlyLeaflet, updateMonthlyLeaflet, deactivateMonthlyLeaflet, uploadMonthlyLeafletFile, removeMonthlyLeafletFile, uploadFixedExcursionLeafletFile, uploadBlockedDatesFile, removeBlockedDatesFile, defaultReason } from './services/availabilityService.js';
@@ -35,6 +35,7 @@ import AnalyticsCanonicalFunnels from './features/analytics/AnalyticsCanonicalFu
 import ReviewsPage from './features/reviews/ReviewsPage.jsx';
 import GoogleReviewsAdminStatus from './features/reviews/GoogleReviewsAdminStatus.jsx';
 import NotificationsPage from './features/notifications/NotificationsPage.jsx';
+import AskNeoPanel from './features/neo/AskNeoPanel.jsx';
 import { normalizeReviewText, reviewSourceLabel } from './features/reviews/reviewModel.js';
 import useBodyScrollLock from './hooks/useBodyScrollLock.js';
 import { publicPageFromPathname, legalPageFromPathname, routeDefinitionFromPathname, canonicalPathForPage, isReferralPath } from './app/publicRoutes.js';
@@ -63,6 +64,7 @@ const ADMIN_NAV_SECTIONS = [
   { key: 'bookingCodes', path: '/admin/booking-codes', labelIt: 'Codici prenotazione', labelEn: 'Booking codes', editable: true },
   { key: 'giftCards', path: '/admin/gift-cards', labelIt: 'Gift Card', labelEn: 'Gift Cards', editable: true },
   { key: 'notifications', path: '/admin/notifications', labelIt: 'Installazione e notifiche', labelEn: 'Install & notifications', editable: false },
+  { key: 'account', path: '/admin/account', labelIt: 'Account', labelEn: 'Account', editable: false },
   { key: 'availability', path: '/admin/availability', labelIt: 'Disponibilità', labelEn: 'Availability', editable: true },
   { key: 'partnerships', path: '/admin/partnerships', labelIt: 'Collaborazioni', labelEn: 'Collaborations', editable: true },
   { key: 'edit', path: '/admin/edit', labelIt: 'Modifica sito e recensioni', labelEn: 'Edit website & reviews', editable: true },
@@ -78,7 +80,7 @@ const ADMIN_NAV_GROUPS = [
   { key: 'bookings', labelIt: 'Prenotazioni', labelEn: 'Bookings', items: ['requests', 'bookingCodes', 'giftCards', 'availability', 'notifications'] },
   { key: 'website', labelIt: 'Gestione sito', labelEn: 'Website management', items: ['edit', 'publicSite'] },
   { key: 'business', labelIt: 'Business', labelEn: 'Business', items: ['partnerships', 'finance', 'analytics'] },
-  { key: 'system', labelIt: 'Sistema', labelEn: 'System', items: ['backup', 'users'] }
+  { key: 'system', labelIt: 'Sistema', labelEn: 'System', items: ['account', 'backup', 'users'] }
 ];
 
 function adminNavLabel(section, lang) {
@@ -6240,6 +6242,8 @@ function AdminLogin({ lang, setLang, navigate }) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState('');
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -6253,10 +6257,25 @@ function AdminLogin({ lang, setLang, navigate }) {
         setError(adminCopy(lang, 'Accesso negato: questo utente non è un owner attivo.', 'Access denied: this user is not an active owner.'));
         return;
       }
-      navigate('/admin/requests');
+      const returnPath = window.sessionStorage.getItem('vulcaniq.admin.returnPath');
+      window.sessionStorage.removeItem('vulcaniq.admin.returnPath');
+      navigate(returnPath?.startsWith('/admin') && returnPath !== '/admin/login' && returnPath !== '/admin/reset-password' ? returnPath : '/admin/requests');
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Login non riuscito.', 'Login failed.'));
     } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRecovery(event) {
+    event.preventDefault();
+    setLoading(true); setError(''); setRecoveryMessage('');
+    try {
+      await requestAdminPasswordReset(email, `${window.location.origin}/admin/reset-password`);
+    } catch {
+      // A neutral response prevents account enumeration. Delivery/configuration is verified operationally.
+    } finally {
+      setRecoveryMessage(adminCopy(lang, 'Se esiste un account per questa email, sono state inviate le istruzioni per reimpostare la password.', 'If an account exists for this email, password reset instructions have been sent.'));
       setLoading(false);
     }
   }
@@ -6279,9 +6298,11 @@ function AdminLogin({ lang, setLang, navigate }) {
           <input id="adminEmail" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
           <label className="field-label" htmlFor="adminPassword">Password</label>
           <input id="adminPassword" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
+          <button className="admin-forgot-password" type="button" onClick={() => { setRecoveryOpen((open) => !open); setRecoveryMessage(''); }}>{adminCopy(lang, 'Password dimenticata?', 'Forgot password?')}</button>
           {error && <div className="admin-alert error" role="alert">{error}</div>}
           <button className="button primary admin-wide-button" type="submit" disabled={loading || !isSupabaseConfigured}>{loading ? adminCopy(lang, 'Accesso...', 'Signing in...') : adminCopy(lang, 'Entra', 'Sign in')}</button>
         </form>
+        {recoveryOpen && <form className="admin-form admin-recovery-form" onSubmit={handleRecovery} aria-label={adminCopy(lang, 'Recupero password', 'Password recovery')}><p>{adminCopy(lang, 'Inserisci l’email Admin. Il link sicuro sarà generato da Supabase Auth.', 'Enter the Admin email. The secure link will be generated by Supabase Auth.')}</p><label className="field-label" htmlFor="adminRecoveryEmail">Email</label><input id="adminRecoveryEmail" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />{recoveryMessage && <div className="admin-alert success" role="status">{recoveryMessage}</div>}<button className="button secondary admin-wide-button" type="submit" disabled={loading || !isSupabaseConfigured}>{adminCopy(lang, 'Invia istruzioni', 'Send instructions')}</button></form>}
         <div className="admin-login-actions">
           <button className="button secondary" type="button" onClick={() => setLang(lang === 'it' ? 'en' : 'it')}>{lang === 'it' ? 'English' : 'Italiano'}</button>
           <a className="button secondary" href="/">{adminCopy(lang, 'Torna al sito', 'Back to public site')}</a>
@@ -6291,9 +6312,39 @@ function AdminLogin({ lang, setLang, navigate }) {
   );
 }
 
+function passwordValidationMessage(password, confirmation, lang) {
+  if (password.length < 12) return adminCopy(lang, 'Usa almeno 12 caratteri.', 'Use at least 12 characters.');
+  if (password !== confirmation) return adminCopy(lang, 'Le password non coincidono.', 'Passwords do not match.');
+  return '';
+}
+
+function AdminResetPassword({ lang, navigate }) {
+  const [state, setState] = useState({ loading: true, valid: false, error: '' });
+  const [password, setPassword] = useState(''); const [confirmation, setConfirmation] = useState(''); const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getAdminAccess().then((access) => { if (alive) setState({ loading: false, valid: Boolean(access.session), error: '' }); }).catch(() => { if (alive) setState({ loading: false, valid: false, error: 'invalid' }); });
+    return () => { alive = false; };
+  }, []);
+  async function submit(event) {
+    event.preventDefault(); const validation = passwordValidationMessage(password, confirmation, lang); if (validation) { setState((current) => ({ ...current, error: validation })); return; }
+    setSaving(true); setState((current) => ({ ...current, error: '' }));
+    try { await updateCurrentAdminPassword(password); setState({ loading: false, valid: true, error: 'success' }); window.setTimeout(() => navigate('/admin'), 900); }
+    catch { setState((current) => ({ ...current, error: adminCopy(lang, 'Link scaduto o aggiornamento non riuscito. Richiedi un nuovo link.', 'Expired link or update failed. Request a new link.') })); }
+    finally { setSaving(false); }
+  }
+  if (state.loading) return <main className="admin-loading"><p>{adminCopy(lang, 'Verifica del link di recupero…', 'Checking recovery link…')}</p></main>;
+  if (!state.valid) return <main className="admin-login-shell"><section className="admin-login-card"><h1>{adminCopy(lang, 'Link non valido o scaduto', 'Invalid or expired link')}</h1><p>{adminCopy(lang, 'Torna al login e richiedi nuove istruzioni.', 'Return to login and request new instructions.')}</p><button className="button primary" type="button" onClick={() => navigate('/admin/login')}>{adminCopy(lang, 'Torna al login', 'Back to login')}</button></section></main>;
+  return <main className="admin-login-shell"><section className="admin-login-card"><span className="kicker">vulcanIQ Admin</span><h1>{adminCopy(lang, 'Scegli una nuova password', 'Choose a new password')}</h1><form className="admin-form" onSubmit={submit}><label htmlFor="newAdminPassword">{adminCopy(lang, 'Nuova password', 'New password')}</label><input id="newAdminPassword" type="password" autoComplete="new-password" minLength={12} value={password} onChange={(event) => setPassword(event.target.value)} required/><label htmlFor="confirmAdminPassword">{adminCopy(lang, 'Conferma password', 'Confirm password')}</label><input id="confirmAdminPassword" type="password" autoComplete="new-password" minLength={12} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required/>{state.error === 'success' ? <div className="admin-alert success" role="status">{adminCopy(lang, 'Password aggiornata. Ritorno all’area Admin…', 'Password updated. Returning to Admin…')}</div> : state.error && <div className="admin-alert error" role="alert">{state.error}</div>}<button className="button primary" type="submit" disabled={saving}>{saving ? adminCopy(lang, 'Aggiornamento…', 'Updating…') : adminCopy(lang, 'Aggiorna password', 'Update password')}</button></form></section></main>;
+}
+
 function AdminRouter({ pathname, navigate, lang, setLang }) {
   if (pathname === '/admin/login') {
     return <AdminLogin lang={lang} setLang={setLang} navigate={navigate} />;
+  }
+
+  if (pathname === '/admin/reset-password') {
+    return <AdminResetPassword lang={lang} navigate={navigate} />;
   }
 
   return <ProtectedAdminArea pathname={pathname} navigate={navigate} lang={lang} setLang={setLang} />;
@@ -6315,6 +6366,7 @@ function ProtectedAdminArea({ pathname, navigate, lang, setLang }) {
         const access = await getAdminAccess();
         if (!alive) return;
         if (!access.session) {
+          if (pathname !== '/admin/login' && pathname !== '/admin/reset-password') window.sessionStorage.setItem('vulcaniq.admin.returnPath', pathname);
           navigate('/admin/login');
           return;
         }
@@ -6326,7 +6378,7 @@ function ProtectedAdminArea({ pathname, navigate, lang, setLang }) {
 
     checkAccess();
     return () => { alive = false; };
-  }, [navigate]);
+  }, [navigate, pathname]);
 
   if (state.loading) {
     return <main className="admin-loading"><span className="kicker">vulcanIQ</span><p>{adminCopy(lang, 'Controllo accesso...', 'Checking access...')}</p></main>;
@@ -6528,6 +6580,18 @@ function AdminUsersPage({ lang }) {
       )}
     </section>
   );
+}
+
+function AdminAccountPage({ lang, session, onSignOut }) {
+  const [password, setPassword] = useState(''); const [confirmation, setConfirmation] = useState(''); const [message, setMessage] = useState(''); const [error, setError] = useState(''); const [saving, setSaving] = useState(false);
+  async function submit(event) {
+    event.preventDefault(); setMessage(''); const validation = passwordValidationMessage(password, confirmation, lang); if (validation) { setError(validation); return; }
+    setSaving(true); setError('');
+    try { await updateCurrentAdminPassword(password); setPassword(''); setConfirmation(''); setMessage(adminCopy(lang, 'Password aggiornata.', 'Password updated.')); }
+    catch { setError(adminCopy(lang, 'Aggiornamento password non riuscito.', 'Password update failed.')); }
+    finally { setSaving(false); }
+  }
+  return <section className="admin-panel admin-account-page"><div className="admin-panel-header"><div><span className="kicker">vulcanIQ Admin</span><h1>Account</h1><p>{adminCopy(lang, 'Gestisci le credenziali del tuo account Supabase Auth.', 'Manage your Supabase Auth account credentials.')}</p></div></div><div className="admin-card-grid"><article className="admin-card"><h2>Email</h2><p>{session?.user?.email || '-'}</p></article><article className="admin-card"><h2>{adminCopy(lang, 'Cambia password', 'Change password')}</h2><form className="admin-form" onSubmit={submit}><label htmlFor="accountPassword">{adminCopy(lang, 'Nuova password', 'New password')}</label><input id="accountPassword" type="password" autoComplete="new-password" minLength={12} value={password} onChange={(event) => setPassword(event.target.value)} required/><label htmlFor="accountPasswordConfirmation">{adminCopy(lang, 'Conferma password', 'Confirm password')}</label><input id="accountPasswordConfirmation" type="password" autoComplete="new-password" minLength={12} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required/>{message && <div className="admin-alert success" role="status">{message}</div>}{error && <div className="admin-alert error" role="alert">{error}</div>}<button className="button primary" type="submit" disabled={saving}>{adminCopy(lang, 'Aggiorna password', 'Update password')}</button></form></article><article className="admin-card"><h2>{adminCopy(lang, 'Sessione', 'Session')}</h2><button className="button secondary" type="button" onClick={onSignOut}>{adminCopy(lang, 'Esci da vulcanIQ Admin', 'Sign out of vulcanIQ Admin')}</button></article></div></section>;
 }
 
 
@@ -6732,6 +6796,8 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           <AdminCalendarPage lang={lang} session={session} navigate={navigate} adminContent={adminContent} />
         ) : normalizedPath.includes('/notifications') || normalizedPath.includes('/install') ? (
           <NotificationsPage variant="admin" lang={lang} adminRole={profile?.role || ''} />
+        ) : normalizedPath.includes('/account') ? (
+          <AdminAccountPage lang={lang} session={session} onSignOut={logout} />
         ) : normalizedPath.includes('/finance') ? (
           <FinanceAdminPage lang={lang} session={session} adminContent={adminContent} />
         ) : normalizedPath.includes('/analytics') || normalizedPath.includes('/data') ? (
@@ -6758,6 +6824,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           <TodayDashboard lang={lang} session={session} navigate={navigate} adminContent={adminContent} />
         )}
       </main>
+      <AskNeoPanel navigate={navigate} profile={profile} />
     </div>
   );
 }
@@ -15462,7 +15529,7 @@ function App() {
     const manifest = document.querySelector('link[rel="manifest"]');
     if (manifest) manifest.setAttribute('href', adminVariant ? '/admin-manifest.webmanifest' : '/manifest.webmanifest');
     const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
-    if (appleTitle) appleTitle.setAttribute('content', adminVariant ? 'VulcanIQ Admin' : 'VulcanIQ');
+    if (appleTitle) appleTitle.setAttribute('content', adminVariant ? 'vulcanIQ Admin' : 'vulcanIQ');
   }, [pathname]);
 
   useEffect(() => {
@@ -15481,7 +15548,7 @@ function App() {
     const legalPage = legalPageFromPathname(pathname);
     const route = routeDefinitionFromPathname(pathname);
     const notFound = !legalPage && !route && !isReferralPath(pathname);
-    applySeo({ page: notFound ? 'notFound' : (legalPage || activePage), lang, pathname, forceNoIndex: notFound });
+    applySeo({ page: notFound ? 'notFound' : (legalPage || activePage), lang, pathname, forceNoIndex: notFound || route?.indexable === false });
   }, [activePage, lang, pathname]);
 
   useEffect(() => {

@@ -126,6 +126,13 @@ test('all indexable routes have localized SEO metadata', () => {
   }
 });
 
+test('install route has accurate metadata and remains noindex', () => {
+  assert.equal(seoMetaFor('install', 'it').page, 'install');
+  assert.match(seoMetaFor('install', 'it').title, /Installazione e notifiche/);
+  assert.match(mainSource, /forceNoIndex: notFound \|\| route\?\.indexable === false/);
+  assert.equal(routeDefinitionFromPathname('/install').indexable, false);
+});
+
 test('partnerships and latest-news render helpers remain defined after feature extraction', () => {
   for (const helper of [
     'normalizedKeyText',

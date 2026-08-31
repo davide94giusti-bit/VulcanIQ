@@ -35,6 +35,10 @@ export const SEO_META = Object.freeze({
     it: ['Gift card Etna | vulcanIQ', 'Richiedi una gift card vulcanIQ per regalare un\'esperienza sull\'Etna.'],
     en: ['Etna gift card | vulcanIQ', 'Request a vulcanIQ gift card to gift a Mount Etna experience.']
   },
+  install: {
+    it: ['Installazione e notifiche | vulcanIQ', 'Installa vulcanIQ e scegli le preferenze per gli aggiornamenti pubblici.'],
+    en: ['Install & notifications | vulcanIQ', 'Install vulcanIQ and choose preferences for public updates.']
+  },
   privacy: {
     it: ['Privacy Policy | vulcanIQ', 'Informativa privacy di vulcanIQ per sito, richieste, recensioni e analytics privacy-first.'],
     en: ['Privacy Policy | vulcanIQ', 'vulcanIQ privacy information for the website, requests, reviews, and privacy-first analytics.']

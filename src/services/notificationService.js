@@ -142,3 +142,4 @@ export async function sendTestNotification(variant) { return api(variant, 'test'
 export async function getNotificationHealth() { return api('admin', 'health', { method: 'GET' }); }
 export async function listNotificationCampaigns() { return api('admin', 'campaigns', { method: 'GET' }); }
 export async function createNotificationCampaign(input) { return api('admin', 'campaigns', { method: 'POST', body: JSON.stringify(input) }); }
+export async function cancelNotificationCampaign(id) { return api('admin', `campaigns/${encodeURIComponent(id)}/cancel`, { method: 'PATCH', body: '{}' }); }

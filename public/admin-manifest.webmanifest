@@ -1,8 +1,8 @@
 {
   "id": "/pwa/admin",
-  "name": "VulcanIQ Admin",
-  "short_name": "VulcanIQ Admin",
-  "description": "VulcanIQ operations and administration.",
+  "name": "vulcanIQ Admin",
+  "short_name": "vulcanIQ Admin",
+  "description": "vulcanIQ operations and administration.",
   "start_url": "/admin",
   "scope": "/admin",
   "display": "standalone",
