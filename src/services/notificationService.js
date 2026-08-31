@@ -71,7 +71,7 @@ async function api(variant, path, options = {}) {
   if (!response.ok) { const error = new Error(payload?.error || `Notification API ${response.status}`); error.status = response.status; error.code = payload?.error; throw error; }
   return payload;
 }
-function registrationOptions(variant) { return variant === 'admin' ? { script: '/admin-sw.js', scope: '/admin/' } : { script: '/sw.js', scope: '/' }; }
+function registrationOptions(variant) { return variant === 'admin' ? { script: '/admin-sw.js', scope: '/admin' } : { script: '/sw.js', scope: '/' }; }
 function waitForActiveWorker(registration) {
   if (registration.active) return Promise.resolve(registration.active);
   const candidate = registration.installing || registration.waiting;
