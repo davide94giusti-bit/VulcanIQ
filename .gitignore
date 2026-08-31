@@ -10,3 +10,4 @@ supabase/.temp/
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
+.wrangler/
