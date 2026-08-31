@@ -19,20 +19,20 @@
 /r/card /?utm_source=business_card&utm_medium=offline&utm_campaign=card 302
 
 # Customer referral codes are validated inside the application.
-/r/ref/* /index.html 200
+/r/ref/* / 200
 
 # Explicit SPA routes. Deliberately no global /* rewrite: unknown paths fall
 # through to public/404.html with a real 404 response on Cloudflare Pages.
-/experiences /index.html 200
-/contact /index.html 200
-/about /index.html 200
-/reviews /index.html 200
-/partnerships /index.html 200
-/social /index.html 200
-/latest-news /index.html 200
-/gift-card /index.html 200
-/install /index.html 200
-/privacy-policy /index.html 200
-/terms-and-conditions /index.html 200
-/cookie-policy /index.html 200
+/experiences / 200
+/contact / 200
+/about / 200
+/reviews / 200
+/partnerships / 200
+/social / 200
+/latest-news / 200
+/gift-card / 200
+/install / 200
+/privacy-policy / 200
+/terms-and-conditions / 200
+/cookie-policy / 200
 # Admin SPA routes are served by Pages Functions under functions/admin/.
