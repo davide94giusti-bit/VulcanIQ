@@ -69,9 +69,34 @@ test('robots points to canonical sitemap and blocks admin/API/referral paths', (
 test('unknown paths are no longer globally rewritten to the SPA', () => {
   const liveRules = redirects.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('#'));
   assert.equal(liveRules.includes('/* /index.html 200'), false);
+  assert.equal(liveRules.includes('/* / 200'), false);
   assert.match(notFound, /noindex,nofollow/);
 });
 
+test('known public SPA routes preserve their pathname on Cloudflare Pages', () => {
+  const liveRules = redirects
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+
+  assert.equal(
+    liveRules.some((rule) => /\s\/index\.html\s+200$/.test(rule)),
+    false,
+    'SPA proxy rules must not target /index.html because Cloudflare canonicalizes it to /',
+  );
+
+  for (const pathname of ['/experiences', '/latest-news', '/install']) {
+    assert.ok(
+      liveRules.includes(`${pathname} / 200`),
+      `${pathname} must proxy to the root SPA shell without redirecting the browser`,
+    );
+  }
+
+  assert.ok(
+    liveRules.includes('/etna-live-news /latest-news 301'),
+    'legacy Etna news alias must redirect to the canonical /latest-news route',
+  );
+});
 test('routing shortcuts are not duplicated', () => {
   const sources = redirectSources(redirects);
   assert.equal(new Set(sources).size, sources.length);
