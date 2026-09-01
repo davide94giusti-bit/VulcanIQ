@@ -23,3 +23,27 @@ ETNA_ROUTINE_MIN_INTERVAL_HOURS = "6"
 SUPABASE_URL = "https://qlfnvfxkjvlzllwrszgz.supabase.co"
 VAPID_PUBLIC_KEY = "BPg4kt7Bg_a5POVFkVL82mhjIuJ59Uq3FVpKwCqxu-jr0Mkoek3_OCD8MLLTj1L4-fO-odTsYupPQhzHNkIBYtg"
 VAPID_SUBJECT = "mailto:notifications@vulcaniq.it"
+
+[env.preview]
+name = "vulcaniq-notifications-preview"
+
+[[env.preview.d1_databases]]
+binding = "NOTIFICATIONS_DB"
+database_name = "vulcaniq-notifications-preview"
+database_id = "8e220c75-2060-4cb9-954e-073a422d5f34"
+migrations_dir = "migrations"
+
+[env.preview.triggers]
+crons = []
+
+[env.preview.vars]
+NOTIFICATION_WARNING_PERCENT = "70"
+NOTIFICATION_CONSERVATION_PERCENT = "85"
+NOTIFICATION_HARD_STOP_PERCENT = "95"
+NOTIFICATION_PUBLIC_DAILY_SEND_CAP = "1000"
+NOTIFICATION_BROADCAST_BATCH_CAP = "250"
+NOTIFICATION_CRON_PROCESSING_CAP = "100"
+ETNA_ROUTINE_MIN_INTERVAL_HOURS = "6"
+SUPABASE_URL = "https://qlfnvfxkjvlzllwrszgz.supabase.co"
+VAPID_PUBLIC_KEY = "BPg4kt7Bg_a5POVFkVL82mhjIuJ59Uq3FVpKwCqxu-jr0Mkoek3_OCD8MLLTj1L4-fO-odTsYupPQhzHNkIBYtg"
+VAPID_SUBJECT = "mailto:notifications@vulcaniq.it"
