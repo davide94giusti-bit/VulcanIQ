@@ -63,9 +63,31 @@ export function recipients(name: string): string[] {
   return [...new Set(env(name).split(',').map((item) => item.trim().toLowerCase()).filter(validEmail))];
 }
 
+function isSecretKey(value: string): boolean {
+  return /^sb_secret_[A-Za-z0-9_-]+$/.test(value);
+}
+
+export function supabaseBackendCredential(): { key: string; kind: 'secret' | 'legacy_service_role' } {
+  const explicit = env('SUPABASE_SECRET_KEY', false);
+  if (explicit) {
+    if (!isSecretKey(explicit)) throw new Error('invalid_supabase_secret_key');
+    return { key: explicit, kind: 'secret' };
+  }
+
+  const serialized = env('SUPABASE_SECRET_KEYS', false);
+  if (serialized) {
+    let value = '';
+    try { value = clean((JSON.parse(serialized) as Record<string, unknown>)?.default, 4096); } catch { throw new Error('invalid_supabase_secret_keys'); }
+    if (!isSecretKey(value)) throw new Error('invalid_supabase_secret_keys');
+    return { key: value, kind: 'secret' };
+  }
+
+  return { key: env('SUPABASE_SERVICE_ROLE_KEY'), kind: 'legacy_service_role' };
+}
+
 export function supabaseHeaders(extra: HeadersInit = {}): HeadersInit {
-  const key = env('SUPABASE_SERVICE_ROLE_KEY');
-  return { apikey: key, authorization: `Bearer ${key}`, 'content-type': 'application/json', ...extra };
+  const credential = supabaseBackendCredential();
+  return { apikey: credential.key, ...(credential.kind === 'legacy_service_role' ? { authorization: `Bearer ${credential.key}` } : {}), 'content-type': 'application/json', ...extra };
 }
 
 export async function db(path: string, init: RequestInit = {}): Promise<Response> {
@@ -119,7 +141,7 @@ export async function requireAdmin(req: Request): Promise<string> {
   const auth = clean(req.headers.get('authorization'), 4096);
   if (!auth.toLowerCase().startsWith('bearer ')) throw new Error('unauthorized');
   const supabaseUrl = env('SUPABASE_URL').replace(/\/$/, '');
-  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: env('SUPABASE_SERVICE_ROLE_KEY'), authorization: auth } });
+  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: supabaseBackendCredential().key, authorization: auth } });
   if (!userResponse.ok) throw new Error('unauthorized');
   const user = await userResponse.json();
   const userId = clean(user?.id, 80);

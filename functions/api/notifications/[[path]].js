@@ -1,4 +1,5 @@
 import { sendEmptyWebPush } from '../../../shared/webPush.js';
+import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../_shared/supabaseBackend.js';
 
 const PUBLIC_CATEGORIES = new Set(['etna_updates', 'etna_weekly', 'experiences', 'events', 'news', 'promotions']);
 const ADMIN_CATEGORIES = new Set(['new_bookings', 'upcoming_excursions', 'gift_cards', 'booking_codes', 'payment_reconciliation', 'operational_failures', 'security_alerts', 'daily_summary', 'weekly_summary']);
@@ -37,8 +38,8 @@ function bearer(request) { return (request.headers.get('Authorization') || '').m
 function supabaseConfig(env) {
   const url = text(env.SUPABASE_URL || env.VITE_SUPABASE_URL, 300).replace(/\/$/, '');
   const anon = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
-  const service = env.SUPABASE_SERVICE_ROLE_KEY;
-  return url && anon && service ? { url, anon, service } : null;
+  const backendCredential = resolveSupabaseBackendCredential(env);
+  return url && anon && backendCredential ? { url, anon, backendCredential } : null;
 }
 async function requireAdmin(request, env) {
   const token = bearer(request); const config = supabaseConfig(env); if (!token || !config) return { response: json(request, env, !token ? 401 : 503, { ok: false, error: !token ? 'admin_auth_required' : 'admin_auth_not_configured' }) };
@@ -46,7 +47,7 @@ async function requireAdmin(request, env) {
   if (!userRes.ok) return { response: json(request, env, 401, { ok: false, error: 'invalid_admin_session' }) };
   const user = await userRes.json();
   const params = new URLSearchParams({ select: 'user_id,role,active', user_id: `eq.${user.id}`, active: 'eq.true', limit: '1' });
-  const profileRes = await fetch(`${config.url}/rest/v1/admin_profiles?${params}`, { headers: { apikey: config.service, Authorization: `Bearer ${config.service}`, Accept: 'application/json' } });
+  const profileRes = await fetch(`${config.url}/rest/v1/admin_profiles?${params}`, { headers: supabaseBackendHeaders(config.backendCredential, { headers: { Accept: 'application/json' } }) });
   const rows = profileRes.ok ? await profileRes.json() : [];
   const profile = Array.isArray(rows) ? rows[0] : null;
   if (!profile?.active) return { response: json(request, env, 403, { ok: false, error: 'admin_forbidden' }) };

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../functions/api/_shared/supabaseBackend.js';
 
 const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -34,6 +35,12 @@ const analyticsContract = read('src/features/analytics/contract.js');
 const analyticsConsolidation = read('supabase/migrations/20260818090000_analytics_consolidation.sql');
 const analyticsService = read('src/services/analyticsService.js');
 const analyticsIngestion = read('functions/api/analytics/event.js');
+const publicApiShared = read('functions/api/public/_shared.js');
+const backendCredentialHelper = read('functions/api/_shared/supabaseBackend.js');
+const storageExport = read('scripts/export-supabase-storage.mjs');
+const storageRestore = read('scripts/restore-storage.js');
+const backupWorkflow = read('.github/workflows/vulcaniq-db-backup.yml');
+const edgeFunctionShared = read('supabase/functions/_shared/vulcaniq.ts');
 const safeguardsComponent = read('src/features/admin/OperationalSafeguardsBanner.jsx');
 const weeklyPanelComponent = read('src/features/system/WeeklyReportsAdminPanel.jsx');
 const premodernMigration = read('supabase/migrations/20260818150000_reviews_google_session_hardening.sql');
@@ -73,6 +80,11 @@ const bookingCodeRowLock = /select\s+\*\s+into\s+code_row\s+from\s+public\.booki
 check('jose dependency pinned', packageJson.dependencies?.jose === '5.9.6');
 check('GitHub App credentials supported', ['GITHUB_APP_ID', 'GITHUB_APP_INSTALLATION_ID', 'GITHUB_APP_PRIVATE_KEY'].every((key) => backupShared.includes(key)));
 check('GitHub App preferred with temporary PAT fallback', backupShared.includes('legacy_pat') && backupShared.includes('github_app'));
+check('Supabase backend Secret key is preferred with a legacy rollback fallback', (() => { const credential = resolveSupabaseBackendCredential({ SUPABASE_SECRET_KEY: 'sb_secret_regression_example', SUPABASE_SERVICE_ROLE_KEY: 'legacy.header.signature' }); return credential?.kind === 'secret' && credential.source === 'SUPABASE_SECRET_KEY' && credential.key === 'sb_secret_regression_example'; })());
+check('legacy Supabase service-role credential remains supported temporarily', (() => { const credential = resolveSupabaseBackendCredential({ SUPABASE_SERVICE_ROLE_KEY: 'legacy.header.signature' }); const headers = supabaseBackendHeaders(credential); return credential?.kind === 'legacy_service_role' && headers.apikey === credential.key && headers.Authorization === `Bearer ${credential.key}`; })());
+check('opaque Supabase Secret key is API-key-only and never treated as a bearer JWT', (() => { const credential = resolveSupabaseBackendCredential({ SUPABASE_SECRET_KEY: 'sb_secret_regression_example' }); const headers = supabaseBackendHeaders(credential); return headers.apikey === credential.key && !('Authorization' in headers); })());
+check('user JWT remains a distinct bearer credential when combined with a backend API key', (() => { const credential = resolveSupabaseBackendCredential({ SUPABASE_SECRET_KEY: 'sb_secret_regression_example' }); const headers = supabaseBackendHeaders(credential, { userAccessToken: 'user.jwt.signature' }); return headers.apikey === credential.key && headers.Authorization === 'Bearer user.jwt.signature'; })());
+check('malformed preferred Supabase Secret key fails closed instead of falling back', (() => { try { resolveSupabaseBackendCredential({ SUPABASE_SECRET_KEY: 'not-a-secret-key', SUPABASE_SERVICE_ROLE_KEY: 'legacy.header.signature' }); return false; } catch (error) { return error.message === 'invalid_supabase_secret_key'; } })());
 check('backup endpoint validates JSON/body size', backupCreate.includes('readRequestJsonWithinLimit') && backupCreate.includes('requestHasJsonContentType'));
 check('backup endpoint is rate limited', backupCreate.includes('claimAdminActionRateLimit'));
 const publicBookingSection = bookingService.slice(bookingService.indexOf('export async function createPublicBookingRequest'), bookingService.indexOf('export async function createManualBookingRequest'));
@@ -129,6 +141,8 @@ check('private key material is not committed', keyFiles.length === 0, keyFiles.j
 check('no service-role VITE variable', !fs.readdirSync(root, { recursive: true }).filter((name) => typeof name === 'string' && !name.startsWith('.git/') && !name.includes('node_modules/')).some((name) => {
   try { return fs.statSync(path.join(root, name)).isFile() && /VITE_[A-Z0-9_]*SERVICE_ROLE/i.test(fs.readFileSync(path.join(root, name), 'utf8')); } catch { return false; }
 }));
+check('no Supabase Secret VITE variable or browser capability', !repositoryFiles.filter((name) => { const normalized = String(name).replaceAll('\\', '/'); return /\.(?:js|jsx|ts|tsx|md|toml|ya?ml)$/i.test(normalized) && !normalized.startsWith('tools/'); }).some((name) => { try { return /VITE_SUPABASE_SECRET_KEY/.test(read(name)); } catch { return false; } }) && !/SUPABASE_SECRET_KEY/.test(mainSource + bookingService + giftService + notificationService + financeAuditService));
+check('no concrete Supabase Secret key value is committed', !/sb_secret_[A-Za-z0-9]{20,}_[A-Za-z0-9]{8}/.test([backendCredentialHelper, notificationWorker, notificationApi, publicApiShared, analyticsIngestion, backupShared, storageExport, storageRestore, backupWorkflow, edgeFunctionShared].join('\n')));
 
 check('weekly recap uses branded email template', recapFunction.includes('buildWeeklyRecapEmail') && weeklyEmail.includes('VULCANIQ · OPERATIONS') && weeklyEmail.includes('Executive overview'));
 check('weekly recap separates conversion families', ['Website booking funnel', 'Fast Request / WhatsApp', 'Booking-code funnel', 'Gift Card funnel', 'Gift Card status'].every((value) => weeklyEmail.includes(value)) && recapFunction.includes('rpc/get_admin_analytics_summary'));
@@ -170,9 +184,14 @@ check('authenticated immediate-email retry CORS is origin-restricted', notifyFun
 check('payment semantics migration is forward-only transactional and privileged', (paymentFinanceMigration.match(/^begin;$/gm) || []).length === 1 && (paymentFinanceMigration.match(/^commit;$/gm) || []).length === 1 && paymentFinanceMigration.includes('if not public.is_privileged_admin()') && paymentFinanceMigration.includes('if not public.is_admin()'));
 check('Gift Card Issued does not recognize revenue', (() => { const block = paymentFinanceMigration.slice(paymentFinanceMigration.indexOf("if next_status = 'issued'"), paymentFinanceMigration.indexOf("elsif next_status = 'cancelled'")); return block && !/insert into public\.finance_entries/i.test(block); })());
 check('refund RPC is transactional, authorized, and preserves original entry', (financeRefundMigration.match(/^begin;$/gm) || []).length === 1 && (financeRefundMigration.match(/^commit;$/gm) || []).length === 1 && financeRefundMigration.includes('if not public.is_admin()') && financeRefundMigration.includes('reversal_of') && !/delete\s+from\s+public\.finance_entries/i.test(financeRefundMigration));
-check('notification API keeps service-role and VAPID private material server-side', notificationApi.includes('SUPABASE_SERVICE_ROLE_KEY') && !notificationService.includes('SUPABASE_SERVICE_ROLE_KEY') && !notificationService.includes('VAPID_PRIVATE_KEY'));
+check('notification API keeps backend Supabase and VAPID private material server-side', notificationApi.includes('resolveSupabaseBackendCredential') && !notificationService.includes('SUPABASE_SECRET_KEY') && !notificationService.includes('SUPABASE_SERVICE_ROLE_KEY') && !notificationService.includes('VAPID_PRIVATE_KEY'));
 check('notification API enforces trusted CORS and admin authorization', notificationApi.includes('trustedOrigin') && notificationApi.includes('admin_profiles') && notificationApi.includes('requireAdmin') && !notificationApi.includes("'Access-Control-Allow-Origin': '*'"));
 check('notification Worker degrades dead push subscriptions to in-app delivery', notificationWorker.includes('p256dh=NULL,auth=NULL,enabled=1') && notificationWorker.includes('inapp://${event.audience}'));
+check('trusted Cloudflare Supabase consumers share Secret-compatible backend headers', [notificationApi, notificationWorker, publicApiShared, analyticsIngestion, backupShared].every((source) => source.includes('resolveSupabaseBackendCredential') && source.includes('supabaseBackendHeaders')));
+check('public API keeps rate limits and server-authoritative RPC boundaries with new credential model', publicApiShared.includes('claim_public_submission_rate_limit') && publicApiShared.includes('supabaseRpc') && bookingEndpoint.includes('create_public_booking_request') && giftEndpoint.includes('create_public_gift_card_request'));
+check('analytics actor continuity remains independent of the preferred Secret key', analyticsIngestion.includes("env.SUBMISSION_HASH_SALT || env.SUPABASE_SERVICE_ROLE_KEY || 'analytics'") && publicApiShared.includes("env.SUBMISSION_HASH_SALT || env.SUPABASE_SERVICE_ROLE_KEY || 'vulcaniq-public-endpoint'"));
+check('backup and restore support Secret key primary with legacy fallback', storageExport.includes('resolveSupabaseBackendCredential(process.env)') && storageExport.includes('secretCompatibleFetch') && storageRestore.includes('process.env.SUPABASE_SECRET_KEY') && storageRestore.includes('USE_LEGACY_BEARER') && backupWorkflow.includes('SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}') && backupWorkflow.includes('SUPABASE_SECRET_KEY:-${SUPABASE_SERVICE_ROLE_KEY:-}'));
+check('Supabase Edge Functions support platform Secret maps without replacing user bearer auth', edgeFunctionShared.includes("env('SUPABASE_SECRET_KEYS', false)") && edgeFunctionShared.includes("env('SUPABASE_SERVICE_ROLE_KEY')") && edgeFunctionShared.includes('authorization: auth'));
 check('Financial Audit authorization is enforced on the backend', financeAuditEndpoint.includes('/auth/v1/user') && financeAuditEndpoint.includes('/rest/v1/admin_profiles') && financeAuditEndpoint.includes("new Set(['owner', 'finance'])") && financeAuditEndpoint.includes('finance_audit_permission_denied'));
 check('Financial Audit browser code contains no service-role capability', !financeAuditService.includes('SERVICE_ROLE') && !financeAuditService.includes('serviceRole') && !financeAuditEndpoint.includes('SUPABASE_SERVICE_ROLE_KEY'));
 check('Financial Audit minimizes PII and neutralizes CSV formulas', financeAuditEndpoint.includes("piiIncluded:false") && financeAuditEndpoint.includes("/^[\\s]*[=+\\-@]/") && !/customer_email|customer_phone|buyer_email|buyer_phone/.test(financeAuditEndpoint));

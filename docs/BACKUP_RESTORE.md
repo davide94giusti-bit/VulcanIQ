@@ -4,7 +4,7 @@
 
 The admin page `Admin > System > Backup` is visible only to active owners (`public.admin_profiles.role = 'owner'` and `active = true`). Managers, unauthenticated users, and public visitors cannot create or download backups.
 
-The browser never receives GitHub tokens, Supabase service-role keys, Supabase access tokens for automation, or database URLs. The browser only sends the logged-in owner Supabase JWT to Cloudflare Pages Functions.
+The browser never receives GitHub tokens, Supabase secret/service-role keys, Supabase access tokens for automation, or database URLs. The browser only sends the logged-in owner Supabase JWT to Cloudflare Pages Functions.
 
 Create flow:
 
@@ -58,7 +58,8 @@ Required:
 - `SUPABASE_PROJECT_REF`
 - `SUPABASE_DB_URL`
 - `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SECRET_KEY` (preferred)
+- `SUPABASE_SERVICE_ROLE_KEY` (temporary fallback)
 
 Do not commit these values to Git and do not put them in frontend `VITE_` variables.
 
@@ -68,7 +69,8 @@ Set these in Cloudflare Pages as non-public server-side variables for the Pages 
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY` or `VITE_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SECRET_KEY` (preferred)
+- `SUPABASE_SERVICE_ROLE_KEY` (temporary fallback)
 - `GITHUB_OWNER`
 - `GITHUB_REPO`
 - `GITHUB_BACKUP_TOKEN`
@@ -149,14 +151,14 @@ This backup includes Supabase Storage files under storage-assets/. After restore
 Run this from the extracted backup folder:
 
 ```bash
-SUPABASE_URL="https://target-project.supabase.co" SUPABASE_SERVICE_ROLE_KEY="..." node restore-storage.js
+SUPABASE_URL="https://target-project.supabase.co" SUPABASE_SECRET_KEY="..." node restore-storage.js
 ```
 
 Windows PowerShell:
 
 ```powershell
 $env:SUPABASE_URL="https://target-project.supabase.co"
-$env:SUPABASE_SERVICE_ROLE_KEY="..."
+$env:SUPABASE_SECRET_KEY="..."
 node restore-storage.js
 ```
 

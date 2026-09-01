@@ -21,7 +21,9 @@ Required Cloudflare Pages environment variables:
 VITE_SUPABASE_URL=your-project-url
 VITE_SUPABASE_ANON_KEY=your-anon-public-key
 SUPABASE_URL=your-project-url
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_SECRET_KEY=your-sb-secret-key
+# Temporary rollback fallback only:
+SUPABASE_SERVICE_ROLE_KEY=your-legacy-service-role-key
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY` must be configured only as a Cloudflare Pages server-side environment variable. Do not expose it in frontend code.
+`SUPABASE_SECRET_KEY` is preferred for Cloudflare backend runtimes. `SUPABASE_SERVICE_ROLE_KEY` remains a temporary fallback. Configure both only as server-side secrets and never expose either through frontend code or a `VITE_*` variable.

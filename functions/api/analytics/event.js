@@ -1,3 +1,5 @@
+import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../_shared/supabaseBackend.js';
+
 // Keep this analytics allowlist synchronized with src/analytics.js.
 const EVENT_NAMES = new Set([
   'page_view',
@@ -223,17 +225,16 @@ function cfGeo(request) {
 
 async function supabaseRequest(env, path, options) {
   const supabaseUrl = env.SUPABASE_URL;
-  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  const backendCredential = resolveSupabaseBackendCredential(env);
 
-  if (!supabaseUrl || !serviceRoleKey) {
+  if (!supabaseUrl || !backendCredential) {
     throw new Error('Missing Supabase analytics environment variables.');
   }
 
   const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/${path}`, {
     ...options,
     headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
+      ...supabaseBackendHeaders(backendCredential),
       'Content-Type': 'application/json',
       ...(options.headers || {})
     }
