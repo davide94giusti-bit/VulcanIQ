@@ -1,3 +1,5 @@
+import { resolveSupabaseEdgeSecretKey } from './supabaseSecretKey.js';
+
 const encoder = new TextEncoder();
 
 export const corsHeaders: HeadersInit = {
@@ -63,24 +65,13 @@ export function recipients(name: string): string[] {
   return [...new Set(env(name).split(',').map((item) => item.trim().toLowerCase()).filter(validEmail))];
 }
 
-function isSecretKey(value: string): boolean {
-  return /^sb_secret_[A-Za-z0-9_-]+$/.test(value);
-}
-
 export function supabaseBackendCredential(): { key: string; kind: 'secret' | 'legacy_service_role' } {
-  const explicit = env('SUPABASE_SECRET_KEY', false);
-  if (explicit) {
-    if (!isSecretKey(explicit)) throw new Error('invalid_supabase_secret_key');
-    return { key: explicit, kind: 'secret' };
-  }
-
-  const serialized = env('SUPABASE_SECRET_KEYS', false);
-  if (serialized) {
-    let value = '';
-    try { value = clean((JSON.parse(serialized) as Record<string, unknown>)?.default, 4096); } catch { throw new Error('invalid_supabase_secret_keys'); }
-    if (!isSecretKey(value)) throw new Error('invalid_supabase_secret_keys');
-    return { key: value, kind: 'secret' };
-  }
+  const secretKey = resolveSupabaseEdgeSecretKey({
+    explicitKey: env('SUPABASE_SECRET_KEY', false),
+    serializedKeys: env('SUPABASE_SECRET_KEYS', false),
+    keyName: env('SUPABASE_SECRET_KEY_NAME', false)
+  });
+  if (secretKey) return { key: secretKey, kind: 'secret' };
 
   return { key: env('SUPABASE_SERVICE_ROLE_KEY'), kind: 'legacy_service_role' };
 }

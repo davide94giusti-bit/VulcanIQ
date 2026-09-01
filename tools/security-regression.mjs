@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../functions/api/_shared/supabaseBackend.js';
+import { resolveSupabaseEdgeSecretKey } from '../supabase/functions/_shared/supabaseSecretKey.js';
 
 const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -10,6 +11,11 @@ const passes = [];
 function check(name, condition, detail = '') {
   if (condition) passes.push(name);
   else failures.push(`${name}${detail ? `: ${detail}` : ''}`);
+}
+
+function failsWith(callback, message) {
+  try { callback(); } catch (error) { return error?.message === message; }
+  return false;
 }
 
 const packageJson = JSON.parse(read('package.json'));
@@ -41,6 +47,7 @@ const storageExport = read('scripts/export-supabase-storage.mjs');
 const storageRestore = read('scripts/restore-storage.js');
 const backupWorkflow = read('.github/workflows/vulcaniq-db-backup.yml');
 const edgeFunctionShared = read('supabase/functions/_shared/vulcaniq.ts');
+const edgeSecretKeyHelper = read('supabase/functions/_shared/supabaseSecretKey.js');
 const safeguardsComponent = read('src/features/admin/OperationalSafeguardsBanner.jsx');
 const weeklyPanelComponent = read('src/features/system/WeeklyReportsAdminPanel.jsx');
 const premodernMigration = read('supabase/migrations/20260818150000_reviews_google_session_hardening.sql');
@@ -85,6 +92,12 @@ check('legacy Supabase service-role credential remains supported temporarily', (
 check('opaque Supabase Secret key is API-key-only and never treated as a bearer JWT', (() => { const credential = resolveSupabaseBackendCredential({ SUPABASE_SECRET_KEY: 'sb_secret_regression_example' }); const headers = supabaseBackendHeaders(credential); return headers.apikey === credential.key && !('Authorization' in headers); })());
 check('user JWT remains a distinct bearer credential when combined with a backend API key', (() => { const credential = resolveSupabaseBackendCredential({ SUPABASE_SECRET_KEY: 'sb_secret_regression_example' }); const headers = supabaseBackendHeaders(credential, { userAccessToken: 'user.jwt.signature' }); return headers.apikey === credential.key && headers.Authorization === 'Bearer user.jwt.signature'; })());
 check('malformed preferred Supabase Secret key fails closed instead of falling back', (() => { try { resolveSupabaseBackendCredential({ SUPABASE_SECRET_KEY: 'not-a-secret-key', SUPABASE_SERVICE_ROLE_KEY: 'legacy.header.signature' }); return false; } catch (error) { return error.message === 'invalid_supabase_secret_key'; } })());
+check('Edge Secret map selects the configured named key deterministically', resolveSupabaseEdgeSecretKey({ serializedKeys: JSON.stringify({ other: 'sb_secret_other_regression', vulcaniq: 'sb_secret_named_regression' }), keyName: 'vulcaniq' }) === 'sb_secret_named_regression');
+check('Edge Secret map uses default only when no name is configured', resolveSupabaseEdgeSecretKey({ serializedKeys: JSON.stringify({ other: 'sb_secret_other_regression', default: 'sb_secret_default_regression' }) }) === 'sb_secret_default_regression');
+check('Edge Secret map fails closed when the configured name is absent', failsWith(() => resolveSupabaseEdgeSecretKey({ serializedKeys: JSON.stringify({ default: 'sb_secret_default_regression' }), keyName: 'missing' }), 'missing_supabase_secret_key_name'));
+check('Edge Secret map fails closed when the selected value is malformed', failsWith(() => resolveSupabaseEdgeSecretKey({ serializedKeys: JSON.stringify({ vulcaniq: 'not-a-secret-key' }), keyName: 'vulcaniq' }), 'invalid_supabase_secret_key_name'));
+check('backend credential helper rejects Authorization header overrides case-insensitively', failsWith(() => supabaseBackendHeaders(resolveSupabaseBackendCredential({ SUPABASE_SECRET_KEY: 'sb_secret_regression_example' }), { headers: { authorization: 'Bearer attacker.jwt' } }), 'supabase_auth_header_override_forbidden'));
+check('backend credential helper rejects apikey overrides for Headers input', failsWith(() => supabaseBackendHeaders(resolveSupabaseBackendCredential({ SUPABASE_SECRET_KEY: 'sb_secret_regression_example' }), { headers: new Headers({ ApiKey: 'attacker-key' }) }), 'supabase_auth_header_override_forbidden'));
 check('backup endpoint validates JSON/body size', backupCreate.includes('readRequestJsonWithinLimit') && backupCreate.includes('requestHasJsonContentType'));
 check('backup endpoint is rate limited', backupCreate.includes('claimAdminActionRateLimit'));
 const publicBookingSection = bookingService.slice(bookingService.indexOf('export async function createPublicBookingRequest'), bookingService.indexOf('export async function createManualBookingRequest'));
@@ -191,7 +204,7 @@ check('trusted Cloudflare Supabase consumers share Secret-compatible backend hea
 check('public API keeps rate limits and server-authoritative RPC boundaries with new credential model', publicApiShared.includes('claim_public_submission_rate_limit') && publicApiShared.includes('supabaseRpc') && bookingEndpoint.includes('create_public_booking_request') && giftEndpoint.includes('create_public_gift_card_request'));
 check('analytics actor continuity remains independent of the preferred Secret key', analyticsIngestion.includes("env.SUBMISSION_HASH_SALT || env.SUPABASE_SERVICE_ROLE_KEY || 'analytics'") && publicApiShared.includes("env.SUBMISSION_HASH_SALT || env.SUPABASE_SERVICE_ROLE_KEY || 'vulcaniq-public-endpoint'"));
 check('backup and restore support Secret key primary with legacy fallback', storageExport.includes('resolveSupabaseBackendCredential(process.env)') && storageExport.includes('secretCompatibleFetch') && storageRestore.includes('process.env.SUPABASE_SECRET_KEY') && storageRestore.includes('USE_LEGACY_BEARER') && backupWorkflow.includes('SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}') && backupWorkflow.includes('SUPABASE_SECRET_KEY:-${SUPABASE_SERVICE_ROLE_KEY:-}'));
-check('Supabase Edge Functions support platform Secret maps without replacing user bearer auth', edgeFunctionShared.includes("env('SUPABASE_SECRET_KEYS', false)") && edgeFunctionShared.includes("env('SUPABASE_SERVICE_ROLE_KEY')") && edgeFunctionShared.includes('authorization: auth'));
+check('Supabase Edge Functions support deterministic named Secret maps without replacing user bearer auth', edgeFunctionShared.includes("env('SUPABASE_SECRET_KEYS', false)") && edgeFunctionShared.includes("env('SUPABASE_SECRET_KEY_NAME', false)") && edgeFunctionShared.includes("env('SUPABASE_SERVICE_ROLE_KEY')") && edgeFunctionShared.includes('authorization: auth') && edgeSecretKeyHelper.includes("requestedName || 'default'") && !edgeSecretKeyHelper.includes('Object.values'));
 check('Financial Audit authorization is enforced on the backend', financeAuditEndpoint.includes('/auth/v1/user') && financeAuditEndpoint.includes('/rest/v1/admin_profiles') && financeAuditEndpoint.includes("new Set(['owner', 'finance'])") && financeAuditEndpoint.includes('finance_audit_permission_denied'));
 check('Financial Audit browser code contains no service-role capability', !financeAuditService.includes('SERVICE_ROLE') && !financeAuditService.includes('serviceRole') && !financeAuditEndpoint.includes('SUPABASE_SERVICE_ROLE_KEY'));
 check('Financial Audit minimizes PII and neutralizes CSV formulas', financeAuditEndpoint.includes("piiIncluded:false") && financeAuditEndpoint.includes("/^[\\s]*[=+\\-@]/") && !/customer_email|customer_phone|buyer_email|buyer_phone/.test(financeAuditEndpoint));

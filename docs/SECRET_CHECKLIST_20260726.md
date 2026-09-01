@@ -40,6 +40,7 @@ No secret values belong in Git, browser bundles, logs, screenshots, or `VITE_` v
 
 - `SUPABASE_URL`
 - `SUPABASE_SECRET_KEYS` (Supabase-provided JSON key map; preferred)
+- `SUPABASE_SECRET_KEY_NAME` (map key to select; omit only when the configured key is named `default`)
 - `SUPABASE_SECRET_KEY` (optional explicitly configured key)
 - `SUPABASE_SERVICE_ROLE_KEY` (legacy runtime fallback)
 - `RESEND_API_KEY`

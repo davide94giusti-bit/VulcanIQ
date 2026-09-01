@@ -17,13 +17,17 @@ export function resolveSupabaseBackendCredential(env = {}) {
 export function supabaseBackendHeaders(credential, options = {}) {
   if (!credential?.key) throw new Error('supabase_backend_credential_required');
   const userAccessToken = String(options.userAccessToken || '').trim();
+  const extraHeaders = new Headers(options.headers || {});
+  if (extraHeaders.has('apikey') || extraHeaders.has('authorization')) {
+    throw new Error('supabase_auth_header_override_forbidden');
+  }
   return {
+    ...Object.fromEntries(extraHeaders.entries()),
     apikey: credential.key,
     ...(userAccessToken
       ? { Authorization: `Bearer ${userAccessToken}` }
       : credential.kind === 'legacy_service_role'
         ? { Authorization: `Bearer ${credential.key}` }
-        : {}),
-    ...(options.headers || {})
+        : {})
   };
 }
