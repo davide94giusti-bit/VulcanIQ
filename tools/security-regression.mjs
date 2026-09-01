@@ -49,6 +49,9 @@ const notificationWorker = read('workers/notifications/src/index.js');
 const notificationService = read('src/services/notificationService.js');
 const financeAuditEndpoint = read('functions/api/admin/finance-audit.js');
 const financeAuditService = read('src/services/financeAuditService.js');
+const bootstrapFoundation = read('supabase/migrations/20260601000000_vulcaniq_bootstrap_foundation.sql');
+const revenueFollowup = read('supabase/migrations/20260705090000_revenue_os_followup.sql');
+const privilegeReconciliation = read('supabase/migrations/20260824120000_privilege_security_reconciliation.sql');
 const claimMigration = read('supabase/migrations/20260824100000_booking_code_gift_card_claim_notifications.sql');
 const giftClaimEndpoint = read('functions/api/public/gift-card-claim.js');
 const bookingCodeService = read('src/services/bookingCodes.js');
@@ -174,6 +177,8 @@ check('Financial Audit authorization is enforced on the backend', financeAuditEn
 check('Financial Audit browser code contains no service-role capability', !financeAuditService.includes('SERVICE_ROLE') && !financeAuditService.includes('serviceRole') && !financeAuditEndpoint.includes('SUPABASE_SERVICE_ROLE_KEY'));
 check('Financial Audit minimizes PII and neutralizes CSV formulas', financeAuditEndpoint.includes("piiIncluded:false") && financeAuditEndpoint.includes("/^[\\s]*[=+\\-@]/") && !/customer_email|customer_phone|buyer_email|buyer_phone/.test(financeAuditEndpoint));
 check('Financial Audit generation is logged before export response', financeAuditEndpoint.indexOf('await logAudit(') < financeAuditEndpoint.indexOf("if (format === 'csv')"));
+check('activity_log grants and RLS authorize active owner/finance bearer callers', privilegeReconciliation.includes('grant select, insert on table public.activity_log to authenticated;') && bootstrapFoundation.includes('create policy "Admins can insert activity log"') && bootstrapFoundation.includes('with check (public.is_admin());') && revenueFollowup.includes('ap.user_id = auth.uid()') && revenueFollowup.includes('ap.active = true') && revenueFollowup.includes("'owner', 'manager', 'guide', 'finance', 'content_editor'"));
+check('Financial Audit logs the caller identity with the caller bearer token', financeAuditEndpoint.includes("supabaseFetch(settings, token, '/rest/v1/activity_log'") && financeAuditEndpoint.includes('actor_id: userId') && financeAuditEndpoint.includes('logAudit(auth.settings,auth.token,auth.user.id,auditId,metadata)'));
 check('security headers include HSTS and CSP remains report-only', securityHeaders.includes('Strict-Transport-Security: max-age=31536000') && securityHeaders.includes('Content-Security-Policy-Report-Only:') && !/^\s*Content-Security-Policy:/m.test(securityHeaders));
 
 for (const name of passes) console.log(`PASS  ${name}`);

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { paymentSummary, calculateLedgerSummary, financeEntryHasBusinessSource, buildFinancialReconciliation } from '../src/domain/financeModel.js';
 import { buildReadOnlyFinancialAudit } from '../src/domain/financeAudit.js';
-import { csvExport, pdfExport, safeCsv } from '../functions/api/admin/finance-audit.js';
+import { buildSourceCounts, csvExport, pdfExport, safeCsv } from '../functions/api/admin/finance-audit.js';
 
 const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -188,9 +188,20 @@ test('Financial Audit endpoint enforces backend role authorization and canonical
   ok(!/customer_email|customer_phone|buyer_email|buyer_phone|description|title/.test(auditEndpoint.match(/const FINANCE_FIELDS\s*=\s*'([^']+)'/)?.[1] || ''), 'unnecessary PII/free text included in Finance evidence query');
 });
 
-test('Financial Audit exports include integrity metadata and minimize evidence', () => {
-  for (const field of ['auditId','generatedAt','dateRange','generatedBy','recordCount','filters','schemaVersion','checksum','locale','piiIncluded']) ok(auditEndpoint.includes(field), `audit metadata missing ${field}`);
-  ok(auditEndpoint.includes("crypto.subtle.digest('SHA-256'"), 'SHA-256 checksum missing');
+test('Financial Audit source metadata counts canonical input arrays deterministically', () => {
+  const counts = buildSourceCounts({ bookings:[{},{}], bookingCodes:[{}], giftCards:[{}, {}, {}], partnerCommissions:[{}], financeEntries:[{},{}] });
+  eq(JSON.stringify(counts), JSON.stringify({ bookingRequests:2, bookingCodes:1, giftCards:3, partnerCommissions:1, financeEntries:2 }), 'source count breakdown');
+  eq(Object.values(counts).reduce((sum, value) => sum + value, 0), 9, 'canonical source record count');
+  ok(auditEndpoint.includes('const sourceCounts = buildSourceCounts({ bookings, bookingCodes, giftCards, partnerCommissions, financeEntries })'), 'endpoint does not count canonical source arrays');
+  ok(!auditEndpoint.includes('Object.values(report.totals).slice'), 'report totals remain the record-count source');
+});
+
+test('Financial Audit exports include canonical evidence integrity metadata and minimize evidence', () => {
+  for (const field of ['auditId','generatedAt','dateRange','generatedBy','recordCount','sourceCounts','filters','schemaVersion','evidenceChecksum','checksum','checksumScope','locale','piiIncluded']) ok(auditEndpoint.includes(field), `audit metadata missing ${field}`);
+  ok(auditEndpoint.includes("crypto.subtle.digest('SHA-256'"), 'SHA-256 evidence checksum missing');
+  ok(auditEndpoint.includes("checksumScope:'canonical_evidence_not_file_bytes'"), 'evidence checksum scope is ambiguous');
+  ok(auditEndpoint.includes('checksum:evidenceChecksum'), 'legacy checksum compatibility alias missing');
+  ok(auditEndpoint.includes('JSON.stringify({metadata})'), 'integrity manifest omits metadata');
   ok(auditEndpoint.includes('MAX_ROWS_PER_TABLE'), 'bounded pagination missing');
   ok(auditEndpoint.includes("piiIncluded:false"), 'PII minimization flag missing');
 });
@@ -204,11 +215,13 @@ test('Financial Audit CSV is deterministic and spreadsheet-formula safe', () => 
   ok(csv.includes('booking_zero_recorded_payment') && !/email|phone/i.test(csv), 'CSV evidence content is incorrect');
 });
 
-test('Financial Audit PDF is a formal generated document rather than a screenshot', () => {
-  const metadata = { auditId:'a',generatedAt:'2026-09-01T00:00:00Z',dateRange:{from:'',to:''},generatedBy:'u',recordCount:0,schemaVersion:'v1',locale:'en',checksum:'abc' };
+test('Financial Audit PDF is explicitly a summary while CSV remains detailed evidence', () => {
+  const metadata = { auditId:'a',generatedAt:'2026-09-01T00:00:00Z',dateRange:{from:'',to:''},generatedBy:'u',recordCount:0,schemaVersion:'v1',locale:'en',evidenceChecksum:'abc',checksum:'abc' };
   const report = { categories:[],totals:{humanReview:0,safeDeterministic:0} };
   const pdf = pdfExport(metadata,report);
-  ok(pdf.startsWith('%PDF-1.4') && pdf.includes('Financial Audit & Compliance') && pdf.endsWith('%%EOF'), 'valid printable PDF structure missing');
+  ok(pdf.startsWith('%PDF-1.4') && pdf.includes('Financial Audit Summary') && pdf.includes('Detailed evidence rows are provided in the CSV export') && pdf.endsWith('%%EOF'), 'summary PDF contract missing');
+  ok(auditEndpoint.includes('-summary.pdf') && auditEndpoint.includes('-detailed-evidence.csv') && auditEndpoint.includes('-integrity-manifest.json'), 'export filenames do not distinguish contracts');
+  ok(mainSource.includes("'PDF riepilogo', 'Summary PDF'") && mainSource.includes("'CSV evidenze dettagliate', 'Detailed evidence CSV'"), 'Admin export labels do not distinguish summary and evidence');
 });
 
 test('multi-currency P&L stays separated with no implicit FX', () => {
