@@ -19,11 +19,11 @@ const INTENT_DOMAINS = {
   kpi_summary: ['analytics'], marketing_opportunities: ['bookingRequests', 'giftCards', 'analytics', 'notificationHealth'], help_navigation: [], unknown: []
 };
 
-export async function askNeo(question) {
+export async function askNeo(question, locale = 'en') {
   const matched = matchNeoIntent(question);
   const domains = INTENT_DOMAINS[matched.intent] || [];
   const settled = await Promise.allSettled(domains.map((name) => LOADERS[name]()));
   const data = {}; const unavailable = [];
   settled.forEach((result, index) => { const name = domains[index]; if (result.status === 'fulfilled') data[name] = result.value; else unavailable.push(name); });
-  return buildNeoAnswer({ question, ...matched, data, unavailable });
+  return buildNeoAnswer({ question, ...matched, data, unavailable, locale: locale === 'it' ? 'it' : 'en' });
 }

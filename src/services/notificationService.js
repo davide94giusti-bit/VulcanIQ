@@ -109,8 +109,10 @@ export async function ensureNotificationDevice(variant, currentLanguage = 'it') 
   return api(variant, 'device', { method: 'POST', body: JSON.stringify({ audience: variant, appVariant: variant, languagePreference: 'auto', resolvedLocale: locale, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Rome', platform: isIos() ? (isSafari() ? 'ios_safari' : 'ios') : navigator.platform || 'web' }) });
 }
 export async function enableNotifications({ variant, currentLanguage, languagePreference = 'auto', categories, quietHoursEnabled = false, quietStart = '', quietEnd = '' }) {
-  if (capabilityState() === 'unsupported') throw new Error('notifications_unsupported');
-  const permission = await Notification.requestPermission();
+  const state = capabilityState();
+  if (state === 'unsupported') throw new Error('notifications_unsupported');
+  if (state === 'permission_denied') { const error = new Error('notification_permission_denied'); error.code = error.message; throw error; }
+  const permission = state === 'permission_granted' ? 'granted' : await Notification.requestPermission();
   if (permission !== 'granted') { const error = new Error(permission === 'denied' ? 'notification_permission_denied' : 'notification_permission_not_granted'); error.code = error.message; throw error; }
   const registration = await registerNotificationServiceWorker(variant);
   const status = await getNotificationStatus(variant);
@@ -143,3 +145,7 @@ export async function getNotificationHealth() { return api('admin', 'health', { 
 export async function listNotificationCampaigns() { return api('admin', 'campaigns', { method: 'GET' }); }
 export async function createNotificationCampaign(input) { return api('admin', 'campaigns', { method: 'POST', body: JSON.stringify(input) }); }
 export async function cancelNotificationCampaign(id) { return api('admin', `campaigns/${encodeURIComponent(id)}/cancel`, { method: 'PATCH', body: '{}' }); }
+export async function listNotificationAutomationRules() { return api('admin', 'automations/rules', { method: 'GET' }); }
+export async function updateNotificationAutomationRule(ruleKey, enabled) { return api('admin', `automations/rules/${encodeURIComponent(ruleKey)}`, { method: 'PATCH', body: JSON.stringify({ enabled: Boolean(enabled) }) }); }
+export async function listNotificationAutomationJobs() { return api('admin', 'automations/jobs', { method: 'GET' }); }
+export async function cancelNotificationAutomationJob(id) { return api('admin', `automations/jobs/${encodeURIComponent(id)}/cancel`, { method: 'PATCH', body: '{}' }); }

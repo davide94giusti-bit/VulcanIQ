@@ -50,7 +50,7 @@ function normalize(row) {
   };
 }
 
-const FINANCE_SELECT_FIELDS = 'id, created_at, updated_at, entry_date, type, amount, currency, title, description, category, payment_method, status, source_type, source_id, booking_request_id, booking_code_id, fixed_excursion_id, leaflet_id, gift_card_request_id, partner_commission_id, idempotency_key, recognized_at, cancelled_at, reversed_at, reversal_of, admin_confirmed_by, admin_confirmed_at, created_by, updated_by, archived_at, archived_by, archive_reason, active';
+export const FINANCE_SELECT_FIELDS = 'id, created_at, updated_at, entry_date, type, amount, currency, title, description, category, payment_method, status, source_type, source_id, booking_request_id, booking_code_id, fixed_excursion_id, leaflet_id, gift_card_request_id, partner_commission_id, idempotency_key, recognized_at, cancelled_at, reversed_at, reversal_of, admin_confirmed_by, admin_confirmed_at, created_by, updated_by, archived_at, archived_by, archive_reason, active';
 
 export async function listFinanceEntries(filters = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');

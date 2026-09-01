@@ -47,6 +47,8 @@ const financeRefundMigration = read('supabase/migrations/20260821073000_finance_
 const notificationApi = read('functions/api/notifications/[[path]].js');
 const notificationWorker = read('workers/notifications/src/index.js');
 const notificationService = read('src/services/notificationService.js');
+const financeAuditEndpoint = read('functions/api/admin/finance-audit.js');
+const financeAuditService = read('src/services/financeAuditService.js');
 const claimMigration = read('supabase/migrations/20260824100000_booking_code_gift_card_claim_notifications.sql');
 const giftClaimEndpoint = read('functions/api/public/gift-card-claim.js');
 const bookingCodeService = read('src/services/bookingCodes.js');
@@ -168,6 +170,10 @@ check('refund RPC is transactional, authorized, and preserves original entry', (
 check('notification API keeps service-role and VAPID private material server-side', notificationApi.includes('SUPABASE_SERVICE_ROLE_KEY') && !notificationService.includes('SUPABASE_SERVICE_ROLE_KEY') && !notificationService.includes('VAPID_PRIVATE_KEY'));
 check('notification API enforces trusted CORS and admin authorization', notificationApi.includes('trustedOrigin') && notificationApi.includes('admin_profiles') && notificationApi.includes('requireAdmin') && !notificationApi.includes("'Access-Control-Allow-Origin': '*'"));
 check('notification Worker degrades dead push subscriptions to in-app delivery', notificationWorker.includes('p256dh=NULL,auth=NULL,enabled=1') && notificationWorker.includes('inapp://${event.audience}'));
+check('Financial Audit authorization is enforced on the backend', financeAuditEndpoint.includes('/auth/v1/user') && financeAuditEndpoint.includes('/rest/v1/admin_profiles') && financeAuditEndpoint.includes("new Set(['owner', 'finance'])") && financeAuditEndpoint.includes('finance_audit_permission_denied'));
+check('Financial Audit browser code contains no service-role capability', !financeAuditService.includes('SERVICE_ROLE') && !financeAuditService.includes('serviceRole') && !financeAuditEndpoint.includes('SUPABASE_SERVICE_ROLE_KEY'));
+check('Financial Audit minimizes PII and neutralizes CSV formulas', financeAuditEndpoint.includes("piiIncluded:false") && financeAuditEndpoint.includes("/^[\\s]*[=+\\-@]/") && !/customer_email|customer_phone|buyer_email|buyer_phone/.test(financeAuditEndpoint));
+check('Financial Audit generation is logged before export response', financeAuditEndpoint.indexOf('await logAudit(') < financeAuditEndpoint.indexOf("if (format === 'csv')"));
 check('security headers include HSTS and CSP remains report-only', securityHeaders.includes('Strict-Transport-Security: max-age=31536000') && securityHeaders.includes('Content-Security-Policy-Report-Only:') && !/^\s*Content-Security-Policy:/m.test(securityHeaders));
 
 for (const name of passes) console.log(`PASS  ${name}`);
