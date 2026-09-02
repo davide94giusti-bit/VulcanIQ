@@ -3,6 +3,13 @@ import { createAvailabilityBlock } from './availabilityService.js';
 import { cancelUnpaidPartnerCommissionsForSource, upsertPartnerCommissionForSource } from './partnerCommissions.js';
 import { createFinanceEntry, updateFinanceEntry } from './financeService.js';
 import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
+import { publishCustomerNotificationEvent } from './notificationService.js';
+
+async function reconcileOwnedBookingEvents(requestId) {
+  if (!requestId) return null;
+  try { return await publishCustomerNotificationEvent(); }
+  catch { return null; }
+}
 
 const requestFields = `
   id, created_at, updated_at, status, request_type, fixed_excursion_id,
@@ -280,6 +287,8 @@ export async function confirmBookingRequestIncome({ request, amount, currency = 
     commissionWarning = error?.message || 'Partner commission sync failed.';
   }
 
+  await reconcileOwnedBookingEvents(request.id);
+
   return { status, entry, commissionWarning };
 }
 
@@ -373,6 +382,7 @@ export async function createPublicBookingRequest(input) {
   payload.form_started_at = textOrNull(input.form_started_at);
   payload.website = textOrNull(input.website);
   payload.turnstile_token = textOrNull(input.turnstile_token);
+  payload.notification_ownership_requested = input.notification_ownership_requested === true;
 
   const response = await fetch('/api/public/booking-request', {
     method: 'POST',
@@ -497,6 +507,7 @@ export async function approveBookingRequest({ request, userId, mode = 'accept-on
     decided_at: new Date().toISOString(),
     decided_by: userId
   });
+  await reconcileOwnedBookingEvents(request.id);
 
   if (mode === 'accept-only') return { request: accepted, block: null, availabilityError: null };
 
@@ -562,6 +573,7 @@ export async function declineBookingRequest({ request, userId, decisionNote = ''
   });
   await reverseOrVoidFinanceForRequest(updated, userId, note || 'Booking request declined');
   await cancelUnpaidPartnerCommissionsForSource({ sourceType: 'booking_request', sourceId: updated.id, userId, reason: note || 'Booking request declined' });
+  await reconcileOwnedBookingEvents(updated.id);
   return updated;
 }
 
@@ -578,6 +590,7 @@ export async function cancelBookingRequest({ request, userId, decisionNote = '' 
   });
   await reverseOrVoidFinanceForRequest(updated, userId, note || 'Booking request cancelled');
   await cancelUnpaidPartnerCommissionsForSource({ sourceType: 'booking_request', sourceId: updated.id, userId, reason: note || 'Booking request cancelled' });
+  await reconcileOwnedBookingEvents(updated.id);
   return updated;
 }
 
@@ -591,12 +604,14 @@ export async function markBookingRequestReviewLinkCopied(id, userId = null) {
 
 export async function markBookingRequestReviewRequested(id, channel = 'whatsapp', userId = null) {
   const now = new Date().toISOString();
-  return updateBookingRequest(id, {
+  const updated = await updateBookingRequest(id, {
     review_requested_at: now,
     review_request_channel: channel || 'whatsapp',
     lead_status: 'review_requested',
     updated_by: userId || null
   });
+  await reconcileOwnedBookingEvents(id);
+  return updated;
 }
 
 export async function markBookingRequestReviewReceived(id, userId = null) {

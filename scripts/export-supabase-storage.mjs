@@ -7,6 +7,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const EXPORT_DIR = process.env.STORAGE_EXPORT_DIR || 'backup/storage-assets';
 const PROJECT_INFO_PATH = process.env.PROJECT_INFO_PATH || 'backup/00_project_info.json';
 const LIST_LIMIT = 1000;
+const DOWNLOAD_MAX_ATTEMPTS = 3;
 
 function requireEnv(name, value) {
   if (!value || !String(value).trim()) {
@@ -50,6 +51,55 @@ function metadataSize(item) {
 
 function metadataContentType(item, blob) {
   return blob?.type || item?.metadata?.mimetype || item?.metadata?.contentType || item?.metadata?.content_type || null;
+}
+
+function sanitizeFailureText(value, fallback = 'storage_export_error') {
+  return String(value || fallback)
+    .replace(/https?:\/\/\S+/gi, '[url]')
+    .replace(/(?:sb_secret_|eyJ)[A-Za-z0-9._-]+/g, '[credential]')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .trim()
+    .slice(0, 240) || fallback;
+}
+
+function safeReference(value, maxLength = 500) {
+  return String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, maxLength) || null;
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function downloadWithRetry(storageBucket, objectName) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= DOWNLOAD_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const { data: blob, error } = await storageBucket.download(objectName);
+      if (error) throw error;
+      if (!blob) throw new Error('Downloaded object was empty');
+      return { blob, attempts: attempt };
+    } catch (error) {
+      lastError = error;
+      if (attempt < DOWNLOAD_MAX_ATTEMPTS) await delay(150 * (2 ** (attempt - 1)));
+    }
+  }
+  throw Object.assign(new Error(sanitizeFailureText(lastError?.message)), { attempts: DOWNLOAD_MAX_ATTEMPTS });
+}
+
+async function referenceDiagnostic(storageBucket, objectName) {
+  const segments = String(objectName || '').split('/');
+  const name = segments.pop() || '';
+  const prefix = segments.join('/');
+  try {
+    const { data, error } = await storageBucket.list(prefix, { limit: 100, search: name });
+    if (error) throw error;
+    return {
+      checked: true,
+      listedAtExport: (Array.isArray(data) ? data : []).some((item) => String(item?.name || '') === name)
+    };
+  } catch (error) {
+    return { checked: false, listedAtExport: null, errorCode: sanitizeFailureText(error?.message) };
+  }
 }
 
 async function listAllObjects(storageBucket, prefix = '') {
@@ -115,8 +165,11 @@ async function main() {
 
   const generatedAt = new Date().toISOString();
   const manifest = {
+    manifestVersion: 2,
     generatedAt,
     supabaseUrl: SUPABASE_URL.replace(/\/$/, ''),
+    exportStatus: 'complete',
+    maxDownloadAttempts: DOWNLOAD_MAX_ATTEMPTS,
     bucketCount: 0,
     objectCount: 0,
     failureCount: 0,
@@ -126,9 +179,7 @@ async function main() {
   };
 
   const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
-  if (bucketError) {
-    throw new Error(`Failed to list Supabase Storage buckets: ${bucketError.message}`);
-  }
+  if (bucketError) manifest.failures.push({ bucket: null, name: null, step: 'list_buckets', errorCode: sanitizeFailureText(bucketError.message), referenceDiagnostic: { checked: false, listedAtExport: null } });
 
   const bucketList = Array.isArray(buckets) ? buckets : [];
   manifest.bucketCount = bucketList.length;
@@ -152,16 +203,14 @@ async function main() {
     try {
       objects = await listAllObjects(storageBucket, '');
     } catch (error) {
-      manifest.failures.push({ bucket: bucketName, name: null, step: 'list', error: error.message });
+      manifest.failures.push({ bucket: safeReference(bucketName, 120), name: null, step: 'list', errorCode: sanitizeFailureText(error.message), referenceDiagnostic: { checked: false, listedAtExport: null } });
       continue;
     }
 
     for (const object of objects) {
       const objectName = object.objectName;
       try {
-        const { data: blob, error } = await storageBucket.download(objectName);
-        if (error) throw error;
-        if (!blob) throw new Error('Downloaded object was empty');
+        const { blob, attempts } = await downloadWithRetry(storageBucket, objectName);
 
         const arrayBuffer = await blob.arrayBuffer();
         const bytes = Buffer.from(arrayBuffer);
@@ -176,7 +225,8 @@ async function main() {
           path: storageRelativePath(bucketName, objectName),
           size,
           contentType: metadataContentType(object, blob),
-          lastModified: object?.updated_at || object?.created_at || object?.last_accessed_at || null
+          lastModified: object?.updated_at || object?.created_at || object?.last_accessed_at || null,
+          downloadAttempts: attempts
         };
 
         bucketManifest.objects.push(item);
@@ -185,27 +235,30 @@ async function main() {
         manifest.objectCount += 1;
         manifest.totalBytes += size;
       } catch (error) {
-        const failure = { bucket: bucketName, name: objectName, step: 'download', error: error.message || String(error) };
+        const diagnostic = await referenceDiagnostic(storageBucket, objectName);
+        const failure = { bucket: safeReference(bucketName, 120), name: safeReference(objectName), step: 'download', attempts: Number(error?.attempts || DOWNLOAD_MAX_ATTEMPTS), errorCode: sanitizeFailureText(error.message || error), referenceDiagnostic: diagnostic };
         manifest.failures.push(failure);
-        console.warn(`Storage export failed for ${bucketName}/${objectName}: ${failure.error}`);
+        console.warn('Storage export object failed', { bucket: failure.bucket, name: failure.name, attempts: failure.attempts, errorCode: failure.errorCode, referenceDiagnostic: failure.referenceDiagnostic });
       }
     }
   }
 
   manifest.failureCount = manifest.failures.length;
+  manifest.exportStatus = manifest.failureCount === 0 ? 'complete' : manifest.objectCount > 0 ? 'partial' : 'failed';
   await writeFile(path.join(EXPORT_DIR, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
   await writeStorageReadme(manifest);
 
   await updateProjectInfo({
     includes_storage_metadata: true,
-    includes_storage_files: manifest.failureCount === 0,
+    includes_storage_files: manifest.objectCount > 0,
+    storage_export_status: manifest.exportStatus,
     storage_bucket_count: manifest.bucketCount,
     storage_object_count: manifest.objectCount,
     storage_total_bytes: manifest.totalBytes,
     storage_failure_count: manifest.failureCount
   });
 
-  console.log(`Storage export complete. Buckets: ${manifest.bucketCount}. Objects: ${manifest.objectCount}. Failures: ${manifest.failureCount}. Bytes: ${manifest.totalBytes}.`);
+  console.log(`Storage export ${manifest.exportStatus}. Buckets: ${manifest.bucketCount}. Objects: ${manifest.objectCount}. Failures: ${manifest.failureCount}. Bytes: ${manifest.totalBytes}.`);
 }
 
 main().catch((error) => {

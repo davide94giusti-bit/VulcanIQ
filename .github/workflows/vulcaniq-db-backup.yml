@@ -188,12 +188,16 @@ jobs:
             "includes_data": true,
             "includes_auth_schema": false,
             "includes_auth_data": false,
+            "auth_restore_mode": "manual_reprovision",
             "includes_storage_metadata": false,
             "includes_storage_files": false,
+            "storage_export_status": "none",
             "storage_bucket_count": null,
             "storage_object_count": null,
             "storage_total_bytes": null,
-            "storage_failure_count": null
+            "storage_failure_count": null,
+            "includes_sha256_checksums": true,
+            "data_classification": "confidential_restricted"
           }
           INFO
 
@@ -269,6 +273,9 @@ jobs:
           - `cloudflare-env-template.txt` - variables to recreate in Cloudflare Pages.
           - `storage-assets/manifest.json` - Storage bucket and object manifest when Storage export succeeded.
           - `storage-assets/<bucket-name>/<object-path>` - downloaded Storage binary files when buckets/files exist.
+          - `checksums.sha256` - SHA-256 hashes of the actual artifact files.
+
+          Treat the complete artifact as confidential/restricted data. `includes_storage_files` only means at least one binary file is present. Read `storage_export_status` (`none`, `complete`, `partial`, or `failed`) and the sanitized Storage failure manifest before restore. Supabase Auth schema/data are not included; Auth users require a separate approved recovery process.
 
           ## Restore steps
 
@@ -392,6 +399,16 @@ jobs:
           test -s backup/restore-storage.js
           test -s backup/storage-assets/README_STORAGE.md
           test -s backup/storage-assets/manifest.json
+
+      - name: Create SHA-256 checksum manifest
+        if: ${{ env.SHOULD_RUN == 'true' }}
+        run: |
+          set -euo pipefail
+          (
+            cd backup
+            find . -type f ! -name 'checksums.sha256' -print0 | sort -z | xargs -0 sha256sum
+          ) > backup/checksums.sha256
+          test -s backup/checksums.sha256
 
       - name: Upload backup artifact
         if: ${{ env.SHOULD_RUN == 'true' }}

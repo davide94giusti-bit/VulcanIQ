@@ -23,10 +23,12 @@ function attachMetadata(latestBackup, metadata) {
   const storage = metadata?.storage || {
     detailsAvailable: false,
     included: null,
+    status: 'none',
     fileCount: null,
     sizeInBytes: null,
     bucketCount: null,
-    failureCount: null
+    failureCount: null,
+    failures: []
   };
 
   return {
@@ -38,6 +40,8 @@ function attachMetadata(latestBackup, metadata) {
       : latestBackup.backupCreatedAtSource || (latestBackup.parsedBackupCreatedAt ? 'artifact_name' : 'github_artifact_created_at'),
     artifactCreatedAt: latestBackup.artifactCreatedAt || latestBackup.uploadedAt || latestBackup.createdAt,
     storage,
+    auth: metadata?.auth || { schemaIncluded: false, dataIncluded: false, restoreMode: 'manual_reprovision' },
+    integrity: metadata?.integrity || { sha256ManifestIncluded: false, dataClassification: 'confidential_restricted' },
     metadataAvailable: Boolean(metadata?.projectInfo || metadata?.storageManifest)
   };
 }

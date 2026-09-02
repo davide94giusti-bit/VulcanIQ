@@ -1,10 +1,12 @@
 # Notification automation, device UX, and Financial Audit UAT
 
-This branch does not deploy anything and does not enable notification Cron. Apply D1 migration `0003_admin_automation_jobs.sql` before deploying dependent Pages/Worker code. Keep `[triggers] crons = []` until an owner separately approves scheduler activation after Preview QA.
+This branch does not deploy anything and does not enable notification Cron. Apply D1 migrations through `0005_customer_notification_operations.sql` and Supabase migration `20260902100000_customer_notification_outbox.sql` before deploying dependent Pages/Worker code. Keep `[triggers] crons = []` until an owner separately approves scheduler activation after Preview QA.
 
 ## Recipient boundary
 
-Current public notification subscriptions identify an anonymous browser device. Current booking and Gift Card records are not linked to an authenticated customer-owned subscription. For that reason, this release does not create personalized customer push journeys. The D1 constraint requires every public automation job to name one concrete subscription, but no booking/Gift Card flow is allowed to choose that subscription until a verified ownership enrolment flow exists.
+Public notification subscriptions still identify a protected anonymous browser device rather than a customer account. A newly created website booking may now issue a high-entropy, one-time, 24-hour claim only when the customer explicitly opts in. The claim is stored only as SHA-256, is bound to that public device on redemption, and is never accepted from email, phone, booking code, Gift Card code, or another predictable identifier. Duplicate submissions do not reissue a claim. Gift Card and ordinary booking-code personalization remain disabled because those journeys do not currently prove customer ownership strongly enough.
+
+Every personalized job names both one owned subscription and its active ownership row. No verified recipient means an auditable `no_verified_recipient` result and no job; there is no public broadcast fallback. Revocation cancels future scheduled jobs for that ownership, and the Worker rechecks ownership before a scheduled send.
 
 Admin operational notifications continue to originate from the existing trusted, secret-authenticated backend ingest. They now create auditable jobs and honor the Admin rule state. Notification delivery must never determine whether a booking or Gift Card transaction succeeds.
 
@@ -15,20 +17,27 @@ For this release the Admin rule interface supports **enable/disable only**. The 
 - Event-driven Admin notifications are processed immediately by the trusted ingest path.
 - Scheduled campaigns and queued jobs depend on a separately enabled scheduler.
 - Notification Cron remains **OFF** (`crons = []`).
-- Personalized customer journeys remain disabled because no verified customer-to-device ownership link exists.
+- Personalized website-booking journeys are enabled only for explicitly claimed devices. Gift Card, ordinary booking-code, second-device recovery, and customer-account journeys remain disabled.
 
 Actual delivery keeps the existing subscription-level Quiet Hours behavior: ordinary and high-priority push attempts are skipped during the recipient's Quiet Hours (the in-app item is still created), while critical security notifications may bypass Quiet Hours. There is no per-rule Quiet Hours override in this release.
 
 ## Preview rollout and checks
 
 1. Create or select an isolated Preview D1 database. Never point local/Preview tests at Production D1.
-2. Apply D1 migrations `0001`, `0002`, then `0003` to that Preview database.
+2. Apply D1 migrations `0001` through `0005` to Preview D1 and apply the outbox migration to Preview Supabase through the reviewed deployment path.
 3. Deploy the notification Worker to Preview with Cron still empty.
 4. Deploy Pages to Preview with its existing notification binding and required environment variable names. Do not copy secret values into logs or source.
 5. Sign in as an owner/manager, open `/admin/notifications`, and confirm the operational rules and empty/recent jobs list load. Confirm the rule UI offers enable/disable only and does not imply that timing, channel, or per-rule Quiet Hours behavior can be edited.
 6. Disable one non-critical rule, create the corresponding trusted test event using only the existing Preview ingest, and confirm the event is suppressed and audited. Re-enable it and repeat with a new deterministic source ID; confirm one job and no duplicate delivery.
 7. Confirm a scheduled job can be cancelled only while `scheduled`, and cancelled jobs are not claimed.
 8. Confirm `workers/notifications/wrangler.toml` still contains `crons = []`.
+9. Submit a new website booking with personal updates unchecked. Confirm no claim is returned and no ownership appears.
+10. Submit a new website booking with personal updates checked. Confirm the in-app device is created before any push prompt, one protected booking link appears under `/install`, and the claim value is absent from URLs, analytics, logs, and Admin UI.
+11. Confirm replay on the same device is idempotent, replay on another device is denied, and invalid/expired/revoked claims fail without exposing the booking record.
+12. Confirm an Admin transition transactionally creates a Supabase outbox row and reconciliation creates at most one immediate notification per owned subscription. Repeat reconciliation and confirm event/job dedupe. For an unowned booking, confirm `no_verified_recipient` and zero jobs.
+13. Unlink the booking from `/install`; confirm future scheduled work is cancelled and an already claimed due job is rejected by the Worker ownership check.
+14. Change canonical fixed-excursion date/time/meeting state and confirm affected eligible owned bookings receive `operational_change`; no free-form customer send action exists.
+15. Verify typed ownership preferences, transient retry/backoff, dead endpoint handling, outbox manual retry, and old-reminder supersession. Cron stays OFF.
 
 ## Finance dashboard regression
 
@@ -85,5 +94,5 @@ These observations are compatibility evidence only. A guaranteed automotive expe
 
 - Stop event-driven Admin sends by disabling affected automation rules in the authenticated Admin UI. Keep Cron off so scheduled campaigns/jobs are not scheduler-driven.
 - Roll back Pages and Worker independently to their previous versions.
-- D1 migration `0003` is additive. Do not destructively remove its tables during an incident; older code ignores them. Preserve job/audit history for investigation.
-- This corrective pass adds no Supabase migration. Financial audit generation uses the caller bearer token and reuses canonical `activity_log` grants/RLS; it never substitutes a service-role key.
+- D1 migrations `0003`–`0005` and the Supabase outbox migration are additive. Do not destructively remove their tables during an incident. Preserve claim hashes, ownership, outbox, job, event, attempt, and audit history. Disable customer rules or roll back Pages/Worker code; do not delete customer or audit data.
+- Financial audit generation still uses the caller bearer token and canonical `activity_log` grants/RLS; it never substitutes a service-role key.

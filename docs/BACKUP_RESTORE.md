@@ -42,9 +42,27 @@ storage-assets/
 storage-assets/README_STORAGE.md
 storage-assets/manifest.json
 storage-assets/<bucket-name>/<object-paths and files>
+checksums.sha256
 ```
 
 Older database-only backups may not contain `storage-assets/manifest.json` or `restore-storage.js`. Those artifacts can still be downloaded and restored for database data, but Storage must be checked manually.
+
+Every new artifact is classified `confidential_restricted`. Store and transfer it as sensitive operational data. Before restore, run `sha256sum -c checksums.sha256` (or an equivalent SHA-256 verifier) from the extracted artifact root. The checksum manifest hashes the actual artifact files, not a logical/canonical representation.
+
+### Storage export status contract
+
+`00_project_info.json` and `storage-assets/manifest.json` distinguish four states:
+
+- `none`: Storage metadata is unavailable, normally for a legacy database-only artifact.
+- `complete`: the export enumerated Storage and every listed object download completed.
+- `partial`: at least one object was exported and at least one list/download operation failed.
+- `failed`: Storage export produced no object files and recorded one or more failures. The database dump may still be valid.
+
+`includes_storage_files` means that at least one Storage binary is actually present. It is not a claim that the export is complete. `storage_failure_count` and the sanitized `failures` array are authoritative for partial/failed diagnostics. Each object download is attempted at most three times with bounded backoff. Failed-object entries contain a bounded bucket/object reference, safe error code, attempt count, and a best-effort live-list diagnostic; they never contain credentials.
+
+### Supabase Auth scope
+
+The logical database dump deliberately reports `includes_auth_schema: false` and `includes_auth_data: false`. Supabase-managed Auth users and credentials are not an import-ready part of this artifact. A disaster recovery procedure must recreate/reconnect Auth users through a separately approved Supabase Auth process, then verify `public.admin_profiles` links. Do not interpret rows that reference Auth UUIDs as an Auth-user backup.
 
 ## GitHub repository secrets
 
@@ -113,20 +131,21 @@ After a successful upload, the workflow lists GitHub Actions artifacts whose nam
 1. Download latest backup from admin page.
 2. Extract ZIP locally.
 3. Verify required files exist.
-4. Create or prepare target Supabase project.
-5. Restore roles with `01_roles.sql` if applicable.
-6. Restore schema with `02_schema.sql`.
-7. Restore data with `03_data.sql`.
-8. Recreate/reconnect Supabase Auth users manually if needed.
-9. Set owner/admin rows correctly in `public.admin_profiles`.
-10. Restore Storage with `restore-storage.js`.
-11. Update Cloudflare variables and secrets.
-12. Redeploy Cloudflare Pages.
-13. Verify public website.
-14. Verify admin login.
-15. Verify backup page.
-16. Verify images, PDFs, leaflets, uploaded assets.
-17. Run test booking/questionnaire flow.
+4. Verify `checksums.sha256` before opening or restoring the data.
+5. Create or prepare target Supabase project.
+6. Restore roles with `01_roles.sql` if applicable.
+7. Restore schema with `02_schema.sql`.
+8. Restore data with `03_data.sql`.
+9. Recreate/reconnect Supabase Auth users manually using the separately approved Auth process.
+10. Set owner/admin rows correctly in `public.admin_profiles`.
+11. Restore Storage with `restore-storage.js`; for `partial` or `failed`, reconcile every failure against live Storage first.
+12. Update Cloudflare variables and secrets.
+13. Redeploy Cloudflare Pages.
+14. Verify public website.
+15. Verify admin login.
+16. Verify backup page.
+17. Verify images, PDFs, leaflets, uploaded assets.
+18. Run test booking/questionnaire flow.
 
 ## Database restore
 

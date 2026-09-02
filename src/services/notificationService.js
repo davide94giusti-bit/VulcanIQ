@@ -141,11 +141,24 @@ export async function listNotificationInbox(variant) { return api(variant, 'inbo
 export async function markNotificationRead(variant, id) { return api(variant, `inbox/${encodeURIComponent(id)}/read`, { method: 'PATCH', body: '{}' }); }
 export async function dismissNotification(variant, id) { return api(variant, `inbox/${encodeURIComponent(id)}/dismiss`, { method: 'PATCH', body: '{}' }); }
 export async function sendTestNotification(variant) { return api(variant, 'test', { method: 'POST', body: '{}' }); }
+export async function claimNotificationOwnership(claimToken) { return api('public', 'ownership/claim', { method: 'POST', body: JSON.stringify({ claimToken }) }); }
+export async function listNotificationOwnerships() { return api('public', 'ownership', { method: 'GET' }); }
+export async function revokeNotificationOwnership(id) { return api('public', `ownership/${encodeURIComponent(id)}/revoke`, { method: 'PATCH', body: '{}' }); }
+export async function updateNotificationOwnershipPreferences(id, preferences) {
+  return api('public', `ownership/${encodeURIComponent(id)}/preferences`, { method: 'PATCH', body: JSON.stringify(preferences) });
+}
+export async function publishCustomerNotificationEvent() {
+  return api('admin', 'personalized-events/reconcile', { method: 'POST', body: '{}' });
+}
+export async function retryCustomerNotificationOutbox(outboxId) {
+  return api('admin', 'personalized-events/reconcile', { method: 'POST', body: JSON.stringify({ outboxId }) });
+}
 export async function getNotificationHealth() { return api('admin', 'health', { method: 'GET' }); }
 export async function listNotificationCampaigns() { return api('admin', 'campaigns', { method: 'GET' }); }
 export async function createNotificationCampaign(input) { return api('admin', 'campaigns', { method: 'POST', body: JSON.stringify(input) }); }
 export async function cancelNotificationCampaign(id) { return api('admin', `campaigns/${encodeURIComponent(id)}/cancel`, { method: 'PATCH', body: '{}' }); }
 export async function listNotificationAutomationRules() { return api('admin', 'automations/rules', { method: 'GET' }); }
+export async function listPersonalizedNotificationEvents() { return api('admin', 'automations/personalized', { method: 'GET' }); }
 export async function updateNotificationAutomationRule(ruleKey, enabled) { return api('admin', `automations/rules/${encodeURIComponent(ruleKey)}`, { method: 'PATCH', body: JSON.stringify({ enabled: Boolean(enabled) }) }); }
 export async function listNotificationAutomationJobs() { return api('admin', 'automations/jobs', { method: 'GET' }); }
 export async function cancelNotificationAutomationJob(id) { return api('admin', `automations/jobs/${encodeURIComponent(id)}/cancel`, { method: 'PATCH', body: '{}' }); }

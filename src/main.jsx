@@ -22,6 +22,7 @@ import { createCustomerReferralCode, disableCustomerReferralCode, listCustomerRe
 import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormStarted, trackBookingFormStepCompleted, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot, isAnalyticsBrowserExcluded, setAnalyticsBrowserExcluded, createFormJourney, markFormFieldStarted, markFormActivity, markFormSubmitted, markFormAbandoned, markFormRecoveredViaWhatsApp } from './analytics.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import { submitPublicBookingRequestWithTracking } from './services/publicBookingSubmit.js';
+import { claimNotificationOwnership, ensureNotificationDevice, publishCustomerNotificationEvent } from './services/notificationService.js';
 import { formatCurrencyAmount, normalizeCurrency, parseMoneyAmount } from './utils/money.js';
 import { paymentSummary, financeEntryHasBusinessSource, financeEntryIsRecognized, calculateLedgerSummary, buildFinancialReconciliation } from './domain/financeModel.js';
 import { applySeo } from './seo.js';
@@ -4510,6 +4511,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
   const contact = resolvePublicContactDetails(siteContent);
   const { requestContactAttribution, contactAttributionModal } = useContactAttributionGate(lang);
   const [submitState, setSubmitState] = useState({ loading: false, error: '', success: '' });
+  const [followBookingUpdates, setFollowBookingUpdates] = useState(false);
   const [fixedExcursions, setFixedExcursions] = useState([]);
   const [questionnaireOpen, setQuestionnaireOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
@@ -5036,13 +5038,31 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
           form_started_at: formJourneyRef.current?.opened_at,
           submission_idempotency_key: trackingMetadata.booking_journey_id || formJourneyRef.current?.journey_id,
           submission_fingerprint: trackingMetadata.booking_journey_id || formJourneyRef.current?.journey_id,
+          notification_ownership_requested: followBookingUpdates,
           website: '',
           ...referralPayload
         }
       });
       if (referralPayload.referral_code) trackEvent('referral_booking_request_created', { referral_code: referralPayload.referral_code, source_type: 'booking_form', source_id: createdRequest?.id || '', language: lang }, { dedupe: false });
       markFormSubmitted(formJourneyRef.current?.journey_id, { ...trackingMetadata, form_type: 'booking_form', has_selected_experience: Boolean(effectiveExperienceId), has_selected_date: Boolean(selectedFixed?.date || formState.requestedDate), has_people_count: totalPeople > 0 });
-      setSubmitState({ loading: false, error: '', success: text(lang, 'requestSent') });
+      let ownershipLinked = false;
+      if (followBookingUpdates && createdRequest?.notification_ownership_claim?.token) {
+        try {
+          await ensureNotificationDevice('public', lang);
+          await claimNotificationOwnership(createdRequest.notification_ownership_claim.token);
+          ownershipLinked = true;
+        } catch {
+          // The booking remains successful. The one-time claim is deliberately not
+          // persisted, logged, placed in analytics, or retried from a URL.
+        }
+      }
+      const ownershipMessage = followBookingUpdates
+        ? ownershipLinked
+          ? (lang === 'it' ? ' Gli aggiornamenti personali sono collegati a questo dispositivo; il centro in-app è già attivo.' : ' Personal updates are linked to this device; the in-app center is already active.')
+          : (lang === 'it' ? ' La richiesta è riuscita, ma gli aggiornamenti personali non sono stati collegati.' : ' The request succeeded, but personal updates were not linked.')
+        : '';
+      setSubmitState({ loading: false, error: '', success: `${text(lang, 'requestSent')}${ownershipMessage}` });
+      setFollowBookingUpdates(false);
       setQuestionnaireOpen(false);
       trackedFormOpenRef.current.delete('field_start');
       bookingJourneyIdRef.current = '';
@@ -5218,6 +5238,11 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
             <label className="field-label" htmlFor="questionnaireMessage">{text(lang, 'message')}</label>
             <textarea id="questionnaireMessage" className="questionnaire-message-textarea" value={message} onChange={(event) => updateMessage(event.target.value)} rows={10} />
             <button className="button secondary" type="button" onClick={regenerateMessageFromAnswers}>{text(lang, 'regenerateMessage')}</button>
+            <label className="notification-toggle questionnaire-notification-optin">
+              <input type="checkbox" checked={followBookingUpdates} onChange={(event) => setFollowBookingUpdates(event.target.checked)} />
+              <span>{lang === 'it' ? 'Segui gli aggiornamenti di questa richiesta su questo dispositivo (centro in-app; push facoltativo).' : 'Follow updates for this request on this device (in-app center; push optional).'}</span>
+            </label>
+            <p className="small-note">{lang === 'it' ? 'Consenso facoltativo. Non useremo email, telefono o il codice prenotazione per collegare un altro dispositivo.' : 'Optional consent. We will not use email, phone, or a booking code to link another device.'}</p>
           </div>
         );
     }
@@ -6918,6 +6943,9 @@ function AdminCalendarPage({ lang, session, navigate, adminContent = {} }) {
     setError('');
     try {
       await updateBookingRequest(request.id, { ...values, updated_by: session.user.id });
+      if (values.requested_date && values.requested_date !== request.requested_date) {
+        await publishCustomerNotificationEvent().catch(() => null);
+      }
       setSelectedBooking(null);
       setFeedback(adminCopy(lang, 'Prenotazione aggiornata.', 'Booking updated.'));
       await refreshCalendar();
@@ -6930,6 +6958,7 @@ function AdminCalendarPage({ lang, session, navigate, adminContent = {} }) {
     setError('');
     try {
       await updateFixedExcursion(item.id, { ...values, updated_by: session.user.id });
+      await publishCustomerNotificationEvent().catch(() => null);
       setSelectedFixed(null);
       setFeedback(adminCopy(lang, 'Escursione fissa aggiornata.', 'Fixed excursion updated.'));
       await refreshCalendar();
@@ -10678,10 +10707,11 @@ function envVarName(parts) {
 }
 
 function storageIncludedLabel(storage, lang) {
-  if (!storage || storage.detailsAvailable === false || storage.included === null || storage.included === undefined) {
-    return adminCopy(lang, 'Non disponibile', 'Not available');
-  }
-  return storage.included ? adminCopy(lang, 'sì', 'yes') : adminCopy(lang, 'no', 'no');
+  const status = storage?.status || (storage?.detailsAvailable === false ? 'none' : 'none');
+  if (status === 'complete') return adminCopy(lang, 'Completa', 'Complete');
+  if (status === 'partial') return adminCopy(lang, 'Parziale', 'Partial');
+  if (status === 'failed') return adminCopy(lang, 'Non riuscita', 'Failed');
+  return adminCopy(lang, 'Nessuna esportazione', 'No export');
 }
 
 function backupStorageHelper(latestBackup, lang) {
@@ -10693,11 +10723,24 @@ function backupStorageHelper(latestBackup, lang) {
   const size = Number.isFinite(Number(storage.sizeInBytes)) ? formatBackupSize(storage.sizeInBytes, lang) : adminCopy(lang, 'Dimensione non disponibile', 'Size unavailable');
   const failureCount = Number.isFinite(Number(storage.failureCount)) ? Number(storage.failureCount) : 0;
   const fileText = fileCount === null ? adminCopy(lang, 'non disponibile', 'unavailable') : String(fileCount);
-  const base = `${adminCopy(lang, 'File Storage', 'Storage files')}: ${fileText} - ${adminCopy(lang, 'Dimensione Storage', 'Storage size')}: ${size}`;
+  const includedText = storage.included ? adminCopy(lang, 'file inclusi', 'files included') : adminCopy(lang, 'nessun file incluso', 'no files included');
+  const base = `${adminCopy(lang, 'File Storage', 'Storage files')}: ${fileText} (${includedText}) - ${adminCopy(lang, 'Dimensione Storage', 'Storage size')}: ${size}`;
   if (failureCount > 0) {
     return `${base} - ${adminCopy(lang, 'Errori export', 'Export failures')}: ${failureCount}`;
   }
   return base;
+}
+
+function BackupStorageFailures({ storage, lang }) {
+  const failures = Array.isArray(storage?.failures) ? storage.failures : [];
+  if (!failures.length) return null;
+  return (
+    <section className="admin-panel backup-panel backup-storage-failures">
+      <div className="admin-panel-header"><h2>{adminCopy(lang, 'Dettagli esportazione Storage parziale', 'Partial Storage export details')}</h2><span className="status-pill warning">{failures.length}</span></div>
+      <p>{adminCopy(lang, 'Lo ZIP resta utilizzabile per database e file esportati, ma gli oggetti elencati devono essere verificati rispetto allo Storage live prima di un ripristino.', 'The ZIP remains usable for the database and exported files, but the listed objects must be checked against live Storage before restore.')}</p>
+      <div className="backup-failure-list">{failures.map((failure,index)=><article key={`${failure.bucket}-${failure.name}-${index}`}><strong>{[failure.bucket,failure.name].filter(Boolean).join('/')||failure.step}</strong><small>{failure.step} · {failure.errorCode}{failure.attempts?` · ${failure.attempts} ${adminCopy(lang,'tentativi','attempts')}`:''} · {failure.referenceChecked?(failure.listedAtExport?adminCopy(lang,'riferimento presente nello Storage live','reference present in live Storage'):adminCopy(lang,'riferimento non trovato nello Storage live','reference not found in live Storage')):adminCopy(lang,'verifica live non disponibile','live check unavailable')}</small></article>)}</div>
+    </section>
+  );
 }
 
 function backupWeekdayOptions(lang) {
@@ -11098,7 +11141,7 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
           <button className="button primary" type="button" disabled={actionState.downloadLoading || actionState.createLoading || statusState.loading || !hasDownloadableBackup} onClick={handleDownloadBackup}>
             {actionState.downloadLoading ? adminCopy(lang, 'Download del backup in corso...', 'Downloading backup...') : adminCopy(lang, 'Scarica ultimo backup', 'Download latest backup')}
           </button>
-          <button className="button secondary" type="button" disabled={actionState.createLoading || actionState.downloadLoading} onClick={handleCreateBackup}>
+          <button className="button secondary" type="button" disabled={actionState.createLoading || actionState.downloadLoading || workflowIsActive || backupProgress.active} onClick={handleCreateBackup}>
             {actionState.createLoading ? adminCopy(lang, 'Avvio backup...', 'Starting backup...') : adminCopy(lang, 'Crea backup', 'Create backup')}
           </button>
           <button className="button secondary" type="button" onClick={() => { setShowWorkflowDetails((value) => !value); refreshBackupStatus(); }}>{adminCopy(lang, 'Vedi stato workflow', 'View workflow status')}</button>
@@ -11108,6 +11151,7 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
       {actionState.message && <div className="admin-alert success" role="status">{actionState.message}{actionState.createLoading || actionState.downloadLoading ? null : <><br />{adminCopy(lang, 'Il backup sarà scaricabile direttamente da questa pagina appena pronto.', 'The backup will be downloadable directly from this page as soon as it is ready.')}</>}</div>}
       {actionState.error && <div className="admin-alert error" role="alert">{actionState.error}</div>}
       {statusState.error && <div className="admin-alert warning" role="status">{statusState.error}</div>}
+      <div className="admin-alert warning backup-lifecycle-banner" role="note">{adminCopy(lang, 'Backup riservato: lo ZIP contiene dati applicativi e checksum SHA-256. Gli utenti Supabase Auth non sono inclusi e devono essere ripristinati con una procedura separata.', 'Restricted backup: the ZIP contains application data and SHA-256 checksums. Supabase Auth users are not included and require a separate recovery procedure.')}</div>
       {backupProgress.active && (
         <div className={`backup-progress-panel ${backupProgress.failed ? 'failed' : ''}`} role="status" aria-live="polite">
           <div className="backup-progress-head">
@@ -11147,8 +11191,11 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
         <SummaryCard label={adminCopy(lang, 'Download backup', 'Backup download')} value={downloadAvailabilityLabel} helper={downloadAvailabilityHelper} />
         <SummaryCard label={adminCopy(lang, 'Ultimo stato', 'Last status')} value={lastStatusLabel} helper={latestBackup?.artifactName || workflowHelper} />
         <SummaryCard label={adminCopy(lang, 'Programmazione backup', 'Backup schedule')} value={backupFrequencyLabel(scheduleDraft.frequency, lang)} helper={backupScheduleSummary(scheduleDraft, lang)} />
-        <SummaryCard label={adminCopy(lang, 'Storage incluso', 'Storage included')} value={storageIncludedLabel(latestBackup?.storage, lang)} helper={backupStorageHelper(latestBackup, lang)} />
+        <SummaryCard label={adminCopy(lang, 'Esportazione Storage', 'Storage export')} value={storageIncludedLabel(latestBackup?.storage, lang)} helper={backupStorageHelper(latestBackup, lang)} />
+        <SummaryCard label={adminCopy(lang, 'Integrità artifact', 'Artifact integrity')} value={latestBackup?.integrity?.sha256ManifestIncluded ? 'SHA-256' : adminCopy(lang, 'Non verificata', 'Unverified')} helper={adminCopy(lang, 'Conserva lo ZIP come materiale riservato. Verifica checksums.sha256 prima del ripristino.', 'Treat the ZIP as restricted material. Verify checksums.sha256 before restore.')} />
       </div>
+
+      <BackupStorageFailures storage={latestBackup?.storage} lang={lang} />
 
       {showWorkflowDetails && (
         <section className="admin-panel backup-panel backup-workflow-panel">
@@ -15348,6 +15395,7 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
         blocked_dates_file_type: nextItType,
         updated_by: userId
       });
+      await publishCustomerNotificationEvent().catch(() => null);
       setEditing(false);
       onChanged(adminCopy(lang, 'Escursione fissa aggiornata.', 'Fixed excursion updated.'));
     } catch (err) {
@@ -15359,6 +15407,7 @@ function FixedExcursionCard({ item, lang, userId, onChanged }) {
     setError('');
     try {
       await deactivateFixedExcursion(item.id, userId);
+      await publishCustomerNotificationEvent().catch(() => null);
       onChanged(adminCopy(lang, 'Escursione fissa disattivata.', 'Fixed excursion deactivated.'));
     } catch (err) {
       setError(err?.message || adminCopy(lang, 'Disattivazione non riuscita.', 'Deactivate failed.'));

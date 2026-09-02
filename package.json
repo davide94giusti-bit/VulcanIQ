@@ -12,10 +12,11 @@
     "test:seo": "node tools/seo-regression.mjs",
     "test:reviews": "node tools/reviews-regression.mjs",
     "test:media": "node tools/media-optimizer-regression.mjs",
-    "test:quality": "npm run test:security && npm run test:analytics && npm run test:seo && npm run test:reviews && npm run test:media && npm run test:finance && npm run test:homepage && npm run test:notifications && npm run test:neo && npm run build",
+    "test:quality": "npm run test:security && npm run test:analytics && npm run test:seo && npm run test:reviews && npm run test:media && npm run test:finance && npm run test:homepage && npm run test:notifications && npm run test:backup && npm run test:neo && npm run build",
     "test:finance": "node tools/finance-regression.mjs",
     "test:homepage": "node tools/homepage-cms-regression.mjs",
     "test:notifications": "node tools/notifications-regression.mjs",
+    "test:backup": "node tools/backup-regression.mjs",
     "test:neo": "node tools/neo-regression.mjs",
     "test:supabase-migrations": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/supabase-migration-reproducibility.ps1"
   },

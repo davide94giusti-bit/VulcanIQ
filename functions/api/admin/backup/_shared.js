@@ -620,27 +620,46 @@ function backupMetadataToStorageSummary(projectInfo, storageManifest) {
     return {
       detailsAvailable: false,
       included: null,
+      status: 'none',
       fileCount: null,
       sizeInBytes: null,
       bucketCount: null,
-      failureCount: null
+      failureCount: null,
+      failures: []
     };
   }
 
   const metadataIncluded = projectInfo?.includes_storage_metadata === true || Boolean(storageManifest);
-  const filesIncluded = projectInfo?.includes_storage_files === true
-    ? true
-    : projectInfo?.includes_storage_files === false
-      ? false
-      : null;
+  const fileCount = safeNumber(projectInfo?.storage_object_count) ?? safeNumber(storageManifest?.objectCount);
+  const failureCount = safeNumber(projectInfo?.storage_failure_count) ?? safeNumber(storageManifest?.failureCount);
+  const declaredStatus = cleanText(projectInfo?.storage_export_status || storageManifest?.exportStatus, 20);
+  const status = ['none', 'complete', 'partial', 'failed'].includes(declaredStatus)
+    ? declaredStatus
+    : !metadataIncluded
+      ? 'none'
+      : Number(failureCount || 0) > 0
+        ? Number(fileCount || 0) > 0 ? 'partial' : 'failed'
+        : 'complete';
+  const filesIncluded = fileCount !== null ? fileCount > 0 : projectInfo?.includes_storage_files === true ? true : projectInfo?.includes_storage_files === false ? false : null;
+  const failures = (Array.isArray(storageManifest?.failures) ? storageManifest.failures : []).slice(0, 25).map((failure) => ({
+    bucket: cleanText(failure?.bucket, 120) || null,
+    name: cleanText(failure?.name, 500) || null,
+    step: cleanText(failure?.step, 40) || 'unknown',
+    attempts: safeNumber(failure?.attempts),
+    errorCode: cleanText(failure?.errorCode, 160) || 'storage_export_error',
+    referenceChecked: failure?.referenceDiagnostic?.checked === true,
+    listedAtExport: typeof failure?.referenceDiagnostic?.listedAtExport === 'boolean' ? failure.referenceDiagnostic.listedAtExport : null
+  }));
 
   return {
     detailsAvailable: metadataIncluded,
     included: filesIncluded,
-    fileCount: safeNumber(projectInfo?.storage_object_count) ?? safeNumber(storageManifest?.objectCount),
+    status,
+    fileCount,
     sizeInBytes: safeNumber(projectInfo?.storage_total_bytes) ?? safeNumber(storageManifest?.totalBytes),
     bucketCount: safeNumber(projectInfo?.storage_bucket_count) ?? safeNumber(storageManifest?.bucketCount),
-    failureCount: safeNumber(projectInfo?.storage_failure_count) ?? safeNumber(storageManifest?.failureCount)
+    failureCount,
+    failures
   };
 }
 
@@ -673,7 +692,16 @@ export async function readBackupArtifactMetadata(config, artifact) {
       projectInfo,
       storageManifest,
       backupCreatedAtUtc: validIsoString(projectInfo?.backup_created_at_utc || projectInfo?.backupCreatedAtUtc || projectInfo?.backup_created_at),
-      storage: backupMetadataToStorageSummary(projectInfo, storageManifest)
+      storage: backupMetadataToStorageSummary(projectInfo, storageManifest),
+      auth: {
+        schemaIncluded: projectInfo?.includes_auth_schema === true,
+        dataIncluded: projectInfo?.includes_auth_data === true,
+        restoreMode: cleanText(projectInfo?.auth_restore_mode, 80) || 'manual_reprovision'
+      },
+      integrity: {
+        sha256ManifestIncluded: projectInfo?.includes_sha256_checksums === true,
+        dataClassification: cleanText(projectInfo?.data_classification, 80) || 'confidential_restricted'
+      }
     };
   } catch (error) {
     console.warn('vulcanIQ backup metadata could not be read', { message: error.message });

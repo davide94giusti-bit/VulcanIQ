@@ -16,6 +16,7 @@ import {
   validateAntiAbuseFields,
   verifyTurnstile
 } from './_shared.js';
+import { issueNotificationOwnershipClaim } from '../notifications/_ownership.js';
 
 const ALLOWED_REQUEST_TYPES = new Set(['private', 'fixed']);
 const ALLOWED_CONTACTS = new Set(['whatsapp', 'phone', 'email', 'form', 'unknown']);
@@ -117,7 +118,24 @@ export async function onRequestPost(context) {
     const result = await supabaseRpc(context.env, 'create_public_booking_request', { request_payload: bookingPayload(input, key, actorHash) }, { traceId });
     const created = Array.isArray(result) ? result[0] : result;
     if (!created?.id) throw new Error('request_creation_failed');
-    return respond(201, { ok: true, id: created.id, status: created.status || 'pending', created_at: created.created_at });
+    let notificationOwnershipClaim = null;
+    if (input.notification_ownership_requested === true && context.env.NOTIFICATIONS_DB) {
+      try {
+        notificationOwnershipClaim = await issueNotificationOwnershipClaim(context.env.NOTIFICATIONS_DB, {
+          entityType: 'booking_request', entityId: created.id, journeyType: 'booking'
+        });
+      } catch {
+        // Booking creation is authoritative. Notification enrollment fails closed
+        // without exposing or logging the one-time claim.
+      }
+    }
+    return respond(201, {
+      ok: true,
+      id: created.id,
+      status: created.status || 'pending',
+      created_at: created.created_at,
+      ...(notificationOwnershipClaim ? { notification_ownership_claim: notificationOwnershipClaim } : {})
+    });
   } catch {
     console.error('vulcanIQ booking request failed', { traceId, code: 'request_creation_failed' });
     return respond(500, { ok: false, code: 'request_creation_failed', message: publicErrorMessage('request_creation_failed') });

@@ -61,6 +61,12 @@
 .backup-schedule-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .backup-schedule-grid input,
 .backup-schedule-grid select { width: 100%; max-width: 100%; box-sizing: border-box; }
+.backup-lifecycle-banner { overflow-wrap: anywhere; }
+.backup-failure-list { display: grid; gap: .65rem; }
+.backup-failure-list article { display: grid; gap: .22rem; padding: .72rem .8rem; border: 1px solid rgba(157, 36, 31, .18); border-radius: 14px; background: rgba(157, 36, 31, .04); min-width: 0; }
+.backup-failure-list strong,
+.backup-failure-list small { overflow-wrap: anywhere; word-break: break-word; }
+.backup-failure-list small { color: var(--muted); line-height: 1.4; }
 .weekly-report-header { gap: 1rem; }
 .weekly-report-header > div:first-child { min-width: 0; }
 .weekly-report-header h2,
@@ -113,7 +119,7 @@
   .backup-panel,
   .weekly-report-panel { padding: 1rem !important; border-radius: 20px; }
   .backup-panel h2,
-  .weekly-report-panel h2 { font-size: clamp(1.65rem, 8vw, 2.2rem); line-height: 1.02; }
+  .weekly-report-panel h2 { font-size: clamp(1.25rem, 6vw, 1.8rem); line-height: 1.1; }
   .weekly-report-table-wrap { overflow: visible; }
   .weekly-report-table,
   .weekly-report-table tbody,
