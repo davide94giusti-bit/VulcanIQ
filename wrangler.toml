@@ -10,7 +10,7 @@ database_name = "vulcaniq-notifications-preview"
 database_id = "8e220c75-2060-4cb9-954e-073a422d5f34"
 
 [vars]
-VAPID_PUBLIC_KEY = "BNCTEGkwaiM5SG_GbKUpLRhhupfSbY4rPELPGTWSKPwbAus6IPxQ2OazZTYCPiHYNh7rg_p-cbiVL0Lqz1l7d_k"
+VAPID_PUBLIC_KEY = "BES7Uktr5qsu0y9EF_TZmvAXfSFJljoY3vdg7WDHPwEohvufEoThGbm5ZuPSOYWfBoVUERBBxTtn-AEXGLkWiXo"
 VAPID_SUBJECT = "mailto:notifications@vulcaniq.it"
 
 # Production notification infrastructure.
