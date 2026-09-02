@@ -116,7 +116,7 @@ export async function onRequest(context) {
   const entryFilters = []; if (from) entryFilters.push(['entry_date', `gte.${from}`]); if (to) entryFilters.push(['entry_date', `lte.${to}`]);
   try {
     const [bookings, bookingCodes, giftCards, partnerCommissions, financeEntries] = await Promise.all([
-      fetchAll(auth.settings,auth.token,'booking_requests','id,status,lead_status,quoted_amount,expected_value,currency,created_at',createdFilters),
+      fetchAll(auth.settings,auth.token,'booking_requests','id,status,lead_status,quoted_amount,expected_value,created_at',createdFilters),
       fetchAll(auth.settings,auth.token,'booking_codes','id,status,expected_amount,currency,payment_status,created_at',createdFilters),
       fetchAll(auth.settings,auth.token,'gift_card_requests','id,status,budget,currency,created_at',createdFilters),
       fetchAll(auth.settings,auth.token,'partner_commissions','id,status,commission_amount,currency,created_at',createdFilters),

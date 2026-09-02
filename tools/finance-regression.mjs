@@ -18,26 +18,36 @@ const claimMigration = read('supabase/migrations/20260824100000_booking_code_gif
 const auditEndpoint = read('functions/api/admin/finance-audit.js');
 const auditService = read('src/services/financeAuditService.js');
 
-function financeSchemaColumns() {
+function schemaColumns(tableName) {
   const migrationDirectory = path.join(root, 'supabase', 'migrations');
   const migrations = fs.readdirSync(migrationDirectory)
     .filter((file) => file.endsWith('.sql'))
     .sort()
     .map((file) => fs.readFileSync(path.join(migrationDirectory, file), 'utf8'));
   const schema = migrations.join('\n');
-  const createBlock = schema.match(/create table(?: if not exists)? public\.finance_entries\s*\(([\s\S]*?)\n\);/i)?.[1];
-  if (!createBlock) throw new Error('finance_entries CREATE TABLE block not found');
+  const escapedTableName = tableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const createBlock = schema.match(new RegExp(`create table(?: if not exists)? public\\.${escapedTableName}\\s*\\(([\\s\\S]*?)\\n\\);`, 'i'))?.[1];
+  if (!createBlock) throw new Error(`${tableName} CREATE TABLE block not found`);
 
   const columns = new Set();
   for (const line of createBlock.split(/\r?\n/)) {
     const name = line.match(/^\s*([a-z_][a-z0-9_]*)\s+/i)?.[1]?.toLowerCase();
     if (name && !['constraint', 'primary', 'foreign', 'unique', 'check'].includes(name)) columns.add(name);
   }
-  for (const alter of schema.matchAll(/alter table(?: only)? public\.finance_entries\b([\s\S]*?);/gi)) {
+  for (const alter of schema.matchAll(new RegExp(`alter table(?: only)? public\\.${escapedTableName}\\b([\\s\\S]*?);`, 'gi'))) {
     for (const addition of alter[1].matchAll(/add column(?: if not exists)?\s+([a-z_][a-z0-9_]*)/gi)) columns.add(addition[1].toLowerCase());
     for (const removal of alter[1].matchAll(/drop column(?: if exists)?\s+([a-z_][a-z0-9_]*)/gi)) columns.delete(removal[1].toLowerCase());
   }
   return columns;
+}
+
+function auditSourceSelectContracts() {
+  const constants = Object.fromEntries([...auditEndpoint.matchAll(/const\s+([A-Z_]+)\s*=\s*'([^']+)'/g)].map((match) => [match[1], match[2]]));
+  return [...auditEndpoint.matchAll(/fetchAll\(auth\.settings,\s*auth\.token,\s*'([a-z_]+)',\s*(?:'([^']+)'|([A-Z_]+)),/g)].map((match) => {
+    const projection = match[2] || constants[match[3]];
+    if (!projection) throw new Error(`${match[1]} has an unresolved Financial Audit projection`);
+    return { table: match[1], fields: projection.split(',').map((field) => field.trim().toLowerCase()).filter(Boolean) };
+  });
 }
 
 function financeSelectContracts() {
@@ -69,7 +79,7 @@ function eq(actual, expected, message) { if (actual !== expected) throw new Erro
 const payment = (id, amount, extra = {}) => ({ id, type: 'income', amount, currency: 'EUR', status: 'confirmed', active: true, entry_date: '2026-08-20', payment_method: 'card', ...extra });
 
 test('Finance service projections match the migration-derived schema contract', () => {
-  const columns = financeSchemaColumns();
+  const columns = schemaColumns('finance_entries');
   const { canonical, contracts } = financeSelectContracts();
   ok(columns.has('description'), 'canonical Finance description column missing');
   ok(!columns.has('notes'), 'unexpected Finance notes column in canonical migrations');
@@ -78,6 +88,16 @@ test('Finance service projections match the migration-derived schema contract', 
   for (const contract of contracts) {
     const unknown = contract.fields.filter((field) => !columns.has(field));
     ok(unknown.length === 0, `${contract.file} selects unknown finance_entries columns: ${unknown.join(', ')}`);
+  }
+});
+
+test('Financial Audit source projections match the migration-derived schema contract', () => {
+  const contracts = auditSourceSelectContracts();
+  eq(contracts.length, 5, 'Financial Audit source projection count');
+  for (const contract of contracts) {
+    const columns = schemaColumns(contract.table);
+    const unknown = contract.fields.filter((field) => !columns.has(field));
+    ok(unknown.length === 0, `Financial Audit selects unknown ${contract.table} columns: ${unknown.join(', ')}`);
   }
 });
 
