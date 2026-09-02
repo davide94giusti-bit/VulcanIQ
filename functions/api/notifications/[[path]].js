@@ -1,10 +1,15 @@
 import { sendEmptyWebPush } from '../../../shared/webPush.js';
+import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../_shared/supabaseBackend.js';
 
 const PUBLIC_CATEGORIES = new Set(['etna_updates', 'etna_weekly', 'experiences', 'events', 'news', 'promotions']);
 const ADMIN_CATEGORIES = new Set(['new_bookings', 'upcoming_excursions', 'gift_cards', 'booking_codes', 'payment_reconciliation', 'operational_failures', 'security_alerts', 'daily_summary', 'weekly_summary']);
 const CAMPAIGN_CATEGORIES = new Set(['experiences', 'events', 'news', 'promotions']);
 const DEFAULT_PUBLIC_CATEGORIES = ['etna_updates', 'etna_weekly', 'experiences', 'events', 'news'];
 const DEFAULT_ADMIN_CATEGORIES = ['new_bookings', 'upcoming_excursions', 'gift_cards', 'booking_codes', 'payment_reconciliation', 'operational_failures', 'security_alerts'];
+const ADMIN_AUTOMATION_RULES = Object.freeze({
+  new_bookings: 'admin_new_booking', gift_cards: 'admin_gift_card', booking_codes: 'admin_booking_code',
+  payment_reconciliation: 'admin_payment_reconciliation', operational_failures: 'admin_operational_failure', security_alerts: 'admin_security_alert'
+});
 const DEFAULT_ORIGINS = ['https://vulcaniq.it', 'https://www.vulcaniq.it', 'https://vulcaniq.pages.dev'];
 
 function text(value, max = 500) { return String(value ?? '').trim().replace(/[\u0000-\u001f\u007f]/g, '').slice(0, max); }
@@ -33,8 +38,8 @@ function bearer(request) { return (request.headers.get('Authorization') || '').m
 function supabaseConfig(env) {
   const url = text(env.SUPABASE_URL || env.VITE_SUPABASE_URL, 300).replace(/\/$/, '');
   const anon = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
-  const service = env.SUPABASE_SERVICE_ROLE_KEY;
-  return url && anon && service ? { url, anon, service } : null;
+  const backendCredential = resolveSupabaseBackendCredential(env);
+  return url && anon && backendCredential ? { url, anon, backendCredential } : null;
 }
 async function requireAdmin(request, env) {
   const token = bearer(request); const config = supabaseConfig(env); if (!token || !config) return { response: json(request, env, !token ? 401 : 503, { ok: false, error: !token ? 'admin_auth_required' : 'admin_auth_not_configured' }) };
@@ -42,7 +47,7 @@ async function requireAdmin(request, env) {
   if (!userRes.ok) return { response: json(request, env, 401, { ok: false, error: 'invalid_admin_session' }) };
   const user = await userRes.json();
   const params = new URLSearchParams({ select: 'user_id,role,active', user_id: `eq.${user.id}`, active: 'eq.true', limit: '1' });
-  const profileRes = await fetch(`${config.url}/rest/v1/admin_profiles?${params}`, { headers: { apikey: config.service, Authorization: `Bearer ${config.service}`, Accept: 'application/json' } });
+  const profileRes = await fetch(`${config.url}/rest/v1/admin_profiles?${params}`, { headers: supabaseBackendHeaders(config.backendCredential, { headers: { Accept: 'application/json' } }) });
   const rows = profileRes.ok ? await profileRes.json() : [];
   const profile = Array.isArray(rows) ? rows[0] : null;
   if (!profile?.active) return { response: json(request, env, 403, { ok: false, error: 'admin_forbidden' }) };
@@ -230,9 +235,28 @@ export async function onRequest(context) {
       const t = templates[category]; const dedupeKey = text(parsed.value.dedupeKey, 180); if (!dedupeKey) return json(request, env, 400, { ok: false, error: 'dedupe_key_required' });
       const eventDedupe = `ingest:${dedupeKey}`;
       const existing = await database.prepare('SELECT id FROM notification_events WHERE dedupe_key=?').bind(eventDedupe).first(); if (existing) return json(request, env, 200, { ok: true, deduped: true });
+      const ruleKey = ADMIN_AUTOMATION_RULES[category] || null;
+      const rule = ruleKey ? await database.prepare('SELECT * FROM notification_automation_rules WHERE rule_key=? AND audience=\'admin\' LIMIT 1').bind(ruleKey).first() : null;
+      if (rule && !rule.enabled) { await audit(database, 'automation_job_suppressed', { audience: 'admin', outcome: 'rule_disabled', metadata: { ruleKey, sourceType: 'trusted_ingest' } }); return json(request, env, 202, { ok: true, suppressed: true, reason: 'automation_rule_disabled' }); }
       const event = { id: uuid(), audience: 'admin', category, origin: 'trusted_ingest', title_it: t[0], body_it: t[1], title_en: t[2], body_en: t[3], destination_url: text(parsed.value.destinationUrl, 500) || t[4], dedupe_key: eventDedupe, priority: category === 'security_alerts' ? 'critical' : category === 'operational_failures' ? 'high' : 'normal' };
-      await database.prepare('INSERT INTO notification_events(id,audience,category,origin,title_it,body_it,title_en,body_en,destination_url,dedupe_key,priority,created_at,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(event.id,event.audience,event.category,event.origin,event.title_it,event.body_it,event.title_en,event.body_en,event.destination_url,event.dedupe_key,event.priority,nowIso(),'sending').run();
-      const result = await fanout(database, env, event); await database.prepare("UPDATE notification_events SET status='sent',sent_at=? WHERE id=?").bind(nowIso(),event.id).run(); return json(request, env, 202, { ok: true, delivery: result });
+      const jobId = uuid(); const jobDedupe = `job:${eventDedupe}`; const createdAt = nowIso();
+      await database.prepare('INSERT INTO notification_jobs(id,rule_key,source_type,source_id,source_revision,audience,category,title_it,body_it,title_en,body_en,destination_url,priority,scheduled_for,status,dedupe_key,created_at,processing_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(jobId,ruleKey,'trusted_ingest',dedupeKey,'1','admin',category,event.title_it,event.body_it,event.title_en,event.body_en,event.destination_url,event.priority,createdAt,'processing',jobDedupe,createdAt,createdAt).run();
+      await audit(database, 'automation_job_created', { audience: 'admin', metadata: { jobId, ruleKey, sourceType: 'trusted_ingest' } });
+      try {
+        await database.prepare('INSERT INTO notification_events(id,audience,category,origin,title_it,body_it,title_en,body_en,destination_url,dedupe_key,priority,created_at,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(event.id,event.audience,event.category,event.origin,event.title_it,event.body_it,event.title_en,event.body_en,event.destination_url,event.dedupe_key,event.priority,nowIso(),'sending').run();
+        const result = await fanout(database, env, event); const sentAt = nowIso(); await database.prepare("UPDATE notification_events SET status='sent',sent_at=? WHERE id=?").bind(sentAt,event.id).run(); await database.prepare("UPDATE notification_jobs SET status='sent',sent_at=?,failure_reason=NULL WHERE id=? AND status='processing'").bind(sentAt,jobId).run(); await audit(database, 'automation_job_sent', { audience: 'admin', metadata: { jobId, ruleKey, attempted: result.attempted, sent: result.sent, failed: result.failed } }); return json(request, env, 202, { ok: true, jobId, delivery: result });
+      } catch (error) {
+        const reason = String(error?.message || error).slice(0, 240); await database.prepare("UPDATE notification_jobs SET status='failed',failure_reason=? WHERE id=? AND status='processing'").bind(reason,jobId).run(); await audit(database,'automation_job_failed',{audience:'admin',outcome:'failed',metadata:{jobId,ruleKey,error:reason.slice(0,120)}}); throw error;
+      }
+    }
+
+    if (route === 'automations') {
+      const auth=await requireAdmin(request,env); if(auth.response)return auth.response; if(!['owner','manager'].includes(auth.profile.role))return json(request,env,403,{ok:false,error:'automation_permission_required'});
+      if(path[1]==='rules'&&request.method==='GET'){const rows=await database.prepare('SELECT rule_key,label_it,label_en,audience,category,enabled,updated_by,created_at,updated_at FROM notification_automation_rules ORDER BY audience,rule_key').all();return json(request,env,200,{ok:true,items:rows.results||[]});}
+      if(path[1]==='rules'&&path[2]&&request.method==='PATCH'){const parsed=await body(request,4096);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});if(typeof parsed.value.enabled!=='boolean')return json(request,env,400,{ok:false,error:'enabled_boolean_required'});const now=nowIso();const result=await database.prepare('UPDATE notification_automation_rules SET enabled=?,updated_by=?,updated_at=? WHERE rule_key=?').bind(parsed.value.enabled?1:0,auth.user.id,now,path[2]).run();if(!result.meta?.changes)return json(request,env,404,{ok:false,error:'automation_rule_not_found'});await audit(database,parsed.value.enabled?'automation_rule_enabled':'automation_rule_disabled',{audience:'admin',actorId:auth.user.id,metadata:{ruleKey:path[2]}});return json(request,env,200,{ok:true,ruleKey:path[2],enabled:parsed.value.enabled});}
+      if(path[1]==='jobs'&&request.method==='GET'){const rows=await database.prepare('SELECT id,rule_key,source_type,source_id,source_revision,audience,category,scheduled_for,status,created_at,processing_at,sent_at,cancelled_at,failure_reason FROM notification_jobs ORDER BY created_at DESC LIMIT 200').all();return json(request,env,200,{ok:true,items:rows.results||[]});}
+      if(path[1]==='jobs'&&path[2]&&path[3]==='cancel'&&request.method==='PATCH'){const now=nowIso();const result=await database.prepare("UPDATE notification_jobs SET status='cancelled',cancelled_at=? WHERE id=? AND status='scheduled'").bind(now,path[2]).run();if(!result.meta?.changes)return json(request,env,409,{ok:false,error:'automation_job_not_cancellable'});await audit(database,'automation_job_cancelled',{audience:'admin',actorId:auth.user.id,metadata:{jobId:path[2]}});return json(request,env,200,{ok:true,id:path[2],status:'cancelled'});}
+      return json(request,env,404,{ok:false,error:'not_found'});
     }
 
     if (route === 'campaigns') {

@@ -1,4 +1,5 @@
 import { importPKCS8, SignJWT } from 'jose';
+import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../../_shared/supabaseBackend.js';
 
 export function json(status, body = {}) {
   if (status === 204) return new Response(null, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -74,12 +75,12 @@ export function bearerToken(request) {
 export function supabaseConfig(env = {}) {
   const supabaseUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
   const anonKey = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
-  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !anonKey || !serviceRoleKey) return null;
+  const backendCredential = resolveSupabaseBackendCredential(env);
+  if (!supabaseUrl || !anonKey || !backendCredential) return null;
   return {
     supabaseUrl: supabaseUrl.replace(/\/$/, ''),
     anonKey,
-    serviceRoleKey
+    backendCredential
   };
 }
 
@@ -103,11 +104,7 @@ export async function getOwnerProfile(config, userId) {
     limit: '1'
   });
   const response = await fetch(`${config.supabaseUrl}/rest/v1/admin_profiles?${query.toString()}`, {
-    headers: {
-      apikey: config.serviceRoleKey,
-      Authorization: `Bearer ${config.serviceRoleKey}`,
-      Accept: 'application/json'
-    }
+    headers: supabaseBackendHeaders(config.backendCredential, { headers: { Accept: 'application/json' } })
   });
   if (!response.ok) return null;
   const rows = await response.json();
@@ -328,12 +325,10 @@ export async function githubFetch(config, path, init = {}) {
 export async function claimAdminActionRateLimit(config, actionKey, actorKey, limit = 3, windowSeconds = 300) {
   const response = await fetch(`${config.supabaseUrl}/rest/v1/rpc/claim_admin_action_rate_limit`, {
     method: 'POST',
-    headers: {
-      apikey: config.serviceRoleKey,
-      Authorization: `Bearer ${config.serviceRoleKey}`,
+    headers: supabaseBackendHeaders(config.backendCredential, { headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json'
-    },
+    } }),
     body: JSON.stringify({
       p_action_key: cleanText(actionKey, 80),
       p_actor_key: cleanText(actorKey, 160),
@@ -509,11 +504,7 @@ export function artifactFilename(artifact) {
 export async function restSelect(config, table, params = {}) {
   const query = new URLSearchParams(params);
   const response = await fetch(`${config.supabaseUrl}/rest/v1/${table}?${query.toString()}`, {
-    headers: {
-      apikey: config.serviceRoleKey,
-      Authorization: `Bearer ${config.serviceRoleKey}`,
-      Accept: 'application/json'
-    }
+    headers: supabaseBackendHeaders(config.backendCredential, { headers: { Accept: 'application/json' } })
   });
   if (!response.ok) return { ok: false, response, rows: [] };
   const rows = await response.json().catch(() => []);
@@ -523,13 +514,11 @@ export async function restSelect(config, table, params = {}) {
 export async function restUpsert(config, table, row) {
   const response = await fetch(`${config.supabaseUrl}/rest/v1/${table}?on_conflict=id`, {
     method: 'POST',
-    headers: {
-      apikey: config.serviceRoleKey,
-      Authorization: `Bearer ${config.serviceRoleKey}`,
+    headers: supabaseBackendHeaders(config.backendCredential, { headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
       Prefer: 'resolution=merge-duplicates,return=representation'
-    },
+    } }),
     body: JSON.stringify(row)
   });
   if (!response.ok) return { ok: false, response, rows: [] };

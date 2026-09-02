@@ -4,13 +4,14 @@ import { askNeo } from '../../services/neoService.js';
 import { calculateEruptionDuration } from './neoEngine.js';
 import './ask-neo.css';
 
-const SUGGESTIONS = [
-  'What needs attention today?', 'Booking requests', 'Upcoming experiences', 'Finance summary',
-  'KPIs this month', 'Notification health', 'Marketing opportunities'
-];
+const SUGGESTIONS = {
+  en: ['What needs attention today?', 'Booking requests', 'Upcoming experiences', 'Finance summary', 'KPIs this month', 'Notification health', 'Scheduled notifications', 'Marketing opportunities'],
+  it: ['Cosa devo sapere oggi?', 'Richieste di prenotazione', 'Mostrami le prossime prenotazioni', 'Mostrami la situazione finanziaria', 'KPI di questo mese', 'Come stanno andando le notifiche?', 'Mostrami le notifiche programmate', 'Come sta andando il marketing?']
+};
+function c(lang, it, en) { return lang === 'it' ? it : en; }
 
-function Volcano({ state }) {
-  return <div className={`neo-volcano neo-volcano-${state}`} role="img" aria-label={state === 'processing' ? 'Neo is analysing authorized vulcanIQ data' : state === 'error' ? 'Neo stopped after an error' : 'Neo is ready'}>
+function Volcano({ state, lang }) {
+  return <div className={`neo-volcano neo-volcano-${state}`} role="img" aria-label={state === 'processing' ? c(lang, 'Neo sta analizzando i dati vulcanIQ autorizzati', 'Neo is analysing authorized vulcanIQ data') : state === 'error' ? c(lang, 'Neo si è fermato dopo un errore', 'Neo stopped after an error') : c(lang, 'Neo è pronto', 'Neo is ready')}>
     <svg viewBox="0 0 180 130" aria-hidden="true" focusable="false">
       <path className="neo-volcano-ground" d="M8 119h164" />
       <path className="neo-volcano-mountain" d="M30 118 72 54h36l42 64Z" />
@@ -20,7 +21,7 @@ function Volcano({ state }) {
   </div>;
 }
 
-export default function AskNeoPanel({ navigate, profile }) {
+export default function AskNeoPanel({ navigate, profile, lang = 'en' }) {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState(null);
@@ -46,13 +47,13 @@ export default function AskNeoPanel({ navigate, profile }) {
     const startedAt = Date.now();
     setQuestion(clean); setLoading(true); setError(''); setAnswer(null); setErupting(true);
     try {
-      const result = await askNeo(clean);
+      const result = await askNeo(clean, lang);
       setAnswer(result);
       stopEruptionAfter(calculateEruptionDuration(clean, { domains: result.sourceTrail.length, cards: result.cards.length }), startedAt);
     } catch {
       window.clearTimeout(timerRef.current);
       setErupting(false);
-      setError('Neo could not load the authorized data for this question. Try again or open the relevant Admin screen.');
+      setError(c(lang, 'Neo non ha potuto caricare i dati autorizzati per questa domanda. Riprova o apri la schermata Admin pertinente.', 'Neo could not load the authorized data for this question. Try again or open the relevant Admin screen.'));
     } finally {
       setLoading(false);
     }
@@ -71,14 +72,14 @@ export default function AskNeoPanel({ navigate, profile }) {
     <button className="neo-launcher" type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-label="Ask Neo"><span aria-hidden="true">▲</span> Ask Neo</button>
     {open && <div className="neo-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
       <section className="neo-panel" ref={panelRef} role="dialog" aria-modal="true" aria-labelledby="neoTitle">
-        <header className="neo-panel-header"><div><span className="kicker">vulcanIQ Admin</span><h2 id="neoTitle">Ask Neo</h2><p>Your read-only operations co-pilot</p></div><div className="neo-header-actions">{(answer || question || error) && <button type="button" onClick={reset}>Reset</button>}<button type="button" onClick={close} aria-label="Close Ask Neo">Close</button></div></header>
-        <Volcano state={volcanoState}/>
-        {!answer && !loading && !error && <div className="neo-suggestions" aria-label="Try asking">{SUGGESTIONS.map((item) => <button type="button" key={item} onClick={() => submit(item)}>{item}</button>)}</div>}
-        {loading && <p className="neo-processing" role="status">Analysing the relevant authorized vulcanIQ data…</p>}
+        <header className="neo-panel-header"><div><span className="kicker">vulcanIQ Admin</span><h2 id="neoTitle">Ask Neo</h2><p>{c(lang, 'Il tuo copilota operativo in sola lettura', 'Your read-only operations co-pilot')}</p></div><div className="neo-header-actions">{(answer || question || error) && <button type="button" onClick={reset}>{c(lang, 'Azzera', 'Reset')}</button>}<button type="button" onClick={close} aria-label={c(lang, 'Chiudi Ask Neo', 'Close Ask Neo')}>{c(lang, 'Chiudi', 'Close')}</button></div></header>
+        <Volcano state={volcanoState} lang={lang}/>
+        {!answer && !loading && !error && <div className="neo-suggestions" aria-label={c(lang, 'Domande suggerite', 'Try asking')}>{SUGGESTIONS[lang === 'it' ? 'it' : 'en'].map((item) => <button type="button" key={item} onClick={() => submit(item)}>{item}</button>)}</div>}
+        {loading && <p className="neo-processing" role="status">{c(lang, 'Analisi dei dati vulcanIQ autorizzati pertinenti…', 'Analysing the relevant authorized vulcanIQ data…')}</p>}
         {error && <p className="admin-alert error" role="alert">{error}</p>}
-        {answer && <div className="neo-answer" aria-live="polite"><header><span className={`neo-confidence neo-confidence-${answer.confidence}`}>{answer.confidence} confidence</span><h3>{answer.title}</h3><p>{answer.summary}</p></header><div className="neo-card-grid">{answer.cards.map((item, index) => <article className={`neo-card neo-card-${item.type}`} key={`${item.type}-${index}`}><span>{item.title}</span><strong>{item.value}</strong><p>{item.detail}</p>{item.route && <button type="button" onClick={() => { navigate(item.route); close(); }}>{`Open ${item.title}`}</button>}</article>)}</div>{answer.sourceTrail.length > 0 && <details><summary>Source trail</summary><ul>{answer.sourceTrail.map((item, index) => <li key={`${item.label}-${index}`}>{item.label}: {item.state}</li>)}</ul></details>}</div>}
-        <form className="neo-composer" onSubmit={(event) => { event.preventDefault(); submit(); }}><label htmlFor="neoQuestion">Ask about bookings, Gift Cards, Finance, notifications, KPIs or marketing</label><div><input id="neoQuestion" value={question} maxLength={500} disabled={loading} onChange={(event) => setQuestion(event.target.value)} autoComplete="off"/><button className="button primary" type="submit" disabled={loading || !question.trim()}>Ask</button></div></form>
-        <p className="neo-boundary">Neo reads only data available to {profile?.role || 'this Admin'} and never sends, schedules or changes records.</p>
+        {answer && <div className="neo-answer" aria-live="polite"><header><span className={`neo-confidence neo-confidence-${answer.confidence}`}>{c(lang, `Affidabilità ${answer.confidence === 'high' ? 'alta' : answer.confidence === 'medium' ? 'media' : 'bassa'}`, `${answer.confidence} confidence`)}</span><h3>{answer.title}</h3><p>{answer.summary}</p></header><div className="neo-card-grid">{answer.cards.map((item, index) => <article className={`neo-card neo-card-${item.type}`} key={`${item.type}-${index}`}><span>{item.title}</span><strong>{item.value}</strong><p>{item.detail}</p>{item.route && <button type="button" onClick={() => { navigate(item.route); close(); }}>{c(lang, `Apri ${item.title}`, `Open ${item.title}`)}</button>}</article>)}</div>{answer.sourceTrail.length > 0 && <details><summary>{c(lang, 'Fonti', 'Source trail')}</summary><ul>{answer.sourceTrail.map((item, index) => <li key={`${item.label}-${index}`}>{item.label}: {item.state}</li>)}</ul></details>}</div>}
+        <form className="neo-composer" onSubmit={(event) => { event.preventDefault(); submit(); }}><label htmlFor="neoQuestion">{c(lang, 'Chiedi di prenotazioni, Gift Card, Finance, notifiche, KPI o marketing', 'Ask about bookings, Gift Cards, Finance, notifications, KPIs or marketing')}</label><div><input id="neoQuestion" value={question} maxLength={500} disabled={loading} onChange={(event) => setQuestion(event.target.value)} autoComplete="off"/><button className="button primary" type="submit" disabled={loading || !question.trim()}>{c(lang, 'Chiedi', 'Ask')}</button></div></form>
+        <p className="neo-boundary">{c(lang, `Neo legge solo i dati disponibili per ${profile?.role || 'questo Admin'} e non invia, programma o modifica mai record.`, `Neo reads only data available to ${profile?.role || 'this Admin'} and never sends, schedules or changes records.`)}</p>
       </section>
     </div>}
   </>;

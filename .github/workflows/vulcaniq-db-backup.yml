@@ -28,6 +28,7 @@ env:
   SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
   SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
   SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
 jobs:
@@ -62,7 +63,7 @@ jobs:
           test -n "${SUPABASE_ACCESS_TOKEN}"
           test -n "${SUPABASE_PROJECT_REF}"
           test -n "${SUPABASE_DB_URL}"
-          test -n "${SUPABASE_SERVICE_ROLE_KEY}"
+          test -n "${SUPABASE_SECRET_KEY:-${SUPABASE_SERVICE_ROLE_KEY:-}}"
           if [ -z "${SUPABASE_URL:-}" ]; then
             echo "SUPABASE_URL=https://${SUPABASE_PROJECT_REF}.supabase.co" >> "$GITHUB_ENV"
           fi
@@ -203,7 +204,8 @@ jobs:
           SUPABASE_URL=https://YOUR-NEW-PROJECT-REF.supabase.co
           VITE_SUPABASE_ANON_KEY=YOUR-PUBLISHABLE-OR-ANON-KEY
           SUPABASE_ANON_KEY=YOUR-PUBLISHABLE-OR-ANON-KEY
-          SUPABASE_SERVICE_ROLE_KEY=YOUR-SERVICE-ROLE-KEY
+          SUPABASE_SECRET_KEY=YOUR-SUPABASE-SECRET-KEY
+          SUPABASE_SERVICE_ROLE_KEY=OPTIONAL-LEGACY-SERVICE-ROLE-KEY
           GITHUB_OWNER=YOUR-GITHUB-OWNER
           GITHUB_REPO=YOUR-GITHUB-REPO
           GITHUB_BACKUP_WORKFLOW_ID=vulcaniq-db-backup.yml
@@ -309,14 +311,14 @@ jobs:
           Run this from the extracted backup folder:
 
           ```bash
-          SUPABASE_URL="https://target-project.supabase.co" SUPABASE_SERVICE_ROLE_KEY="..." node restore-storage.js
+          SUPABASE_URL="https://target-project.supabase.co" SUPABASE_SECRET_KEY="..." node restore-storage.js
           ```
 
           Windows PowerShell:
 
           ```powershell
           $env:SUPABASE_URL="https://target-project.supabase.co"
-          $env:SUPABASE_SERVICE_ROLE_KEY="..."
+          $env:SUPABASE_SECRET_KEY="..."
           node restore-storage.js
           ```
 
@@ -336,6 +338,7 @@ jobs:
           - `SUPABASE_PROJECT_REF`
           - `SUPABASE_DB_URL`
           - `SUPABASE_URL`
+          - `SUPABASE_SECRET_KEY` (preferred)
           - `SUPABASE_SERVICE_ROLE_KEY`
 
           Do not commit these values to Git and do not place them in frontend `VITE_` variables.

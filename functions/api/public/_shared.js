@@ -1,3 +1,5 @@
+import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../_shared/supabaseBackend.js';
+
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://vulcaniq.it',
   'https://www.vulcaniq.it',
@@ -87,9 +89,9 @@ export async function readJsonBody(request, maxBytes = 32768) {
 
 function supabaseConfig(env = {}) {
   const url = cleanText(env.SUPABASE_URL, 240);
-  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRoleKey) return null;
-  return { url: url.replace(/\/$/, ''), serviceRoleKey };
+  const backendCredential = resolveSupabaseBackendCredential(env);
+  if (!url || !backendCredential) return null;
+  return { url: url.replace(/\/$/, ''), backendCredential };
 }
 
 export async function supabaseRequest(env, path, init = {}) {
@@ -98,8 +100,7 @@ export async function supabaseRequest(env, path, init = {}) {
   const response = await fetch(`${config.url}/rest/v1/${path}`, {
     ...init,
     headers: {
-      apikey: config.serviceRoleKey,
-      Authorization: `Bearer ${config.serviceRoleKey}`,
+      ...supabaseBackendHeaders(config.backendCredential),
       'Content-Type': 'application/json',
       Accept: 'application/json',
       ...(init.headers || {})

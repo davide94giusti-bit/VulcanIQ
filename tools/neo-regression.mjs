@@ -17,6 +17,24 @@ test('Neo has no public or unauthenticated backend endpoint', () => { no(/functi
 test('Neo remains read-only and imports no mutation services', () => { no(/createFinanceEntry|updateFinanceEntry|createNotificationCampaign|updateBookingRequest|sendWeeklyAdminRecap/.test(neoService), 'mutation import found'); no(/\.insert\(|\.update\(|\.delete\(|fetch\(/.test(neoService), 'direct write/network bypass found'); });
 test('Neo supports at least five meaningful deterministic intents', () => { const questions = ['booking requests', 'Gift Cards', 'Finance', 'notification health', 'KPIs this month', 'marketing opportunity', 'upcoming excursions']; const intents = new Set(questions.map((question) => matchNeoIntent(question).intent)); yes(intents.size >= 5 && !intents.has('unknown'), 'intent coverage insufficient'); });
 test('Neo distinguishes scheduled campaigns from notification health', () => { eq(matchNeoIntent('Are scheduled notifications waiting?').intent, 'scheduled_notifications'); eq(matchNeoIntent('Were there push failures?').intent, 'notification_health'); });
+test('Neo recognizes the required Italian intents while preserving precedence', () => {
+  const cases = [
+    ['Cosa devo sapere oggi?', 'today_attention'], ['Mostrami le prossime prenotazioni', 'upcoming_experiences'],
+    ['Come stanno andando le notifiche?', 'notification_health'], ['Mostrami le notifiche programmate', 'scheduled_notifications'],
+    ['Come sta andando il marketing?', 'marketing_opportunities'], ['Come stanno andando i Gift Card?', 'gift_card_status'],
+    ['Mostrami la situazione finanziaria', 'finance_summary'], ['Mostrami i promemoria automatici', 'scheduled_notifications'],
+    ['Ci sono notifiche automatiche in errore?', 'scheduled_notifications']
+  ];
+  for (const [question, intent] of cases) eq(matchNeoIntent(question).intent, intent);
+});
+test('Neo response language is controlled by Admin locale, not query language', () => {
+  const data = { bookingRequests: [{ id: 'b1', status: 'pending', next_follow_up_at: '2026-09-02' }] };
+  const englishFromItalian = buildNeoAnswer({ question: 'Mostrami le prenotazioni', intent: 'booking_requests', confidence: 'medium', data, locale: 'en' });
+  const italianFromEnglish = buildNeoAnswer({ question: 'Show bookings', intent: 'booking_requests', confidence: 'medium', data, locale: 'it' });
+  yes(englishFromItalian.summary.includes('read-only') && englishFromItalian.cards[0].title === 'Pending requests', 'English Admin output changed with Italian query');
+  yes(italianFromEnglish.summary.includes('sola lettura') && italianFromEnglish.cards[0].title === 'Richieste in attesa', 'Italian Admin output changed with English query');
+  yes(panel.includes('askNeo(clean, lang)') && main.includes('profile={profile} lang={lang}'), 'Admin locale is not passed end-to-end');
+});
 test('Neo ambiguous intent is low confidence', () => { eq(matchNeoIntent('hello volcano').intent, 'unknown'); eq(matchNeoIntent('hello volcano').confidence, 'low'); });
 test('Neo responses use structured cards, actions and source trail', () => { for (const token of ['cards:', 'actions:', 'sourceTrail:', 'confidence:', 'createdAt:']) yes(engine.includes(token), `missing ${token}`); });
 test('Neo no-result state is explicit and non-speculative', () => { const answer = buildNeoAnswer({ question: 'hello volcano', intent: 'unknown', confidence: 'low' }); eq(answer.cards.length, 0); yes(answer.summary.includes("not sure"), 'unknown intent guidance missing'); });

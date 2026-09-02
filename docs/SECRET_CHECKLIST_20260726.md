@@ -2,12 +2,21 @@
 
 No secret values belong in Git, browser bundles, logs, screenshots, or `VITE_` variables.
 
+## Supabase backend credential migration
+
+- Prefer `SUPABASE_SECRET_KEY` in Cloudflare and Node/GitHub backend runtimes; temporarily retain `SUPABASE_SERVICE_ROLE_KEY` for rollback.
+- Send an opaque `sb_secret_...` credential in the `apikey` header only. It is an API credential, not a user JWT.
+- Keep signed-in user access tokens in `Authorization: Bearer <user-access-token>` so caller identity and RLS semantics remain intact.
+- The legacy service-role JWT fallback retains its historical `apikey` plus bearer headers until all runtimes have been validated and the exposed legacy key can be disabled.
+- Keep `SUBMISSION_HASH_SALT` stable and independent of backend-key rotation.
+
 ## Cloudflare Pages server-side variables
 
 ### Supabase
 
 - `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SECRET_KEY` (preferred)
+- `SUPABASE_SERVICE_ROLE_KEY` (temporary fallback)
 - `SUBMISSION_HASH_SALT`
 
 ### GitHub App backup
@@ -30,7 +39,10 @@ No secret values belong in Git, browser bundles, logs, screenshots, or `VITE_` v
 ## Supabase Edge Function secrets
 
 - `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SECRET_KEYS` (Supabase-provided JSON key map; preferred)
+- `SUPABASE_SECRET_KEY_NAME` (map key to select; omit only when the configured key is named `default`)
+- `SUPABASE_SECRET_KEY` (optional explicitly configured key)
+- `SUPABASE_SERVICE_ROLE_KEY` (legacy runtime fallback)
 - `RESEND_API_KEY`
 - `REQUEST_NOTIFICATION_WEBHOOK_SECRET`
 - `REQUEST_NOTIFICATION_RECIPIENTS`
@@ -50,7 +62,7 @@ The Vault webhook and cron secrets must exactly match the corresponding Edge Fun
 
 ## Public frontend values
 
-The Supabase URL and anon key may remain public. No service-role, Resend, GitHub App, GitHub token, webhook, cron, or Turnstile secret may be exposed to the browser.
+The Supabase URL and anon key may remain public. No Supabase secret/service-role, Resend, GitHub App, GitHub token, webhook, cron, or Turnstile secret may be exposed to the browser.
 
 ## Removal gate for the legacy PAT
 

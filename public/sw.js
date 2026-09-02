@@ -48,6 +48,8 @@ self.addEventListener('push', (event) => {
       icon: '/brand/vulcaniq/app-icon-192.png',
       badge: '/brand/vulcaniq/app-icon-192.png',
       tag: 'vulcaniq-public-update',
+      silent: false,
+      vibrate: [120],
       data: { url: '/install' }
     });
   })());

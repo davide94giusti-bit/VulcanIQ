@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
+import { FINANCE_SELECT_FIELDS } from './financeService.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const BOOKING_CODE_FIELDS = `
@@ -138,8 +139,8 @@ export async function listBookingCodes(filters = {}) {
   for (let index = 0; index < ids.length; index += 100) chunks.push(ids.slice(index, index + 100));
   for (const chunk of chunks) {
     const [linked, sourced] = await Promise.all([
-      supabase.from('finance_entries').select('id,type,category,amount,currency,status,entry_date,payment_method,source_type,source_id,booking_code_id,notes,idempotency_key,created_at').in('booking_code_id', chunk),
-      supabase.from('finance_entries').select('id,type,category,amount,currency,status,entry_date,payment_method,source_type,source_id,booking_code_id,notes,idempotency_key,created_at').eq('source_type', 'booking_code').in('source_id', chunk)
+      supabase.from('finance_entries').select(FINANCE_SELECT_FIELDS).in('booking_code_id', chunk),
+      supabase.from('finance_entries').select(FINANCE_SELECT_FIELDS).eq('source_type', 'booking_code').in('source_id', chunk)
     ]);
     if (linked.error) throw linked.error;
     if (sourced.error) throw sourced.error;

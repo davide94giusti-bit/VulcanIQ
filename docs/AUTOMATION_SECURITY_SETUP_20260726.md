@@ -64,7 +64,7 @@ supabase secrets set WEEKLY_RECAP_FROM_EMAIL="vulcanIQ Reports <reports@notify.v
 supabase secrets set WEEKLY_RECAP_TIMEZONE=Europe/Rome
 ```
 
-Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to deployed Edge Functions. Confirm they are available in the project before testing.
+Supabase supplies `SUPABASE_URL`, the preferred `SUPABASE_SECRET_KEYS` JSON map, and legacy `SUPABASE_SERVICE_ROLE_KEY` to deployed Edge Functions. Set `SUPABASE_SECRET_KEY_NAME` to the configured map key; if it is omitted, the runtime selects only the documented `default` entry and never an arbitrary first key. The shared runtime also accepts an explicitly configured `SUPABASE_SECRET_KEY`, which takes precedence over the map. A configured name that is absent or resolves to a malformed value fails closed. Confirm the preferred key map or temporary legacy fallback is available before testing; incoming user JWT, webhook-secret, and Cron-secret verification remains unchanged.
 
 ## 6. Configure Vault
 

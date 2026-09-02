@@ -22,7 +22,7 @@ VITE_SUPABASE_URL=your-project-url
 VITE_SUPABASE_ANON_KEY=your-anon-public-key
 ```
 
-Never put the service role key in frontend JavaScript.
+Never put a Supabase secret or legacy service-role key in frontend JavaScript.
 
 ## 3. Run the schema
 
@@ -408,7 +408,10 @@ For full session duration updates, configure the server-side ingestion endpoint 
 
 ```bash
 SUPABASE_URL=your-project-url
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_SECRET_KEY=your-sb-secret-key
+# Temporary rollback fallback only:
+SUPABASE_SERVICE_ROLE_KEY=your-legacy-service-role-key
+SUBMISSION_HASH_SALT=your-existing-stable-dedicated-salt
 ```
 
-The service role key must only be stored as a Cloudflare Pages server-side environment variable.
+Prefer the secret key and keep the legacy service-role key only during staged migration. Both must remain Cloudflare Pages server-side variables. Keep `SUBMISSION_HASH_SALT` stable when rotating backend credentials so privacy-preserving actor hashes do not reset.

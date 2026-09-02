@@ -12,6 +12,7 @@ import { loadPublicReviews, submitPublicReview, listReviews, createManualReview,
 import { listSiteMedia, upsertSiteMedia, uploadSiteMediaFile, removeSiteMediaFile } from './services/siteMediaService.js';
 import { loadPublicSiteContent, listSiteContent, upsertSiteContent } from './services/siteContentService.js';
 import { listFinanceEntries, createFinanceEntry, updateFinanceEntry, archiveFinanceEntry, reverseFinanceEntry } from './services/financeService.js';
+import { downloadFinancialAudit } from './services/financeAuditService.js';
 import { assignPartnerToBookingRequest, calculatePartnerCommission, listPartnerCommissions, listPartnerCommissionSummary, updatePartnerCommissionStatus, upsertPartnerCommissionForSource } from './services/partnerCommissions.js';
 import { getAdminAnalyticsSummary, listAnalyticsEventPage, listAnalyticsSessionPage, setAnalyticsReportingBaseline, clearAnalyticsReportingBaseline } from './services/analyticsService.js';
 import { createDatabaseBackup, downloadLatestDatabaseBackup, getBackupSchedule, getBackupStatus, saveBackupSchedule } from './services/backupService.js';
@@ -6799,7 +6800,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
         ) : normalizedPath.includes('/account') ? (
           <AdminAccountPage lang={lang} session={session} onSignOut={logout} />
         ) : normalizedPath.includes('/finance') ? (
-          <FinanceAdminPage lang={lang} session={session} adminContent={adminContent} />
+          <FinanceAdminPage lang={lang} session={session} profile={profile} adminContent={adminContent} />
         ) : normalizedPath.includes('/analytics') || normalizedPath.includes('/data') ? (
           <AdminAnalyticsPage lang={lang} session={session} profile={profile} adminContent={adminContent} />
         ) : normalizedPath.includes('/system') || normalizedPath.includes('/backup') ? (
@@ -6824,7 +6825,7 @@ function AdminLayout({ pathname, navigate, lang, setLang, session, profile }) {
           <TodayDashboard lang={lang} session={session} navigate={navigate} adminContent={adminContent} />
         )}
       </main>
-      <AskNeoPanel navigate={navigate} profile={profile} />
+      <AskNeoPanel navigate={navigate} profile={profile} lang={lang} />
     </div>
   );
 }
@@ -11845,7 +11846,26 @@ function AdminAnalyticsPreview({ lang, adminContent, editor }) {
   );
 }
 
-function FinanceAdminPage({ lang, session, adminContent = {} }) {
+function FinancialAuditPanel({ lang }) {
+  const [range, setRange] = useState({ from: '', to: '' });
+  const [busy, setBusy] = useState(''); const [error, setError] = useState(''); const [message, setMessage] = useState('');
+  async function download(format) {
+    setBusy(format); setError(''); setMessage('');
+    try { const result = await downloadFinancialAudit({ ...range, locale: lang, format }); setMessage(adminCopy(lang, `Audit generato: ${result.filename}`, `Audit generated: ${result.filename}`)); }
+    catch (err) { setError(err.message || adminCopy(lang, 'Audit non generato.', 'Audit was not generated.')); }
+    finally { setBusy(''); }
+  }
+  return <details className="admin-panel finance-collapsible-panel finance-audit-panel">
+    <summary className="finance-collapsible-summary"><strong>{adminCopy(lang, 'Financial Audit & Compliance', 'Financial Audit & Compliance')}</strong></summary>
+    <div className="finance-collapsible-body"><p className="small-note">{adminCopy(lang, 'Il PDF è un riepilogo; il CSV contiene le righe di evidenza dettagliate e il manifest JSON contiene i metadati di integrità. Il checksum dell’evidenza riguarda i dati canonici, non i byte dei file. Non è una certificazione legale o fiscale.', 'The PDF is a summary; the CSV contains detailed evidence rows and the JSON manifest contains integrity metadata. The evidence checksum covers canonical data, not file bytes. This is not a legal or tax certification.')}</p>
+      <div className="admin-filter-bar finance-audit-filter"><label><span>{adminCopy(lang, 'Da', 'From')}</span><input type="date" value={range.from} onChange={(event) => setRange((value) => ({ ...value, from: event.target.value }))}/></label><label><span>{adminCopy(lang, 'A', 'To')}</span><input type="date" value={range.to} onChange={(event) => setRange((value) => ({ ...value, to: event.target.value }))}/></label></div>
+      {error && <div className="admin-alert error" role="alert">{error}</div>}{message && <div className="admin-alert success" role="status">{message}</div>}
+      <div className="modal-actions"><button className="button secondary" type="button" disabled={Boolean(busy)} onClick={() => download('pdf')}>{busy === 'pdf' ? adminCopy(lang, 'Generazione…', 'Generating…') : adminCopy(lang, 'PDF riepilogo', 'Summary PDF')}</button><button className="button secondary" type="button" disabled={Boolean(busy)} onClick={() => download('csv')}>{adminCopy(lang, 'CSV evidenze dettagliate', 'Detailed evidence CSV')}</button><button className="button secondary" type="button" disabled={Boolean(busy)} onClick={() => download('manifest')}>{adminCopy(lang, 'Manifest integrità JSON', 'JSON integrity manifest')}</button></div>
+    </div>
+  </details>;
+}
+
+function FinanceAdminPage({ lang, session, profile, adminContent = {} }) {
 const [entries, setEntries] = useState([]);
 const [requests, setRequests] = useState([]);
 const [fixedExcursions, setFixedExcursions] = useState([]);
@@ -12040,6 +12060,7 @@ const [filters, setFilters] = useState({
         <p className="small-note finance-filter-range-note">{adminCopy(lang, 'Periodo', 'Period')}: {resolvedDateRange.label}</p>
       </div>
       <FinanceReconciliationPanel lang={lang} reconciliation={reconciliation} requestById={requestById} financeById={financeById} session={session} onChanged={refresh} onOpenEntry={(entry) => setActiveFinanceDetail({ key: 'movement', title: adminCopy(lang, 'Dettaglio movimento', 'Movement detail'), entries: [entry], total: Number(entry.amount || 0), selectedEntry: entry })} onRefundEntry={(entry) => setRefundTarget(entry)} />
+      {['owner', 'finance'].includes(profile?.role) && <FinancialAuditPanel lang={lang} />}
       <FinanceOverview lang={lang} summary={financeSummary} rangeLabel={resolvedDateRange.label} onOpen={setActiveFinanceDetail} />
       <FinanceProfitLoss lang={lang} summary={financeSummary} adminContent={adminContent} />
       <PartnerCommissionsFinancePanel lang={lang} session={session} commissions={partnerCommissions} summary={partnerCommissionSummary} onChanged={async (message) => { setFeedback(message); await refresh(); }} />

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { paymentSummary, calculateLedgerSummary, financeEntryHasBusinessSource, buildFinancialReconciliation } from '../src/domain/financeModel.js';
 import { buildReadOnlyFinancialAudit } from '../src/domain/financeAudit.js';
+import { buildSourceCounts, csvExport, pdfExport, safeCsv } from '../functions/api/admin/finance-audit.js';
 
 const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -14,6 +15,51 @@ const paymentMigration = read('supabase/migrations/20260821070000_payment_financ
 const refundMigration = read('supabase/migrations/20260821073000_finance_refund_rpc.sql');
 const mainSource = read('src/main.jsx');
 const claimMigration = read('supabase/migrations/20260824100000_booking_code_gift_card_claim_notifications.sql');
+const auditEndpoint = read('functions/api/admin/finance-audit.js');
+const auditService = read('src/services/financeAuditService.js');
+
+function financeSchemaColumns() {
+  const migrationDirectory = path.join(root, 'supabase', 'migrations');
+  const migrations = fs.readdirSync(migrationDirectory)
+    .filter((file) => file.endsWith('.sql'))
+    .sort()
+    .map((file) => fs.readFileSync(path.join(migrationDirectory, file), 'utf8'));
+  const schema = migrations.join('\n');
+  const createBlock = schema.match(/create table(?: if not exists)? public\.finance_entries\s*\(([\s\S]*?)\n\);/i)?.[1];
+  if (!createBlock) throw new Error('finance_entries CREATE TABLE block not found');
+
+  const columns = new Set();
+  for (const line of createBlock.split(/\r?\n/)) {
+    const name = line.match(/^\s*([a-z_][a-z0-9_]*)\s+/i)?.[1]?.toLowerCase();
+    if (name && !['constraint', 'primary', 'foreign', 'unique', 'check'].includes(name)) columns.add(name);
+  }
+  for (const alter of schema.matchAll(/alter table(?: only)? public\.finance_entries\b([\s\S]*?);/gi)) {
+    for (const addition of alter[1].matchAll(/add column(?: if not exists)?\s+([a-z_][a-z0-9_]*)/gi)) columns.add(addition[1].toLowerCase());
+    for (const removal of alter[1].matchAll(/drop column(?: if exists)?\s+([a-z_][a-z0-9_]*)/gi)) columns.delete(removal[1].toLowerCase());
+  }
+  return columns;
+}
+
+function financeSelectContracts() {
+  const servicesDirectory = path.join(root, 'src', 'services');
+  const canonical = financeService.match(/(?:export\s+)?const FINANCE_SELECT_FIELDS\s*=\s*['"`]([^'"`]+)['"`]/)?.[1];
+  if (!canonical) throw new Error('FINANCE_SELECT_FIELDS not found');
+  const contracts = [];
+
+  for (const file of fs.readdirSync(servicesDirectory).filter((name) => name.endsWith('.js')).sort()) {
+    const source = fs.readFileSync(path.join(servicesDirectory, file), 'utf8');
+    for (const query of source.matchAll(/\.from\(\s*['"]finance_entries['"]\s*\)([\s\S]*?)(?:;|\n\s*\]\))/g)) {
+      const argument = query[1].match(/\.select\(\s*([^)]+?)\s*\)/)?.[1]?.trim();
+      if (!argument) continue;
+      let projection;
+      if (argument === 'FINANCE_SELECT_FIELDS') projection = canonical;
+      else if (/^(['"`])([\s\S]*)\1$/.test(argument)) projection = argument.slice(1, -1);
+      else throw new Error(`${file} has an unresolved finance select contract: ${argument}`);
+      contracts.push({ file, fields: projection === '*' ? [] : projection.split(',').map((field) => field.trim().toLowerCase()).filter(Boolean) });
+    }
+  }
+  return { canonical, contracts };
+}
 
 const passes = []; const failures = [];
 function test(name, fn) { try { fn(); passes.push(name); } catch (error) { failures.push(`${name}: ${error.message}`); } }
@@ -21,6 +67,19 @@ function ok(value, message) { if (!value) throw new Error(message); }
 function eq(actual, expected, message) { if (actual !== expected) throw new Error(`${message}: expected ${expected}, got ${actual}`); }
 
 const payment = (id, amount, extra = {}) => ({ id, type: 'income', amount, currency: 'EUR', status: 'confirmed', active: true, entry_date: '2026-08-20', payment_method: 'card', ...extra });
+
+test('Finance service projections match the migration-derived schema contract', () => {
+  const columns = financeSchemaColumns();
+  const { canonical, contracts } = financeSelectContracts();
+  ok(columns.has('description'), 'canonical Finance description column missing');
+  ok(!columns.has('notes'), 'unexpected Finance notes column in canonical migrations');
+  ok(!canonical.split(',').map((field) => field.trim()).includes('notes'), 'canonical Finance projection still requests notes');
+  ok(contracts.length >= 10, `too few Finance projections inspected (${contracts.length})`);
+  for (const contract of contracts) {
+    const unknown = contract.fields.filter((field) => !columns.has(field));
+    ok(unknown.length === 0, `${contract.file} selects unknown finance_entries columns: ${unknown.join(', ')}`);
+  }
+});
 
 test('deposit and balance are driven by recognized Finance transactions', () => {
   const first = paymentSummary([payment('p1', 100)], 300, 'EUR');
@@ -118,6 +177,51 @@ test('read-only audit reports requested classifications without PII', () => {
   });
   ok(report.piiIncluded === false, 'audit PII flag wrong');
   for (const code of ['booking_zero_recorded_payment','booking_code_status_finance_inconsistent','gift_card_issued_unpaid','paid_commission_missing_finance_expense']) ok(report.categories.some((row) => row.code === code), `audit missing ${code}`);
+});
+
+test('Financial Audit endpoint enforces backend role authorization and canonical read-only data', () => {
+  ok(auditEndpoint.includes("const AUDIT_ROLES = new Set(['owner', 'finance'])"), 'audit role allowlist missing');
+  ok(auditEndpoint.includes('/auth/v1/user') && auditEndpoint.includes('/rest/v1/admin_profiles'), 'backend identity/profile verification missing');
+  ok(auditEndpoint.includes("action: 'financial_audit_generated'") && auditEndpoint.includes("entity_type: 'financial_audit'"), 'audit generation log missing');
+  ok(auditEndpoint.includes('buildReadOnlyFinancialAudit'), 'canonical finance audit model not reused');
+  ok(!/serviceRole|SERVICE_ROLE/.test(auditService), 'service-role credential referenced by browser audit service');
+  ok(!/customer_email|customer_phone|buyer_email|buyer_phone|description|title/.test(auditEndpoint.match(/const FINANCE_FIELDS\s*=\s*'([^']+)'/)?.[1] || ''), 'unnecessary PII/free text included in Finance evidence query');
+});
+
+test('Financial Audit source metadata counts canonical input arrays deterministically', () => {
+  const counts = buildSourceCounts({ bookings:[{},{}], bookingCodes:[{}], giftCards:[{}, {}, {}], partnerCommissions:[{}], financeEntries:[{},{}] });
+  eq(JSON.stringify(counts), JSON.stringify({ bookingRequests:2, bookingCodes:1, giftCards:3, partnerCommissions:1, financeEntries:2 }), 'source count breakdown');
+  eq(Object.values(counts).reduce((sum, value) => sum + value, 0), 9, 'canonical source record count');
+  ok(auditEndpoint.includes('const sourceCounts = buildSourceCounts({ bookings, bookingCodes, giftCards, partnerCommissions, financeEntries })'), 'endpoint does not count canonical source arrays');
+  ok(!auditEndpoint.includes('Object.values(report.totals).slice'), 'report totals remain the record-count source');
+});
+
+test('Financial Audit exports include canonical evidence integrity metadata and minimize evidence', () => {
+  for (const field of ['auditId','generatedAt','dateRange','generatedBy','recordCount','sourceCounts','filters','schemaVersion','evidenceChecksum','checksum','checksumScope','locale','piiIncluded']) ok(auditEndpoint.includes(field), `audit metadata missing ${field}`);
+  ok(auditEndpoint.includes("crypto.subtle.digest('SHA-256'"), 'SHA-256 evidence checksum missing');
+  ok(auditEndpoint.includes("checksumScope:'canonical_evidence_not_file_bytes'"), 'evidence checksum scope is ambiguous');
+  ok(auditEndpoint.includes('checksum:evidenceChecksum'), 'legacy checksum compatibility alias missing');
+  ok(auditEndpoint.includes('JSON.stringify({metadata})'), 'integrity manifest omits metadata');
+  ok(auditEndpoint.includes('MAX_ROWS_PER_TABLE'), 'bounded pagination missing');
+  ok(auditEndpoint.includes("piiIncluded:false"), 'PII minimization flag missing');
+});
+
+test('Financial Audit CSV is deterministic and spreadsheet-formula safe', () => {
+  ok(safeCsv('=SUM(1,1)').startsWith('"\'='), 'formula prefix not neutralized');
+  const metadata = { auditId:'a',generatedAt:'2026-09-01T00:00:00Z',dateRange:{from:'2026-08-01',to:'2026-08-31'} };
+  const report = { classifications:{safeDeterministic:[],humanReview:[{classification:'HUMAN_REVIEW_REQUIRED',reason:'booking_zero_recorded_payment',sourceType:'booking_request',sourceId:'b1',currency:'EUR',amount:10}]} };
+  const csv = csvExport(metadata,report);
+  ok(csv.startsWith('\uFEFF') && csv.endsWith('\r\n'), 'CSV encoding/line endings are not deterministic');
+  ok(csv.includes('booking_zero_recorded_payment') && !/email|phone/i.test(csv), 'CSV evidence content is incorrect');
+});
+
+test('Financial Audit PDF is explicitly a summary while CSV remains detailed evidence', () => {
+  const metadata = { auditId:'a',generatedAt:'2026-09-01T00:00:00Z',dateRange:{from:'',to:''},generatedBy:'u',recordCount:0,schemaVersion:'v1',locale:'en',evidenceChecksum:'abc',checksum:'abc' };
+  const report = { categories:[],totals:{humanReview:0,safeDeterministic:0} };
+  const pdf = pdfExport(metadata,report);
+  ok(pdf.startsWith('%PDF-1.4') && pdf.includes('Financial Audit Summary') && pdf.includes('Detailed evidence rows are provided in the CSV export') && pdf.endsWith('%%EOF'), 'summary PDF contract missing');
+  ok(auditEndpoint.includes('-summary.pdf') && auditEndpoint.includes('-detailed-evidence.csv') && auditEndpoint.includes('-integrity-manifest.json'), 'export filenames do not distinguish contracts');
+  ok(mainSource.includes("'PDF riepilogo', 'Summary PDF'") && mainSource.includes("'CSV evidenze dettagliate', 'Detailed evidence CSV'"), 'Admin export labels do not distinguish summary and evidence');
 });
 
 test('multi-currency P&L stays separated with no implicit FX', () => {

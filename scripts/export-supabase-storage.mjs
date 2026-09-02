@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { resolveSupabaseBackendCredential } from '../functions/api/_shared/supabaseBackend.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const EXPORT_DIR = process.env.STORAGE_EXPORT_DIR || 'backup/storage-assets';
 const PROJECT_INFO_PATH = process.env.PROJECT_INFO_PATH || 'backup/00_project_info.json';
 const LIST_LIMIT = 1000;
@@ -12,6 +12,14 @@ function requireEnv(name, value) {
   if (!value || !String(value).trim()) {
     throw new Error(`${name} is required`);
   }
+}
+
+function secretCompatibleFetch(credential) {
+  return (input, init = {}) => {
+    const headers = new Headers(init.headers || {});
+    if (credential.kind === 'secret' && headers.get('Authorization') === `Bearer ${credential.key}`) headers.delete('Authorization');
+    return globalThis.fetch(input, { ...init, headers });
+  };
 }
 
 function safePathSegments(value) {
@@ -89,18 +97,20 @@ async function updateProjectInfo(partial) {
 }
 
 async function writeStorageReadme(manifest) {
-  const readme = `# Supabase Storage backup\n\nThis folder contains Supabase Storage files exported by the vulcanIQ backup workflow.\n\n## Contents\n\n- \`manifest.json\` - bucket, object, size, content type, last modified, and failure metadata.\n- \`<bucket-name>/<object-path>\` - downloaded binary files from each Storage bucket.\n\n## Summary\n\n- Generated at: ${manifest.generatedAt}\n- Source Supabase URL: ${manifest.supabaseUrl}\n- Buckets: ${manifest.bucketCount}\n- Downloaded objects: ${manifest.objectCount}\n- Failed objects: ${manifest.failureCount}\n- Total downloaded bytes: ${manifest.totalBytes}\n\n## Restore\n\nRun \`node restore-storage.js\` from the extracted backup folder after setting \`SUPABASE_URL\` and \`SUPABASE_SERVICE_ROLE_KEY\` for the target Supabase project. The restore script creates missing buckets where possible and uploads files with upsert enabled.\n\nIf \`failureCount\` is greater than zero, inspect \`manifest.json\` and manually re-upload failed objects.\n`;
+  const readme = `# Supabase Storage backup\n\nThis folder contains Supabase Storage files exported by the vulcanIQ backup workflow.\n\n## Contents\n\n- \`manifest.json\` - bucket, object, size, content type, last modified, and failure metadata.\n- \`<bucket-name>/<object-path>\` - downloaded binary files from each Storage bucket.\n\n## Summary\n\n- Generated at: ${manifest.generatedAt}\n- Source Supabase URL: ${manifest.supabaseUrl}\n- Buckets: ${manifest.bucketCount}\n- Downloaded objects: ${manifest.objectCount}\n- Failed objects: ${manifest.failureCount}\n- Total downloaded bytes: ${manifest.totalBytes}\n\n## Restore\n\nRun \`node restore-storage.js\` from the extracted backup folder after setting \`SUPABASE_URL\` and preferably \`SUPABASE_SECRET_KEY\` for the target Supabase project. \`SUPABASE_SERVICE_ROLE_KEY\` remains a temporary fallback. The restore script creates missing buckets where possible and uploads files with upsert enabled.\n\nIf \`failureCount\` is greater than zero, inspect \`manifest.json\` and manually re-upload failed objects.\n`;
   await writeFile(path.join(EXPORT_DIR, 'README_STORAGE.md'), readme, 'utf8');
 }
 
 async function main() {
   requireEnv('SUPABASE_URL', SUPABASE_URL);
-  requireEnv('SUPABASE_SERVICE_ROLE_KEY', SERVICE_ROLE_KEY);
+  const backendCredential = resolveSupabaseBackendCredential(process.env);
+  if (!backendCredential) throw new Error('SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY is required');
 
   await mkdir(EXPORT_DIR, { recursive: true });
 
-  const supabase = createClient(SUPABASE_URL.replace(/\/$/, ''), SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false }
+  const supabase = createClient(SUPABASE_URL.replace(/\/$/, ''), backendCredential.key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: secretCompatibleFetch(backendCredential) }
   });
 
   const generatedAt = new Date().toISOString();

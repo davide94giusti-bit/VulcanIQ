@@ -1,3 +1,5 @@
+import { resolveSupabaseEdgeSecretKey } from './supabaseSecretKey.js';
+
 const encoder = new TextEncoder();
 
 export const corsHeaders: HeadersInit = {
@@ -63,9 +65,20 @@ export function recipients(name: string): string[] {
   return [...new Set(env(name).split(',').map((item) => item.trim().toLowerCase()).filter(validEmail))];
 }
 
+export function supabaseBackendCredential(): { key: string; kind: 'secret' | 'legacy_service_role' } {
+  const secretKey = resolveSupabaseEdgeSecretKey({
+    explicitKey: env('SUPABASE_SECRET_KEY', false),
+    serializedKeys: env('SUPABASE_SECRET_KEYS', false),
+    keyName: env('SUPABASE_SECRET_KEY_NAME', false)
+  });
+  if (secretKey) return { key: secretKey, kind: 'secret' };
+
+  return { key: env('SUPABASE_SERVICE_ROLE_KEY'), kind: 'legacy_service_role' };
+}
+
 export function supabaseHeaders(extra: HeadersInit = {}): HeadersInit {
-  const key = env('SUPABASE_SERVICE_ROLE_KEY');
-  return { apikey: key, authorization: `Bearer ${key}`, 'content-type': 'application/json', ...extra };
+  const credential = supabaseBackendCredential();
+  return { apikey: credential.key, ...(credential.kind === 'legacy_service_role' ? { authorization: `Bearer ${credential.key}` } : {}), 'content-type': 'application/json', ...extra };
 }
 
 export async function db(path: string, init: RequestInit = {}): Promise<Response> {
@@ -119,7 +132,7 @@ export async function requireAdmin(req: Request): Promise<string> {
   const auth = clean(req.headers.get('authorization'), 4096);
   if (!auth.toLowerCase().startsWith('bearer ')) throw new Error('unauthorized');
   const supabaseUrl = env('SUPABASE_URL').replace(/\/$/, '');
-  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: env('SUPABASE_SERVICE_ROLE_KEY'), authorization: auth } });
+  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: supabaseBackendCredential().key, authorization: auth } });
   if (!userResponse.ok) throw new Error('unauthorized');
   const user = await userResponse.json();
   const userId = clean(user?.id, 80);

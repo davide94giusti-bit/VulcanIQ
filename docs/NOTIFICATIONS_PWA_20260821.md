@@ -96,7 +96,8 @@ Cloudflare Pages Functions:
 - `NOTIFICATIONS_DB` — D1 binding, not an environment string;
 - `SUPABASE_URL`;
 - `SUPABASE_ANON_KEY`;
-- `SUPABASE_SERVICE_ROLE_KEY` — server only;
+- `SUPABASE_SECRET_KEY` — preferred server-only backend credential;
+- `SUPABASE_SERVICE_ROLE_KEY` — temporary server-only fallback;
 - `VAPID_PUBLIC_KEY`;
 - `VAPID_PRIVATE_KEY` — secret;
 - `VAPID_SUBJECT`;
@@ -109,7 +110,8 @@ Notification Worker:
 - same `NOTIFICATIONS_DB` D1 database;
 - `SUPABASE_URL`;
 - `SUPABASE_ANON_KEY`;
-- `SUPABASE_SERVICE_ROLE_KEY` — server only, used for Admin upcoming-booking polling;
+- `SUPABASE_SECRET_KEY` — preferred server-only credential for Admin upcoming-booking polling;
+- `SUPABASE_SERVICE_ROLE_KEY` — temporary server-only fallback;
 - `VAPID_PUBLIC_KEY`;
 - `VAPID_PRIVATE_KEY` — secret;
 - `VAPID_SUBJECT`;
@@ -121,7 +123,7 @@ Supabase `notify-new-request` Edge Function, only when immediate Admin push inge
 - `NOTIFICATION_INGEST_SECRET` — same shared ingest secret as Cloudflare;
 - optional `REQUEST_NOTIFICATION_ALLOWED_ORIGINS`.
 
-No private VAPID key, service-role key or ingest secret belongs in `VITE_*` variables.
+No Supabase secret/service-role key, private VAPID key, or ingest secret belongs in `VITE_*` variables. Opaque `sb_secret_...` credentials are sent as `apikey`, never as user bearer JWTs.
 
 ## Cost / safety circuit breaker
 

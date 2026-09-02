@@ -63,7 +63,7 @@ VITE_SUPABASE_URL=your-project-url
 VITE_SUPABASE_ANON_KEY=your-anon-public-key
 ```
 
-Do **not** expose the Supabase service role key in frontend JavaScript.
+Do **not** expose a Supabase secret or legacy service-role key in frontend JavaScript.
 
 ## Public and brand assets
 
@@ -222,10 +222,12 @@ Required server-side environment variables for the Cloudflare Pages ingestion en
 
 ```bash
 SUPABASE_URL=your-project-url
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_SECRET_KEY=your-sb-secret-key
+# Temporary rollback fallback only:
+SUPABASE_SERVICE_ROLE_KEY=your-legacy-service-role-key
 ```
 
-Do not expose `SUPABASE_SERVICE_ROLE_KEY` in frontend code. It must be set only in Cloudflare Pages environment variables for server-side Functions.
+Prefer `SUPABASE_SECRET_KEY`; the legacy `SUPABASE_SERVICE_ROLE_KEY` remains a temporary fallback during staged migration. Both are server-only and must never use a `VITE_*` name or enter frontend code.
 
 Optional Cloudflare Web Analytics support:
 

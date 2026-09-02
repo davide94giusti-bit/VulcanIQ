@@ -5,7 +5,11 @@ const path = require('node:path');
 
 const ROOT_DIR = process.cwd();
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const SECRET_KEY = String(process.env.SUPABASE_SECRET_KEY || '').trim();
+const LEGACY_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+if (SECRET_KEY && !/^sb_secret_[A-Za-z0-9_-]+$/.test(SECRET_KEY)) throw new Error('SUPABASE_SECRET_KEY is not a valid Supabase secret key');
+const BACKEND_KEY = SECRET_KEY || LEGACY_SERVICE_ROLE_KEY;
+const USE_LEGACY_BEARER = !SECRET_KEY && Boolean(LEGACY_SERVICE_ROLE_KEY);
 const MANIFEST_PATH = path.join(ROOT_DIR, 'storage-assets', 'manifest.json');
 
 function requireEnv(name, value) {
@@ -24,8 +28,8 @@ function encodeObjectPath(value) {
 
 function headers(contentType = 'application/json') {
   const result = {
-    apikey: SERVICE_ROLE_KEY,
-    Authorization: `Bearer ${SERVICE_ROLE_KEY}`
+    apikey: BACKEND_KEY,
+    ...(USE_LEGACY_BEARER ? { Authorization: `Bearer ${BACKEND_KEY}` } : {})
   };
   if (contentType) result['Content-Type'] = contentType;
   return result;
@@ -85,7 +89,7 @@ async function uploadObject(object) {
 
 async function main() {
   requireEnv('SUPABASE_URL', SUPABASE_URL);
-  requireEnv('SUPABASE_SERVICE_ROLE_KEY', SERVICE_ROLE_KEY);
+  requireEnv('SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY', BACKEND_KEY);
 
   const rawManifest = await readFile(MANIFEST_PATH, 'utf8').catch(() => {
     throw new Error('storage-assets/manifest.json was not found. This is probably an older database-only backup. Check Storage manually and re-upload missing files.');
@@ -146,6 +150,6 @@ async function main() {
 
 main().catch((error) => {
   console.error(`Supabase Storage restore failed: ${error.message}`);
-  console.error('Usage: SUPABASE_URL="https://target-project.supabase.co" SUPABASE_SERVICE_ROLE_KEY="..." node restore-storage.js');
+  console.error('Usage: SUPABASE_URL="https://target-project.supabase.co" SUPABASE_SECRET_KEY="..." node restore-storage.js');
   process.exit(1);
 });
