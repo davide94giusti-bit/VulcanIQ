@@ -10,6 +10,7 @@ const status = read('functions/api/admin/backup/status.js');
 const ui = read('src/main.jsx');
 const css = read('src/styles/admin-system.css');
 const docs = read('docs/BACKUP_RESTORE.md');
+const backupValueRule = css.match(/\.backup-summary-grid \.summary-card strong\s*\{([^}]*)\}/)?.[1] || '';
 
 let passed = 0;
 let failed = 0;
@@ -32,7 +33,8 @@ test('Backup status exposes Storage, Auth, and integrity summaries', status.incl
 test('Admin Storage card reports export status rather than a misleading boolean', ui.includes("'Esportazione Storage', 'Storage export'") && ['Completa', 'Parziale', 'Non riuscita', 'Nessuna esportazione'].every((value) => ui.includes(value)));
 test('Admin UI exposes sanitized partial-failure diagnostics', ui.includes('function BackupStorageFailures') && ui.includes('referenceChecked') && ui.includes('failure.errorCode') && !ui.includes('failure.errorMessage'));
 test('duplicate backup creation is disabled while workflow or monitor is active', ui.includes('workflowIsActive || backupProgress.active'));
-test('Backup cards and failure details remain responsive', css.includes('.backup-failure-list') && css.includes('overflow-wrap: anywhere') && css.includes('grid-template-columns: minmax(0, 1fr) !important'));
+test('Backup card values preserve normal word boundaries responsively', css.includes('.backup-failure-list') && css.includes('grid-template-columns: minmax(0, 1fr) !important') && backupValueRule.includes('overflow-wrap: normal') && backupValueRule.includes('word-break: normal') && backupValueRule.includes('hyphens: none') && !/overflow-wrap:\s*anywhere|word-break:\s*break-all/.test(backupValueRule));
+test('Backup create action uses the explicit localized copy', ui.includes("'Crea nuovo backup', 'Create new backup'") && !ui.includes("'Crea backup', 'Create backup'"));
 test('restore documentation requires checksum and separate Auth recovery', docs.includes('sha256sum -c checksums.sha256') && docs.includes('separately approved Supabase Auth process'));
 
 console.log(`\n${passed} passed, ${failed} failed.`);

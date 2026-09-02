@@ -11142,7 +11142,7 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
             {actionState.downloadLoading ? adminCopy(lang, 'Download del backup in corso...', 'Downloading backup...') : adminCopy(lang, 'Scarica ultimo backup', 'Download latest backup')}
           </button>
           <button className="button secondary" type="button" disabled={actionState.createLoading || actionState.downloadLoading || workflowIsActive || backupProgress.active} onClick={handleCreateBackup}>
-            {actionState.createLoading ? adminCopy(lang, 'Avvio backup...', 'Starting backup...') : adminCopy(lang, 'Crea backup', 'Create backup')}
+            {actionState.createLoading ? adminCopy(lang, 'Avvio backup...', 'Starting backup...') : adminCopy(lang, 'Crea nuovo backup', 'Create new backup')}
           </button>
           <button className="button secondary" type="button" onClick={() => { setShowWorkflowDetails((value) => !value); refreshBackupStatus(); }}>{adminCopy(lang, 'Vedi stato workflow', 'View workflow status')}</button>
         </div>

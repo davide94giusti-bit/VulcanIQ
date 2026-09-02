@@ -52,11 +52,17 @@
 .backup-header-actions .button,
 .backup-schedule-actions .button { white-space: normal; text-align: center; }
 .backup-summary-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
-.backup-summary-grid .summary-card,
-.backup-workflow-grid div { overflow-wrap: anywhere; word-break: break-word; }
-.backup-summary-grid .summary-card strong,
+.backup-summary-grid .summary-card strong {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  font-size: clamp(1.35rem, 2vw, 1.85rem);
+  line-height: 1.08;
+  letter-spacing: -.035em;
+}
+.backup-summary-grid .summary-card > span,
+.backup-workflow-grid dd { overflow-wrap: normal; word-break: normal; hyphens: none; }
 .backup-summary-grid .summary-card small,
-.backup-workflow-grid dd,
 .backup-code-grid code { overflow-wrap: anywhere; word-break: break-word; }
 .backup-schedule-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .backup-schedule-grid input,
