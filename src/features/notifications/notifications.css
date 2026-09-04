@@ -14,3 +14,9 @@
 .preparation-guidance-grid ul{margin:.65rem 0 0;padding-left:1.15rem}
 .preparation-guidance-grid li+li{margin-top:.45rem}
 @media(max-width:700px){.notification-item-actions .button{flex:1 1 8rem;min-width:0}.preparation-guidance-grid{grid-template-columns:1fr}}
+.owned-journey-card .campaign-row{align-items:center}
+.owned-journey-disconnect{flex:0 0 auto;justify-content:center;width:auto;max-width:100%;min-width:7.5rem}
+.owned-journey-disconnect:hover{border-color:rgba(16,27,45,.34);box-shadow:0 8px 20px rgba(16,27,45,.1)}
+.owned-journey-disconnect:active{transform:translateY(0);box-shadow:inset 0 1px 2px rgba(16,27,45,.12)}
+.owned-journey-disconnect:focus-visible{outline:3px solid #d9922e;outline-offset:3px}
+@media(max-width:700px){.owned-journey-card .campaign-row{align-items:flex-start}.owned-journey-disconnect{align-self:flex-start;max-width:100%;margin-top:.15rem}}
