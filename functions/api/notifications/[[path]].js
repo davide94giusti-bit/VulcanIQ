@@ -1,4 +1,4 @@
-import { sendEmptyWebPush } from '../../../shared/webPush.js';
+import { sendWebPush } from '../../../shared/webPush.js';
 import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../_shared/supabaseBackend.js';
 import { isOwnershipClaimToken, notificationEntityRef, ownershipClaimStateError, sha256Hex } from './_ownership.js';
 
@@ -115,6 +115,19 @@ function inQuietHours(pref, date = new Date()) {
   const start = toMin(pref.quiet_start), end = toMin(pref.quiet_end); return start === end ? false : start < end ? now >= start && now < end : now >= start || now < end;
 }
 async function increment(database, key, amount = 1) { const day = nowIso().slice(0,10); await database.prepare('INSERT INTO notification_usage_counters(counter_date,counter_key,counter_value,updated_at) VALUES(?,?,?,?) ON CONFLICT(counter_date,counter_key) DO UPDATE SET counter_value=counter_value+excluded.counter_value,updated_at=excluded.updated_at').bind(day,key,amount,nowIso()).run(); }
+function pushAttemptState(push) {
+  if (push.accepted) return { outcome: 'sent', errorCode: 'push_service_accepted' };
+  if (push.retryable) return { outcome: 'retryable_error', errorCode: 'retryable_push_error' };
+  if (push.unknown) return { outcome: 'outcome_unknown', errorCode: 'push_outcome_unknown' };
+  if (push.dead) return { outcome: 'permanent_error', errorCode: 'dead_subscription' };
+  return { outcome: 'permanent_error', errorCode: push.error || 'permanent_push_error' };
+}
+async function recordPushAttempt(database, jobId, attemptNumber, push) {
+  if (!jobId || !attemptNumber) return;
+  const state = pushAttemptState(push);
+  await database.prepare("INSERT OR IGNORE INTO notification_delivery_attempts(id,job_id,attempt_number,transport,outcome,http_status,error_code,created_at) VALUES(?,?,?,'push',?,?,?,?)")
+    .bind(uuid(),jobId,attemptNumber,state.outcome,push.status||null,state.errorCode,nowIso()).run();
+}
 async function budget(database, env) {
   const day = nowIso().slice(0,10); const row = await database.prepare("SELECT counter_value FROM notification_usage_counters WHERE counter_date=? AND counter_key='push_attempts'").bind(day).first();
   const attempts = Number(row?.counter_value || 0); const cap = Math.max(1, Number(env.NOTIFICATION_PUBLIC_DAILY_SEND_CAP || 1000)); const pct = attempts / cap * 100;
@@ -132,7 +145,7 @@ async function fanout(database, env, event) {
   const result = event.recipient_subscription_id
     ? await statement.bind(event.audience, event.recipient_subscription_id).all()
     : await statement.bind(event.audience).all();
-  let attempted=0,sent=0,failed=0,retryable=0,dead=0,unknown=0;
+  let attempted=0,accepted=0,failed=0,retryable=0,dead=0,unknown=0;
   for (const sub of result.results || []) {
     const categories = parseJson(sub.categories_json, []); if (!personalized && !categories.includes(event.category)) continue;
     if (event.language_target && event.language_target !== 'all' && sub.resolved_locale !== event.language_target) continue;
@@ -140,11 +153,13 @@ async function fanout(database, env, event) {
     if(event.inapp_enabled!==false){const inboxId = uuid(); await database.prepare('INSERT OR IGNORE INTO notification_inbox(id,event_id,subscription_id,audience,category,title,body,destination_url,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(inboxId,event.id,sub.id,event.audience,event.category,title,bodyText,event.destination_url || null,nowIso()).run();if(event.job_id)await database.prepare('UPDATE notification_jobs SET inbox_delivered_at=coalesce(inbox_delivered_at,?) WHERE id=?').bind(nowIso(),event.job_id).run();}
     const quiet = inQuietHours(sub) && event.priority !== 'critical'; if (quiet || !endpointValid(sub.endpoint) || event.push_enabled===false) continue;
     attempted += 1; await increment(database, 'push_attempts');
+    const attemptNumber=event.job_id?1:0;
     if(event.job_id){const started=nowIso();await database.prepare('UPDATE notification_jobs SET push_started_at=?,last_attempt_at=?,attempt_count=attempt_count+1 WHERE id=? AND push_started_at IS NULL AND push_delivered_at IS NULL').bind(started,started,event.job_id).run();}
-    const push = await sendEmptyWebPush(sub, env, { urgency: event.priority === 'critical' ? 'high' : 'normal' });
-    if (push.ok) { sent += 1; await increment(database, 'push_success');if(event.job_id)await database.prepare('UPDATE notification_jobs SET push_delivered_at=?,terminal_reason=NULL WHERE id=?').bind(nowIso(),event.job_id).run(); } else { failed += 1; await increment(database, 'push_failed');if(push.dead){dead+=1;await database.prepare('UPDATE notification_subscriptions SET endpoint=?,p256dh=NULL,auth=NULL,enabled=1,updated_at=? WHERE id=?').bind(`inapp://${event.audience}/${(await hash(sub.device_id)).slice(0,32)}`,nowIso(),sub.id).run();if(event.job_id)await database.prepare("UPDATE notification_jobs SET dead_subscription_at=?,terminal_reason='dead_subscription' WHERE id=?").bind(nowIso(),event.job_id).run();}else if(push.status===429||push.status>=500){retryable+=1;if(event.job_id)await database.prepare("UPDATE notification_jobs SET push_started_at=NULL,failure_reason='retryable_push_error' WHERE id=?").bind(event.job_id).run();}else if(push.status===0){unknown+=1;if(event.job_id)await database.prepare("UPDATE notification_jobs SET terminal_reason='push_outcome_unknown' WHERE id=?").bind(event.job_id).run();}else if(event.job_id)await database.prepare("UPDATE notification_jobs SET terminal_reason='permanent_push_error' WHERE id=?").bind(event.job_id).run(); }
+    const push = await sendWebPush(sub, env, { urgency: event.priority === 'critical' ? 'high' : 'normal' });
+    await recordPushAttempt(database,event.job_id,attemptNumber,push);
+    if (push.accepted) { accepted += 1; await increment(database, 'push_success');if(event.job_id)await database.prepare('UPDATE notification_jobs SET push_delivered_at=?,terminal_reason=NULL WHERE id=?').bind(nowIso(),event.job_id).run(); } else { failed += 1; await increment(database, 'push_failed');if(push.dead){dead+=1;await database.prepare('UPDATE notification_subscriptions SET endpoint=?,p256dh=NULL,auth=NULL,enabled=1,updated_at=? WHERE id=?').bind(`inapp://${event.audience}/${(await hash(sub.device_id)).slice(0,32)}`,nowIso(),sub.id).run();if(event.job_id)await database.prepare("UPDATE notification_jobs SET dead_subscription_at=?,terminal_reason='dead_subscription' WHERE id=?").bind(nowIso(),event.job_id).run();}else if(push.retryable){retryable+=1;if(event.job_id)await database.prepare("UPDATE notification_jobs SET push_started_at=NULL,failure_reason='retryable_push_error' WHERE id=?").bind(event.job_id).run();}else if(push.unknown){unknown+=1;if(event.job_id)await database.prepare("UPDATE notification_jobs SET terminal_reason='push_outcome_unknown' WHERE id=?").bind(event.job_id).run();}else if(event.job_id)await database.prepare("UPDATE notification_jobs SET terminal_reason='permanent_push_error' WHERE id=?").bind(event.job_id).run(); }
   }
-  return { attempted, sent, failed, retryable, dead, unknown, suppressed: false, budget: budgetState };
+  return { attempted, accepted, sent:accepted, failed, retryable, dead, unknown, deliveryConfirmed:false, suppressed: false, budget: budgetState };
 }
 
 async function claimOwnership(database, subscription, rawToken) {
@@ -548,12 +563,12 @@ export async function onRequest(context) {
           return json(request, env, 200, { ok: true, pushSkipped: true });
         }
         await increment(database, 'push_attempts');
-        const push = await sendEmptyWebPush(sub, env);
+        const push = await sendWebPush(sub, env);
         if (push.dead) await database.prepare('UPDATE notification_subscriptions SET endpoint=?,p256dh=NULL,auth=NULL,enabled=1,updated_at=? WHERE id=?')
           .bind(`inapp://${audience}/${(await hash(ctx.deviceId)).slice(0,32)}`, nowIso(), sub.id).run();
-        await increment(database, push.ok ? 'push_success' : 'push_failed');
-        await audit(database, push.ok ? 'test_notification_sent' : 'test_notification_failed', { audience, actorId: audience === 'admin' ? ctx.user.id : ctx.deviceId, subscriptionId: sub.id, outcome: push.ok ? 'ok' : String(push.status) });
-        return json(request, env, push.ok ? 200 : 502, { ok: push.ok, dead: push.dead });
+        await increment(database, push.accepted ? 'push_success' : 'push_failed');
+        await audit(database, push.accepted ? 'test_notification_sent' : 'test_notification_failed', { audience, actorId: audience === 'admin' ? ctx.user.id : ctx.deviceId, subscriptionId: sub.id, outcome: push.outcome, metadata: { transport: 'push', httpStatus: push.status || null, deliveryConfirmed: false } });
+        return json(request, env, push.accepted ? 200 : 502, { ok: push.accepted, acceptedByPushService: push.accepted, deliveryConfirmed: false, dead: push.dead, retryable: push.retryable, unknown: push.unknown, pushServiceStatus: push.status || null });
       }
     }
 
@@ -601,7 +616,7 @@ export async function onRequest(context) {
       if(path[1]==='rules'&&request.method==='GET'){const rows=await database.prepare('SELECT rule_key,label_it,label_en,audience,category,enabled,updated_by,created_at,updated_at FROM notification_automation_rules ORDER BY audience,rule_key').all();return json(request,env,200,{ok:true,items:rows.results||[]});}
       if(path[1]==='rules'&&path[2]&&request.method==='PATCH'){const parsed=await body(request,4096);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});if(typeof parsed.value.enabled!=='boolean')return json(request,env,400,{ok:false,error:'enabled_boolean_required'});const now=nowIso();const result=await database.prepare('UPDATE notification_automation_rules SET enabled=?,updated_by=?,updated_at=? WHERE rule_key=?').bind(parsed.value.enabled?1:0,auth.user.id,now,path[2]).run();if(!result.meta?.changes)return json(request,env,404,{ok:false,error:'automation_rule_not_found'});await audit(database,parsed.value.enabled?'automation_rule_enabled':'automation_rule_disabled',{audience:'admin',actorId:auth.user.id,metadata:{ruleKey:path[2]}});return json(request,env,200,{ok:true,ruleKey:path[2],enabled:parsed.value.enabled});}
       if(path[1]==='personalized'&&request.method==='GET'){const rows=await database.prepare('SELECT event_type,status,recipient_count,job_count,failure_reason,created_at,resolved_at FROM notification_personalized_events ORDER BY created_at DESC LIMIT 200').all();const config=supabaseConfig(env);let outbox=[];if(config){const params=new URLSearchParams({select:'id,event_type,status,attempt_count,next_attempt_at,last_attempt_at,processed_at,last_error_code,created_at',order:'created_at.desc',limit:'200'});outbox=await backendRows(config,'customer_notification_outbox',params);}return json(request,env,200,{ok:true,items:rows.results||[],outbox});}
-      if(path[1]==='jobs'&&request.method==='GET'){const rows=await database.prepare('SELECT id,rule_key,source_type,source_id,source_revision,audience,category,scheduled_for,status,created_at,processing_at,sent_at,cancelled_at,failure_reason,attempt_count,max_attempts,next_attempt_at,last_attempt_at,terminal_reason,dead_subscription_at FROM notification_jobs ORDER BY created_at DESC LIMIT 200').all();return json(request,env,200,{ok:true,items:rows.results||[]});}
+      if(path[1]==='jobs'&&request.method==='GET'){const rows=await database.prepare('SELECT id,rule_key,source_type,source_id,source_revision,audience,category,scheduled_for,status,created_at,processing_at,sent_at,cancelled_at,failure_reason,attempt_count,max_attempts,next_attempt_at,last_attempt_at,terminal_reason,push_started_at,push_delivered_at,dead_subscription_at FROM notification_jobs ORDER BY created_at DESC LIMIT 200').all();return json(request,env,200,{ok:true,items:rows.results||[]});}
       if(path[1]==='jobs'&&path[2]&&path[3]==='cancel'&&request.method==='PATCH'){const now=nowIso();const result=await database.prepare("UPDATE notification_jobs SET status='cancelled',cancelled_at=? WHERE id=? AND status='scheduled'").bind(now,path[2]).run();if(!result.meta?.changes)return json(request,env,409,{ok:false,error:'automation_job_not_cancellable'});await audit(database,'automation_job_cancelled',{audience:'admin',actorId:auth.user.id,metadata:{jobId:path[2]}});return json(request,env,200,{ok:true,id:path[2],status:'cancelled'});}
       return json(request,env,404,{ok:false,error:'not_found'});
     }

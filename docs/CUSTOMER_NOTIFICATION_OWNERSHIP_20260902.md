@@ -32,6 +32,9 @@ Canonical booking, recognized Finance, and fixed-excursion mutations enqueue det
 - Revocation cancels future scheduled work. Reschedule and cancellation cancel obsolete upcoming reminders before replacement or terminal delivery.
 - Fixed excursions use canonical local date/start time in `Europe/Rome` plus the internal reminder rule offset. Private/date-only bookings retain the documented 09:00 UTC fallback rather than inventing a time.
 - Transient push responses (429/5xx) retry at most three times with exponential backoff once the scheduler is enabled. 404/410 becomes in-app-only. An unknown outcome after push starts is terminal and is never replayed.
+- Native Web Push carries only an RFC 8291-encrypted, generic, PII-free wake-up payload. The Public and Admin service workers continue to own the localized notification copy and deliberately tolerate empty or unparsed event data.
+- A successful push-service HTTP response means the message was accepted for delivery; it does not prove that the browser or operating system displayed a notification. There is no client delivery receipt in this release.
+- Existing D1 compatibility names (`push_success`, `push_delivered_at`, and delivery-attempt outcome `sent`) represent push-service acceptance, not visible delivery. Successful attempt rows use the safe `push_service_accepted` code to make that boundary explicit.
 - Status/payment, operational, upcoming, review, push, and in-app consent are typed per ownership. Marketing/promotions remain separate public consent.
 - Existing budget safety remains authoritative. Under hard safety, customer push work is suppressed rather than upgraded to critical.
 - Cron remains OFF. Immediate Pages events work without Cron; scheduled reminders remain pending until a separately approved scheduler is enabled.
@@ -77,7 +80,7 @@ The Preview Worker keeps its dedicated Preview D1 binding and existing non-secre
 9. Verify quiet-hours behavior with a tester subscription. The in-app item follows existing semantics; noncritical push is skipped during Quiet Hours. Customer events never bypass as critical.
 10. Verify public campaigns and Admin operational notifications still work independently and that public campaign category input cannot select any `customer_*` category.
 11. Disable each typed owned-journey preference in turn and confirm its event is suppressed only for that ownership; marketing preferences remain unchanged.
-12. Simulate retryable, permanent, dead-endpoint, and unknown transport outcomes. Confirm bounded backoff, terminal states, and no replay after an uncertain push.
+12. Simulate accepted, retryable, permanent, dead-endpoint, and unknown transport outcomes. Confirm the accepted state is described only as push-service acceptance, bounded backoff and terminal states are correct, and no replay occurs after an uncertain push.
 13. Interrupt reconciliation after the Supabase mutation. Confirm the outbox row remains visible, use **Retry**, and confirm D1 dedupe creates one effective send.
 
 ## Operational risks and rollback
