@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { webcrypto } from 'node:crypto';
+import vm from 'node:vm';
 import { sendWebPush } from '../shared/webPush.js';
 
 if (!globalThis.crypto) Object.defineProperty(globalThis, 'crypto', { value: webcrypto });
@@ -48,6 +50,55 @@ async function capturePush(pushFixture, response = new Response(null, { status: 
   try { return { result: await sendWebPush(pushFixture.subscription, pushFixture.env, options), request }; }
   finally { globalThis.fetch = originalFetch; }
 }
+async function decryptPushPayload(pushFixture, message) {
+  const salt = message.slice(0, 16); const recordSize = new DataView(message.buffer, message.byteOffset + 16, 4).getUint32(0); const keyLength = message[20];
+  const applicationPublic = message.slice(21, 21 + keyLength); const ciphertext = message.slice(21 + keyLength);
+  assert.equal(recordSize, 4096); assert.equal(keyLength, 65); assert.equal(applicationPublic[0], 4);
+  const applicationKey = await crypto.subtle.importKey('raw', applicationPublic, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: applicationKey }, pushFixture.userPair.privateKey, 256));
+  const keyPrk = await hkdfExtract(pushFixture.authSecret, shared);
+  const ikm = await hkdfExpand(keyPrk, concat(encoder.encode('WebPush: info'), Uint8Array.of(0), pushFixture.userPublic, applicationPublic), 32);
+  const contentPrk = await hkdfExtract(salt, ikm);
+  const contentKey = await hkdfExpand(contentPrk, concat(encoder.encode('Content-Encoding: aes128gcm'), Uint8Array.of(0)), 16);
+  const nonce = await hkdfExpand(contentPrk, concat(encoder.encode('Content-Encoding: nonce'), Uint8Array.of(0)), 12);
+  const aesKey = await crypto.subtle.importKey('raw', contentKey, 'AES-GCM', false, ['decrypt']);
+  const plaintext = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce, tagLength: 128 }, aesKey, ciphertext));
+  assert.equal(plaintext.at(-1), 2);
+  return JSON.parse(decoder.decode(plaintext.slice(0, -1)));
+}
+async function runPublicServiceWorkerPush(data, locale = 'en') {
+  const listeners = {}; const shown = [];
+  const indexedDB = { open() {
+    const request = { result: { transaction() { return { objectStore() { return { get() { const getRequest = {}; queueMicrotask(() => { getRequest.result = { locale }; getRequest.onsuccess?.(); }); return getRequest; } }; } }; }, close() {} } };
+    queueMicrotask(() => request.onsuccess?.()); return request;
+  } };
+  const self = {
+    addEventListener(type, listener) { listeners[type] = listener; },
+    location: { origin: 'https://preview.vulcaniq.invalid' },
+    registration: { async showNotification(title, options) { shown.push({ title, options }); } },
+    clients: { async matchAll() { return []; }, async openWindow() {} }
+  };
+  vm.runInNewContext(fs.readFileSync('public/sw.js', 'utf8'), { self, indexedDB, URL, Promise, queueMicrotask });
+  let pending;
+  const event = { waitUntil(value) { pending = value; }, ...(data === undefined ? {} : { data: { json() { if (data instanceof Error) throw data; return data; } } }) };
+  listeners.push(event); await pending;
+  assert.equal(shown.length, 1);
+  return shown[0];
+}
+async function runPublicServiceWorkerClick(url) {
+  const listeners = {}; const opened = [];
+  const self = {
+    addEventListener(type, listener) { listeners[type] = listener; },
+    location: { origin: 'https://preview.vulcaniq.invalid' },
+    registration: { async showNotification() {} },
+    clients: { async matchAll() { return []; }, async openWindow(target) { opened.push(target); } }
+  };
+  vm.runInNewContext(fs.readFileSync('public/sw.js', 'utf8'), { self, indexedDB: {}, URL, Promise, queueMicrotask });
+  let pending; let closed = false;
+  listeners.notificationclick({ notification: { data: { url }, close() { closed = true; } }, waitUntil(value) { pending = value; } });
+  await pending; assert.equal(closed, true); assert.equal(opened.length, 1);
+  return opened[0];
+}
 async function test(name, callback) {
   try { await callback(); passed += 1; console.log(`PASS  ${name}`); }
   catch (error) { failed += 1; console.error(`FAIL  ${name}: ${error.message}`); }
@@ -93,19 +144,72 @@ await test('request uses an encrypted Web Push body without forcing Content-Leng
 
 await test('encrypted payload conforms to RFC 8291 and remains generic', async () => {
   const pushFixture = await fixture(); const { request } = await capturePush(pushFixture, new Response(null, { status: 201 }), { payload: 'forbidden-custom-data' }); const message = request.init.body;
-  const salt = message.slice(0, 16); const recordSize = new DataView(message.buffer, message.byteOffset + 16, 4).getUint32(0); const keyLength = message[20];
-  const applicationPublic = message.slice(21, 21 + keyLength); const ciphertext = message.slice(21 + keyLength);
-  assert.equal(recordSize, 4096); assert.equal(keyLength, 65); assert.equal(applicationPublic[0], 4);
-  const applicationKey = await crypto.subtle.importKey('raw', applicationPublic, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
-  const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: applicationKey }, pushFixture.userPair.privateKey, 256));
-  const keyPrk = await hkdfExtract(pushFixture.authSecret, shared);
-  const ikm = await hkdfExpand(keyPrk, concat(encoder.encode('WebPush: info'), Uint8Array.of(0), pushFixture.userPublic, applicationPublic), 32);
-  const contentPrk = await hkdfExtract(salt, ikm);
-  const contentKey = await hkdfExpand(contentPrk, concat(encoder.encode('Content-Encoding: aes128gcm'), Uint8Array.of(0)), 16);
-  const nonce = await hkdfExpand(contentPrk, concat(encoder.encode('Content-Encoding: nonce'), Uint8Array.of(0)), 12);
-  const aesKey = await crypto.subtle.importKey('raw', contentKey, 'AES-GCM', false, ['decrypt']);
-  const plaintext = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce, tagLength: 128 }, aesKey, ciphertext));
-  assert.equal(plaintext.at(-1), 2); assert.deepEqual(JSON.parse(decoder.decode(plaintext.slice(0, -1))), { type: 'vulcaniq-notification' });
+  assert.deepEqual(await decryptPushPayload(pushFixture, message), { type: 'vulcaniq-notification' });
+});
+
+await test('safe notification presentation is normalized and encrypted', async () => {
+  const pushFixture = await fixture();
+  const notification = { type: 'attacker-type', category: 'customer_booking_confirmed', title: ' Booking confirmed ', body: ' Your vulcanIQ booking has been confirmed. ', url: '/install?lang=en' };
+  const { request } = await capturePush(pushFixture, new Response(null, { status: 201 }), { notification });
+  assert.deepEqual(await decryptPushPayload(pushFixture, request.init.body), { type: 'vulcaniq-notification', category: 'customer_booking_confirmed', title: 'Booking confirmed', body: 'Your vulcanIQ booking has been confirmed.', url: '/install?lang=en' });
+});
+
+await test('invalid notification presentation fails back to the mandatory generic contract', async () => {
+  const pushFixture = await fixture();
+  const notification = { type: 'wrong', category: 'not valid!', title: { unsafe: true }, body: '', url: 'https://example.invalid/path' };
+  const { request } = await capturePush(pushFixture, new Response(null, { status: 201 }), { notification });
+  assert.deepEqual(await decryptPushPayload(pushFixture, request.init.body), { type: 'vulcaniq-notification' });
+});
+
+await test('helper defaults contain no PII-like or business identifier fields', async () => {
+  const pushFixture = await fixture(); const { request } = await capturePush(pushFixture); const payload = await decryptPushPayload(pushFixture, request.init.body);
+  for (const forbidden of ['booking_id', 'entity_id', 'ownership_id', 'claim', 'subscription_id', 'device_id', 'customer_name', 'email', 'phone', 'booking_code', 'gift_card_code', 'amount']) assert.equal(forbidden in payload, false);
+});
+
+await test('helper rejects obvious contact details and raw UUIDs from presentation', async () => {
+  const pushFixture = await fixture();
+  for (const notification of [
+    { category: 'news', title: 'Contact guest@example.invalid', body: 'Safe body', url: '/install' },
+    { category: 'news', title: 'Safe title', body: 'Call +41 79 123 45 67', url: '/install' }
+  ]) {
+    const { request } = await capturePush(pushFixture, new Response(null, { status: 201 }), { notification });
+    assert.deepEqual(await decryptPushPayload(pushFixture, request.init.body), { type: 'vulcaniq-notification' });
+  }
+  const rawId = '01234567-89ab-cdef-0123-456789abcdef';
+  const { request } = await capturePush(pushFixture, new Response(null, { status: 201 }), { notification: { category: 'news', title: 'Safe title', body: 'Safe body', url: `/install?booking=${rawId}` } });
+  assert.equal((await decryptPushPayload(pushFixture, request.init.body)).url, '/install');
+});
+
+await test('valid public payload displays localized presentation and deterministic tag', async () => {
+  const shown = await runPublicServiceWorkerPush({ type: 'vulcaniq-notification', category: 'customer_booking_confirmed', title: 'Booking confirmed', body: 'Your vulcanIQ booking has been confirmed.', url: '/install?lang=en' });
+  assert.equal(shown.title, 'Booking confirmed'); assert.equal(shown.options.body, 'Your vulcanIQ booking has been confirmed.'); assert.equal(shown.options.data.url, '/install?lang=en'); assert.equal(shown.options.tag, 'vulcaniq-customer_booking_confirmed');
+});
+
+await test('empty public payload displays the safe localized fallback', async () => {
+  const shown = await runPublicServiceWorkerPush(undefined);
+  assert.equal(shown.title, 'VulcanIQ update'); assert.equal(shown.options.data.url, '/install'); assert.equal(shown.options.tag, 'vulcaniq-public-update');
+});
+
+await test('malformed public payload still displays the safe fallback', async () => {
+  const shown = await runPublicServiceWorkerPush(new Error('malformed-json'));
+  assert.equal(shown.title, 'VulcanIQ update'); assert.equal(shown.options.body, 'A new update is available. Open VulcanIQ for details.');
+});
+
+await test('public service worker rejects external and active-content destinations', async () => {
+  for (const url of ['https://example.invalid/path', 'javascript:alert(1)', 'data:text/html,unsafe', '//example.invalid/path']) {
+    const shown = await runPublicServiceWorkerPush({ type: 'vulcaniq-notification', category: 'news', title: 'Safe title', body: 'Safe body', url });
+    assert.equal(shown.options.data.url, '/install');
+  }
+});
+
+await test('notification click revalidates internal destinations', async () => {
+  assert.equal(await runPublicServiceWorkerClick('/news'), '/news');
+  for (const url of ['https://example.invalid/path', 'javascript:alert(1)', 'data:text/html,unsafe', '//example.invalid/path']) assert.equal(await runPublicServiceWorkerClick(url), '/install');
+});
+
+await test('invalid category uses the privacy-safe fallback tag', async () => {
+  const shown = await runPublicServiceWorkerPush({ type: 'vulcaniq-notification', category: 'booking-123-private', title: 'Safe title', body: 'Safe body', url: '/install' });
+  assert.equal(shown.options.tag, 'vulcaniq-public-update');
 });
 
 await test('push-service acceptance is not represented as browser delivery', async () => {

@@ -12,6 +12,34 @@ function bytesToBase64Url(bytes) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 function jsonBase64Url(value) { return bytesToBase64Url(new TextEncoder().encode(JSON.stringify(value))); }
+function presentationText(value, maxLength) {
+  if (typeof value !== 'string') return '';
+  const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleaned || cleaned.length > maxLength) return '';
+  if (/\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b/i.test(cleaned)) return '';
+  if (/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(cleaned)) return '';
+  if (/(?:\+?\d[\s().-]*){7,}/.test(cleaned)) return '';
+  return cleaned;
+}
+function presentationCategory(value) {
+  const category = typeof value === 'string' ? value.trim() : '';
+  return /^[a-z][a-z0-9_]{0,59}$/.test(category) ? category : '';
+}
+function presentationUrl(value) {
+  const url = typeof value === 'string' ? value.trim() : '';
+  if (!url || url.length > 500 || !url.startsWith('/') || url.startsWith('//') || url.includes('\\') || /[\u0000-\u001f\u007f]/.test(url)) return '/install';
+  if (/\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b/i.test(url)) return '/install';
+  return url;
+}
+function pushPayload(notification) {
+  const payload = { type: 'vulcaniq-notification' };
+  if (!notification || typeof notification !== 'object' || Array.isArray(notification)) return payload;
+  const title = presentationText(notification.title, 100);
+  const body = presentationText(notification.body, 240);
+  if (!title || !body) return payload;
+  const category = presentationCategory(notification.category);
+  return { ...payload, ...(category ? { category } : {}), title, body, url: presentationUrl(notification.url) };
+}
 function concatBytes(...parts) {
   const result = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
   let offset = 0;
@@ -90,7 +118,7 @@ export async function sendWebPush(subscription, env = {}, options = {}) {
   if (!subscription?.endpoint) return failure(new Error('missing_endpoint'));
   try {
     const { token, publicKey } = await vapidJwt(subscription.endpoint, env);
-    const payload = JSON.stringify({ type: 'vulcaniq-notification' });
+    const payload = JSON.stringify(pushPayload(options.notification));
     const body = await encryptedPushBody(subscription, payload);
     const response = await fetch(subscription.endpoint, {
       method: 'POST',

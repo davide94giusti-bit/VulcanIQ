@@ -155,7 +155,8 @@ async function fanout(database, env, event) {
     attempted += 1; await increment(database, 'push_attempts');
     const attemptNumber=event.job_id?1:0;
     if(event.job_id){const started=nowIso();await database.prepare('UPDATE notification_jobs SET push_started_at=?,last_attempt_at=?,attempt_count=attempt_count+1 WHERE id=? AND push_started_at IS NULL AND push_delivered_at IS NULL').bind(started,started,event.job_id).run();}
-    const push = await sendWebPush(sub, env, { urgency: event.priority === 'critical' ? 'high' : 'normal' });
+    const notification = event.audience === 'public' ? { category: event.category, title, body: bodyText, url: event.destination_url } : undefined;
+    const push = await sendWebPush(sub, env, { urgency: event.priority === 'critical' ? 'high' : 'normal', notification });
     await recordPushAttempt(database,event.job_id,attemptNumber,push);
     if (push.accepted) { accepted += 1; await increment(database, 'push_success');if(event.job_id)await database.prepare('UPDATE notification_jobs SET push_delivered_at=?,terminal_reason=NULL WHERE id=?').bind(nowIso(),event.job_id).run(); } else { failed += 1; await increment(database, 'push_failed');if(push.dead){dead+=1;await database.prepare('UPDATE notification_subscriptions SET endpoint=?,p256dh=NULL,auth=NULL,enabled=1,updated_at=? WHERE id=?').bind(`inapp://${event.audience}/${(await hash(sub.device_id)).slice(0,32)}`,nowIso(),sub.id).run();if(event.job_id)await database.prepare("UPDATE notification_jobs SET dead_subscription_at=?,terminal_reason='dead_subscription' WHERE id=?").bind(nowIso(),event.job_id).run();}else if(push.retryable){retryable+=1;if(event.job_id)await database.prepare("UPDATE notification_jobs SET push_started_at=NULL,failure_reason='retryable_push_error' WHERE id=?").bind(event.job_id).run();}else if(push.unknown){unknown+=1;if(event.job_id)await database.prepare("UPDATE notification_jobs SET terminal_reason='push_outcome_unknown' WHERE id=?").bind(event.job_id).run();}else if(event.job_id)await database.prepare("UPDATE notification_jobs SET terminal_reason='permanent_push_error' WHERE id=?").bind(event.job_id).run(); }
   }
@@ -563,7 +564,8 @@ export async function onRequest(context) {
           return json(request, env, 200, { ok: true, pushSkipped: true });
         }
         await increment(database, 'push_attempts');
-        const push = await sendWebPush(sub, env);
+        const notification = audience === 'public' ? { category: event.category, title, body: bodyText, url: event.destination_url } : undefined;
+        const push = await sendWebPush(sub, env, { notification });
         if (push.dead) await database.prepare('UPDATE notification_subscriptions SET endpoint=?,p256dh=NULL,auth=NULL,enabled=1,updated_at=? WHERE id=?')
           .bind(`inapp://${audience}/${(await hash(ctx.deviceId)).slice(0,32)}`, nowIso(), sub.id).run();
         await increment(database, push.accepted ? 'push_success' : 'push_failed');
