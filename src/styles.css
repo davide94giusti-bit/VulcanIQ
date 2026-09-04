@@ -15307,11 +15307,6 @@ section#reviews.compact-section,
   min-width: 0;
 }
 
-.fast-request-edit-row {
-  display: flex;
-  justify-content: flex-start;
-}
-
 .fast-request-contact-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -15394,13 +15389,31 @@ section#reviews.compact-section,
   font-weight: 600;
 }
 
-.fast-request-submit-actions {
+.fast-request-final-actions {
+  display: grid;
+  grid-template-columns: minmax(0, .8fr) minmax(12rem, 1.5fr) minmax(0, .8fr);
+  align-items: stretch;
+  gap: .7rem;
   width: 100%;
+  min-width: 0;
+}
+
+.fast-request-final-actions .button {
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  margin: 0;
+  justify-content: center;
+  text-align: center;
 }
 
 @media (max-width: 600px) {
   .fast-request-contact-fields,
   .fast-request-contact-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .fast-request-final-actions {
     grid-template-columns: 1fr;
   }
 
