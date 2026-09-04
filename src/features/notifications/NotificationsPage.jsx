@@ -8,6 +8,8 @@ import {
   listCustomerNotificationOutbox, retryCustomerNotificationOutbox
 } from '../../services/notificationService.js';
 import { preparationProfileFromKey } from '../../domain/experiencePreparation.js';
+import { notificationUnreadAriaLabel, unreadNotificationCount } from '../../domain/notificationInbox.js';
+import NotificationUnreadBadge from './NotificationUnreadBadge.jsx';
 import './notifications.css';
 
 const PUBLIC_OPTIONS = [
@@ -23,10 +25,10 @@ const ADMIN_OPTIONS = [
 function c(lang, it, en) { return lang === 'it' ? it : en; }
 function defaultCategories(variant) { return variant === 'admin' ? ADMIN_OPTIONS.slice(0, 7).map(([key]) => key) : PUBLIC_OPTIONS.slice(0, 5).map(([key]) => key); }
 
-function DisclosureCard({ id, title, summary, defaultOpen = false, actions = null, children }) {
+function DisclosureCard({ id, title, summary, triggerAriaLabel = '', defaultOpen = false, actions = null, children }) {
   const [open, setOpen] = useState(defaultOpen);
   return <section className={`notifications-card notification-disclosure ${open ? 'is-open' : ''}`}>
-    <div className="notifications-card-head"><button className="notification-disclosure-trigger" type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((value) => !value)}><span>{title}</span><small>{summary}</small><span aria-hidden="true">{open ? '−' : '+'}</span></button>{actions}</div>
+    <div className="notifications-card-head"><button className="notification-disclosure-trigger" type="button" aria-label={triggerAriaLabel || undefined} aria-expanded={open} aria-controls={id} onClick={() => setOpen((value) => !value)}><span>{title}</span><small>{summary}</small><span aria-hidden="true">{open ? '−' : '+'}</span></button>{actions}</div>
     <div id={id} hidden={!open}>{children}</div>
   </section>;
 }
@@ -64,13 +66,30 @@ function PreparationGuidance({ lang }) {
   </section>;
 }
 
-function Inbox({ variant, lang, refreshKey }) {
+function Inbox({ variant, lang, refreshKey, onPublicUnreadCountChange = null }) {
   const [items, setItems] = useState([]); const [error, setError] = useState('');
-  async function load() { try { const data = await listNotificationInbox(variant); setItems(data.items || []); setError(''); } catch (err) { if (err.status !== 404) setError(err.message); } }
+  async function load() {
+    try {
+      const data = await listNotificationInbox(variant);
+      const nextItems = data.items || [];
+      setItems(nextItems);
+      setError('');
+      if (variant === 'public') onPublicUnreadCountChange?.(unreadNotificationCount(nextItems));
+    } catch (err) {
+      if (variant === 'public') onPublicUnreadCountChange?.(null);
+      if (err.status !== 404) setError(c(lang, 'Impossibile aggiornare il centro notifiche.', 'Unable to refresh the notification center.'));
+    }
+  }
   useEffect(() => { load(); }, [variant, refreshKey]);
-  const unread = items.filter((item) => !item.read_at).length;
-  return <DisclosureCard id={`${variant}-notification-inbox`} title={c(lang, 'Centro notifiche', 'Notification center')} summary={unread ? c(lang, `${unread} non lette`, `${unread} unread`) : c(lang, 'Nessuna novità', 'No new notifications')} defaultOpen={variant === 'admin'} actions={<button type="button" className="button secondary" onClick={load}>{c(lang, 'Aggiorna', 'Refresh')}</button>}>
-    <div className="notification-disclosure-body">{error && <p className="notification-error" role="alert">{error}</p>}{items.length === 0 ? <p>{c(lang, 'Nessuna notifica su questo dispositivo.', 'No notifications on this device.')}</p> : <div className="notification-inbox-list">{items.map((item) => <article key={item.id} className={item.read_at ? 'read' : 'unread'}><div><strong>{item.title}</strong><p>{item.body}</p><small>{new Date(item.created_at).toLocaleString(lang === 'it' ? 'it-IT' : 'en-GB')}</small></div><div className="notification-item-actions">{!item.read_at && <button className="button secondary" type="button" onClick={async () => { await markNotificationRead(variant, item.id); load(); }}>{c(lang, 'Letta', 'Mark read')}</button>}{item.destination_url && <a className="button secondary" href={item.destination_url}>{c(lang, 'Apri', 'Open')}</a>}<button className="button secondary notification-action-subtle" type="button" onClick={async () => { await dismissNotification(variant, item.id); load(); }}>{c(lang, 'Nascondi', 'Dismiss')}</button></div></article>)}</div>}</div>
+  async function mutate(action) {
+    try { await action(); await load(); }
+    catch { setError(c(lang, 'Operazione non riuscita. Riprova.', 'Action failed. Please try again.')); }
+  }
+  const unread = unreadNotificationCount(items);
+  const titleLabel = c(lang, 'Centro notifiche', 'Notification center');
+  const title = variant === 'public' ? <span className="notification-title-with-badge"><span>{titleLabel}</span><NotificationUnreadBadge count={unread}/></span> : titleLabel;
+  return <DisclosureCard id={`${variant}-notification-inbox`} title={title} triggerAriaLabel={variant === 'public' ? notificationUnreadAriaLabel(titleLabel, unread, lang) : ''} summary={unread ? c(lang, `${unread} non lette`, `${unread} unread`) : c(lang, 'Nessuna novità', 'No new notifications')} defaultOpen={variant === 'admin'} actions={<button type="button" className="button secondary" onClick={load}>{c(lang, 'Aggiorna', 'Refresh')}</button>}>
+    <div className="notification-disclosure-body">{error && <p className="notification-error" role="alert">{error}</p>}{items.length === 0 ? <p>{c(lang, 'Nessuna notifica su questo dispositivo.', 'No notifications on this device.')}</p> : <div className="notification-inbox-list">{items.map((item) => <article key={item.id} className={item.read_at ? 'read' : 'unread'}><div><strong>{item.title}</strong><p>{item.body}</p><small>{new Date(item.created_at).toLocaleString(lang === 'it' ? 'it-IT' : 'en-GB')}</small></div><div className="notification-item-actions">{!item.read_at && <button className="button secondary" type="button" onClick={() => mutate(() => markNotificationRead(variant, item.id))}>{c(lang, 'Letta', 'Mark read')}</button>}{item.destination_url && <a className="button secondary" href={item.destination_url}>{c(lang, 'Apri', 'Open')}</a>}<button className="button secondary notification-action-subtle" type="button" onClick={() => mutate(() => dismissNotification(variant, item.id))}>{c(lang, 'Nascondi', 'Dismiss')}</button></div></article>)}</div>}</div>
   </DisclosureCard>;
 }
 
@@ -132,7 +151,7 @@ function AutomationAdmin({ lang }) {
   </DisclosureCard>;
 }
 
-export default function NotificationsPage({ variant = 'public', lang = 'it', adminRole = '' }) {
+export default function NotificationsPage({ variant = 'public', lang = 'it', adminRole = '', onPublicUnreadCountChange = null }) {
   const [prefs, setPrefs] = useState({ languagePreference: 'auto', categories: defaultCategories(variant), quietHoursEnabled: false, quietStart: '22:00', quietEnd: '07:00' });
   const [deviceRegistered, setDeviceRegistered] = useState(false); const [pushEnabled, setPushEnabled] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [message, setMessage] = useState(''); const [refreshKey, setRefreshKey] = useState(0); const [health, setHealth] = useState(null); const [capability, setCapability] = useState(() => capabilityState());
   const options = variant === 'admin' ? ADMIN_OPTIONS : PUBLIC_OPTIONS; const promoSelected = prefs.categories.includes('promotions');
@@ -157,7 +176,7 @@ export default function NotificationsPage({ variant = 'public', lang = 'it', adm
     {variant === 'public' && <PreparationGuidance lang={lang}/>}
     <InstallCard variant={variant} lang={lang}/>
     <DisclosureCard id={`${variant}-notification-preferences`} title={c(lang, 'Preferenze notifiche', 'Notification preferences')} summary={preferenceSummary} defaultOpen={variant === 'admin'}><div className="notification-disclosure-body"><label><span>{c(lang, 'Lingua notifiche', 'Notification language')}</span><select value={prefs.languagePreference} onChange={(event) => setPrefs((value) => ({ ...value, languagePreference: event.target.value }))}><option value="auto">{c(lang, 'Automatico', 'Automatic')}</option><option value="it">Italiano</option><option value="en">English</option></select></label><fieldset><legend>{variant === 'admin' ? c(lang, 'Categorie Admin', 'Admin categories') : c(lang, 'Categorie pubbliche', 'Public categories')}</legend>{options.map(([key, en, it]) => <label className="notification-toggle" key={key}><input type="checkbox" checked={prefs.categories.includes(key)} onChange={() => toggleCategory(key)}/><span>{lang === 'it' ? it : en}</span></label>)}</fieldset>{variant === 'public' && <p className="small-note">{c(lang, `Le promozioni sono ${promoSelected ? 'attive' : 'disattivate'} separatamente dal permesso push.`, `Promotions are ${promoSelected ? 'enabled' : 'disabled'} separately from push permission.`)}</p>}<label className="notification-toggle"><input type="checkbox" checked={prefs.quietHoursEnabled} onChange={(event) => setPrefs((value) => ({ ...value, quietHoursEnabled: event.target.checked }))}/><span>{c(lang, 'Ore silenziose', 'Quiet hours')}</span></label>{prefs.quietHoursEnabled && <div className="quiet-hours"><label><span>{c(lang, 'Da', 'From')}</span><input type="time" value={prefs.quietStart || ''} onChange={(event) => setPrefs((value) => ({ ...value, quietStart: event.target.value }))}/></label><label><span>{c(lang, 'A', 'To')}</span><input type="time" value={prefs.quietEnd || ''} onChange={(event) => setPrefs((value) => ({ ...value, quietEnd: event.target.value }))}/></label></div>}{capability === 'permission_denied' && <p className="notification-status permission-recovery" role="status">{c(lang, 'Le notifiche sono bloccate nelle impostazioni del browser o del dispositivo. Riattivale nelle impostazioni e poi torna qui. Le preferenze selezionate restano salvabili.', 'Notifications are blocked in your browser or device settings. Re-enable them in settings, then return here. Your selected preferences can still be saved.')}</p>}{error && <p className="notification-error" role="alert">{error}</p>}{message && <p className="notification-status success" role="status">{message}</p>}<div className="notification-actions"><button className="button primary" type="button" disabled={busy || !deviceRegistered} onClick={save}>{c(lang, 'Salva preferenze', 'Save preferences')}</button><button className="button secondary" type="button" disabled={busy || !deviceRegistered} onClick={test}>{c(lang, 'Invia test', 'Send test')}</button>{!pushEnabled && capability !== 'permission_denied' ? <button className="button secondary" type="button" disabled={busy || capability === 'unsupported'} onClick={enable}>{c(lang, 'Abilita notifiche push', 'Enable push notifications')}</button> : pushEnabled ? <button className="button secondary" type="button" disabled={busy} onClick={disable}>{c(lang, 'Disabilita push', 'Disable push')}</button> : null}</div></div></DisclosureCard>
-    {variant === 'public' && <OwnedJourneys lang={lang} deviceRegistered={deviceRegistered}/>}<Inbox variant={variant} lang={lang} refreshKey={refreshKey}/>
+    {variant === 'public' && <OwnedJourneys lang={lang} deviceRegistered={deviceRegistered}/>}<Inbox variant={variant} lang={lang} refreshKey={refreshKey} onPublicUnreadCountChange={variant === 'public' ? onPublicUnreadCountChange : null}/>
     {variant === 'admin' && <><section className="notifications-card"><h2>{c(lang, 'Salute sistema notifiche', 'Notification system health')}</h2>{health ? <div className="health-grid"><span><small>{c(lang, 'Modalità budget', 'Budget mode')}</small><strong>{health.budget?.mode || '-'}</strong></span><span><small>{c(lang, 'Tentativi push oggi', 'Push attempts today')}</small><strong>{health.counters?.push_attempts || 0}</strong></span><span><small>{c(lang, 'Accettati dal servizio push', 'Accepted by push service')}</small><strong>{health.counters?.push_success || 0}</strong></span><span><small>{c(lang, 'Non accettati', 'Not accepted')}</small><strong>{health.counters?.push_failed || 0}</strong></span></div> : <p>{c(lang, 'Dati salute non disponibili.', 'Health data unavailable.')}</p>}</section>{['owner', 'manager'].includes(adminRole) && <><AutomationAdmin lang={lang}/><CampaignComposer lang={lang} onSent={() => setRefreshKey((value) => value + 1)}/></>}</>}
   </div>;
 }

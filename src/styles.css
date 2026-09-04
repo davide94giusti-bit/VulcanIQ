@@ -15273,6 +15273,113 @@ section#reviews.compact-section,
 .finance-reconciliation-item { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: .9rem; border: 1px solid rgba(16,27,45,.14); border-radius: 14px; background: rgba(255,255,255,.7); }
 .finance-reconciliation-item p { margin: .25rem 0 0; }
 @media (max-width: 680px) { .finance-reconciliation-item { align-items: stretch; flex-direction: column; } }
+
+/* Fast-request direct submission and public unread counters. */
+.public-notification-nav-label,
+.notification-title-with-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  min-width: 0;
+}
+
+.notification-unread-badge {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  padding: 0 .38rem;
+  border-radius: 999px;
+  background: var(--lava, #cd5837);
+  color: #fff;
+  font-size: .75rem;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.2);
+}
+
+.fast-request-review {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.fast-request-edit-row {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.fast-request-direct-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .8rem;
+  min-width: 0;
+}
+
+.fast-request-direct-fields .full,
+.fast-request-direct-heading {
+  grid-column: 1 / -1;
+}
+
+.fast-request-direct-heading h3,
+.fast-request-direct-heading p {
+  margin: 0;
+}
+
+.fast-request-direct-heading p {
+  margin-top: .3rem;
+  color: var(--ash, #596579);
+}
+
+.fast-request-direct-fields .questionnaire-notification-optin {
+  display: flex;
+  align-items: flex-start;
+  gap: .7rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.fast-request-direct-fields .questionnaire-notification-optin input {
+  flex: 0 0 auto;
+  width: 1.2rem;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  min-height: 1.2rem;
+  margin-top: .15rem;
+}
+
+.fast-request-direct-fields .questionnaire-notification-optin span {
+  display: grid;
+  gap: .2rem;
+  min-width: 0;
+}
+
+.fast-request-direct-fields .questionnaire-notification-optin small {
+  color: var(--ash, #596579);
+  font-weight: 600;
+}
+
+.fast-request-submit-actions {
+  width: 100%;
+}
+
+@media (max-width: 600px) {
+  .fast-request-direct-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .fast-request-direct-fields .full,
+  .fast-request-direct-heading {
+    grid-column: auto;
+  }
+
+  .public-notification-nav-label {
+    max-width: 100%;
+  }
+}
 .finance-reconciliation-list { display: grid; gap: .75rem; }
 .finance-reconciliation-item { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: .9rem; border: 1px solid var(--admin-border, rgba(16,27,45,.14)); border-radius: 14px; background: rgba(255,255,255,.7); }
 .finance-reconciliation-item p { margin: .25rem 0 0; }

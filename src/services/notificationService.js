@@ -142,6 +142,19 @@ export async function markNotificationRead(variant, id) { return api(variant, `i
 export async function dismissNotification(variant, id) { return api(variant, `inbox/${encodeURIComponent(id)}/dismiss`, { method: 'PATCH', body: '{}' }); }
 export async function sendTestNotification(variant) { return api(variant, 'test', { method: 'POST', body: '{}' }); }
 export async function claimNotificationOwnership(claimToken) { return api('public', 'ownership/claim', { method: 'POST', body: JSON.stringify({ claimToken }) }); }
+export async function claimRequestedNotificationOwnership(createdRequest, requested, currentLanguage = 'it') {
+  const claimToken = createdRequest?.notification_ownership_claim?.token;
+  if (!requested || typeof claimToken !== 'string' || !claimToken) return false;
+  try {
+    await ensureNotificationDevice('public', currentLanguage);
+    await claimNotificationOwnership(claimToken);
+    return true;
+  } catch {
+    // Booking creation remains authoritative. One-time claim material is never
+    // persisted, logged, placed in analytics, or retried from a URL.
+    return false;
+  }
+}
 export async function listNotificationOwnerships() { return api('public', 'ownership', { method: 'GET' }); }
 export async function revokeNotificationOwnership(id) { return api('public', `ownership/${encodeURIComponent(id)}/revoke`, { method: 'PATCH', body: '{}' }); }
 export async function updateNotificationOwnershipPreferences(id, preferences) {

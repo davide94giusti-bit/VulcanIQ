@@ -93,6 +93,10 @@ self.addEventListener('push', (event) => {
       vibrate: [120],
       data: { url: presentation.url }
     });
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of windows) {
+      if (!new URL(client.url).pathname.startsWith('/admin')) client.postMessage({ type: 'vulcaniq-public-inbox-changed' });
+    }
   })());
 });
 

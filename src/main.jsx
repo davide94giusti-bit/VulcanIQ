@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { blockedDates, defaultExperienceAvailability } from './data/availability.js';
@@ -22,7 +22,7 @@ import { createCustomerReferralCode, disableCustomerReferralCode, listCustomerRe
 import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormStarted, trackBookingFormStepCompleted, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot, isAnalyticsBrowserExcluded, setAnalyticsBrowserExcluded, createFormJourney, markFormFieldStarted, markFormActivity, markFormSubmitted, markFormAbandoned, markFormRecoveredViaWhatsApp } from './analytics.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import { submitPublicBookingRequestWithTracking } from './services/publicBookingSubmit.js';
-import { claimNotificationOwnership, ensureNotificationDevice, publishCustomerNotificationEvent } from './services/notificationService.js';
+import { claimRequestedNotificationOwnership, listNotificationInbox, publishCustomerNotificationEvent } from './services/notificationService.js';
 import { formatCurrencyAmount, normalizeCurrency, parseMoneyAmount } from './utils/money.js';
 import { paymentSummary, financeEntryHasBusinessSource, financeEntryIsRecognized, calculateLedgerSummary, buildFinancialReconciliation } from './domain/financeModel.js';
 import { applySeo } from './seo.js';
@@ -37,6 +37,8 @@ import AnalyticsCanonicalFunnels from './features/analytics/AnalyticsCanonicalFu
 import ReviewsPage from './features/reviews/ReviewsPage.jsx';
 import GoogleReviewsAdminStatus from './features/reviews/GoogleReviewsAdminStatus.jsx';
 import NotificationsPage from './features/notifications/NotificationsPage.jsx';
+import NotificationUnreadBadge from './features/notifications/NotificationUnreadBadge.jsx';
+import { notificationUnreadAriaLabel, unreadNotificationCount } from './domain/notificationInbox.js';
 import AskNeoPanel from './features/neo/AskNeoPanel.jsx';
 import { normalizeReviewText, reviewSourceLabel } from './features/reviews/reviewModel.js';
 import useBodyScrollLock from './hooks/useBodyScrollLock.js';
@@ -2196,10 +2198,11 @@ function BrandLogo({ compact = false, siteMedia, editor }) {
 }
 
 const publicPages = ['home', 'experiences', 'partnerships', 'about', 'reviews', 'social', 'latestNews', 'contact'];
-function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor }) {
+function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor, publicUnreadCount = null }) {
   const [open, setOpen] = useState(false);
   const switchLanguage = () => setLang(lang === 'it' ? 'en' : 'it');
   const languageAria = lang === 'it' ? 'Switch to English' : "Passa all'italiano";
+  const notificationLabel = lang === 'it' ? 'Installazione e notifiche' : 'Install & Notifications';
 
   function choose(page) {
     setActivePage(page);
@@ -2216,7 +2219,7 @@ function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor })
           {publicPages.map((page, index) => (
             <button key={page} type="button" className={activePage === page ? 'active' : ''} onClick={() => choose(page)}>{i18n[lang].nav[index]}</button>
           ))}
-          <button type="button" className={activePage === 'install' ? 'active' : ''} onClick={() => choose('install')}>{lang === 'it' ? 'Installazione e notifiche' : 'Install & Notifications'}</button>
+          <button type="button" className={activePage === 'install' ? 'active' : ''} aria-label={notificationUnreadAriaLabel(notificationLabel, publicUnreadCount, lang)} onClick={() => choose('install')}><span className="public-notification-nav-label"><span>{notificationLabel}</span><NotificationUnreadBadge count={publicUnreadCount}/></span></button>
           <button className="language-toggle desktop-language-toggle" type="button" onClick={switchLanguage} aria-label={languageAria}>{i18n[lang].switchLabel}</button>
         </nav>
         <button className="mobile-language-switch" type="button" onClick={switchLanguage} aria-label={languageAria}>{i18n[lang].switchLabel}</button>
@@ -3125,8 +3128,11 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   useBodyScrollLock(true);
   const sourceMetadata = { language: lang, source_section: sourceSection, source_cta: sourceCta, cta_location: ctaLocation, flow_type: flowType };
   const formJourneyRef = useRef(null);
+  const fastRequestModalRef = useRef(null);
   const [step, setStep] = useState(1);
   const [error, setError] = useState('');
+  const [followBookingUpdates, setFollowBookingUpdates] = useState(false);
+  const [submissionState, setSubmissionState] = useState({ loading: false, error: '', success: '' });
   const [form, setForm] = useState(() => {
     try {
       const stored = JSON.parse(window.localStorage.getItem('vulcaniq_fast_request') || '{}');
@@ -3138,19 +3144,27 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
           adults: stored.adults || '2',
           children: stored.children || '0',
           heardAboutUs: normalizeHeardAboutUs(stored.heardAboutUs) || '',
-          heardAboutUsDetail: cleanHeardAboutUsDetail(stored.heardAboutUsDetail)
+          heardAboutUsDetail: cleanHeardAboutUsDetail(stored.heardAboutUsDetail),
+          name: '',
+          email: '',
+          phone: '',
+          preferredContact: 'whatsapp'
         };
       }
     } catch {}
-    return { experienceId: 'etna-premium', dateMode: 'flexible', customDate: '', adults: '2', children: '0', heardAboutUs: '', heardAboutUsDetail: '' };
+    return { experienceId: 'etna-premium', dateMode: 'flexible', customDate: '', adults: '2', children: '0', heardAboutUs: '', heardAboutUsDetail: '', name: '', email: '', phone: '', preferredContact: 'whatsapp' };
   });
+
+  useEffect(() => {
+    if (fastRequestModalRef.current) fastRequestModalRef.current.scrollTop = 0;
+  }, [step]);
 
   useEffect(() => {
     formJourneyRef.current = createFormJourney('fast_request', { ...sourceMetadata, has_selected_experience: true, has_people_count: true, has_attribution: false });
     trackEvent('fast_request_start', { ...sourceMetadata, journey_id: formJourneyRef.current?.journey_id || '', form_type: 'fast_request' }, { dedupe: false });
     return () => {
       try {
-        window.localStorage.setItem('vulcaniq_fast_request', JSON.stringify({ ...form, expires_at: Date.now() + 24 * 60 * 60 * 1000 }));
+        window.localStorage.setItem('vulcaniq_fast_request', JSON.stringify({ experienceId: form.experienceId, dateMode: form.dateMode, customDate: form.customDate, adults: form.adults, children: form.children, heardAboutUs: form.heardAboutUs, heardAboutUsDetail: form.heardAboutUsDetail, expires_at: Date.now() + 24 * 60 * 60 * 1000 }));
       } catch {}
     };
   }, []);
@@ -3165,6 +3179,7 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
       has_attribution: key === 'heardAboutUs' ? Boolean(nextValue) : Boolean(form.heardAboutUs)
     });
     setError('');
+    setSubmissionState((current) => current.error ? { ...current, error: '' } : current);
     setForm((current) => ({ ...current, [key]: nextValue }));
   }
 
@@ -3225,9 +3240,131 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
     try { window.localStorage.removeItem('vulcaniq_fast_request'); } catch {}
   }
 
+  async function submitDirectRequest() {
+    const email = String(form.email || '').trim();
+    const phone = String(form.phone || '').trim();
+    const preferredContact = ['whatsapp', 'phone', 'email'].includes(form.preferredContact) ? form.preferredContact : 'whatsapp';
+    const adults = safeParticipantNumber(form.adults, 0);
+    const children = safeParticipantNumber(form.children, 0);
+    if (!validateAttributionStep()) return;
+    if (adults + children < 1) {
+      setSubmissionState({ loading: false, error: text(lang, 'peopleRequired'), success: '' });
+      return;
+    }
+    if (!email && !phone) {
+      setSubmissionState({ loading: false, error: text(lang, 'contactRequired'), success: '' });
+      return;
+    }
+    if ((preferredContact === 'whatsapp' || preferredContact === 'phone') && !phone) {
+      setSubmissionState({ loading: false, error: text(lang, 'contactPhoneRequired'), success: '' });
+      return;
+    }
+    if (preferredContact === 'email' && !email) {
+      setSubmissionState({ loading: false, error: text(lang, 'contactEmailRequired'), success: '' });
+      return;
+    }
+    if (phone.length > 40 || !isValidPublicPhone(phone)) {
+      setSubmissionState({ loading: false, error: text(lang, 'contactPhoneInvalid'), success: '' });
+      return;
+    }
+    if (email.length > 254 || !isValidPublicEmail(email)) {
+      setSubmissionState({ loading: false, error: text(lang, 'contactEmailInvalid'), success: '' });
+      return;
+    }
+
+    const selectedDate = form.dateMode === 'custom' ? form.customDate : '';
+    const attributionMetadata = heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail);
+    const trackingMetadata = withBookingJourneyId(buildBookingTrackingContext({
+      experienceId: form.experienceId,
+      requestType: 'private',
+      sourceSection,
+      sourceCta,
+      ctaLocation,
+      selectedDate,
+      language: lang,
+      extra: { ...sourceMetadata, form_type: 'fast_request', date_mode: form.dateMode, questionnaire_completed: true, ...attributionMetadata }
+    }), { booking_journey_id: formJourneyRef.current?.journey_id || '' });
+    const referralPayload = referralAttributionPayload();
+    setSubmissionState({ loading: true, error: '', success: '' });
+
+    try {
+      const createdRequest = await submitPublicBookingRequestWithTracking({
+        experience: form.experienceId,
+        adults,
+        children,
+        metadata: { ...trackingMetadata, submit_trigger: 'fast_request_submit_button' },
+        payload: {
+          customer_name: String(form.name || '').trim(),
+          customer_email: email,
+          customer_phone: phone,
+          preferred_contact: preferredContact,
+          experience_id: form.experienceId || 'unsure',
+          requested_date: selectedDate || null,
+          alternative_date: null,
+          language: lang,
+          party_type: 'other',
+          request_type: 'private',
+          fixed_excursion_id: null,
+          adults,
+          children,
+          children_under_3: false,
+          private_experience: true,
+          message,
+          heard_about_us: normalizeHeardAboutUs(form.heardAboutUs),
+          heard_about_us_label: heardAboutUsLabel(form.heardAboutUs, lang),
+          heard_about_us_detail: needsHeardAboutUsDetail(form.heardAboutUs) ? cleanHeardAboutUsDetail(form.heardAboutUsDetail) : null,
+          source: 'website',
+          source_section: trackingMetadata.source_section,
+          source_cta: trackingMetadata.source_cta,
+          cta_location: trackingMetadata.cta_location,
+          selected_date: trackingMetadata.selected_date || null,
+          has_fixed_excursion: false,
+          traffic_source: trackingMetadata.traffic_source,
+          detected_source: trackingMetadata.detected_source || trackingMetadata.traffic_source,
+          declared_source: normalizeHeardAboutUs(form.heardAboutUs),
+          referrer: trackingMetadata.referrer,
+          landing_path: trackingMetadata.landing_path,
+          utm_source: trackingMetadata.utm_source,
+          utm_medium: trackingMetadata.utm_medium,
+          utm_campaign: trackingMetadata.utm_campaign,
+          utm_content: trackingMetadata.utm_content,
+          utm_term: trackingMetadata.utm_term,
+          analytics_session_id: trackingMetadata.analytics_session_id || trackingMetadata.session_id,
+          analytics_visitor_id: trackingMetadata.analytics_visitor_id || trackingMetadata.visitor_id,
+          analytics_journey_id: trackingMetadata.booking_journey_id,
+          booking_journey_version: trackingMetadata.booking_journey_version,
+          selected_month: trackingMetadata.selected_month || isoMonthKey(selectedDate),
+          device_type: trackingMetadata.device_type,
+          browser: trackingMetadata.browser,
+          operating_system: trackingMetadata.operating_system,
+          form_started_at: formJourneyRef.current?.opened_at,
+          submission_idempotency_key: trackingMetadata.booking_journey_id,
+          submission_fingerprint: trackingMetadata.booking_journey_id,
+          notification_ownership_requested: followBookingUpdates,
+          website: '',
+          ...referralPayload
+        }
+      });
+      if (referralPayload.referral_code) trackEvent('referral_booking_request_created', { referral_code: referralPayload.referral_code, source_type: 'fast_request', source_id: createdRequest?.id || '', language: lang }, { dedupe: false });
+      markFormSubmitted(formJourneyRef.current?.journey_id, { ...trackingMetadata, channel: 'website', has_selected_experience: true, has_selected_date: Boolean(selectedDate || form.dateMode === 'flexible'), has_people_count: adults + children > 0, has_attribution: true, ...attributionMetadata });
+      trackEvent('fast_request_submit_success', { ...sourceMetadata, journey_id: trackingMetadata.booking_journey_id, form_type: 'fast_request', experience_id: form.experienceId, channel: 'website', ...attributionMetadata }, { dedupe: false });
+      const ownershipLinked = await claimRequestedNotificationOwnership(createdRequest, followBookingUpdates, lang);
+      const ownershipMessage = followBookingUpdates
+        ? ownershipLinked
+          ? (lang === 'it' ? ' Gli aggiornamenti personali sono collegati a questo dispositivo; il centro in-app è già attivo.' : ' Personal updates are linked to this device; the in-app center is already active.')
+          : (lang === 'it' ? ' La richiesta è riuscita, ma gli aggiornamenti personali non sono stati collegati.' : ' The request succeeded, but personal updates were not linked.')
+        : '';
+      setSubmissionState({ loading: false, error: '', success: `${text(lang, 'requestSent')}${ownershipMessage}` });
+      setFollowBookingUpdates(false);
+      try { window.localStorage.removeItem('vulcaniq_fast_request'); } catch {}
+    } catch {
+      setSubmissionState({ loading: false, error: text(lang, 'requestFallbackError'), success: '' });
+    }
+  }
+
   return createPortal((
     <div className="modal-backdrop fast-request-backdrop" role="dialog" aria-modal="true" aria-labelledby="fastRequestTitle">
-      <section className="admin-modal fast-request-modal">
+      <section className="admin-modal fast-request-modal" ref={fastRequestModalRef}>
         <header className="admin-modal-header">
           <div><span className="kicker">{lang === 'it' ? 'Richiesta rapida' : 'Fast request'}</span><h2 id="fastRequestTitle">{lang === 'it' ? 'Verifica disponibilità in pochi passaggi' : 'Check availability in a few steps'}</h2></div>
           <button className="modal-close-button" type="button" onClick={handleClose}>{text(lang, 'close')}</button>
@@ -3263,7 +3400,18 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
         {step === 5 && (
           <div className="fast-request-review">
             <textarea readOnly value={message} rows={10} />
-            <div className="modal-actions fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(4)}>{lang === 'it' ? 'Modifica' : 'Edit'}</button><a className="button primary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>WhatsApp</a><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
+            <div className="fast-request-edit-row"><button className="button secondary" type="button" onClick={() => setStep(4)} disabled={submissionState.loading}>{lang === 'it' ? 'Modifica' : 'Edit'}</button></div>
+            <div className="fast-request-direct-fields" aria-labelledby="fastRequestDirectTitle">
+              <div className="fast-request-direct-heading"><h3 id="fastRequestDirectTitle">{lang === 'it' ? 'Invia la richiesta direttamente' : 'Send the request directly'}</h3><p>{lang === 'it' ? 'Inserisci almeno email o telefono. Il nome è facoltativo.' : 'Enter at least an email or phone number. Name is optional.'}</p></div>
+              <label className="admin-field full" htmlFor="fastRequestName"><span>{text(lang, 'name')}</span><input id="fastRequestName" type="text" maxLength={120} value={form.name || ''} onChange={(event) => update('name', event.target.value)} autoComplete="name" /></label>
+              <label className="admin-field" htmlFor="fastRequestEmail"><span>{text(lang, 'contactEmail')}</span><input id="fastRequestEmail" type="email" inputMode="email" maxLength={254} value={form.email || ''} onChange={(event) => update('email', event.target.value)} onBlur={(event) => update('email', String(event.target.value || '').trim())} autoComplete="email" /></label>
+              <label className="admin-field" htmlFor="fastRequestPhone"><span>{text(lang, 'phone')}</span><input id="fastRequestPhone" type="tel" inputMode="tel" pattern="^\+?[0-9]*$" maxLength={40} value={form.phone || ''} onBeforeInput={preventInvalidPhoneInput} onChange={(event) => update('phone', sanitizePublicPhoneInput(event.target.value))} autoComplete="tel" /></label>
+              <label className="admin-field full" htmlFor="fastRequestPreferredContact"><span>{text(lang, 'preferredContact')}</span><select id="fastRequestPreferredContact" value={form.preferredContact || 'whatsapp'} onChange={(event) => update('preferredContact', event.target.value)}><option value="whatsapp">WhatsApp</option><option value="phone">{lang === 'it' ? 'Telefono' : 'Phone'}</option><option value="email">Email</option></select></label>
+              <label className="questionnaire-notification-optin full" htmlFor="fastRequestFollowUpdates"><input id="fastRequestFollowUpdates" type="checkbox" checked={followBookingUpdates} onChange={(event) => setFollowBookingUpdates(event.target.checked)} /><span><strong>{lang === 'it' ? 'Segui su questo dispositivo gli aggiornamenti dopo l’invio diretto.' : 'Follow updates on this device after sending the direct request.'}</strong><small>{lang === 'it' ? 'Facoltativo. WhatsApp non collega le notifiche personali.' : 'Optional. WhatsApp does not link personal notifications.'}</small></span></label>
+            </div>
+            {submissionState.error && <p className="form-status error" role="alert">{submissionState.error}</p>}
+            {submissionState.success && <p className="form-status success" role="status">{submissionState.success}</p>}
+            <div className="modal-actions fast-request-actions fast-request-submit-actions"><button className="button primary" type="button" onClick={submitDirectRequest} disabled={submissionState.loading || Boolean(submissionState.success)}>{submissionState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : (lang === 'it' ? 'Invia richiesta' : 'Send request')}</button><a className="button secondary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>WhatsApp</a><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
           </div>
         )}
         <aside className="booking-code-support-card fast-request-support-card">
@@ -5045,17 +5193,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
       });
       if (referralPayload.referral_code) trackEvent('referral_booking_request_created', { referral_code: referralPayload.referral_code, source_type: 'booking_form', source_id: createdRequest?.id || '', language: lang }, { dedupe: false });
       markFormSubmitted(formJourneyRef.current?.journey_id, { ...trackingMetadata, form_type: 'booking_form', has_selected_experience: Boolean(effectiveExperienceId), has_selected_date: Boolean(selectedFixed?.date || formState.requestedDate), has_people_count: totalPeople > 0 });
-      let ownershipLinked = false;
-      if (followBookingUpdates && createdRequest?.notification_ownership_claim?.token) {
-        try {
-          await ensureNotificationDevice('public', lang);
-          await claimNotificationOwnership(createdRequest.notification_ownership_claim.token);
-          ownershipLinked = true;
-        } catch {
-          // The booking remains successful. The one-time claim is deliberately not
-          // persisted, logged, placed in analytics, or retried from a URL.
-        }
-      }
+      const ownershipLinked = await claimRequestedNotificationOwnership(createdRequest, followBookingUpdates, lang);
       const ownershipMessage = followBookingUpdates
         ? ownershipLinked
           ? (lang === 'it' ? ' Gli aggiornamenti personali sono collegati a questo dispositivo; il centro in-app è già attivo.' : ' Personal updates are linked to this device; the in-app center is already active.')
@@ -15536,9 +15674,39 @@ function App() {
   const [siteMedia, setSiteMedia] = useState({});
   const [siteContent, setSiteContent] = useState({});
   const [cmsStatus, setCmsStatus] = useState(() => isSupabaseConfigured ? 'loading' : 'error');
+  const [publicUnreadCount, setPublicUnreadCount] = useState(null);
   const contactRef = useRef(null);
   const analyticsContextRef = useRef({ section: 'home', language: 'it' });
   const analyticsDisabledForRoute = pathname.startsWith('/admin');
+
+  const refreshPublicUnread = useCallback(async () => {
+    try {
+      const result = await listNotificationInbox('public');
+      setPublicUnreadCount(unreadNotificationCount(result.items || []));
+    } catch {
+      setPublicUnreadCount(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (pathname.startsWith('/admin')) {
+      setPublicUnreadCount(null);
+      return undefined;
+    }
+    if (activePage !== 'install') refreshPublicUnread();
+    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refreshPublicUnread(); };
+    const handleServiceWorkerMessage = (event) => { if (event.data?.type === 'vulcaniq-public-inbox-changed') refreshPublicUnread(); };
+    window.addEventListener('focus', refreshPublicUnread);
+    window.addEventListener('pageshow', refreshPublicUnread);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    navigator.serviceWorker?.addEventListener?.('message', handleServiceWorkerMessage);
+    return () => {
+      window.removeEventListener('focus', refreshPublicUnread);
+      window.removeEventListener('pageshow', refreshPublicUnread);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      navigator.serviceWorker?.removeEventListener?.('message', handleServiceWorkerMessage);
+    };
+  }, [activePage, pathname, refreshPublicUnread]);
 
   useEffect(() => {
     const match = pathname.match(/^\/r\/ref\/([^/?#]+)/);
@@ -15732,7 +15900,7 @@ function App() {
       case 'giftCard':
         return <GiftCardPage lang={lang} siteContent={siteContent} onClose={() => { setActivePage('home'); navigatePublicRoute('/', lang); }} />;
       case 'install':
-        return <NotificationsPage variant="public" lang={lang} />;
+        return <NotificationsPage variant="public" lang={lang} onPublicUnreadCountChange={setPublicUnreadCount} />;
       case 'home':
       default:
         return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} cmsStatus={cmsStatus} />;
@@ -15745,7 +15913,7 @@ function App() {
 
   return (
     <>
-      <Header lang={lang} setLang={setPublicLanguage} activePage={activePage} setActivePage={setActivePage} siteMedia={siteMedia} />
+      <Header lang={lang} setLang={setPublicLanguage} activePage={activePage} setActivePage={setActivePage} siteMedia={siteMedia} publicUnreadCount={publicUnreadCount} />
       <main ref={contactRef} className={`public-page-shell public-page-${activePage}`}>
         <DomainErrorBoundary resetKey={`${pathname}:${lang}`} lang={lang}>{renderPublicPage()}</DomainErrorBoundary>
       </main>
