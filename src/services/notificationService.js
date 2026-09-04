@@ -159,6 +159,7 @@ export async function createNotificationCampaign(input) { return api('admin', 'c
 export async function cancelNotificationCampaign(id) { return api('admin', `campaigns/${encodeURIComponent(id)}/cancel`, { method: 'PATCH', body: '{}' }); }
 export async function listNotificationAutomationRules() { return api('admin', 'automations/rules', { method: 'GET' }); }
 export async function listPersonalizedNotificationEvents() { return api('admin', 'automations/personalized', { method: 'GET' }); }
+export async function listCustomerNotificationOutbox() { return api('admin', 'automations/outbox', { method: 'GET' }); }
 export async function updateNotificationAutomationRule(ruleKey, enabled) { return api('admin', `automations/rules/${encodeURIComponent(ruleKey)}`, { method: 'PATCH', body: JSON.stringify({ enabled: Boolean(enabled) }) }); }
 export async function listNotificationAutomationJobs() { return api('admin', 'automations/jobs', { method: 'GET' }); }
 export async function cancelNotificationAutomationJob(id) { return api('admin', `automations/jobs/${encodeURIComponent(id)}/cancel`, { method: 'PATCH', body: '{}' }); }

@@ -36,6 +36,7 @@ test('duplicate backup creation is disabled while workflow or monitor is active'
 test('Backup card values preserve normal word boundaries responsively', css.includes('.backup-failure-list') && css.includes('grid-template-columns: minmax(0, 1fr) !important') && backupValueRule.includes('overflow-wrap: normal') && backupValueRule.includes('word-break: normal') && backupValueRule.includes('hyphens: none') && !/overflow-wrap:\s*anywhere|word-break:\s*break-all/.test(backupValueRule));
 test('Backup create action uses the explicit localized copy', ui.includes("'Crea nuovo backup', 'Create new backup'") && !ui.includes("'Crea backup', 'Create backup'"));
 test('restore documentation requires checksum and separate Auth recovery', docs.includes('sha256sum -c checksums.sha256') && docs.includes('separately approved Supabase Auth process'));
+test('Backup warning describes Auth as a separate recovery scope without implying live users are missing', ui.includes('Gli account Supabase Auth sono gestiti separatamente da Supabase') && ui.includes('they are outside this application backup') && ui.includes('file Storage esportati') && !ui.includes('Gli utenti Supabase Auth non sono inclusi e devono essere ripristinati'));
 
 console.log(`\n${passed} passed, ${failed} failed.`);
 if (failed) process.exit(1);

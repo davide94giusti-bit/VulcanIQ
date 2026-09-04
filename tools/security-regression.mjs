@@ -32,6 +32,7 @@ const backupShared = read('functions/api/admin/backup/_shared.js');
 const backupCreate = read('functions/api/admin/backup/create.js');
 const notifyFunction = read('supabase/functions/notify-new-request/index.ts');
 const recapFunction = read('supabase/functions/send-weekly-admin-recap/index.ts');
+const weeklyRecapSetup = read('supabase/setup/20260726_weekly_recap_cron.sql');
 const followupMigration = read('supabase/migrations/20260817090000_operational_analytics_reporting_fix.sql');
 const weeklyEmail = read('supabase/functions/_shared/weeklyRecapEmail.ts');
 const operationsService = read('src/services/operationsService.js');
@@ -142,6 +143,7 @@ check('notification function validates webhook secret', notifyFunction.includes(
 check('notification retries require admin and throttling', notifyFunction.includes('requireAdmin') && notifyFunction.includes('claimAdminAction'));
 check('weekly recap validates cron secret', recapFunction.includes('WEEKLY_RECAP_CRON_SECRET') && recapFunction.includes('x-vulcaniq-cron-secret'));
 check('weekly recap is DST guarded', recapFunction.includes('isRomeMondayEight') && recapFunction.includes('Europe/Rome'));
+check('weekly recap setup targets Monday 08:00 Europe/Rome across DST without duplicate sends', weeklyRecapSetup.includes("'0 6 * * 1'") && weeklyRecapSetup.includes("'0 7 * * 1'") && weeklyRecapSetup.includes('Monday 08:00 Europe/Rome') && recapFunction.includes("values.weekday === 'Mon'") && recapFunction.includes('Number(values.hour) === 8') && recapFunction.includes('Number(values.minute) < 15') && migration.includes('admin_weekly_reports_idempotency_unique'));
 check('weekly recap manual send is throttled', recapFunction.includes("claimAdminAction('weekly-recap-manual'"));
 check('weekly recap rejects an empty recipient list', recapFunction.includes("if (!targets.length) throw new Error('no_weekly_recap_recipients')"));
 check('migration has one transaction boundary', (migration.match(/^begin;$/gm) || []).length === 1 && (migration.match(/^commit;$/gm) || []).length === 1);

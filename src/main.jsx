@@ -5238,11 +5238,6 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
             <label className="field-label" htmlFor="questionnaireMessage">{text(lang, 'message')}</label>
             <textarea id="questionnaireMessage" className="questionnaire-message-textarea" value={message} onChange={(event) => updateMessage(event.target.value)} rows={10} />
             <button className="button secondary" type="button" onClick={regenerateMessageFromAnswers}>{text(lang, 'regenerateMessage')}</button>
-            <label className="notification-toggle questionnaire-notification-optin">
-              <input type="checkbox" checked={followBookingUpdates} onChange={(event) => setFollowBookingUpdates(event.target.checked)} />
-              <span>{lang === 'it' ? 'Segui gli aggiornamenti di questa richiesta su questo dispositivo (centro in-app; push facoltativo).' : 'Follow updates for this request on this device (in-app center; push optional).'}</span>
-            </label>
-            <p className="small-note">{lang === 'it' ? 'Consenso facoltativo. Non useremo email, telefono o il codice prenotazione per collegare un altro dispositivo.' : 'Optional consent. We will not use email, phone, or a booking code to link another device.'}</p>
           </div>
         );
     }
@@ -5269,7 +5264,7 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
 
       {questionnaireTransition.shouldRender && (
         <div className={`questionnaire-overlay motion-backdrop ${questionnaireTransition.isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="questionnaire-title">
-          <form className="questionnaire-modal motion-panel" ref={modalRef} onSubmit={submitRequest}>
+          <form className={`questionnaire-modal motion-panel ${currentStep.key === 'message' ? 'questionnaire-modal-final' : ''}`} ref={modalRef} onSubmit={submitRequest}>
             <header className="questionnaire-header">
               <div>
                 <span className="kicker">vulcanIQ</span>
@@ -5299,9 +5294,16 @@ function ContactForm({ lang, formState, setFormState, siteMedia, siteContent, ed
               {currentStep.key !== 'message' ? (
                 <button className="request-action-button request-action-button-primary" type="button" onClick={goNext}>{text(lang, 'next')}</button>
               ) : (
-                <div className="questionnaire-final-actions">
-                  <button className="request-action-button request-action-button-primary" type="submit" disabled={finalActionsDisabled}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitRequest')}</button>
-                  <button className="request-action-button request-action-button-secondary" type="button" onClick={openFormWhatsapp} disabled={finalActionsDisabled}>{text(lang, 'sendWhatsapp')}</button>
+                <div className="questionnaire-final-cta">
+                  <label className="notification-toggle questionnaire-notification-optin" htmlFor="questionnaireFollowUpdates">
+                    <input id="questionnaireFollowUpdates" type="checkbox" checked={followBookingUpdates} onChange={(event) => setFollowBookingUpdates(event.target.checked)} />
+                    <span>{lang === 'it' ? 'Segui su questo dispositivo gli aggiornamenti dopo l’invio diretto (centro in-app; push facoltativo).' : 'Follow updates on this device after sending the direct request (in-app center; push optional).'}</span>
+                  </label>
+                  <p className="questionnaire-notification-note">{lang === 'it' ? 'Facoltativo e solo per “Invia richiesta”. WhatsApp non collega le notifiche personali.' : 'Optional and only for “Send request”. WhatsApp does not link personal notifications.'}</p>
+                  <div className="questionnaire-final-actions">
+                    <button className="request-action-button request-action-button-primary" type="submit" disabled={finalActionsDisabled}>{submitState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : text(lang, 'submitRequest')}</button>
+                    <button className="request-action-button request-action-button-secondary" type="button" onClick={openFormWhatsapp} disabled={finalActionsDisabled}>{text(lang, 'sendWhatsapp')}</button>
+                  </div>
                 </div>
               )}
             </footer>
@@ -11151,7 +11153,7 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
       {actionState.message && <div className="admin-alert success" role="status">{actionState.message}{actionState.createLoading || actionState.downloadLoading ? null : <><br />{adminCopy(lang, 'Il backup sarà scaricabile direttamente da questa pagina appena pronto.', 'The backup will be downloadable directly from this page as soon as it is ready.')}</>}</div>}
       {actionState.error && <div className="admin-alert error" role="alert">{actionState.error}</div>}
       {statusState.error && <div className="admin-alert warning" role="status">{statusState.error}</div>}
-      <div className="admin-alert warning backup-lifecycle-banner" role="note">{adminCopy(lang, 'Backup riservato: lo ZIP contiene dati applicativi e checksum SHA-256. Gli utenti Supabase Auth non sono inclusi e devono essere ripristinati con una procedura separata.', 'Restricted backup: the ZIP contains application data and SHA-256 checksums. Supabase Auth users are not included and require a separate recovery procedure.')}</div>
+      <div className="admin-alert warning backup-lifecycle-banner" role="note">{adminCopy(lang, 'Backup riservato: include dati applicativi, file Storage esportati e checksum SHA-256. Gli account Supabase Auth sono gestiti separatamente da Supabase e non fanno parte di questo backup applicativo; in caso di ripristino richiedono la relativa procedura Auth.', 'Restricted backup: it includes application data, exported Storage files and SHA-256 checksums. Supabase manages Auth accounts separately, so they are outside this application backup and require the corresponding Auth recovery procedure.')}</div>
       {backupProgress.active && (
         <div className={`backup-progress-panel ${backupProgress.failed ? 'failed' : ''}`} role="status" aria-live="polite">
           <div className="backup-progress-head">

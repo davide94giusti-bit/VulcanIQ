@@ -1,6 +1,7 @@
 import { sendWebPush } from '../../../shared/webPush.js';
 import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../_shared/supabaseBackend.js';
 import { isOwnershipClaimToken, notificationEntityRef, ownershipClaimStateError, sha256Hex } from './_ownership.js';
+import { preparationReminder } from '../../../src/domain/experiencePreparation.js';
 
 const PUBLIC_CATEGORIES = new Set(['etna_updates', 'etna_weekly', 'experiences', 'events', 'news', 'promotions']);
 const ADMIN_CATEGORIES = new Set(['new_bookings', 'upcoming_excursions', 'gift_cards', 'booking_codes', 'payment_reconciliation', 'operational_failures', 'security_alerts', 'daily_summary', 'weekly_summary']);
@@ -218,7 +219,7 @@ function customerPreferenceColumn(eventType) {
 
 async function authoritativeCustomerEvent(config, entityId, eventType) {
   const parameters = new URLSearchParams({
-    select: 'id,status,lead_status,requested_date,fixed_excursion_id,updated_at,decided_at,confirmed_at,review_requested_at',
+    select: 'id,status,lead_status,experience_id,requested_date,fixed_excursion_id,updated_at,decided_at,confirmed_at,review_requested_at',
     id: `eq.${entityId}`, limit: '1'
   });
   const booking = (await backendRows(config, 'booking_requests', parameters))[0];
@@ -226,7 +227,7 @@ async function authoritativeCustomerEvent(config, entityId, eventType) {
   let fixedExcursion = null;
   if (booking.fixed_excursion_id) {
     const fixedParameters = new URLSearchParams({
-      select: 'id,date,start_time,updated_at,status,active',
+      select: 'id,date,start_time,experience_id,updated_at,status,active',
       id: `eq.${booking.fixed_excursion_id}`,
       limit: '1'
     });
@@ -255,18 +256,21 @@ async function authoritativeCustomerEvent(config, entityId, eventType) {
     revisionInput = fixedExcursion ? `${fixedExcursion.id}:${fixedExcursion.updated_at || ''}:${fixedExcursion.date || ''}:${fixedExcursion.start_time || ''}:${fixedExcursion.status || ''}:${fixedExcursion.active}` : booking.updated_at;
   }
   if (!valid) return { error: 'personalized_invalid_business_state', booking };
+  const preparationExperienceId = fixedExcursion?.experience_id || booking.experience_id || '';
   return {
     booking,
     fixedExcursion,
     activityDate: fixedExcursion?.date || booking.requested_date || null,
     activityStartTime: fixedExcursion?.start_time || null,
     activityTimezone: fixedExcursion?.start_time ? 'Europe/Rome' : null,
-    sourceRevision: await sha256Hex(`${eventType}:${revisionInput}`)
+    preparationExperienceId,
+    sourceRevision: await sha256Hex(`${eventType}:${revisionInput}:${preparationExperienceId}`)
   };
 }
 
 async function insertPersonalizedJob(database, env, eventRecord, ownership, config, scheduledFor = null) {
   const now = nowIso(); const jobId = uuid(); const scheduled = scheduledFor || now;
+  const destinationUrl = cleanDestination(config.destinationUrl, '/install');
   const dedupeKey = `owned-job:${eventRecord.dedupe_key}:${ownership.id}:${config.category}`;
   const status = scheduledFor ? 'scheduled' : 'processing';
   let inserted;
@@ -274,14 +278,14 @@ async function insertPersonalizedJob(database, env, eventRecord, ownership, conf
     inserted = await database.prepare(`INSERT OR IGNORE INTO notification_jobs
       (id,rule_key,source_type,source_id,source_revision,recipient_subscription_id,audience,category,title_it,body_it,title_en,body_en,destination_url,priority,scheduled_for,status,dedupe_key,created_at,processing_at,ownership_id)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'normal',?,?,?,?,?,?)`)
-      .bind(jobId,config.ruleKey,'owned_journey',eventRecord.entity_ref,eventRecord.source_revision,ownership.subscription_id,'public',config.category,config.titleIt,config.bodyIt,config.titleEn,config.bodyEn,'/install',scheduled,status,dedupeKey,now,scheduledFor?null:now,ownership.id).run();
+      .bind(jobId,config.ruleKey,'owned_journey',eventRecord.entity_ref,eventRecord.source_revision,ownership.subscription_id,'public',config.category,config.titleIt,config.bodyIt,config.titleEn,config.bodyEn,destinationUrl,scheduled,status,dedupeKey,now,scheduledFor?null:now,ownership.id).run();
   } catch (error) {
     if (String(error?.message || error).includes('personalized_job_requires_active_ownership')) return { error: true, reason: 'revoked_recipient' };
     throw error;
   }
   if(!inserted.meta?.changes)return {deduped:true};
   if (scheduledFor) return { scheduled: true, jobId };
-  const event = { id: uuid(), audience: 'public', category: config.category, origin: 'owned_journey', title_it: config.titleIt, body_it: config.bodyIt, title_en: config.titleEn, body_en: config.bodyEn, destination_url: '/install', dedupe_key: `owned-event:${dedupeKey}`, priority: 'normal', recipient_subscription_id: ownership.subscription_id,job_id:jobId,push_enabled:ownership.push_enabled!==0,inapp_enabled:ownership.inapp_enabled!==0 };
+  const event = { id: uuid(), audience: 'public', category: config.category, origin: 'owned_journey', title_it: config.titleIt, body_it: config.bodyIt, title_en: config.titleEn, body_en: config.bodyEn, destination_url: destinationUrl, dedupe_key: `owned-event:${dedupeKey}`, priority: 'normal', recipient_subscription_id: ownership.subscription_id,job_id:jobId,push_enabled:ownership.push_enabled!==0,inapp_enabled:ownership.inapp_enabled!==0 };
   try {
     await database.prepare('INSERT INTO notification_events(id,audience,category,origin,title_it,body_it,title_en,body_en,destination_url,dedupe_key,priority,created_at,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(event.id,event.audience,event.category,event.origin,event.title_it,event.body_it,event.title_en,event.body_en,event.destination_url,event.dedupe_key,event.priority,now,'sending').run();
     const result = await fanout(database, env, event); const resolvedAt = nowIso();
@@ -340,7 +344,7 @@ async function processPersonalizedEvent(database, env, config, actorId, entityTy
   const existing=await database.prepare('SELECT id,status,recipient_count,job_count FROM notification_personalized_events WHERE dedupe_key=? LIMIT 1').bind(dedupeKey).first();
   if(existing)return {ok:true,deduped:true,status:existing.status,recipientCount:existing.recipient_count,jobCount:existing.job_count};
   const eventId=uuid(),createdAt=nowIso();
-  if(['booking_rescheduled','booking_cancelled'].includes(eventType))await database.prepare("UPDATE notification_jobs SET status='cancelled',cancelled_at=?,failure_reason=?,terminal_reason='superseded' WHERE source_type='owned_journey' AND source_id=? AND category='customer_upcoming_reminder' AND status='scheduled'").bind(createdAt,`superseded_by_${eventType}`,entityRef).run();
+  if(['booking_rescheduled','booking_cancelled','operational_change'].includes(eventType))await database.prepare("UPDATE notification_jobs SET status='cancelled',cancelled_at=?,failure_reason=?,terminal_reason='superseded' WHERE source_type='owned_journey' AND source_id=? AND category='customer_upcoming_reminder' AND status='scheduled'").bind(createdAt,`superseded_by_${eventType}`,entityRef).run();
   const rule=await database.prepare("SELECT enabled FROM notification_automation_rules WHERE rule_key=? AND audience='public' LIMIT 1").bind(eventConfig.ruleKey).first();
   const preferenceColumn=customerPreferenceColumn(eventType);
   const ownerships=await database.prepare(`SELECT o.id,o.subscription_id,o.push_enabled,o.inapp_enabled,o.reminders_enabled FROM notification_subscription_ownership o
@@ -360,11 +364,12 @@ async function processPersonalizedEvent(database, env, config, actorId, entityTy
   const eventRecord={id:eventId,entity_ref:entityRef,source_revision:authoritative.sourceRevision,dedupe_key:dedupeKey};
   let jobs=0,immediateFailures=0,scheduledFailures=0;
   for(const ownership of recipients){const delivered=await insertPersonalizedJob(database,env,eventRecord,ownership,eventConfig);jobs+=delivered.deduped?0:1;if(delivered.error)immediateFailures+=1;}
-  if(['booking_confirmed','booking_rescheduled'].includes(eventType)){
+  const activityAvailable=!authoritative.fixedExcursion||(authoritative.fixedExcursion.active!==0&&authoritative.fixedExcursion.active!==false&&String(authoritative.fixedExcursion.status||'').toLowerCase()!=='cancelled');
+  if(['booking_confirmed','booking_rescheduled','operational_change'].includes(eventType)&&activityAvailable){
     const reminderRule=await database.prepare("SELECT enabled,offset_minutes FROM notification_automation_rules WHERE rule_key='customer_upcoming_reminder' LIMIT 1").first();
     const scheduledFor=upcomingSchedule(authoritative.activityDate,authoritative.activityStartTime,authoritative.activityTimezone,reminderRule?.offset_minutes);
     if(scheduledFor&&reminderRule?.enabled){
-      const reminderConfig={ruleKey:'customer_upcoming_reminder',category:'customer_upcoming_reminder',titleIt:'La tua esperienza si avvicina',bodyIt:'La tua esperienza vulcanIQ è in programma a breve.',titleEn:'Your experience is coming up',bodyEn:'Your vulcanIQ experience is coming up soon.'};
+      const reminderConfig=preparationReminder(authoritative.preparationExperienceId);
       for(const ownership of recipients){if(!ownership.reminders_enabled)continue;const scheduledJob=await insertPersonalizedJob(database,env,eventRecord,ownership,reminderConfig,scheduledFor);jobs+=scheduledJob.deduped?0:1;if(scheduledJob.error)scheduledFailures+=1;}
     }
   }
@@ -617,7 +622,8 @@ export async function onRequest(context) {
       const auth=await requireAdmin(request,env); if(auth.response)return auth.response; if(!['owner','manager'].includes(auth.profile.role))return json(request,env,403,{ok:false,error:'automation_permission_required'});
       if(path[1]==='rules'&&request.method==='GET'){const rows=await database.prepare('SELECT rule_key,label_it,label_en,audience,category,enabled,updated_by,created_at,updated_at FROM notification_automation_rules ORDER BY audience,rule_key').all();return json(request,env,200,{ok:true,items:rows.results||[]});}
       if(path[1]==='rules'&&path[2]&&request.method==='PATCH'){const parsed=await body(request,4096);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});if(typeof parsed.value.enabled!=='boolean')return json(request,env,400,{ok:false,error:'enabled_boolean_required'});const now=nowIso();const result=await database.prepare('UPDATE notification_automation_rules SET enabled=?,updated_by=?,updated_at=? WHERE rule_key=?').bind(parsed.value.enabled?1:0,auth.user.id,now,path[2]).run();if(!result.meta?.changes)return json(request,env,404,{ok:false,error:'automation_rule_not_found'});await audit(database,parsed.value.enabled?'automation_rule_enabled':'automation_rule_disabled',{audience:'admin',actorId:auth.user.id,metadata:{ruleKey:path[2]}});return json(request,env,200,{ok:true,ruleKey:path[2],enabled:parsed.value.enabled});}
-      if(path[1]==='personalized'&&request.method==='GET'){const rows=await database.prepare('SELECT event_type,status,recipient_count,job_count,failure_reason,created_at,resolved_at FROM notification_personalized_events ORDER BY created_at DESC LIMIT 200').all();const config=supabaseConfig(env);let outbox=[];if(config){const params=new URLSearchParams({select:'id,event_type,status,attempt_count,next_attempt_at,last_attempt_at,processed_at,last_error_code,created_at',order:'created_at.desc',limit:'200'});outbox=await backendRows(config,'customer_notification_outbox',params);}return json(request,env,200,{ok:true,items:rows.results||[],outbox});}
+      if(path[1]==='personalized'&&request.method==='GET'){const rows=await database.prepare('SELECT event_type,status,recipient_count,job_count,failure_reason,created_at,resolved_at FROM notification_personalized_events ORDER BY created_at DESC LIMIT 200').all();return json(request,env,200,{ok:true,items:rows.results||[]});}
+      if(path[1]==='outbox'&&request.method==='GET'){const config=supabaseConfig(env);if(!config)return json(request,env,503,{ok:false,error:'personalized_source_not_configured'});const params=new URLSearchParams({select:'id,event_type,status,attempt_count,next_attempt_at,last_attempt_at,processed_at,last_error_code,created_at',order:'created_at.desc',limit:'200'});const outbox=await backendRows(config,'customer_notification_outbox',params);return json(request,env,200,{ok:true,items:outbox});}
       if(path[1]==='jobs'&&request.method==='GET'){const rows=await database.prepare('SELECT id,rule_key,source_type,source_id,source_revision,audience,category,scheduled_for,status,created_at,processing_at,sent_at,cancelled_at,failure_reason,attempt_count,max_attempts,next_attempt_at,last_attempt_at,terminal_reason,push_started_at,push_delivered_at,dead_subscription_at FROM notification_jobs ORDER BY created_at DESC LIMIT 200').all();return json(request,env,200,{ok:true,items:rows.results||[]});}
       if(path[1]==='jobs'&&path[2]&&path[3]==='cancel'&&request.method==='PATCH'){const now=nowIso();const result=await database.prepare("UPDATE notification_jobs SET status='cancelled',cancelled_at=? WHERE id=? AND status='scheduled'").bind(now,path[2]).run();if(!result.meta?.changes)return json(request,env,409,{ok:false,error:'automation_job_not_cancellable'});await audit(database,'automation_job_cancelled',{audience:'admin',actorId:auth.user.id,metadata:{jobId:path[2]}});return json(request,env,200,{ok:true,id:path[2],status:'cancelled'});}
       return json(request,env,404,{ok:false,error:'not_found'});

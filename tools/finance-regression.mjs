@@ -236,10 +236,23 @@ test('Financial Audit CSV is deterministic and spreadsheet-formula safe', () => 
 });
 
 test('Financial Audit PDF is explicitly a summary while CSV remains detailed evidence', () => {
-  const metadata = { auditId:'a',generatedAt:'2026-09-01T00:00:00Z',dateRange:{from:'',to:''},generatedBy:'u',recordCount:0,schemaVersion:'v1',locale:'en',evidenceChecksum:'abc',checksum:'abc' };
-  const report = { categories:[],totals:{humanReview:0,safeDeterministic:0} };
+  const categoryCodes = [
+    'booking_zero_recorded_payment','booking_exactly_one_payment','booking_multiple_payments','booking_remaining_balance',
+    'booking_overpayment','booking_pending_expected_entries','booking_multiple_expected_entries','booking_duplicate_confirmed_entries',
+    'booking_cancelled_with_confirmed_payment','booking_cancelled_with_reversal','booking_cancelled_with_unreversed_net_payment',
+    'booking_code_status_finance_inconsistent','booking_code_consistent','booking_code_multiple_expected_entries',
+    'booking_code_duplicate_confirmed_entries','booking_code_overpayment','gift_card_paid_with_income','gift_card_paid_missing_income',
+    'gift_card_issued_unpaid','gift_card_issued_with_existing_income','gift_card_duplicate_income','paid_commission_missing_finance_expense',
+    'duplicate_commission_expenses','valid_source_linked_finance_entry','genuinely_unlinked_finance_entry'
+  ];
+  const metadata = { auditId:'audit-123',generatedAt:'2026-09-01T00:00:00Z',dateRange:{from:'2026-08-01',to:'2026-08-31'},generatedBy:'user-123',recordCount:15,sourceCounts:{bookingRequests:2,bookingCodes:3,giftCards:4,partnerCommissions:1,financeEntries:5},schemaVersion:'v1',locale:'en',evidenceChecksum:'a'.repeat(64),checksum:'a'.repeat(64) };
+  const report = { categories:categoryCodes.map((code,index)=>({code,count:index+1})),classifications:{humanReview:[{reason:'booking_zero_recorded_payment'}],safeDeterministic:[]},totals:{humanReview:1,safeDeterministic:0} };
   const pdf = pdfExport(metadata,report);
-  ok(pdf.startsWith('%PDF-1.4') && pdf.includes('Financial Audit Summary') && pdf.includes('Detailed evidence rows are provided in the CSV export') && pdf.endsWith('%%EOF'), 'summary PDF contract missing');
+  for (const value of ['VULCANIQ | OPERATIONS','Financial Audit Summary','Executive summary','Classification overview','Evidence & metadata','Source records','Human review required','Safe deterministic','Detailed evidence rows are provided in the CSV export','not a legal certification or tax filing']) ok(pdf.includes(value),`summary PDF section missing: ${value}`);
+  for (const code of categoryCodes) ok(pdf.includes(code),`summary PDF omitted classification: ${code}`);
+  ok((pdf.match(/\/Type \/Page\b/g)||[]).length >= 2, 'long classification table was not paginated');
+  ok(pdf.includes('Booking requests')&&pdf.includes('Partner commissions')&&pdf.includes('Canonical evidence SHA-256'),'source/evidence metadata missing');
+  ok(pdf.startsWith('%PDF-1.4') && pdf.endsWith('%%EOF'), 'summary PDF envelope missing');
   ok(auditEndpoint.includes('-summary.pdf') && auditEndpoint.includes('-detailed-evidence.csv') && auditEndpoint.includes('-integrity-manifest.json'), 'export filenames do not distinguish contracts');
   ok(mainSource.includes("'PDF riepilogo', 'Summary PDF'") && mainSource.includes("'CSV evidenze dettagliate', 'Detailed evidence CSV'"), 'Admin export labels do not distinguish summary and evidence');
 });

@@ -1,4 +1,35 @@
 /* Operational/admin system hardening and responsive layout. */
+.admin-main {
+  --admin-body-text-size: 1rem;
+  --admin-control-text-size: .94rem;
+  --admin-label-text-size: .9rem;
+  --admin-helper-text-size: .82rem;
+  --admin-table-text-size: .9rem;
+}
+.admin-main :where(.admin-panel, .admin-card, .request-card, .availability-block-card, .notifications-card) {
+  font-size: var(--admin-body-text-size);
+  line-height: 1.5;
+}
+.admin-main :where(.admin-panel, .admin-card, .request-card, .availability-block-card, .notifications-card) :where(p, li, dd) {
+  line-height: 1.5;
+}
+.admin-main :where(.admin-field > span, .notifications-card label > span, .notifications-card legend) {
+  font-size: var(--admin-label-text-size);
+  line-height: 1.35;
+}
+.admin-main :where(.button, .admin-panel button, .admin-card button, .request-card button, .notifications-card button, input, select, textarea) {
+  font-size: var(--admin-control-text-size);
+}
+.admin-main :where(.admin-panel, .admin-card, .request-card, .availability-block-card, .notifications-card) :where(.small-note, small) {
+  font-size: var(--admin-helper-text-size);
+  line-height: 1.45;
+}
+.admin-main .admin-table {
+  font-size: var(--admin-table-text-size);
+  line-height: 1.4;
+}
+.admin-main .summary-card > span { font-size: var(--admin-label-text-size); }
+.admin-main .summary-card small { font-size: var(--admin-helper-text-size); line-height: 1.4; }
 .admin-operational-banner {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

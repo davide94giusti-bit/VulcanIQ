@@ -28,6 +28,7 @@ Actual delivery keeps the existing subscription-level Quiet Hours behavior: ordi
 3. Deploy the notification Worker to Preview with Cron still empty.
 4. Deploy Pages to Preview with its existing notification binding and required environment variable names. Do not copy secret values into logs or source.
 5. Sign in as an owner/manager, open `/admin/notifications`, and confirm the operational rules and empty/recent jobs list load. Confirm the rule UI offers enable/disable only and does not imply that timing, channel, or per-rule Quiet Hours behavior can be edited.
+   Test each read independently: a failed rules, recent-jobs, personal-outcomes, or authoritative-outbox request must show a localized error only in that subsection and must not replace successful sibling data with zero counts.
 6. Disable one non-critical rule, create the corresponding trusted test event using only the existing Preview ingest, and confirm the event is suppressed and audited. Re-enable it and repeat with a new deterministic source ID; confirm one job and no duplicate delivery.
 7. Confirm a scheduled job can be cancelled only while `scheduled`, and cancelled jobs are not claimed.
 8. Confirm `workers/notifications/wrangler.toml` still contains `crons = []`.
@@ -50,7 +51,7 @@ Actual delivery keeps the existing subscription-level Quiet Hours behavior: ordi
 
 1. As an `owner` or `finance` user, open `/admin/finance` and expand **Financial Audit & Compliance**.
 2. Generate the **Financial Audit Summary PDF**, detailed evidence CSV, and JSON integrity manifest for an empty date range and a populated date range.
-3. Confirm filenames are opaque/safe, the summary PDF prints as text and explicitly points to the CSV for detailed evidence rows, the detailed CSV opens as UTF-8, and the integrity manifest contains metadata only.
+3. Confirm filenames are opaque/safe; the A4 summary PDF has the branded header, executive cards, complete paginated classification overview, evidence metadata and non-overlapping footer, and explicitly points to the CSV for detailed evidence rows. Confirm the detailed CSV opens as UTF-8 and the integrity manifest contains metadata only.
 4. Confirm metadata includes audit ID, generation time, range, actor ID, `sourceCounts`, their summed `recordCount`, filters, schema version, locale, canonical evidence SHA-256, checksum scope `canonical_evidence_not_file_bytes`, and `piiIncluded: false`. The checksum covers canonical evidence data, not the bytes of any downloaded PDF, CSV, or JSON file; `checksum` remains a compatibility alias of `evidenceChecksum`.
 5. Confirm an `activity_log` row with action `financial_audit_generated` exists and its `actor_id` is the signed-in user. Canonical grants and RLS permit active `owner` and `finance` users to insert this record with their own bearer token; verify this live in Preview because static migration coverage cannot exercise the deployed Auth/RLS integration.
 6. Sign in as manager/guide/content editor and confirm the backend returns 403 even if the endpoint is called directly.

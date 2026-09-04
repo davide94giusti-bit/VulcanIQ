@@ -2,3 +2,15 @@
 .notifications-card .notification-toggle input[type=checkbox]{box-sizing:border-box;padding:0}
 .permission-recovery{padding:.75rem;border:1px solid rgba(141,31,31,.35);border-radius:10px;background:rgba(141,31,31,.06)}
 .automation-rule-list,.automation-job-list{display:grid;gap:.25rem}.automation-job-list{margin-top:.5rem}.campaign-row>span{display:grid;gap:.2rem;min-width:0}.campaign-row small{overflow-wrap:anywhere;color:#596579}
+.notification-item-actions .button{justify-content:center;min-width:7rem;padding-inline:1rem}
+.notification-item-actions .notification-action-subtle{background:transparent;box-shadow:none}
+.notification-item-actions .button:focus-visible{outline:3px solid #d9922e;outline-offset:3px}
+.preparation-guidance{border-color:rgba(205,88,55,.25);background:linear-gradient(145deg,rgba(255,255,255,.96),rgba(244,238,228,.92))}
+.preparation-guidance h2,.preparation-guidance h3,.preparation-guidance p{margin-block:0}
+.preparation-guidance>div:first-child{display:grid;gap:.35rem}
+.preparation-guidance-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem}
+.preparation-guidance-grid article{min-width:0;padding:1rem;border:1px solid rgba(16,27,45,.12);border-radius:14px;background:rgba(255,255,255,.72)}
+.preparation-guidance-grid h3{font-size:1rem}
+.preparation-guidance-grid ul{margin:.65rem 0 0;padding-left:1.15rem}
+.preparation-guidance-grid li+li{margin-top:.45rem}
+@media(max-width:700px){.notification-item-actions .button{flex:1 1 8rem;min-width:0}.preparation-guidance-grid{grid-template-columns:1fr}}

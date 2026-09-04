@@ -7624,6 +7624,32 @@ body.modal-scroll-lock {
   justify-content: flex-end;
 }
 
+.questionnaire-final-cta {
+  width: min(760px, 100%);
+  margin-left: auto;
+  display: grid;
+  gap: 8px;
+}
+
+.questionnaire-notification-optin {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid rgba(13, 27, 50, 0.14);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.72);
+  color: var(--night);
+  cursor: pointer;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.questionnaire-notification-note {
+  margin: 0;
+  color: var(--ash);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .request-fixed-list {
   display: grid;
   gap: 10px;
@@ -8148,6 +8174,36 @@ body.modal-scroll-lock {
 
   .questionnaire-final-actions {
     padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .questionnaire-final-cta {
+    width: 100%;
+    margin: 0;
+  }
+
+  .questionnaire-modal-final {
+    display: grid;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .questionnaire-modal-final .questionnaire-body {
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .questionnaire-modal-final .questionnaire-footer {
+    position: static;
+  }
+
+  .questionnaire-notification-optin {
+    padding: 7px 10px;
+    font-size: 0.9rem;
+  }
+
+  .questionnaire-notification-note {
+    font-size: 0.76rem;
   }
 }
 

@@ -29,8 +29,10 @@ Canonical booking, recognized Finance, and fixed-excursion mutations enqueue det
 - Dedupe uses event type + opaque entity reference + authoritative revision, then ownership per job.
 - Immediate events use the existing in-app-first delivery. Ordinary/high push observes subscription Quiet Hours; no customer event is critical.
 - Scheduled work is claimed atomically by the Worker. The Worker rechecks that `ownership_id` belongs to the target subscription and is not revoked.
-- Revocation cancels future scheduled work. Reschedule and cancellation cancel obsolete upcoming reminders before replacement or terminal delivery.
+- Revocation cancels future scheduled work. Booking reschedules and canonical fixed-excursion changes cancel obsolete upcoming reminders before an eligible replacement is scheduled; booking cancellation or an inactive/cancelled fixed excursion prevents replacement.
 - Fixed excursions use canonical local date/start time in `Europe/Rome` plus the internal reminder rule offset. Private/date-only bookings retain the documented 09:00 UTC fallback rather than inventing a time.
+- Upcoming reminders resolve a localized preparation profile only from the canonical `booking_requests.experience_id` or linked `fixed_excursions.experience_id`. The four current experience IDs have distinct stable guidance; unknown/legacy values use the conservative `standard-etna` fallback. Customer-entered text never selects notification content.
+- The native reminder stays concise and excludes names, contact details, raw IDs, codes, payment data and private itinerary details. It deliberately avoids “tomorrow” because the internal offset and scheduler pickup time do not guarantee that wording is literally correct. Opening the owned reminder leads to `/install?preparation=<allowlisted-profile>`, where What to wear, What to bring and important notes are shown without exposing booking data.
 - Transient push responses (429/5xx) retry at most three times with exponential backoff once the scheduler is enabled. 404/410 becomes in-app-only. An unknown outcome after push starts is terminal and is never replayed.
 - Native Web Push carries an RFC 8291-encrypted presentation envelope with mandatory type `vulcaniq-notification` and, for public delivery, constrained category/title/body/internal-URL fields resolved from the existing localized event. It carries no business or ownership identifiers, contact details, codes, amounts, or transport material.
 - The Public service worker validates and bounds the optional presentation fields, rejects external/active-content destinations, and falls back to localized generic copy plus `/install` for absent or malformed data. Valid categories produce deterministic `vulcaniq-<category>` tags; invalid categories use `vulcaniq-public-update`.
@@ -48,7 +50,7 @@ Canonical booking, recognized Finance, and fixed-excursion mutations enqueue det
 | New website booking opt-in | Implemented | New request may issue and immediately redeem one device claim. In-app works before push. |
 | Booking confirmed | Implemented | Accepted/confirmed authoritative state; immediate owned notification and future reminder scheduling. |
 | Payment received | Implemented | Requires a recognized/confirmed active Finance entry; immediate owned notification. No Finance mutation is performed. |
-| Upcoming activity reminder | Implemented, scheduler dependent | Fixed excursions use canonical `date` + `start_time` in `Europe/Rome` and the rule offset; date-only requests use the safe 09:00 UTC fallback. |
+| Upcoming activity reminder | Implemented, scheduler dependent | Fixed excursions use canonical `date` + `start_time` in `Europe/Rome` and the rule offset; date-only requests use the safe 09:00 UTC fallback. Canonical experience IDs select stable IT/EN preparation guidance. |
 | Booking rescheduled | Implemented | Date/fixed-excursion updates cancel obsolete reminders, notify immediately, and schedule a replacement when eligible. |
 | Booking cancelled/declined | Implemented | Cancels future reminders and notifies immediately after authoritative terminal state. |
 | Review reminder | Implemented | Requires authoritative `review_requested_at`/status; immediate owned notification. |
@@ -84,6 +86,7 @@ The Preview Worker keeps its dedicated Preview D1 binding and existing non-secre
 11. Disable each typed owned-journey preference in turn and confirm its event is suppressed only for that ownership; marketing preferences remain unchanged.
 12. Simulate accepted, retryable, permanent, dead-endpoint, and unknown transport outcomes. Confirm the accepted state is described only as push-service acceptance, bounded backoff and terminal states are correct, and no replay occurs after an uncertain push.
 13. Interrupt reconciliation after the Supabase mutation. Confirm the outbox row remains visible, use **Retry**, and confirm D1 dedupe creates one effective send.
+14. Confirm an owned reminder opens the allowlisted preparation profile on `/install`, different canonical experiences show different stable guidance, an unknown value uses `standard-etna`, and no native or rich content exposes customer/booking identifiers or makes an unverified weather claim.
 
 ## Operational risks and rollback
 
