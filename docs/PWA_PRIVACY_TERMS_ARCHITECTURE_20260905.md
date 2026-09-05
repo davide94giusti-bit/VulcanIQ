@@ -1,6 +1,6 @@
 # Unified onboarding, participant foundation, and Terms architecture
 
-Status: implementation record for unified PWA/privacy onboarding and the applied Phase 1 participant foundation. Phase 2 Terms evidence is implemented in source and in the unapplied migration `20260905110000_terms_evidence_foundation.sql`; see `TERMS_EVIDENCE_FOUNDATION_20260905.md`. Individual-adult and guardian journeys remain deferred.
+Status: implementation record for unified PWA/privacy onboarding and the applied Phase 1 participant foundation. Phase 2 Terms evidence infrastructure is implemented in source and in the unapplied migration `20260905110000_terms_evidence_foundation.sql`; it publishes no Terms until a separate counsel-approved migration is reviewed. See `TERMS_EVIDENCE_FOUNDATION_20260905.md`. Individual-adult and guardian journeys remain deferred.
 
 ## Browser storage and tracker audit
 
@@ -85,8 +85,8 @@ Secure adult acceptance links should use high-entropy, expiring, single-purpose 
 
 | Flow | Current business effect / payment obligation | Candidate acceptance actor and evidence | Required / reacceptance decision |
 | --- | --- | --- | --- |
-| Fast Request website | Creates a pending request; no online payment obligation | Organizer request-purpose acceptance linked atomically to request | Mandatory in Phase 2; counsel must approve the seeded current text before Production release |
-| Full questionnaire | Creates a pending website request; no online payment obligation | Same request-purpose organizer event | Mandatory in Phase 2; never reuse a checked client state |
+| Fast Request website | Creates a pending request; no online payment obligation; requires email or phone but no name | Contact-attributed request-purpose event can be linked atomically without inventing a named organizer | Owner/counsel must decide whether this is sufficient or the lead remains non-contractual; no Terms are currently published |
+| Full questionnaire | Creates a pending website request; no online payment obligation; includes organizer name | Named organizer request-purpose event can be linked atomically | Requires distinct approved request text before publication; never reuse a checked client state |
 | Fast Request WhatsApp | Opens external prefilled conversation; site creates no canonical request at click | Cannot truthfully record contractual acceptance in current flow | Decide whether WhatsApp process supplies/records Terms later |
 | Private excursion | Request first; Admin confirmation/payment lifecycle later | Request event, then booking/participant events if booking Terms differ | Reaccept only on approved material-change rules |
 | Fixed excursion | Request tied to fixed excursion; no immediate online charge | Organizer request event, later participant coverage | Reschedule/material itinerary rule requires legal decision |
@@ -119,7 +119,7 @@ After approval, a `customer_terms_required` personalized event could be generate
 ## Migration sequence
 
 1. **Applied Phase 1:** `booking_participants`, guardian/organizer constraints, least-privilege access, owned-device locator, and guarded customer/Admin UI. No historical participants were fabricated.
-2. **Authored Phase 2:** immutable `terms_versions`, append-only `terms_acceptances`, atomic website request enforcement, and owned organizer self-acceptance. Remote application awaits approval.
+2. **Authored Phase 2 infrastructure:** immutable `terms_versions`, append-only `terms_acceptances`, atomic website request enforcement, and owned organizer self-acceptance. It contains no published content; remote infrastructure application and a later legal publication both await separate approval.
 3. Resolve remaining legal/product decisions and approve final document purposes/content before Production release.
 4. **Later:** add hashed one-time acceptance invitations for individual adults and an approved guardian flow.
 5. Only then add personalized reminder event/outbox integration; scheduler/Cron remains a separate approval.

@@ -74,7 +74,7 @@ create table public.terms_acceptances (
   participant_id uuid references public.booking_participants(id) on delete restrict,
   actor_participant_id uuid references public.booking_participants(id) on delete restrict,
   actor_type text not null,
-  actor_name_snapshot text not null,
+  actor_name_snapshot text,
   representation_type text not null,
   locale text not null,
   source_context text not null,
@@ -83,9 +83,9 @@ create table public.terms_acceptances (
   created_at timestamptz not null,
   constraint terms_acceptances_hash_check check (terms_content_sha256 ~ '^[0-9a-f]{64}$'),
   constraint terms_acceptances_purpose_check check (document_purpose in ('booking_request', 'excursion_booking', 'gift_card_purchase', 'gift_card_redemption')),
-  constraint terms_acceptances_actor_type_check check (actor_type in ('booking_organizer', 'participant')),
-  constraint terms_acceptances_actor_name_check check (char_length(btrim(actor_name_snapshot)) between 1 and 120),
-  constraint terms_acceptances_representation_check check (representation_type in ('request_organizer', 'self', 'parent_or_guardian')),
+  constraint terms_acceptances_actor_type_check check (actor_type in ('request_contact', 'booking_organizer', 'participant')),
+  constraint terms_acceptances_actor_name_check check (actor_name_snapshot is null or char_length(btrim(actor_name_snapshot)) between 1 and 120),
+  constraint terms_acceptances_representation_check check (representation_type in ('request_submitter', 'request_organizer', 'self', 'parent_or_guardian')),
   constraint terms_acceptances_locale_check check (locale in ('it', 'en')),
   constraint terms_acceptances_source_check check (char_length(btrim(source_context)) between 1 and 80)
 );
@@ -127,7 +127,7 @@ begin
   new.terms_content_sha256 := version_row.content_sha256;
   new.document_purpose := version_row.document_purpose;
   new.locale := version_row.locale;
-  new.actor_name_snapshot := btrim(new.actor_name_snapshot);
+  new.actor_name_snapshot := nullif(btrim(new.actor_name_snapshot), '');
   new.source_context := btrim(new.source_context);
   new.accepted_at := transaction_timestamp();
   new.privacy_notice_provided_at := transaction_timestamp();
@@ -138,11 +138,23 @@ begin
   end if;
 
   if new.document_purpose = 'booking_request' then
-    if new.participant_id is not null
-      or new.actor_participant_id is not null
-      or new.actor_type <> 'booking_organizer'
-      or new.representation_type <> 'request_organizer' then
+    if new.participant_id is not null or new.actor_participant_id is not null then
       raise exception 'terms_request_actor_invalid';
+    end if;
+    if new.source_context = 'fast_request_website' then
+      if new.actor_type <> 'request_contact'
+        or new.representation_type <> 'request_submitter'
+        or new.actor_name_snapshot is not null then
+        raise exception 'terms_request_actor_invalid';
+      end if;
+    elsif new.source_context = 'questionnaire_website' then
+      if new.actor_type <> 'booking_organizer'
+        or new.representation_type <> 'request_organizer'
+        or new.actor_name_snapshot is null then
+        raise exception 'terms_request_actor_invalid';
+      end if;
+    else
+      raise exception 'terms_request_source_invalid';
     end if;
     return new;
   end if;
@@ -163,6 +175,7 @@ begin
     or actor_row.status <> 'active' then
     raise exception 'terms_participant_scope_invalid';
   end if;
+  new.actor_name_snapshot := actor_row.full_name;
 
   if new.representation_type = 'self' then
     if new.actor_participant_id <> new.participant_id
@@ -235,13 +248,20 @@ declare
   clean_source text := nullif(btrim(coalesce(p_terms_source, '')), '');
   request_idempotency text := nullif(btrim(coalesce(request_payload->>'idempotency_key', '')), '');
   was_existing boolean := false;
+  request_actor_type text;
+  request_representation text;
 begin
-  if actor_name is null or char_length(actor_name) > 120 then
+  if actor_name is not null and char_length(actor_name) > 120 then
     raise exception 'terms_actor_name_required';
   end if;
   if clean_source not in ('fast_request_website', 'questionnaire_website') then
     raise exception 'terms_source_invalid';
   end if;
+  if clean_source = 'questionnaire_website' and actor_name is null then
+    raise exception 'terms_actor_name_required';
+  end if;
+  request_actor_type := case when clean_source = 'fast_request_website' then 'request_contact' else 'booking_organizer' end;
+  request_representation := case when clean_source = 'fast_request_website' then 'request_submitter' else 'request_organizer' end;
   if request_idempotency is null or char_length(request_idempotency) < 12 then
     raise exception 'terms_request_idempotency_required';
   end if;
@@ -269,7 +289,7 @@ begin
   ) values (
     version_row.id, version_row.content_sha256, version_row.document_purpose,
     created.id, null, null,
-    'booking_organizer', actor_name, 'request_organizer', version_row.locale,
+    request_actor_type, actor_name, request_representation, version_row.locale,
     clean_source, transaction_timestamp(), transaction_timestamp(), transaction_timestamp()
   )
   on conflict (booking_request_id, terms_version_id) where participant_id is null
@@ -373,81 +393,9 @@ revoke all privileges on table public.terms_versions from public, anon, authenti
 revoke all privileges on table public.terms_acceptances from public, anon, authenticated, service_role;
 grant select on table public.terms_versions, public.terms_acceptances to authenticated, service_role;
 
-insert into public.terms_versions (
-  id, document_purpose, version, locale, effective_at, published_at,
-  content_snapshot, content_sha256, status
-)
-select seed.id, seed.document_purpose, '2026-06-30', seed.locale,
-  '2026-06-30 00:00:00+00'::timestamptz, transaction_timestamp(),
-  seed.content_snapshot, repeat('0', 64), 'published'
-from (
-  values
-    (
-      '10000000-0000-4000-8000-000000000001'::uuid,
-      'booking_request'::text,
-      'it'::text,
-      jsonb_build_object(
-        'intro', 'Queste condizioni regolano l’uso del sito e l’invio di richieste per esperienze vulcanIQ.',
-        'sections', jsonb_build_array(
-          jsonb_build_object('title', 'Uso del sito', 'body', 'Le informazioni sono fornite per presentare esperienze, disponibilità indicative e modalità di contatto. Non usare il sito in modo illecito o dannoso.'),
-          jsonb_build_object('title', 'Richieste e conferme', 'body', 'L’invio di una richiesta non costituisce conferma automatica. La prenotazione è confermata solo dopo risposta esplicita del team vulcanIQ.'),
-          jsonb_build_object('title', 'Disponibilità, prezzi e programmi', 'body', 'Disponibilità, prezzi, orari, itinerari e programmi possono cambiare in base a meteo, ordinanze, attività vulcanica, logistica e valutazione della guida.'),
-          jsonb_build_object('title', 'Responsabilità del cliente', 'body', 'Il cliente deve fornire informazioni corrette su partecipanti, età, condizioni fisiche, esigenze specifiche e contatti utili alla gestione dell’esperienza.'),
-          jsonb_build_object('title', 'Sicurezza Etna e meteo', 'body', 'Le esperienze sull’Etna dipendono da condizioni naturali variabili. La guida può modificare, rinviare o annullare l’attività per motivi di sicurezza.'),
-          jsonb_build_object('title', 'Link esterni e proprietà intellettuale', 'body', 'I link esterni sono forniti per utilità. Testi, immagini, logo e contenuti vulcanIQ non possono essere copiati senza autorizzazione.')
-        )
-      )
-    ),
-    (
-      '10000000-0000-4000-8000-000000000002'::uuid,
-      'booking_request'::text,
-      'en'::text,
-      jsonb_build_object(
-        'intro', 'These terms govern use of the site and submission of requests for vulcanIQ experiences.',
-        'sections', jsonb_build_array(
-          jsonb_build_object('title', 'Website use', 'body', 'Information is provided to present experiences, indicative availability and contact methods. Do not use the site in unlawful or harmful ways.'),
-          jsonb_build_object('title', 'Requests and confirmations', 'body', 'Submitting a request is not an automatic confirmation. A booking is confirmed only after explicit confirmation from the vulcanIQ team.'),
-          jsonb_build_object('title', 'Availability, prices and programs', 'body', 'Availability, prices, times, routes and programs may change based on weather, regulations, volcanic activity, logistics and guide assessment.'),
-          jsonb_build_object('title', 'Customer responsibilities', 'body', 'Customers must provide accurate information about participants, age, fitness level, specific needs and contact details required to manage the experience.'),
-          jsonb_build_object('title', 'Etna safety and weather', 'body', 'Etna experiences depend on variable natural conditions. The guide may change, postpone or cancel the activity for safety reasons.'),
-          jsonb_build_object('title', 'External links and intellectual property', 'body', 'External links are provided for convenience. vulcanIQ text, images, logo and content may not be copied without permission.')
-        )
-      )
-    ),
-    (
-      '10000000-0000-4000-8000-000000000003'::uuid,
-      'excursion_booking'::text,
-      'it'::text,
-      jsonb_build_object(
-        'intro', 'Queste condizioni regolano l’uso del sito e l’invio di richieste per esperienze vulcanIQ.',
-        'sections', jsonb_build_array(
-          jsonb_build_object('title', 'Uso del sito', 'body', 'Le informazioni sono fornite per presentare esperienze, disponibilità indicative e modalità di contatto. Non usare il sito in modo illecito o dannoso.'),
-          jsonb_build_object('title', 'Richieste e conferme', 'body', 'L’invio di una richiesta non costituisce conferma automatica. La prenotazione è confermata solo dopo risposta esplicita del team vulcanIQ.'),
-          jsonb_build_object('title', 'Disponibilità, prezzi e programmi', 'body', 'Disponibilità, prezzi, orari, itinerari e programmi possono cambiare in base a meteo, ordinanze, attività vulcanica, logistica e valutazione della guida.'),
-          jsonb_build_object('title', 'Responsabilità del cliente', 'body', 'Il cliente deve fornire informazioni corrette su partecipanti, età, condizioni fisiche, esigenze specifiche e contatti utili alla gestione dell’esperienza.'),
-          jsonb_build_object('title', 'Sicurezza Etna e meteo', 'body', 'Le esperienze sull’Etna dipendono da condizioni naturali variabili. La guida può modificare, rinviare o annullare l’attività per motivi di sicurezza.'),
-          jsonb_build_object('title', 'Link esterni e proprietà intellettuale', 'body', 'I link esterni sono forniti per utilità. Testi, immagini, logo e contenuti vulcanIQ non possono essere copiati senza autorizzazione.')
-        )
-      )
-    ),
-    (
-      '10000000-0000-4000-8000-000000000004'::uuid,
-      'excursion_booking'::text,
-      'en'::text,
-      jsonb_build_object(
-        'intro', 'These terms govern use of the site and submission of requests for vulcanIQ experiences.',
-        'sections', jsonb_build_array(
-          jsonb_build_object('title', 'Website use', 'body', 'Information is provided to present experiences, indicative availability and contact methods. Do not use the site in unlawful or harmful ways.'),
-          jsonb_build_object('title', 'Requests and confirmations', 'body', 'Submitting a request is not an automatic confirmation. A booking is confirmed only after explicit confirmation from the vulcanIQ team.'),
-          jsonb_build_object('title', 'Availability, prices and programs', 'body', 'Availability, prices, times, routes and programs may change based on weather, regulations, volcanic activity, logistics and guide assessment.'),
-          jsonb_build_object('title', 'Customer responsibilities', 'body', 'Customers must provide accurate information about participants, age, fitness level, specific needs and contact details required to manage the experience.'),
-          jsonb_build_object('title', 'Etna safety and weather', 'body', 'Etna experiences depend on variable natural conditions. The guide may change, postpone or cancel the activity for safety reasons.'),
-          jsonb_build_object('title', 'External links and intellectual property', 'body', 'External links are provided for convenience. vulcanIQ text, images, logo and content may not be copied without permission.')
-        )
-      )
-    )
-) as seed(id, document_purpose, locale, content_snapshot);
-
+-- Intentionally publish no contractual text in this infrastructure migration.
+-- Counsel-approved purpose- and locale-specific content must arrive in a later,
+-- separately reviewed publication migration. Until then the resolver returns no row.
 comment on table public.terms_versions is
   'Immutable published Terms content snapshots. Corrections require a new version.';
 comment on table public.terms_acceptances is

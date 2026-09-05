@@ -108,7 +108,7 @@ export async function onRequestPost(context) {
   const rawActorName = String(input.customer_name || '').trim();
   const termsVersionId = String(input.terms_version_id || '').trim();
   const termsSource = ['fast_request_website', 'questionnaire_website'].includes(input.terms_source) ? input.terms_source : '';
-  if (!rawActorName || rawActorName.length > 120) {
+  if (rawActorName.length > 120 || (termsSource === 'questionnaire_website' && !rawActorName)) {
     return respond(400, { ok: false, code: 'terms_actor_name_required', message: publicErrorMessage('terms_actor_name_required') });
   }
   if (input.terms_accepted !== true || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(termsVersionId) || !termsSource) {

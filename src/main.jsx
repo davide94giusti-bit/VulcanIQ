@@ -3217,7 +3217,6 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
       const stored = JSON.parse(window.localStorage.getItem('vulcaniq_fast_request') || '{}');
       if (stored?.expires_at && Date.now() < stored.expires_at) {
         return {
-          name: '',
           experienceId: stored.experienceId || 'etna-premium',
           dateMode: stored.dateMode || 'flexible',
           customDate: stored.customDate || '',
@@ -3230,7 +3229,7 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
         };
       }
     } catch {}
-    return { name: '', experienceId: 'etna-premium', dateMode: 'flexible', customDate: '', adults: '2', children: '0', heardAboutUs: '', heardAboutUsDetail: '', email: '', phone: '' };
+    return { experienceId: 'etna-premium', dateMode: 'flexible', customDate: '', adults: '2', children: '0', heardAboutUs: '', heardAboutUsDetail: '', email: '', phone: '' };
   });
 
   useEffect(() => {
@@ -3347,7 +3346,6 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   }
 
   async function submitDirectRequest() {
-    const name = String(form.name || '').trim();
     const email = String(form.email || '').trim();
     const phone = String(form.phone || '').trim();
     const adults = safeParticipantNumber(form.adults, 0);
@@ -3361,10 +3359,6 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
       return;
     }
     if (!validateFastContactStep(true)) {
-      return;
-    }
-    if (!name || name.length > 120) {
-      setSubmissionState({ loading: false, error: lang === 'it' ? 'Inserisci il nome dell’organizzatore.' : 'Enter the organizer name.', success: '' });
       return;
     }
     if (!termsAccepted || !termsVersionId) {
@@ -3395,7 +3389,6 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
         children,
         metadata: { ...trackingMetadata, submit_trigger: 'fast_request_submit_button' },
         payload: {
-          customer_name: name,
           customer_email: email,
           customer_phone: phone,
           preferred_contact: phone ? 'whatsapp' : 'email',
@@ -3510,7 +3503,6 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
                   <p>{lang === 'it' ? 'Inserisci almeno un indirizzo email o un numero di telefono valido.' : 'Enter at least one valid email address or phone number.'}</p>
                 </div>
                 <div className="fast-request-contact-fields">
-                  <label className="admin-field full" htmlFor="fastRequestName"><span>{lang === 'it' ? 'Nome dell’organizzatore' : 'Organizer name'}</span><input id="fastRequestName" type="text" maxLength={120} value={form.name || ''} onChange={(event) => update('name', event.target.value)} autoComplete="name" /></label>
                   <label className="admin-field" htmlFor="fastRequestEmail"><span>{text(lang, 'contactEmail')}</span><input id="fastRequestEmail" type="email" inputMode="email" maxLength={254} value={form.email || ''} onChange={(event) => update('email', event.target.value)} onBlur={(event) => update('email', String(event.target.value || '').trim())} autoComplete="email" aria-describedby={error ? 'fastRequestContactError' : undefined} /></label>
                   <label className="admin-field" htmlFor="fastRequestPhone"><span>{text(lang, 'phone')}</span><input id="fastRequestPhone" type="tel" inputMode="tel" pattern="^\+?[0-9]*$" maxLength={40} value={form.phone || ''} onBeforeInput={preventInvalidPhoneInput} onChange={(event) => update('phone', sanitizePublicPhoneInput(event.target.value))} autoComplete="tel" aria-describedby={error ? 'fastRequestContactError' : undefined} /></label>
                 </div>
@@ -13953,7 +13945,7 @@ function AdminTermsSummary({ request, lang }) {
   const participants=Array.isArray(request.booking_participants)?request.booking_participants.filter((item)=>item.status==='active'):[];
   const currentParticipantAcceptance=new Map(acceptances.filter((item)=>item.document_purpose==='excursion_booking'&&item.terms_version_id===currentExcursion?.id&&item.participant_id).map((item)=>[item.participant_id,item]));
   const versionLabel=(item)=>{const joined=Array.isArray(item?.terms_versions)?item.terms_versions[0]:item?.terms_versions;return joined?.version||'-';};
-  const evidenceLine=(item)=>item?<small>{adminCopy(lang,'Versione','Version')} {versionLabel(item)} · {formatLocalDateTime(item.accepted_at,lang,'-')} · {adminCopy(lang,'Attore','Actor')}: {item.actor_name_snapshot} · {item.representation_type} · {item.locale?.toUpperCase()} · {item.source_context}</small>:null;
+  const evidenceLine=(item)=>item?<small>{adminCopy(lang,'Versione','Version')} {versionLabel(item)} · {formatLocalDateTime(item.accepted_at,lang,'-')} · {adminCopy(lang,'Attore','Actor')}: {item.actor_name_snapshot||adminCopy(lang,'Contatto della richiesta (nome non fornito)','Request contact (name not supplied)')} · {item.representation_type} · {item.locale?.toUpperCase()} · {item.source_context}</small>:null;
   return <section className="admin-terms-summary"><div><strong>{adminCopy(lang,'Termini','Terms')}</strong><span className="small-note">{adminCopy(lang,'Evidenza in sola lettura','Read-only evidence')}</span></div><div className="admin-terms-list"><p><strong>{adminCopy(lang,'Termini della richiesta','Request terms')}</strong><span className={requestAcceptance?'status-success':'status-warning'}>{requestAcceptance?adminCopy(lang,'Accettati','Accepted'):adminCopy(lang,'In attesa','Pending')}</span>{evidenceLine(requestAcceptance)}</p><p><strong>{adminCopy(lang,'Termini dell’esperienza','Excursion terms')}</strong><span className="small-note">{currentExcursion?`${adminCopy(lang,'Versione corrente','Current version')} ${currentExcursion.version} · ${locale.toUpperCase()}`:adminCopy(lang,'Versione corrente non disponibile','Current version unavailable')}</span></p>{participants.map((participant)=>{const evidence=currentParticipantAcceptance.get(participant.id);return <p key={participant.id}><strong>{participant.full_name}</strong><span className={evidence?'status-success':'status-warning'}>{evidence?adminCopy(lang,'Accettati','Accepted'):participant.participant_type==='minor'?adminCopy(lang,'In attesa del genitore/tutore','Pending parent/guardian'):adminCopy(lang,'In attesa','Pending')}</span>{evidenceLine(evidence)}</p>;})}</div></section>;
 }
 

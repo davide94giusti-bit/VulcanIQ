@@ -14,7 +14,36 @@ declare
   acceptance_count integer;
   mutation_rejected boolean := false;
   locale_mismatch_rejected boolean := false;
+  questionnaire_name_rejected boolean := false;
 begin
+  if exists (select 1 from public.resolve_current_terms_version('booking_request', 'en'))
+    or exists (select 1 from public.resolve_current_terms_version('excursion_booking', 'en')) then
+    raise exception 'terms_test_unapproved_version_published';
+  end if;
+
+  insert into public.terms_versions (
+    id, document_purpose, version, locale, effective_at, published_at,
+    content_snapshot, content_sha256, status
+  ) values
+    (
+      '20000000-0000-4000-8000-000000000001', 'booking_request', 'local-test-only', 'en',
+      transaction_timestamp(), transaction_timestamp(),
+      jsonb_build_object('intro', 'Local test only.', 'sections', jsonb_build_array(jsonb_build_object('title', 'Request', 'body', 'Not legal content.'))),
+      repeat('0', 64), 'published'
+    ),
+    (
+      '20000000-0000-4000-8000-000000000002', 'booking_request', 'local-test-only', 'it',
+      transaction_timestamp(), transaction_timestamp(),
+      jsonb_build_object('intro', 'Solo test locale.', 'sections', jsonb_build_array(jsonb_build_object('title', 'Richiesta', 'body', 'Contenuto non legale.'))),
+      repeat('0', 64), 'published'
+    ),
+    (
+      '20000000-0000-4000-8000-000000000003', 'excursion_booking', 'local-test-only', 'en',
+      transaction_timestamp(), transaction_timestamp(),
+      jsonb_build_object('intro', 'Local test only.', 'sections', jsonb_build_array(jsonb_build_object('title', 'Excursion', 'body', 'Not legal content.'))),
+      repeat('0', 64), 'published'
+    );
+
   select id into request_version_id
   from public.resolve_current_terms_version('booking_request', 'en');
   select id into excursion_version_id
@@ -52,17 +81,32 @@ begin
         'request_type', 'private'
       ),
       italian_request_version_id,
-      'fast_request_website'
+      'questionnaire_website'
     );
   exception when others then
     locale_mismatch_rejected := sqlerrm = 'terms_version_not_current';
   end;
   if not locale_mismatch_rejected then raise exception 'terms_test_locale_mismatch_allowed'; end if;
 
+  begin
+    perform public.create_public_booking_request_with_terms(
+      jsonb_build_object(
+        'customer_email', 'questionnaire-name@example.test',
+        'language', 'en',
+        'idempotency_key', 'terms-questionnaire-name-20260905',
+        'request_type', 'private'
+      ),
+      request_version_id,
+      'questionnaire_website'
+    );
+  exception when others then
+    questionnaire_name_rejected := sqlerrm = 'terms_actor_name_required';
+  end;
+  if not questionnaire_name_rejected then raise exception 'terms_test_questionnaire_name_allowed'; end if;
+
   select * into created
   from public.create_public_booking_request_with_terms(
     jsonb_build_object(
-      'customer_name', 'Local Terms Test',
       'customer_email', 'local-terms@example.test',
       'language', 'en',
       'idempotency_key', 'terms-local-test-20260905',
@@ -87,13 +131,15 @@ begin
     where id = created.terms_acceptance_id
       and (accepted_at <> transaction_timestamp()
         or privacy_notice_provided_at <> transaction_timestamp()
-        or terms_content_sha256 <> (select content_sha256 from public.terms_versions where id = request_version_id))
+        or terms_content_sha256 <> (select content_sha256 from public.terms_versions where id = request_version_id)
+        or actor_type <> 'request_contact'
+        or actor_name_snapshot is not null
+        or representation_type <> 'request_submitter')
   ) then raise exception 'terms_test_authoritative_fields'; end if;
 
   select * into repeated
   from public.create_public_booking_request_with_terms(
     jsonb_build_object(
-      'customer_name', 'Local Terms Test',
       'customer_email', 'local-terms@example.test',
       'language', 'en',
       'idempotency_key', 'terms-local-test-20260905',

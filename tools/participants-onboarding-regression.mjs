@@ -162,7 +162,7 @@ test('participant UI is responsive and not table-only', () => {
 test('Terms evidence remains separate from participant records', () => {
   assert.ok(!/terms_versions|terms_acceptances|self_accepted|accepted_by_guardian/.test(participantMigration));
   assert.ok(participantMigration.includes('This table is not Terms acceptance evidence.'));
-  assert.ok(termsDoc.includes('Phase 2 Terms evidence is implemented'));
+  assert.ok(termsDoc.includes('Phase 2 Terms evidence infrastructure is implemented'));
   assert.ok(termsDoc.includes('Individual-adult and guardian journeys remain deferred'));
 });
 
