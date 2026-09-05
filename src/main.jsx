@@ -3133,6 +3133,7 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   const fastRequestSubmissionErrorRef = useRef(null);
   const [step, setStep] = useState(1);
   const [error, setError] = useState('');
+  const [deliveryChoice, setDeliveryChoice] = useState('');
   const [followBookingUpdates, setFollowBookingUpdates] = useState(false);
   const [submissionState, setSubmissionState] = useState({ loading: false, error: '', success: '' });
   const [form, setForm] = useState(() => {
@@ -3160,11 +3161,11 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   }, [step]);
 
   useEffect(() => {
-    if (step === 4 && error) fastRequestContactHeadingRef.current?.focus();
-  }, [error, step]);
+    if (step === 5 && deliveryChoice === 'website' && error) fastRequestContactHeadingRef.current?.focus();
+  }, [deliveryChoice, error, step]);
 
   useEffect(() => {
-    if (step === 6 && submissionState.error) fastRequestSubmissionErrorRef.current?.focus();
+    if (step === 5 && submissionState.error) fastRequestSubmissionErrorRef.current?.focus();
   }, [step, submissionState.error]);
 
   useEffect(() => {
@@ -3224,8 +3225,7 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   }
 
   function completeStep(nextStep) {
-    if (step === 4 && nextStep === 5 && !validateFastContactStep()) return;
-    if (step === 5 && nextStep === 6 && !validateAttributionStep()) return;
+    if (step === 4 && nextStep === 5 && !validateAttributionStep()) return;
     setError('');
     markFormFieldStarted(formJourneyRef.current?.journey_id, `step_${step}`, { ...sourceMetadata, step_index: step, step_key: `step_${step}` });
     trackEvent('fast_request_step_complete', { ...sourceMetadata, journey_id: formJourneyRef.current?.journey_id || '', form_type: 'fast_request', step, next_step: nextStep, ...heardAboutUsMetadata(form.heardAboutUs, lang, form.heardAboutUsDetail) }, { dedupe: false });
@@ -3281,7 +3281,6 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
       return;
     }
     if (!validateFastContactStep(true)) {
-      setStep(4);
       return;
     }
 
@@ -3403,41 +3402,42 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
           </div>
         )}
         {step === 4 && (
-          <div className="admin-form-grid fast-request-contact-step" aria-labelledby="fastRequestContactTitle">
-            <div className="fast-request-contact-heading full">
-              <h3 id="fastRequestContactTitle" ref={fastRequestContactHeadingRef} tabIndex="-1">{lang === 'it' ? 'Dove possiamo risponderti?' : 'Where can we reply?'}</h3>
-              <p>{lang === 'it' ? 'Inserisci email o telefono solo se vuoi inviare la richiesta direttamente. Puoi lasciare entrambi vuoti e continuare con WhatsApp.' : 'Enter an email or phone number only if you want to send the request directly. You can leave both empty and continue with WhatsApp.'}</p>
-            </div>
-            <div className="fast-request-contact-fields full">
-              <label className="admin-field" htmlFor="fastRequestEmail"><span>{text(lang, 'contactEmail')}</span><input id="fastRequestEmail" type="email" inputMode="email" maxLength={254} value={form.email || ''} onChange={(event) => update('email', event.target.value)} onBlur={(event) => update('email', String(event.target.value || '').trim())} autoComplete="email" aria-describedby={error ? 'fastRequestContactError' : undefined} /></label>
-              <label className="admin-field" htmlFor="fastRequestPhone"><span>{text(lang, 'phone')}</span><input id="fastRequestPhone" type="tel" inputMode="tel" pattern="^\+?[0-9]*$" maxLength={40} value={form.phone || ''} onBeforeInput={preventInvalidPhoneInput} onChange={(event) => update('phone', sanitizePublicPhoneInput(event.target.value))} autoComplete="tel" aria-describedby={error ? 'fastRequestContactError' : undefined} /></label>
-            </div>
-            {error && <p id="fastRequestContactError" className="form-status error full" role="alert">{error}</p>}
-            <div className="modal-actions full fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(3)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(5)}>{lang === 'it' ? 'Continua' : 'Continue'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
-          </div>
-        )}
-        {step === 5 && (
           <div className="admin-form-grid fast-request-attribution-step">
             <label className="admin-field full" htmlFor="fastRequestHeardAboutUs"><span>{text(lang, 'heardAboutUs')}</span><ContactAttributionSelect id="fastRequestHeardAboutUs" lang={lang} value={form.heardAboutUs || ''} onChange={(value) => update('heardAboutUs', value)} /></label>
             {needsHeardAboutUsDetail(form.heardAboutUs) && <label className="admin-field full" htmlFor="fastRequestHeardAboutUsDetail"><span>{text(lang, 'heardAboutUsOtherLabel')}</span><textarea id="fastRequestHeardAboutUsDetail" className="fast-request-attribution-detail" value={form.heardAboutUsDetail || ''} onChange={(event) => update('heardAboutUsDetail', event.target.value)} placeholder={text(lang, 'heardAboutUsOtherPlaceholder')} rows={3} maxLength={240} /></label>}
             {error && <p className="form-status error full" role="alert">{error}</p>}
-            <div className="modal-actions full fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(4)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(6)}>{lang === 'it' ? 'Rivedi messaggio' : 'Review message'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
+            <div className="modal-actions full fast-request-actions"><button className="button secondary" type="button" onClick={() => setStep(3)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => completeStep(5)}>{lang === 'it' ? 'Scegli come inviare' : 'Choose how to send'}</button><button className="button secondary fast-request-inline-close" type="button" onClick={handleClose}>{text(lang, 'close')}</button></div>
           </div>
         )}
-        {step === 6 && (
-          <div className="fast-request-review">
-            <textarea readOnly value={message} rows={10} />
-            <div className="fast-request-review-details" aria-labelledby="fastRequestDirectTitle">
-              <div className="fast-request-direct-heading"><h3 id="fastRequestDirectTitle">{lang === 'it' ? 'Invia la richiesta direttamente' : 'Send the request directly'}</h3><p>{lang === 'it' ? 'Useremo i dati già inseriti. Per l’invio diretto serve almeno email o telefono.' : 'We will use the information already entered. Direct sending requires at least an email or phone number.'}</p></div>
-              <dl className="fast-request-contact-summary" aria-label={lang === 'it' ? 'Recapiti inseriti' : 'Contact details entered'}>
-                <div><dt>Email</dt><dd>{form.email || (lang === 'it' ? 'Non fornita' : 'Not provided')}</dd></div>
-                <div><dt>{lang === 'it' ? 'Telefono' : 'Phone'}</dt><dd>{form.phone || (lang === 'it' ? 'Non fornito' : 'Not provided')}</dd></div>
-              </dl>
-            </div>
-            <label className="questionnaire-notification-optin fast-request-review-optin" htmlFor="fastRequestFollowUpdates"><input id="fastRequestFollowUpdates" type="checkbox" checked={followBookingUpdates} onChange={(event) => setFollowBookingUpdates(event.target.checked)} /><span><strong>{lang === 'it' ? 'Segui su questo dispositivo gli aggiornamenti dopo l’invio diretto.' : 'Follow updates on this device after sending the direct request.'}</strong><small>{lang === 'it' ? 'Facoltativo. WhatsApp non collega le notifiche personali.' : 'Optional. WhatsApp does not link personal notifications.'}</small></span></label>
-            {submissionState.error && <p className="form-status error" role="alert" tabIndex="-1" ref={fastRequestSubmissionErrorRef}>{submissionState.error}</p>}
-            {submissionState.success && <p className="form-status success" role="status">{submissionState.success}</p>}
-            <div className="fast-request-final-actions"><button className="button secondary" type="button" onClick={() => setStep(1)} disabled={submissionState.loading}>{lang === 'it' ? 'Modifica' : 'Edit'}</button><button className="button primary" type="button" onClick={submitDirectRequest} disabled={submissionState.loading || Boolean(submissionState.success)}>{submissionState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : (lang === 'it' ? 'Invia richiesta' : 'Send request')}</button><a className="button secondary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>WhatsApp</a></div>
+        {step === 5 && (
+          <div className="fast-request-send-step">
+            {deliveryChoice === 'website' ? (
+              <div className="fast-request-website-options">
+                <div className="fast-request-contact-heading">
+                  <h3 id="fastRequestContactTitle" ref={fastRequestContactHeadingRef} tabIndex="-1">{lang === 'it' ? 'Dove possiamo risponderti?' : 'Where can we reply?'}</h3>
+                  <p>{lang === 'it' ? 'Inserisci almeno un indirizzo email o un numero di telefono valido.' : 'Enter at least one valid email address or phone number.'}</p>
+                </div>
+                <div className="fast-request-contact-fields">
+                  <label className="admin-field" htmlFor="fastRequestEmail"><span>{text(lang, 'contactEmail')}</span><input id="fastRequestEmail" type="email" inputMode="email" maxLength={254} value={form.email || ''} onChange={(event) => update('email', event.target.value)} onBlur={(event) => update('email', String(event.target.value || '').trim())} autoComplete="email" aria-describedby={error ? 'fastRequestContactError' : undefined} /></label>
+                  <label className="admin-field" htmlFor="fastRequestPhone"><span>{text(lang, 'phone')}</span><input id="fastRequestPhone" type="tel" inputMode="tel" pattern="^\+?[0-9]*$" maxLength={40} value={form.phone || ''} onBeforeInput={preventInvalidPhoneInput} onChange={(event) => update('phone', sanitizePublicPhoneInput(event.target.value))} autoComplete="tel" aria-describedby={error ? 'fastRequestContactError' : undefined} /></label>
+                </div>
+                {error && <p id="fastRequestContactError" className="form-status error" role="alert">{error}</p>}
+                <label className="questionnaire-notification-optin fast-request-notification-optin" htmlFor="fastRequestFollowUpdates"><input id="fastRequestFollowUpdates" type="checkbox" checked={followBookingUpdates} onChange={(event) => setFollowBookingUpdates(event.target.checked)} /><span><strong>{lang === 'it' ? 'Segui su questo dispositivo gli aggiornamenti dopo l’invio diretto.' : 'Follow updates on this device after sending the direct request.'}</strong><small>{lang === 'it' ? 'Facoltativo. Non serve per inviare la richiesta e non riguarda WhatsApp.' : 'Optional. It is not required to send the request and does not apply to WhatsApp.'}</small></span></label>
+                {submissionState.error && <p className="form-status error" role="alert" tabIndex="-1" ref={fastRequestSubmissionErrorRef}>{submissionState.error}</p>}
+                {submissionState.success && <p className="form-status success" role="status">{submissionState.success}</p>}
+                <button className="button primary fast-request-website-submit" type="button" onClick={submitDirectRequest} disabled={submissionState.loading || Boolean(submissionState.success)}>{submissionState.loading ? (lang === 'it' ? 'Invio...' : 'Sending...') : (lang === 'it' ? 'Invia richiesta' : 'Send request')}</button>
+                <button className="button secondary fast-request-delivery-back" type="button" onClick={() => setDeliveryChoice('')} disabled={submissionState.loading || Boolean(submissionState.success)}>{lang === 'it' ? 'Indietro' : 'Back'}</button>
+              </div>
+            ) : (
+              <>
+                <div className="fast-request-send-heading">
+                  <h3>{lang === 'it' ? 'Come vuoi inviare la richiesta?' : 'How would you like to send your request?'}</h3>
+                  <p>{lang === 'it' ? 'Useremo le informazioni già inserite.' : 'We will use the information you already entered.'}</p>
+                </div>
+                <div className="fast-request-delivery-actions"><button className="button primary" type="button" onClick={() => setDeliveryChoice('website')}>{lang === 'it' ? 'Invia tramite il sito' : 'Send via website'}</button><a className="button secondary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>{lang === 'it' ? 'Invia su WhatsApp' : 'Send via WhatsApp'}</a></div>
+                <button className="button secondary fast-request-delivery-back" type="button" onClick={() => setStep(4)}>{lang === 'it' ? 'Indietro' : 'Back'}</button>
+              </>
+            )}
           </div>
         )}
         <aside className="booking-code-support-card fast-request-support-card">
@@ -3449,7 +3449,7 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   ), document.body);
 }
 
-function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteContent, editor, cmsStatus = 'ready' }) {
+function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteContent, editor }) {
   const mediaSource = editor?.mediaMap || siteMedia || {};
   const backgroundItem = editorMediaItem(mediaSource, 'home_hero_background', '', lang === 'it' ? 'Sfondo hero homepage' : 'Home hero background');
   const heroBackground = backgroundItem.file_url || '';
@@ -3469,21 +3469,6 @@ function Hero({ lang, setActivePage, scrollToForm, fillForm, siteMedia, siteCont
   const [bookingCodeOpen, setBookingCodeOpen] = useState(false);
   const [supportContactOpen, setSupportContactOpen] = useState(false);
   const [fastRequestOpen, setFastRequestOpen] = useState(false);
-
-  if (!editor?.isEditing && cmsStatus === 'loading') {
-    return (
-      <section className="hero hero-no-feature-media hero-layout-center hero-cms-loading" id="top" aria-busy="true" aria-label={lang === 'it' ? 'Caricamento contenuti' : 'Loading content'}>
-        <div className="hero-overlay" />
-        <div className="container hero-grid hero-grid-no-media">
-          <div className="hero-copy hero-cms-loading-copy" aria-hidden="true">
-            <span className="hero-cms-loading-line hero-cms-loading-title" />
-            <span className="hero-cms-loading-line hero-cms-loading-lead" />
-            <span className="hero-cms-loading-line hero-cms-loading-action" />
-          </div>
-        </div>
-      </section>
-    );
-  }
 
   function handleBookNow() {
     setFastRequestOpen(true);
@@ -15699,7 +15684,6 @@ function App() {
   const [activePage, setActivePage] = useState(() => publicPageFromPathname(window.location.pathname) || 'home');
   const [siteMedia, setSiteMedia] = useState({});
   const [siteContent, setSiteContent] = useState({});
-  const [cmsStatus, setCmsStatus] = useState(() => isSupabaseConfigured ? 'loading' : 'error');
   const [publicUnreadCount, setPublicUnreadCount] = useState(null);
   const contactRef = useRef(null);
   const analyticsContextRef = useRef({ section: 'home', language: 'it' });
@@ -15818,12 +15802,8 @@ function App() {
   }, [activePage, lang, pathname]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) {
-      setCmsStatus('error');
-      return undefined;
-    }
+    if (!isSupabaseConfigured) return undefined;
     let active = true;
-    setCmsStatus('loading');
     Promise.allSettled([listSiteMedia({ activeOnly: true }), loadPublicSiteContent()])
       .then(([mediaResult, contentResult]) => {
         if (!active) return;
@@ -15831,7 +15811,6 @@ function App() {
         const contentReady = contentResult.status === 'fulfilled';
         setSiteMedia(mediaReady ? buildMediaMap(mediaResult.value) : {});
         setSiteContent(contentReady ? buildSiteContentMap(contentResult.value) : {});
-        setCmsStatus(mediaReady || contentReady ? 'ready' : 'error');
       });
     return () => { active = false; };
   }, []);
@@ -15929,7 +15908,7 @@ function App() {
         return <NotificationsPage variant="public" lang={lang} onPublicUnreadCountChange={setPublicUnreadCount} />;
       case 'home':
       default:
-        return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} cmsStatus={cmsStatus} />;
+        return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} />;
     }
   }
 

@@ -7,17 +7,15 @@ function yes(value,msg){if(!value)throw new Error(msg);}
 function no(value,msg){if(value)throw new Error(msg);}
 const hero = main.slice(main.indexOf('function Hero('), main.indexOf('function ExperienceAccordion'));
 
-test('CMS has an explicit loading/ready/error lifecycle',()=>{
-  yes(main.includes("const [cmsStatus, setCmsStatus]"),'cmsStatus state missing');
-  yes(main.includes("? 'loading' : 'error'"),'initial loading/error state missing');
-  yes(main.includes("setCmsStatus('loading')"),'loading transition missing');
-  yes(main.includes("? 'ready' : 'error'"),'ready/error resolution missing');
+test('CMS resolves asynchronously without gating the first public render',()=>{
+  yes(main.includes('Promise.allSettled([listSiteMedia({ activeOnly: true }), loadPublicSiteContent()])'),'independent CMS loading missing');
+  no(main.includes('cmsStatus') || main.includes('setCmsStatus'),'CMS status still gates public rendering');
+  yes(hero.includes("fallback={text(lang, 'heroTitle')}"),'immediate title fallback missing');
+  yes(hero.includes("fallback={text(lang, 'heroLead')}"),'immediate lead fallback missing');
 });
-test('unresolved CMS renders a stable modern shell',()=>{
-  yes(hero.includes("cmsStatus === 'loading'"),'loading gate missing');
-  yes(hero.includes('hero-cms-loading'),'modern loading shell missing');
-  yes(styles.includes('.hero-cms-loading'),'loading shell CSS missing');
-  yes(/100(?:svh|dvh)/.test(styles),'dynamic viewport geometry missing');
+test('homepage startup never renders a transient skeleton shell',()=>{
+  no(hero.includes("cmsStatus === 'loading'") || hero.includes('hero-cms-loading'),'Hero still renders the startup skeleton');
+  no(styles.includes('.hero-cms-loading'),'obsolete startup skeleton CSS remains');
 });
 test('unresolved/public Hero never renders legacy intro/feature media',()=>{
   no(/fallbackSrc:\s*MEDIA\.introVideo/.test(hero),'legacy intro video fallback remains');
@@ -36,8 +34,9 @@ test('current background video/poster/centered/reduced-motion behavior remains r
   yes(hero.includes('heroCenteredWithoutMedia'),'centered layout missing');
   yes(styles.includes('@media (prefers-reduced-motion: reduce)'),'reduced-motion handling missing');
 });
-test('CMS failure resolves to modern no-legacy Hero',()=>{
-  yes(main.includes("setCmsStatus('error')") || main.includes("? 'ready' : 'error'"),'error path missing');
+test('CMS failure preserves immediate modern fallbacks without legacy media',()=>{
+  yes(main.includes('setSiteMedia(mediaReady ? buildMediaMap(mediaResult.value) : {})'),'media failure fallback missing');
+  yes(main.includes('setSiteContent(contentReady ? buildSiteContentMap(contentResult.value) : {})'),'content failure fallback missing');
   no(/cmsStatus[^\n]{0,120}MEDIA\./.test(hero),'CMS error references legacy MEDIA fallback');
   no(/heroStyle[^\n]*MEDIA\./.test(hero),'public hero style references legacy background');
 });
