@@ -1,6 +1,6 @@
 # Unified onboarding, participant foundation, and Terms architecture
 
-Status: implementation record for unified PWA/privacy onboarding and the applied Phase 1 participant foundation. Phase 2 Terms evidence infrastructure is implemented in source and in the unapplied migration `20260905110000_terms_evidence_foundation.sql`; it publishes no Terms until a separate counsel-approved migration is reviewed. See `TERMS_EVIDENCE_FOUNDATION_20260905.md`. Individual-adult and guardian journeys remain deferred.
+Status: implementation record for unified PWA/privacy onboarding and the applied Phase 1 participant and Phase 2 Terms evidence foundations. Phase 3 individual-adult and configured-guardian invitation journeys are implemented in source through a new, unapplied additive migration; they publish no Terms and remain fail-closed until separate counsel-approved content exists. See `TERMS_EVIDENCE_FOUNDATION_20260905.md` and `PARTICIPANT_TERMS_ACCEPTANCE_PHASE3_20260905.md`.
 
 ## Browser storage and tracker audit
 
@@ -119,12 +119,12 @@ After approval, a `customer_terms_required` personalized event could be generate
 ## Migration sequence
 
 1. **Applied Phase 1:** `booking_participants`, guardian/organizer constraints, least-privilege access, owned-device locator, and guarded customer/Admin UI. No historical participants were fabricated.
-2. **Authored Phase 2 infrastructure:** immutable `terms_versions`, append-only `terms_acceptances`, atomic website request enforcement, and owned organizer self-acceptance. It contains no published content; remote infrastructure application and a later legal publication both await separate approval.
-3. Resolve remaining legal/product decisions and approve final document purposes/content before Production release.
-4. **Later:** add hashed one-time acceptance invitations for individual adults and an approved guardian flow.
+2. **Applied Phase 2 infrastructure:** immutable `terms_versions`, append-only `terms_acceptances`, atomic website request enforcement, and owned organizer self-acceptance. It contains no published content; a later legal publication still requires separate approval.
+3. **Authored Phase 3 infrastructure:** hashed, expiring, participant/version-scoped invitations for individual adults and configured guardians, with atomic consumption and evidence creation. Its additive migration remains unapplied remotely.
+4. Resolve remaining legal/product decisions and approve final document purposes/content before Production release.
 5. Only then add personalized reminder event/outbox integration; scheduler/Cron remains a separate approval.
 
-Migration files `20260905100000_booking_participants_foundation.sql` and `0006_participant_ownership_locator.sql` are already applied to their authorized targets and were not rewritten. New Terms migration `20260905110000_terms_evidence_foundation.sql` is additive, forward-only, and unapplied remotely. If rollback is required after application, use a reviewed forward migration; do not rewrite applied history or delete legal evidence.
+Migration files `20260905100000_booking_participants_foundation.sql`, `20260905110000_terms_evidence_foundation.sql`, and `0006_participant_ownership_locator.sql` are already applied to their authorized targets and were not rewritten. The Phase 3 invitation migration is additive, forward-only, and unapplied remotely. If rollback is required after application, use a reviewed forward migration; do not rewrite applied history or delete legal evidence.
 
 ## Unresolved owner/legal decisions
 

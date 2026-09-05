@@ -1,6 +1,6 @@
 # Terms evidence foundation — 2026-09-05
 
-Status: Phase 2 infrastructure and pre-deployment hardening record. `20260905110000_terms_evidence_foundation.sql` is authored but **has not been applied remotely**. The migration deliberately publishes no Terms. Direct website requests fail closed until counsel-approved, purpose-specific Terms are supplied by a separate publication migration with its own review. Cron remains off.
+Status: Phase 2 infrastructure and pre-deployment hardening record. `20260905110000_terms_evidence_foundation.sql` has been applied remotely and deliberately published no Terms. Direct website requests still fail closed until counsel-approved, purpose-specific Terms are supplied by a separate publication migration with its own review. Phase 3 participant journeys are documented separately in `PARTICIPANT_TERMS_ACCEPTANCE_PHASE3_20260905.md`. Cron remains off.
 
 ## Existing content and legal-content gate
 
@@ -84,6 +84,6 @@ Applying it is additive infrastructure only: it creates the empty evidence model
 
 ## Deferred decisions and Phase 3
 
-Phase 3 needs purpose-bound, expiring, hashed invitation tokens for individual adults; a verified guardian authority journey for minors; reminder/outbox rules only after an owned recipient exists; and transaction tests for all new actor paths. The organizer must never accept for an unrelated adult. A minor must never self-accept. No reminder or Cron work is included here.
+Phase 3 now authors purpose-bound, expiring, hashed invitation tokens for individual adults and configured guardians, plus transaction tests for the new actor paths. It deliberately does not claim verified identity: the organizer must never accept for another adult, a minor must never self-accept, and the configured guardian uses an explicitly scoped capability and self-attestation. The additive Phase 3 migration remains unapplied remotely. No reminder or Cron work is included.
 
 Owner/counsel must first decide whether a Fast Request is a non-binding lead with no request-level contractual acceptance, whether contact-attributed acceptance is sufficient without a name, or whether a deliberate future UX change should require a name. They must also decide what legally differentiates `booking_request` from `excursion_booking`, the legal status of IT versus EN, final approved text/version/effective date, reacceptance/material-change rules, guardian authority and age jurisdiction, offline/Admin-created bookings, Gift Card purchase/redemption rules, booking-code applicability, evidence corrections, and retention/legal-hold/deletion policy. No retention duration is invented.

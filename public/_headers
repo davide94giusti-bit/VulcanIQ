@@ -9,6 +9,16 @@
 /admin/*
   X-Robots-Tag: noindex, nofollow
 
+/terms-acceptance
+  X-Robots-Tag: noindex, nofollow
+  Referrer-Policy: no-referrer
+  Cache-Control: no-store
+
+/terms-acceptance/
+  X-Robots-Tag: noindex, nofollow
+  Referrer-Policy: no-referrer
+  Cache-Control: no-store
+
 /*.html
   Content-Type: text/html; charset=utf-8
 

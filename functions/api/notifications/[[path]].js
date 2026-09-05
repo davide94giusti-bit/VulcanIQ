@@ -2,6 +2,7 @@ import { sendWebPush } from '../../../shared/webPush.js';
 import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../_shared/supabaseBackend.js';
 import { isOwnershipClaimToken, notificationEntityRef, ownershipClaimStateError, sha256Hex } from './_ownership.js';
 import { preparationReminder } from '../../../src/domain/experiencePreparation.js';
+import { createParticipantTermsToken, participantTermsAcceptanceUrl, participantTermsTokenHash } from '../public/_participantTerms.js';
 
 const PUBLIC_CATEGORIES = new Set(['etna_updates', 'etna_weekly', 'experiences', 'events', 'news', 'promotions']);
 const ADMIN_CATEGORIES = new Set(['new_bookings', 'upcoming_excursions', 'gift_cards', 'booking_codes', 'payment_reconciliation', 'operational_failures', 'security_alerts', 'daily_summary', 'weekly_summary']);
@@ -318,11 +319,28 @@ async function ownedTermsPayload(config, context, locale) {
   ]);
   const version = versions[0] || null;
   const activeParticipants = context.participants.filter((item) => item.status === 'active');
-  const currentAcceptanceByParticipant = new Map(
-    acceptances
-      .filter((item) => item.document_purpose === 'excursion_booking' && item.terms_version_id === version?.id && item.participant_id)
-      .map((item) => [item.participant_id, item])
-  );
+  const activeParticipantById = new Map(activeParticipants.map((item) => [item.id, item]));
+  let invitationFoundationAvailable = true;
+  let invitations = [];
+  try {
+    const invitationQuery = new URLSearchParams({
+      select: 'participant_id,actor_participant_id,terms_version_id,representation_type,locale,issued_at,expires_at,consumed_at,revoked_at,revocation_reason',
+      booking_request_id: `eq.${context.bookingId}`,
+      order: 'issued_at.desc',
+      limit: '200'
+    });
+    if (version?.id) invitationQuery.set('terms_version_id', `eq.${version.id}`);
+    invitations = await backendRows(config, 'terms_acceptance_invitations', invitationQuery);
+  } catch (error) {
+    if (String(error?.message || '').endsWith('_404')) invitationFoundationAvailable = false;
+    else throw error;
+  }
+  const latestInvitationByParticipant = new Map();
+  for (const invitation of invitations) {
+    if (invitation.participant_id && !latestInvitationByParticipant.has(invitation.participant_id)) {
+      latestInvitationByParticipant.set(invitation.participant_id, invitation);
+    }
+  }
   const requestAcceptance = acceptances.find((item) => item.document_purpose === 'booking_request' && !item.participant_id) || null;
   const summarizeAcceptance = (item) => item ? {
     purpose: item.document_purpose,
@@ -334,9 +352,64 @@ async function ownedTermsPayload(config, context, locale) {
     representation: item.representation_type,
     source: item.source_context
   } : null;
+  const validAcceptance = (participant) => acceptances.find((item) => {
+    if (item.document_purpose !== 'excursion_booking' || item.terms_version_id !== version?.id || item.participant_id !== participant.id) return false;
+    if (participant.participant_type === 'adult') {
+      return item.actor_type === 'participant' && item.representation_type === 'self' && item.actor_participant_id === participant.id;
+    }
+    return item.actor_type === 'participant'
+      && item.representation_type === 'parent_or_guardian'
+      && Boolean(item.actor_participant_id);
+  }) || null;
+  const invitationStatus = (item) => {
+    if (!item) return null;
+    if (item.consumed_at) return 'consumed';
+    if (item.revoked_at) return 'revoked';
+    if (!Number.isFinite(Date.parse(item.expires_at)) || Date.parse(item.expires_at) <= Date.now()) return 'expired';
+    return 'pending';
+  };
+  const invitationMatchesParticipant = (item, participant) => {
+    if (!item || !participant || item.participant_id !== participant.id) return false;
+    if (participant.participant_type === 'adult') return item.representation_type === 'self' && item.actor_participant_id === participant.id;
+    const guardian = activeParticipantById.get(participant.guardian_participant_id);
+    return item.representation_type === 'parent_or_guardian' && Boolean(guardian) && item.actor_participant_id === guardian.id;
+  };
+  const summarizeInvitation = (item, participant) => item ? {
+    status: invitationStatus(item) === 'pending'
+      && (context.booking.status !== 'accepted' || !invitationMatchesParticipant(item, participant))
+      ? 'invalidated'
+      : invitationStatus(item),
+    representationType: item.representation_type,
+    locale: item.locale,
+    issuedAt: item.issued_at,
+    expiresAt: item.expires_at,
+    consumedAt: item.consumed_at || null,
+    revokedAt: item.revoked_at || null
+  } : null;
+  const expectedAdults = Number(context.booking.adults || 0);
+  const expectedChildren = Number(context.booking.children || 0);
+  const expectedParticipants = expectedAdults + expectedChildren;
+  const namedAdults = activeParticipants.filter((item) => item.participant_type === 'adult').length;
+  const namedChildren = activeParticipants.filter((item) => item.participant_type === 'minor').length;
+  const organizerPresent = activeParticipants.some((item) => item.is_organizer === true && item.participant_type === 'adult');
+  const compositionComplete = organizerPresent && namedAdults === expectedAdults && namedChildren === expectedChildren;
+  const acceptedParticipants = version ? activeParticipants.filter((participant) => Boolean(validAcceptance(participant))).length : 0;
+  const requiredParticipants = Math.max(expectedParticipants, activeParticipants.length);
+  const pendingParticipants = Math.max(0, requiredParticipants - acceptedParticipants);
+  const termsAvailable = Boolean(version);
   return {
     bookingStatus: context.booking.status,
+    termsAvailable,
+    invitationFoundationAvailable,
     requestTerms: summarizeAcceptance(requestAcceptance),
+    completion: {
+      requiredParticipants,
+      acceptedParticipants,
+      pendingParticipants,
+      notRequiredParticipants: context.participants.filter((item) => item.status !== 'active').length,
+      compositionComplete,
+      complete: termsAvailable && compositionComplete && acceptedParticipants === requiredParticipants
+    },
     excursionTerms: version ? {
       current: {
         id: version.id,
@@ -352,13 +425,22 @@ async function ownedTermsPayload(config, context, locale) {
         }
       },
       participants: activeParticipants.map((participant) => {
-        const acceptance = currentAcceptanceByParticipant.get(participant.id) || null;
+        const acceptance = validAcceptance(participant);
+        const invitation = latestInvitationByParticipant.get(participant.id) || null;
+        const summarizedInvitation = summarizeInvitation(invitation, participant);
+        const guardian = participant.participant_type === 'minor' ? activeParticipantById.get(participant.guardian_participant_id) : null;
         return {
+          id: participant.id,
           name: participant.full_name,
           participantType: participant.participant_type,
           isOrganizer: participant.is_organizer === true,
           status: acceptance ? 'accepted' : participant.participant_type === 'minor' ? 'pending_guardian' : 'pending',
-          acceptance: summarizeAcceptance(acceptance)
+          ...(guardian ? { guardianName: guardian.full_name } : {}),
+          acceptance: summarizeAcceptance(acceptance),
+          invitation: summarizedInvitation,
+          canInvite: context.booking.status === 'accepted' && invitationFoundationAvailable && !acceptance && !participant.is_organizer
+            && (participant.participant_type === 'adult' || Boolean(guardian)),
+          canRevoke: invitationFoundationAvailable && ['pending', 'invalidated'].includes(summarizedInvitation?.status)
         };
       })
     } : null
@@ -596,6 +678,74 @@ export async function onRequest(context) {
           return json(request,env,200,{ok:true,...payload});
         }catch{
           return json(request,env,503,{ok:false,error:'terms_foundation_unavailable'});
+        }
+      }
+      if(path[1]&&path[2]==='participants'&&path[3]&&path[4]==='terms-invitation'){
+        const issueInvitation=!path[5];
+        const revokeInvitation=path[5]==='revoke'&&!path[6];
+        if(!issueInvitation&&!revokeInvitation)return json(request,env,404,{ok:false,error:'not_found'});
+        if((revokeInvitation&&request.method!=='PATCH')||(issueInvitation&&request.method!=='POST'))return json(request,env,405,{ok:false,error:'method_not_allowed'});
+        const ownershipId=uuidValue(path[1]);
+        const participantId=uuidValue(path[3]);
+        if(!ownershipId||!participantId)return json(request,env,404,{ok:false,error:'terms_participant_not_found'});
+        const action=revokeInvitation?'revoke':'issue';
+        if(!(await rateLimit(database,`terms-invitation-${action}:${sub.id}`,revokeInvitation?12:6,3600)))return json(request,env,429,{ok:false,error:'rate_limited'});
+        const config=supabaseConfig(env);if(!config)return json(request,env,503,{ok:false,error:'terms_source_not_configured'});
+        let invitationContext=await ownedParticipantContext(database,sub,ownershipId,config);
+        if(invitationContext.error)return json(request,env,invitationContext.status,{ok:false,error:invitationContext.error});
+        const participant=invitationContext.participants.find((item)=>item.id===participantId);
+        const organizer=invitationContext.participants.find((item)=>item.status==='active'&&item.is_organizer===true&&item.participant_type==='adult');
+        if(!participantId||!participant||participant.is_organizer)return json(request,env,404,{ok:false,error:'terms_participant_not_found'});
+        if(!organizer)return json(request,env,409,{ok:false,error:'terms_organizer_required'});
+        if(revokeInvitation){
+          const parsed=await body(request,2048);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});
+          if(Object.keys(parsed.value).length)return json(request,env,400,{ok:false,error:'invalid_request'});
+          try{
+            const revoked=await backendRpc(config,'revoke_participant_terms_acceptance_invitation',{
+              p_booking_request_id:invitationContext.bookingId,
+              p_participant_id:participant.id,
+              p_organizer_participant_id:organizer.id
+            });
+            const item=revoked[0]||null;
+            if(!item||!Number.isFinite(Number(item.revoked_count)))return json(request,env,409,{ok:false,error:'terms_invitation_rejected'});
+            const revokedCount=Math.max(0,Number(item.revoked_count));
+            return json(request,env,200,{ok:true,item:{status:revokedCount?'revoked':'unchanged',revokedCount,revokedAt:item.revoked_at||null}});
+          }catch(error){
+            if(String(error?.message||'').endsWith('_404'))return json(request,env,503,{ok:false,error:'terms_invitation_foundation_unavailable'});
+            return json(request,env,409,{ok:false,error:'terms_invitation_rejected'});
+          }
+        }
+        if(invitationContext.booking.status!=='accepted')return json(request,env,409,{ok:false,error:'terms_booking_not_confirmed'});
+        if(participant.status!=='active')return json(request,env,404,{ok:false,error:'terms_participant_not_found'});
+        const parsed=await body(request,2048);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});
+        if(Object.keys(parsed.value).some((key)=>key!=='locale')||!['it','en'].includes(parsed.value.locale))return json(request,env,400,{ok:false,error:'terms_invitation_locale_invalid'});
+        const locale=parsed.value.locale;
+        const token=createParticipantTermsToken();
+        const tokenHash=await participantTermsTokenHash(token);
+        try{
+          const issued=await backendRpc(config,'issue_participant_terms_acceptance_invitation',{
+            p_booking_request_id:invitationContext.bookingId,
+            p_participant_id:participant.id,
+            p_organizer_participant_id:organizer.id,
+            p_locale:locale,
+            p_token_hash:tokenHash
+          });
+          const item=issued[0]||null;
+          if(!item?.expires_at)return json(request,env,409,{ok:false,error:'terms_invitation_rejected'});
+          return json(request,env,201,{
+            ok:true,
+            item:{
+              status:'pending',
+              termsVersion:item.terms_version,
+              locale:item.locale,
+              representationType:item.representation_type,
+              expiresAt:item.expires_at
+            },
+            acceptanceUrl:participantTermsAcceptanceUrl(request,token)
+          });
+        }catch(error){
+          if(String(error?.message||'').endsWith('_404'))return json(request,env,503,{ok:false,error:'terms_invitation_foundation_unavailable'});
+          return json(request,env,409,{ok:false,error:'terms_invitation_rejected'});
         }
       }
       if(path[1]&&path[2]==='participants'){

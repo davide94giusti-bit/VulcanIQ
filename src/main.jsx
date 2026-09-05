@@ -41,6 +41,7 @@ import FirstRunOnboarding from './features/onboarding/FirstRunOnboarding.jsx';
 import NotificationUnreadBadge from './features/notifications/NotificationUnreadBadge.jsx';
 import PrivacyPreferences from './features/privacy/PrivacyPreferences.jsx';
 import TermsAcceptanceControl from './features/legal/TermsAcceptanceControl.jsx';
+import ParticipantTermsAcceptancePage from './features/legal/ParticipantTermsAcceptancePage.jsx';
 import { getApplicableTerms } from './services/termsService.js';
 import { PRIVACY_PREFERENCES_EVENT, readPrivacyPreferences, writePrivacyPreferences } from './services/privacyPreferences.js';
 import { readInitialPublicLanguage, storePublicLanguage } from './services/languagePreference.js';
@@ -48,7 +49,7 @@ import { notificationUnreadAriaLabel, unreadNotificationCount } from './domain/n
 import AskNeoPanel from './features/neo/AskNeoPanel.jsx';
 import { normalizeReviewText, reviewSourceLabel } from './features/reviews/reviewModel.js';
 import useBodyScrollLock from './hooks/useBodyScrollLock.js';
-import { publicPageFromPathname, legalPageFromPathname, routeDefinitionFromPathname, canonicalPathForPage, isReferralPath } from './app/publicRoutes.js';
+import { publicPageFromPathname, legalPageFromPathname, routeDefinitionFromPathname, canonicalPathForPage, isReferralPath, normalizePublicPath } from './app/publicRoutes.js';
 import NotFoundPage from './app/NotFoundPage.jsx';
 import DomainErrorBoundary from './app/DomainErrorBoundary.jsx';
 import './styles.css';
@@ -13938,15 +13939,25 @@ function AdminTermsSummary({ request, lang }) {
   if(request.terms_foundation_available===false)return <section className="admin-terms-summary"><strong>{adminCopy(lang,'Termini','Terms')}</strong><p className="small-note">{adminCopy(lang,'Fondazione dei Termini non ancora disponibile in questo ambiente.','Terms foundation is not available in this environment yet.')}</p></section>;
   const acceptances=Array.isArray(request.terms_acceptances)?request.terms_acceptances:[];
   const versions=Array.isArray(request.current_terms_versions)?request.current_terms_versions:[];
+  const invitations=Array.isArray(request.terms_acceptance_invitations)?request.terms_acceptance_invitations:[];
   const locale=request.language==='en'?'en':'it';
+  const bookingClosed=['declined','cancelled','archived'].includes(request.status);
   const currentRequest=versions.find((item)=>item.document_purpose==='booking_request'&&item.locale===locale);
   const currentExcursion=versions.find((item)=>item.document_purpose==='excursion_booking'&&item.locale===locale);
   const requestAcceptance=acceptances.find((item)=>item.document_purpose==='booking_request'&&!item.participant_id&&item.terms_version_id===currentRequest?.id);
   const participants=Array.isArray(request.booking_participants)?request.booking_participants.filter((item)=>item.status==='active'):[];
-  const currentParticipantAcceptance=new Map(acceptances.filter((item)=>item.document_purpose==='excursion_booking'&&item.terms_version_id===currentExcursion?.id&&item.participant_id).map((item)=>[item.participant_id,item]));
+  const participantById=new Map(participants.map((item)=>[item.id,item]));
+  const validEvidence=(participant)=>acceptances.find((item)=>item.document_purpose==='excursion_booking'&&item.terms_version_id===currentExcursion?.id&&item.participant_id===participant.id&&item.actor_type==='participant'&&(participant.participant_type==='adult'?(item.representation_type==='self'&&item.actor_participant_id===participant.id):(item.representation_type==='parent_or_guardian'&&Boolean(item.actor_participant_id))))||null;
+  const currentParticipantAcceptance=new Map(participants.map((participant)=>[participant.id,validEvidence(participant)]));
+  const latestInvitation=new Map();for(const item of invitations){if(item.terms_version_id===currentExcursion?.id&&item.participant_id&&!latestInvitation.has(item.participant_id))latestInvitation.set(item.participant_id,item);}
+  const invitationMatchesParticipant=(item,participant)=>participant.participant_type==='adult'?(item.representation_type==='self'&&item.actor_participant_id===participant.id):(item.representation_type==='parent_or_guardian'&&item.actor_participant_id===participant.guardian_participant_id&&participantById.get(participant.guardian_participant_id)?.participant_type==='adult');
+  const invitationStatus=(item,participant)=>!item?'':item.consumed_at?'consumed':item.revoked_at?'revoked':Date.parse(item.expires_at)<=Date.now()?'expired':request.status!=='accepted'||!invitationMatchesParticipant(item,participant)?'invalidated':'pending';
+  const invitationLine=(item,participant)=>{const status=invitationStatus(item,participant);if(!status)return null;const label=status==='pending'?adminCopy(lang,'Collegamento in attesa','Invitation pending'):status==='consumed'?adminCopy(lang,'Collegamento utilizzato','Invitation consumed'):status==='revoked'?adminCopy(lang,'Collegamento revocato','Invitation revoked'):status==='invalidated'?adminCopy(lang,'Collegamento non più valido','Invitation no longer valid'):adminCopy(lang,'Collegamento scaduto','Invitation expired');const timestamp=item.consumed_at||item.revoked_at||(status==='invalidated'?item.issued_at:item.expires_at);return <small>{label}{timestamp?` · ${formatLocalDateTime(timestamp,lang,'-')}`:''}</small>;};
+  const expectedAdults=Number(request.adults||0);const expectedChildren=Number(request.children||0);const namedAdults=participants.filter((item)=>item.participant_type==='adult').length;const namedChildren=participants.filter((item)=>item.participant_type==='minor').length;const organizerPresent=participants.some((item)=>item.is_organizer&&item.participant_type==='adult');const compositionComplete=organizerPresent&&namedAdults===expectedAdults&&namedChildren===expectedChildren;const requiredParticipants=Math.max(expectedAdults+expectedChildren,participants.length);const acceptedParticipants=currentExcursion?participants.filter((item)=>currentParticipantAcceptance.get(item.id)).length:0;
   const versionLabel=(item)=>{const joined=Array.isArray(item?.terms_versions)?item.terms_versions[0]:item?.terms_versions;return joined?.version||'-';};
   const evidenceLine=(item)=>item?<small>{adminCopy(lang,'Versione','Version')} {versionLabel(item)} · {formatLocalDateTime(item.accepted_at,lang,'-')} · {adminCopy(lang,'Attore','Actor')}: {item.actor_name_snapshot||adminCopy(lang,'Contatto della richiesta (nome non fornito)','Request contact (name not supplied)')} · {item.representation_type} · {item.locale?.toUpperCase()} · {item.source_context}</small>:null;
-  return <section className="admin-terms-summary"><div><strong>{adminCopy(lang,'Termini','Terms')}</strong><span className="small-note">{adminCopy(lang,'Evidenza in sola lettura','Read-only evidence')}</span></div><div className="admin-terms-list"><p><strong>{adminCopy(lang,'Termini della richiesta','Request terms')}</strong><span className={requestAcceptance?'status-success':'status-warning'}>{requestAcceptance?adminCopy(lang,'Accettati','Accepted'):adminCopy(lang,'In attesa','Pending')}</span>{evidenceLine(requestAcceptance)}</p><p><strong>{adminCopy(lang,'Termini dell’esperienza','Excursion terms')}</strong><span className="small-note">{currentExcursion?`${adminCopy(lang,'Versione corrente','Current version')} ${currentExcursion.version} · ${locale.toUpperCase()}`:adminCopy(lang,'Versione corrente non disponibile','Current version unavailable')}</span></p>{participants.map((participant)=>{const evidence=currentParticipantAcceptance.get(participant.id);return <p key={participant.id}><strong>{participant.full_name}</strong><span className={evidence?'status-success':'status-warning'}>{evidence?adminCopy(lang,'Accettati','Accepted'):participant.participant_type==='minor'?adminCopy(lang,'In attesa del genitore/tutore','Pending parent/guardian'):adminCopy(lang,'In attesa','Pending')}</span>{evidenceLine(evidence)}</p>;})}</div></section>;
+  const completionLabel=!currentExcursion?adminCopy(lang,'Termini dell’esperienza non pubblicati','Excursion Terms not published'):bookingClosed?adminCopy(lang,'Prenotazione chiusa · nessuna ulteriore accettazione richiesta','Booking closed · no further acceptance required'):compositionComplete?adminCopy(lang,`${acceptedParticipants} / ${requiredParticipants} completati`,`${acceptedParticipants} / ${requiredParticipants} complete`):adminCopy(lang,`${acceptedParticipants} accettati · composizione incompleta`,`${acceptedParticipants} accepted · incomplete participant composition`);
+  return <section className="admin-terms-summary"><div><strong>{adminCopy(lang,'Termini','Terms')}</strong><span className="small-note">{adminCopy(lang,'Evidenza in sola lettura','Read-only evidence')}</span></div><div className="admin-terms-list"><p><strong>{adminCopy(lang,'Termini della richiesta','Request terms')}</strong><span className={requestAcceptance?'status-success':'status-warning'}>{requestAcceptance?adminCopy(lang,'Accettati','Accepted'):currentRequest?adminCopy(lang,'In attesa','Pending'):adminCopy(lang,'Non pubblicati','Not published')}</span>{evidenceLine(requestAcceptance)}</p><p><strong>{adminCopy(lang,'Requisiti Termini dei partecipanti','Participant Terms requirements')}</strong><span className={currentExcursion&&compositionComplete&&acceptedParticipants===requiredParticipants?'status-success':bookingClosed?'small-note':'status-warning'}>{completionLabel}</span><small>{currentExcursion?`${adminCopy(lang,'Versione corrente','Current version')} ${currentExcursion.version} · ${locale.toUpperCase()}`:adminCopy(lang,'Nessuna accettazione può essere raccolta finché non viene pubblicata una versione applicabile.','No acceptance can be collected until an applicable version is published.')}</small></p>{participants.map((participant)=>{const evidence=currentParticipantAcceptance.get(participant.id);const invitation=latestInvitation.get(participant.id);const guardian=participantById.get(participant.guardian_participant_id);const role=participant.is_organizer?adminCopy(lang,'Organizzatore / Adulto','Organizer / Adult'):participant.participant_type==='minor'?`${adminCopy(lang,'Minore','Minor')}${guardian?` · ${adminCopy(lang,'Responsabile','Guardian')}: ${guardian.full_name}`:''}`:adminCopy(lang,'Adulto','Adult');const status=!currentExcursion?adminCopy(lang,'Termini non disponibili','Terms unavailable'):evidence?(evidence.representation_type==='parent_or_guardian'?adminCopy(lang,'Accettati dal genitore/tutore','Accepted by guardian'):adminCopy(lang,'Accettati','Accepted')):bookingClosed?adminCopy(lang,'Nessuna ulteriore accettazione richiesta','No further acceptance required'):participant.participant_type==='minor'?adminCopy(lang,'In attesa del genitore/tutore','Pending parent/guardian'):adminCopy(lang,'In attesa','Pending');return <p key={participant.id}><strong>{participant.full_name}</strong><span className={evidence?'status-success':bookingClosed?'small-note':'status-warning'}>{role} · {status}</span>{evidenceLine(evidence)}{invitationLine(invitation,participant)}</p>;})}</div>{request.terms_invitation_foundation_available===false&&<p className="small-note">{adminCopy(lang,'Il ciclo operativo degli inviti non è ancora disponibile in questo ambiente.','The invitation lifecycle is not available in this environment yet.')}</p>}</section>;
 }
 
 function ReplyTools({ request, lang, children = null }) {
@@ -15822,8 +15833,9 @@ function App() {
   const [privacyPreferencesOpen, setPrivacyPreferencesOpen] = useState(false);
   const contactRef = useRef(null);
   const analyticsContextRef = useRef({ section: 'home', language: 'it' });
-  const analyticsDisabledForRoute = pathname.startsWith('/admin');
-  const analyticsAllowed = privacyPreferences.analytics === true;
+  const sensitiveAcceptanceRoute = normalizePublicPath(pathname) === '/terms-acceptance';
+  const analyticsDisabledForRoute = pathname.startsWith('/admin') || sensitiveAcceptanceRoute;
+  const analyticsAllowed = privacyPreferences.analytics === true && !analyticsDisabledForRoute;
 
   useEffect(() => {
     const sync = (event) => setPrivacyPreferences(event.detail || readPrivacyPreferences());
@@ -15979,7 +15991,7 @@ function App() {
   function setPublicLanguage(nextLang) {
     setLang((current) => {
       const resolved = typeof nextLang === 'function' ? nextLang(current) : nextLang;
-      if (resolved && resolved !== current) trackLanguageSwitch(current, resolved);
+      if (resolved && resolved !== current && !sensitiveAcceptanceRoute) trackLanguageSwitch(current, resolved);
       if (resolved) {
         storePublicLanguage(resolved);
         if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/admin')) {
@@ -16064,6 +16076,8 @@ function App() {
         return <GiftCardPage lang={lang} siteContent={siteContent} onClose={() => { setActivePage('home'); navigatePublicRoute('/', lang); }} />;
       case 'install':
         return <NotificationsPage variant="public" lang={lang} onPublicUnreadCountChange={setPublicUnreadCount} />;
+      case 'termsAcceptance':
+        return <ParticipantTermsAcceptancePage lang={lang} />;
       case 'home':
       default:
         return <Hero lang={lang} setActivePage={setActivePage} scrollToForm={scrollToForm} fillForm={fillForm} siteMedia={siteMedia} siteContent={siteContent} />;
@@ -16081,8 +16095,8 @@ function App() {
         <DomainErrorBoundary resetKey={`${pathname}:${lang}`} lang={lang}>{renderPublicPage()}</DomainErrorBoundary>
       </main>
       <Footer lang={lang} siteContent={siteContent} onOpenPrivacyPreferences={() => setPrivacyPreferencesOpen(true)} />
-      <StickyMobileBar lang={lang} siteContent={siteContent} />
-      <FirstRunOnboarding lang={lang} eligible={!legalPageFromPathname(pathname)} blocked={privacyPreferencesOpen} privacyPreferences={privacyPreferences} onLanguage={setPublicLanguage} onPrivacy={savePrivacyPreferences} />
+      {!sensitiveAcceptanceRoute && <StickyMobileBar lang={lang} siteContent={siteContent} />}
+      <FirstRunOnboarding lang={lang} eligible={!legalPageFromPathname(pathname) && !sensitiveAcceptanceRoute} blocked={privacyPreferencesOpen} privacyPreferences={privacyPreferences} onLanguage={setPublicLanguage} onPrivacy={savePrivacyPreferences} />
       <PrivacyPreferences lang={lang} open={privacyPreferencesOpen} current={privacyPreferences} onSave={savePrivacyPreferences} onClose={() => setPrivacyPreferencesOpen(false)} />
     </>
   );

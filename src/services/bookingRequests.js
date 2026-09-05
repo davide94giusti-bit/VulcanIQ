@@ -455,7 +455,8 @@ export async function listBookingRequests(filters = {}) {
 
   const requestIds = requests.map((request) => request.id).filter(Boolean);
   const fixedIds = [...new Set(requests.map((request) => request.fixed_excursion_id).filter(Boolean))];
-  const [fixedResult, financeResult, participantResult, termsResult, termsVersionsResult] = await Promise.all([
+  const termsAsOf = new Date().toISOString();
+  const [fixedResult, financeResult, participantResult, termsResult, termsVersionsResult, invitationResult] = await Promise.all([
     fixedIds.length
       ? supabase.from('fixed_excursions').select('id, date, start_time, end_time, experience_id, title_it, title_en').in('id', fixedIds)
       : Promise.resolve({ data: [], error: null }),
@@ -481,8 +482,17 @@ export async function listBookingRequests(filters = {}) {
     supabase.from('terms_versions')
       .select('id, document_purpose, version, locale, effective_at, published_at')
       .eq('status', 'published')
-      .lte('effective_at', new Date().toISOString())
+      .lte('effective_at', termsAsOf)
+      .lte('published_at', termsAsOf)
       .order('effective_at', { ascending: false })
+      .order('published_at', { ascending: false })
+      .order('id', { ascending: false }),
+    requestIds.length
+      ? supabase.from('terms_acceptance_invitations')
+          .select('booking_request_id, participant_id, actor_participant_id, terms_version_id, representation_type, locale, issued_at, expires_at, consumed_at, revoked_at, revocation_reason')
+          .in('booking_request_id', requestIds)
+          .order('issued_at', { ascending: false })
+      : Promise.resolve({ data: [], error: null })
   ]);
   if (fixedResult.error) throw fixedResult.error;
   if (financeResult.error) throw financeResult.error;
@@ -491,6 +501,8 @@ export async function listBookingRequests(filters = {}) {
   const termsSchemaUnavailable = [termsResult.error?.code, termsVersionsResult.error?.code].some((code) => ['42P01', 'PGRST200', 'PGRST205'].includes(code));
   if (termsResult.error && !termsSchemaUnavailable) throw termsResult.error;
   if (termsVersionsResult.error && !termsSchemaUnavailable) throw termsVersionsResult.error;
+  const invitationSchemaUnavailable = ['42P01', 'PGRST200', 'PGRST205'].includes(invitationResult.error?.code);
+  if (invitationResult.error && !invitationSchemaUnavailable) throw invitationResult.error;
 
   const fixedById = (fixedResult.data || []).reduce((acc, row) => ({ ...acc, [row.id]: row }), {});
   const financeByRequest = (financeResult.data || []).reduce((acc, row) => {
@@ -511,6 +523,12 @@ export async function listBookingRequests(filters = {}) {
     acc[row.booking_request_id].push(row);
     return acc;
   }, {});
+  const invitationsByRequest = (invitationResult.data || []).reduce((acc, row) => {
+    if (!row.booking_request_id) return acc;
+    if (!acc[row.booking_request_id]) acc[row.booking_request_id] = [];
+    acc[row.booking_request_id].push(row);
+    return acc;
+  }, {});
 
   return requests.map((request) => ({
     ...request,
@@ -520,7 +538,9 @@ export async function listBookingRequests(filters = {}) {
     participant_foundation_available: !participantSchemaUnavailable,
     terms_acceptances: termsByRequest[request.id] || [],
     current_terms_versions: termsVersionsResult.data || [],
-    terms_foundation_available: !termsSchemaUnavailable
+    terms_foundation_available: !termsSchemaUnavailable,
+    terms_acceptance_invitations: invitationsByRequest[request.id] || [],
+    terms_invitation_foundation_available: !invitationSchemaUnavailable
   }));
 }
 

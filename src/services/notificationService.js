@@ -243,6 +243,18 @@ export async function acceptOwnedOrganizerTerms(ownershipId, termsVersionId, loc
     body: JSON.stringify({ termsVersionId, locale: locale === 'en' ? 'en' : 'it' })
   });
 }
+export async function issueOwnedParticipantTermsInvitation(ownershipId, participantId, locale = 'it') {
+  return api('public', `ownership/${encodeURIComponent(ownershipId)}/participants/${encodeURIComponent(participantId)}/terms-invitation`, {
+    method: 'POST',
+    body: JSON.stringify({ locale: locale === 'en' ? 'en' : 'it' })
+  });
+}
+export async function revokeOwnedParticipantTermsInvitation(ownershipId, participantId) {
+  return api('public', `ownership/${encodeURIComponent(ownershipId)}/participants/${encodeURIComponent(participantId)}/terms-invitation/revoke`, {
+    method: 'PATCH',
+    body: '{}'
+  });
+}
 export async function publishCustomerNotificationEvent() {
   return api('admin', 'personalized-events/reconcile', { method: 'POST', body: '{}' });
 }

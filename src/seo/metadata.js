@@ -39,6 +39,10 @@ export const SEO_META = Object.freeze({
     it: ['Installazione e notifiche | vulcanIQ', 'Installa vulcanIQ e scegli le preferenze per gli aggiornamenti pubblici.'],
     en: ['Install & notifications | vulcanIQ', 'Install vulcanIQ and choose preferences for public updates.']
   },
+  termsAcceptance: {
+    it: ['Accettazione Termini | vulcanIQ', 'Pagina sicura per consultare e accettare i Termini applicabili a un partecipante.'],
+    en: ['Terms acceptance | vulcanIQ', 'Secure page for reviewing and accepting Terms applicable to a participant.']
+  },
   privacy: {
     it: ['Privacy Policy | vulcanIQ', 'Informativa privacy di vulcanIQ per sito, richieste, recensioni e analytics privacy-first.'],
     en: ['Privacy Policy | vulcanIQ', 'vulcanIQ privacy information for the website, requests, reviews, and privacy-first analytics.']

@@ -162,8 +162,8 @@ test('participant UI is responsive and not table-only', () => {
 test('Terms evidence remains separate from participant records', () => {
   assert.ok(!/terms_versions|terms_acceptances|self_accepted|accepted_by_guardian/.test(participantMigration));
   assert.ok(participantMigration.includes('This table is not Terms acceptance evidence.'));
-  assert.ok(termsDoc.includes('Phase 2 Terms evidence infrastructure is implemented'));
-  assert.ok(termsDoc.includes('Individual-adult and guardian journeys remain deferred'));
+  assert.ok(termsDoc.includes('Applied Phase 2 infrastructure:'));
+  assert.ok(termsDoc.includes('Authored Phase 3 infrastructure:'));
 });
 
 test('Finance and notification ownership remain independent of participant rows', () => {
