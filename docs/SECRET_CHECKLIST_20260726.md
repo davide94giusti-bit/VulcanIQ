@@ -18,6 +18,7 @@ No secret values belong in Git, browser bundles, logs, screenshots, or `VITE_` v
 - `SUPABASE_SECRET_KEY` (preferred)
 - `SUPABASE_SERVICE_ROLE_KEY` (temporary fallback)
 - `SUBMISSION_HASH_SALT`
+- `PARTICIPANT_TERMS_DELIVERY_SECRET` (server-only shared delivery authorization)
 
 ### GitHub App backup
 
@@ -47,6 +48,9 @@ No secret values belong in Git, browser bundles, logs, screenshots, or `VITE_` v
 - `REQUEST_NOTIFICATION_WEBHOOK_SECRET`
 - `REQUEST_NOTIFICATION_RECIPIENTS`
 - `REQUEST_NOTIFICATION_FROM_EMAIL`
+- `PARTICIPANT_TERMS_DELIVERY_SECRET` (same high-entropy value in Pages and the participant-invitation Edge Function)
+- `PARTICIPANT_TERMS_ACCEPTANCE_BASE_URL` (canonical HTTPS site origin used by the Edge Function)
+- `PARTICIPANT_TERMS_FROM_EMAIL` (optional; falls back to `REQUEST_NOTIFICATION_FROM_EMAIL`)
 - `WEEKLY_RECAP_CRON_SECRET`
 - `WEEKLY_RECAP_RECIPIENTS`
 - `WEEKLY_RECAP_FROM_EMAIL`

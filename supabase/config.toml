@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.send-weekly-admin-recap]
 verify_jwt = false
+
+[functions.send-participant-terms-invitation]
+verify_jwt = false

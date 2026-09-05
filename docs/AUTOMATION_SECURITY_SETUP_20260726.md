@@ -58,6 +58,9 @@ supabase secrets set RESEND_API_KEY=<VALUE>
 supabase secrets set REQUEST_NOTIFICATION_WEBHOOK_SECRET=<VALUE>
 supabase secrets set REQUEST_NOTIFICATION_RECIPIENTS=<COMMA_SEPARATED_EMAILS>
 supabase secrets set REQUEST_NOTIFICATION_FROM_EMAIL="vulcanIQ Notifications <bookings@notify.vulcaniq.it>"
+supabase secrets set PARTICIPANT_TERMS_DELIVERY_SECRET=<SAME_HIGH_ENTROPY_VALUE_AS_PAGES>
+supabase secrets set PARTICIPANT_TERMS_ACCEPTANCE_BASE_URL="https://vulcaniq.it"
+supabase secrets set PARTICIPANT_TERMS_FROM_EMAIL="vulcanIQ Terms <bookings@notify.vulcaniq.it>"
 supabase secrets set WEEKLY_RECAP_CRON_SECRET=<VALUE>
 supabase secrets set WEEKLY_RECAP_RECIPIENTS=<COMMA_SEPARATED_EMAILS>
 supabase secrets set WEEKLY_RECAP_FROM_EMAIL="vulcanIQ Reports <reports@notify.vulcaniq.it>"
@@ -65,6 +68,8 @@ supabase secrets set WEEKLY_RECAP_TIMEZONE=Europe/Rome
 ```
 
 Supabase supplies `SUPABASE_URL`, the preferred `SUPABASE_SECRET_KEYS` JSON map, and legacy `SUPABASE_SERVICE_ROLE_KEY` to deployed Edge Functions. Set `SUPABASE_SECRET_KEY_NAME` to the configured map key; if it is omitted, the runtime selects only the documented `default` entry and never an arbitrary first key. The shared runtime also accepts an explicitly configured `SUPABASE_SECRET_KEY`, which takes precedence over the map. A configured name that is absent or resolves to a malformed value fails closed. Confirm the preferred key map or temporary legacy fallback is available before testing; incoming user JWT, webhook-secret, and Cron-secret verification remains unchanged.
+
+The Pages Functions environment must also contain `PARTICIPANT_TERMS_DELIVERY_SECRET` with the exact same value. It is server-only and must never use a `VITE_` prefix. The participant email is passed transiently to the Edge Function and is not stored or converted into notification ownership.
 
 ## 6. Configure Vault
 

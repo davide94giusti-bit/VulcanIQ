@@ -2,7 +2,6 @@ import { sendWebPush } from '../../../shared/webPush.js';
 import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../_shared/supabaseBackend.js';
 import { isOwnershipClaimToken, notificationEntityRef, ownershipClaimStateError, sha256Hex } from './_ownership.js';
 import { preparationReminder } from '../../../src/domain/experiencePreparation.js';
-import { createParticipantTermsToken, participantTermsAcceptanceUrl, participantTermsTokenHash } from '../public/_participantTerms.js';
 
 const PUBLIC_CATEGORIES = new Set(['etna_updates', 'etna_weekly', 'experiences', 'events', 'news', 'promotions']);
 const ADMIN_CATEGORIES = new Set(['new_bookings', 'upcoming_excursions', 'gift_cards', 'booking_codes', 'payment_reconciliation', 'operational_failures', 'security_alerts', 'daily_summary', 'weekly_summary']);
@@ -263,6 +262,25 @@ async function backendUpdateRows(config, table, parameters, payload) {
 }
 
 function uuidValue(value) { const clean = text(value, 80); return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean) ? clean : ''; }
+function participantDeliveryEmail(value) { const raw = String(value ?? '').trim().toLowerCase(); return raw && raw.length <= 254 && !/[\u0000-\u001f\u007f]/.test(raw) && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(raw) ? raw : ''; }
+
+async function deliverParticipantTermsInvitation(config, env, payload) {
+  const deliverySecret = String(env.PARTICIPANT_TERMS_DELIVERY_SECRET || '').trim();
+  if (deliverySecret.length < 32) throw new Error('terms_delivery_not_configured');
+  const response = await fetch(`${config.url}/functions/v1/send-participant-terms-invitation`, {
+    method: 'POST',
+    headers: {
+      apikey: config.anon,
+      'Content-Type': 'application/json',
+      'X-VulcanIQ-Participant-Terms-Delivery-Secret': deliverySecret
+    },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json().catch(() => null);
+  if (response.status === 503) throw new Error('terms_delivery_not_configured');
+  if (!response.ok || !result?.ok || !result?.item) throw new Error(`terms_delivery_${response.status}`);
+  return result.item;
+}
 
 async function ownedParticipantContext(database, subscription, ownershipId, config) {
   const ownership = await database.prepare('SELECT * FROM notification_subscription_ownership WHERE id=? AND subscription_id=? AND entity_type=? AND revoked_at IS NULL LIMIT 1')
@@ -392,6 +410,7 @@ async function ownedTermsPayload(config, context, locale) {
   const namedAdults = activeParticipants.filter((item) => item.participant_type === 'adult').length;
   const namedChildren = activeParticipants.filter((item) => item.participant_type === 'minor').length;
   const organizerPresent = activeParticipants.some((item) => item.is_organizer === true && item.participant_type === 'adult');
+  const organizer = activeParticipants.find((item) => item.is_organizer === true && item.participant_type === 'adult') || null;
   const compositionComplete = organizerPresent && namedAdults === expectedAdults && namedChildren === expectedChildren;
   const acceptedParticipants = version ? activeParticipants.filter((participant) => Boolean(validAcceptance(participant))).length : 0;
   const requiredParticipants = Math.max(expectedParticipants, activeParticipants.length);
@@ -439,7 +458,9 @@ async function ownedTermsPayload(config, context, locale) {
           acceptance: summarizeAcceptance(acceptance),
           invitation: summarizedInvitation,
           canInvite: context.booking.status === 'accepted' && invitationFoundationAvailable && !acceptance && !participant.is_organizer
-            && (participant.participant_type === 'adult' || Boolean(guardian)),
+            && (participant.participant_type === 'adult' || (Boolean(guardian) && guardian.id !== organizer?.id)),
+          canGuardianAccept: context.booking.status === 'accepted' && !acceptance && participant.participant_type === 'minor'
+            && Boolean(organizer) && guardian?.id === organizer.id,
           canRevoke: invitationFoundationAvailable && ['pending', 'invalidated'].includes(summarizedInvitation?.status)
         };
       })
@@ -718,34 +739,53 @@ export async function onRequest(context) {
         if(invitationContext.booking.status!=='accepted')return json(request,env,409,{ok:false,error:'terms_booking_not_confirmed'});
         if(participant.status!=='active')return json(request,env,404,{ok:false,error:'terms_participant_not_found'});
         const parsed=await body(request,2048);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});
-        if(Object.keys(parsed.value).some((key)=>key!=='locale')||!['it','en'].includes(parsed.value.locale))return json(request,env,400,{ok:false,error:'terms_invitation_locale_invalid'});
+        if(Object.keys(parsed.value).some((key)=>!['locale','recipientEmail'].includes(key))||!['it','en'].includes(parsed.value.locale))return json(request,env,400,{ok:false,error:'terms_invitation_locale_invalid'});
         const locale=parsed.value.locale;
-        const token=createParticipantTermsToken();
-        const tokenHash=await participantTermsTokenHash(token);
+        const recipientEmail=participantDeliveryEmail(parsed.value.recipientEmail);
+        if(!recipientEmail)return json(request,env,400,{ok:false,error:'terms_invitation_email_invalid'});
+        if(participant.participant_type==='minor'&&participant.guardian_participant_id===organizer.id)return json(request,env,409,{ok:false,error:'terms_guardian_owned_acceptance_required'});
         try{
-          const issued=await backendRpc(config,'issue_participant_terms_acceptance_invitation',{
-            p_booking_request_id:invitationContext.bookingId,
-            p_participant_id:participant.id,
-            p_organizer_participant_id:organizer.id,
-            p_locale:locale,
-            p_token_hash:tokenHash
+          const item=await deliverParticipantTermsInvitation(config,env,{
+            bookingRequestId:invitationContext.bookingId,
+            participantId:participant.id,
+            organizerParticipantId:organizer.id,
+            locale,
+            recipientEmail
           });
-          const item=issued[0]||null;
-          if(!item?.expires_at)return json(request,env,409,{ok:false,error:'terms_invitation_rejected'});
-          return json(request,env,201,{
-            ok:true,
-            item:{
-              status:'pending',
-              termsVersion:item.terms_version,
-              locale:item.locale,
-              representationType:item.representation_type,
-              expiresAt:item.expires_at
-            },
-            acceptanceUrl:participantTermsAcceptanceUrl(request,token)
-          });
+          return json(request,env,201,{ok:true,item});
         }catch(error){
-          if(String(error?.message||'').endsWith('_404'))return json(request,env,503,{ok:false,error:'terms_invitation_foundation_unavailable'});
+          if(String(error?.message||'').includes('not_configured')||String(error?.message||'').endsWith('_404'))return json(request,env,503,{ok:false,error:'terms_invitation_delivery_unavailable'});
           return json(request,env,409,{ok:false,error:'terms_invitation_rejected'});
+        }
+      }
+      if(path[1]&&path[2]==='participants'&&path[3]&&path[4]==='terms-acceptance'&&!path[5]){
+        if(request.method!=='POST')return json(request,env,405,{ok:false,error:'method_not_allowed'});
+        if(!(await rateLimit(database,`terms-guardian:${sub.id}`,8,3600)))return json(request,env,429,{ok:false,error:'rate_limited'});
+        const ownershipId=uuidValue(path[1]);const participantId=uuidValue(path[3]);
+        if(!ownershipId||!participantId)return json(request,env,404,{ok:false,error:'terms_participant_not_found'});
+        const config=supabaseConfig(env);if(!config)return json(request,env,503,{ok:false,error:'terms_source_not_configured'});
+        const termsContext=await ownedParticipantContext(database,sub,ownershipId,config);
+        if(termsContext.error)return json(request,env,termsContext.status,{ok:false,error:termsContext.error});
+        if(termsContext.booking.status!=='accepted')return json(request,env,409,{ok:false,error:'terms_booking_not_confirmed'});
+        const organizer=termsContext.participants.find((item)=>item.status==='active'&&item.is_organizer===true&&item.participant_type==='adult');
+        const participant=termsContext.participants.find((item)=>item.id===participantId&&item.status==='active'&&item.participant_type==='minor');
+        if(!organizer||!participant||participant.guardian_participant_id!==organizer.id)return json(request,env,409,{ok:false,error:'terms_guardian_relationship_invalid'});
+        const parsed=await body(request,2048);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});
+        if(Object.keys(parsed.value).some((key)=>!['termsVersionId','locale'].includes(key)))return json(request,env,400,{ok:false,error:'invalid_request'});
+        const termsVersionId=uuidValue(parsed.value.termsVersionId);const locale=cleanLocale(parsed.value.locale);
+        if(!termsVersionId||!['it','en'].includes(parsed.value.locale))return json(request,env,400,{ok:false,error:'terms_version_invalid'});
+        try{
+          await backendRpc(config,'record_owned_organizer_guardian_terms_acceptance',{
+            p_booking_request_id:termsContext.bookingId,
+            p_minor_participant_id:participant.id,
+            p_guardian_participant_id:organizer.id,
+            p_terms_version_id:termsVersionId,
+            p_locale:locale
+          });
+          return json(request,env,200,{ok:true,...await ownedTermsPayload(config,termsContext,locale)});
+        }catch(error){
+          if(String(error?.message||'').endsWith('_404'))return json(request,env,503,{ok:false,error:'terms_guardian_foundation_unavailable'});
+          return json(request,env,409,{ok:false,error:'terms_guardian_acceptance_rejected'});
         }
       }
       if(path[1]&&path[2]==='participants'){
