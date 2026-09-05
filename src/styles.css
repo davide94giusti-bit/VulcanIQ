@@ -15242,6 +15242,11 @@ section#reviews.compact-section,
 .payment-history-list { margin: .8rem 0; }
 @media (max-width: 680px) { .booking-payment-summary-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
 .finance-reconciliation-list { display: grid; gap: .75rem; }
+.admin-participant-summary { display: grid; gap: .6rem; margin: .8rem 0; padding: .8rem; border: 1px solid var(--admin-border, rgba(16,27,45,.14)); border-radius: 12px; background: rgba(255,255,255,.58); min-width: 0; }
+.admin-participant-summary>div:first-child { display: flex; justify-content: space-between; gap: .7rem; flex-wrap: wrap; }
+.admin-participant-list { display: grid; gap: .45rem; }
+.admin-participant-list p { display: grid; gap: .1rem; margin: 0; min-width: 0; }
+.admin-participant-list strong,.admin-participant-list span { overflow-wrap: anywhere; }
 .finance-reconciliation-item { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: .9rem; border: 1px solid rgba(16,27,45,.14); border-radius: 14px; background: rgba(255,255,255,.7); }
 .finance-reconciliation-item p { margin: .25rem 0 0; }
 @media (max-width: 680px) { .finance-reconciliation-item { align-items: stretch; flex-direction: column; } }
@@ -15307,6 +15312,7 @@ section#reviews.compact-section,
   background: rgba(255,255,255,.16);
 }
 
+.first-run-onboarding-backdrop,
 .notification-onboarding-backdrop,
 .privacy-preferences-backdrop {
   position: fixed;
@@ -15322,6 +15328,7 @@ section#reviews.compact-section,
 
 .privacy-preferences-backdrop { z-index: 1800; }
 
+.first-run-onboarding-dialog,
 .notification-onboarding-dialog,
 .privacy-preferences-dialog {
   position: relative;
@@ -15335,8 +15342,17 @@ section#reviews.compact-section,
   box-shadow: var(--shadow);
 }
 
+.first-run-onboarding-dialog h2,
 .notification-onboarding-dialog h2,
 .privacy-preferences-dialog h2 { font-size: clamp(1.8rem, 5vw, 2.6rem); }
+
+.first-run-progress { display: flex; gap: .45rem; margin-bottom: 1rem; }
+.first-run-progress span { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border: 1px solid var(--line); border-radius: 50%; color: var(--ash); font-weight: 850; }
+.first-run-progress span.active { border-color: var(--lava); background: var(--lava); color: #fff; }
+.first-run-language-actions,
+.first-run-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+.first-run-actions .button,
+.first-run-language-actions .button { width: 100%; min-height: 48px; justify-content: center; }
 
 .notification-onboarding-actions,
 .privacy-preferences-actions {
@@ -15387,27 +15403,6 @@ section#reviews.compact-section,
   min-width: 0;
 }
 
-.fast-request-method-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: .75rem;
-  min-width: 0;
-}
-
-.fast-request-method-header .fast-request-send-heading {
-  flex: 1 1 12rem;
-}
-
-.fast-request-method-back {
-  flex: 0 0 auto;
-  width: auto;
-  min-height: 44px;
-  margin: 0;
-  padding: .55rem .85rem;
-}
-
 .fast-request-contact-heading h3,
 .fast-request-contact-heading p,
 .fast-request-send-heading h3,
@@ -15423,7 +15418,7 @@ section#reviews.compact-section,
 
 .fast-request-delivery-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: .7rem;
   min-width: 0;
 }
@@ -15502,6 +15497,9 @@ section#reviews.compact-section,
 
   .notification-onboarding-actions,
   .privacy-preferences-actions { flex-direction: column; }
+
+  .first-run-language-actions,
+  .first-run-actions { grid-template-columns: 1fr; }
 
   .notification-onboarding-actions .button,
   .privacy-preferences-actions .button { flex-basis: auto; width: 100%; }

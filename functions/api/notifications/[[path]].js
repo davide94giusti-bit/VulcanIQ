@@ -178,14 +178,21 @@ async function claimOwnership(database, subscription, rawToken) {
   }
   if (stateError) return { error: stateError };
   const ownershipId = uuid(); const now = nowIso();
-  await database.batch([
+  let locatorSupported = true;
+  try { await database.prepare('SELECT entity_id FROM notification_subscription_ownership LIMIT 0').all(); } catch { locatorSupported = false; }
+  const statements = [
     database.prepare("UPDATE notification_ownership_claims SET status='claimed',claimed_subscription_id=?,claimed_at=? WHERE id=? AND status='pending' AND expires_at>?").bind(subscription.id, now, claim.id, now),
-    database.prepare(`INSERT OR IGNORE INTO notification_subscription_ownership
+    locatorSupported ? database.prepare(`INSERT OR IGNORE INTO notification_subscription_ownership
+      (id,claim_id,subscription_id,entity_type,entity_ref,entity_id,journey_type,verified_at,created_at)
+      SELECT ?,id,?,entity_type,entity_ref,entity_id,journey_type,?,? FROM notification_ownership_claims
+      WHERE id=? AND status='claimed' AND claimed_subscription_id=?`)
+      .bind(ownershipId, subscription.id, now, now, claim.id, subscription.id) : database.prepare(`INSERT OR IGNORE INTO notification_subscription_ownership
       (id,claim_id,subscription_id,entity_type,entity_ref,journey_type,verified_at,created_at)
       SELECT ?,id,?,entity_type,entity_ref,journey_type,?,? FROM notification_ownership_claims
       WHERE id=? AND status='claimed' AND claimed_subscription_id=?`)
       .bind(ownershipId, subscription.id, now, now, claim.id, subscription.id)
-  ]);
+  ];
+  await database.batch(statements);
   const ownership = await database.prepare('SELECT id,journey_type,verified_at,revoked_at FROM notification_subscription_ownership WHERE claim_id=? AND subscription_id=? LIMIT 1').bind(claim.id, subscription.id).first();
   if (!ownership || ownership.revoked_at) return { error: 'ownership_claim_already_claimed' };
   return { ownership, idempotent: false };
@@ -208,6 +215,81 @@ async function backendUpdate(config, table, parameters, payload) {
     body: JSON.stringify(payload)
   });
   if (!response.ok) throw new Error(`personalized_source_${table}_${response.status}`);
+}
+
+async function backendInsert(config, table, payload) {
+  const response = await fetch(`${config.url}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: supabaseBackendHeaders(config.backendCredential, { headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation'
+    } }),
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error(`personalized_source_${table}_${response.status}`);
+  const rows = await response.json();
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function backendUpdateRows(config, table, parameters, payload) {
+  const response = await fetch(`${config.url}/rest/v1/${table}?${parameters}`, {
+    method: 'PATCH',
+    headers: supabaseBackendHeaders(config.backendCredential, { headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation'
+    } }),
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error(`personalized_source_${table}_${response.status}`);
+  const rows = await response.json();
+  return Array.isArray(rows) ? rows : [];
+}
+
+function uuidValue(value) { const clean = text(value, 80); return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean) ? clean : ''; }
+
+async function ownedParticipantContext(database, subscription, ownershipId, config) {
+  const ownership = await database.prepare('SELECT * FROM notification_subscription_ownership WHERE id=? AND subscription_id=? AND entity_type=? AND revoked_at IS NULL LIMIT 1')
+    .bind(ownershipId, subscription.id, 'booking_request').first();
+  if (!ownership) return { error: 'ownership_not_found', status: 404 };
+  const bookingId = uuidValue(ownership.entity_id);
+  if (!bookingId) return { error: 'participant_foundation_unavailable', status: 503 };
+  try {
+    const bookings = await backendRows(config, 'booking_requests', new URLSearchParams({
+      select: 'id,status,adults,children,children_under_3', id: `eq.${bookingId}`, limit: '1'
+    }));
+    if (!bookings[0]) return { error: 'owned_booking_not_found', status: 404 };
+    const participants = await backendRows(config, 'booking_participants', new URLSearchParams({
+      select: 'id,full_name,participant_type,is_organizer,guardian_participant_id,status,created_at,updated_at',
+      booking_request_id: `eq.${bookingId}`, order: 'created_at.asc', limit: '100'
+    }));
+    return { ownership, booking: bookings[0], bookingId, participants };
+  } catch (error) {
+    if (String(error?.message || '').includes('personalized_source_booking_participants_')) return { error: 'participant_foundation_unavailable', status: 503 };
+    throw error;
+  }
+}
+
+function participantPayload(context) {
+  const active = context.participants.filter((item) => item.status === 'active');
+  const actualAdults = active.filter((item) => item.participant_type === 'adult').length;
+  const actualChildren = active.filter((item) => item.participant_type === 'minor').length;
+  const expectedAdults = Number(context.booking.adults || 0);
+  const expectedChildren = Number(context.booking.children || 0);
+  const organizerPresent = active.some((item) => item.is_organizer);
+  return {
+    booking: {
+      status: context.booking.status,
+      editable: context.booking.status === 'accepted',
+      party: { adults: expectedAdults, children: expectedChildren, childrenUnder3: Boolean(context.booking.children_under_3) }
+    },
+    participants: context.participants,
+    composition: {
+      expectedAdults, expectedChildren, actualAdults, actualChildren, organizerPresent,
+      matches: organizerPresent && actualAdults === expectedAdults && actualChildren === expectedChildren
+    }
+  };
 }
 
 function customerPreferenceColumn(eventType) {
@@ -394,7 +476,7 @@ export async function onRequest(context) {
       if (audience !== 'public') return json(request,env,403,{ok:false,error:'public_device_required'});
       const ctx=await ownerContext(request,env,'public'); if(ctx.response)return ctx.response;
       const sub=await resolveSubscription(database,ctx,'public'); if(!sub)return json(request,env,404,{ok:false,error:'subscription_not_found'});
-      if(request.method==='GET'){
+      if(request.method==='GET'&&!path[1]){
         const rows=await database.prepare('SELECT id,journey_type,verified_at,revoked_at,status_updates_enabled,operational_updates_enabled,reminders_enabled,review_reminders_enabled,push_enabled,inapp_enabled FROM notification_subscription_ownership WHERE subscription_id=? ORDER BY created_at DESC LIMIT 100').bind(sub.id).all();
         return json(request,env,200,{ok:true,items:rows.results||[]});
       }
@@ -405,6 +487,51 @@ export async function onRequest(context) {
         if(claimed.error)return json(request,env,claimed.error==='ownership_claim_invalid'?404:409,{ok:false,error:claimed.error});
         await audit(database,'notification_ownership_claimed',{audience:'public',subscriptionId:sub.id,metadata:{journeyType:claimed.ownership.journey_type,idempotent:claimed.idempotent}});
         return json(request,env,claimed.idempotent?200:201,{ok:true,item:claimed.ownership,idempotent:claimed.idempotent});
+      }
+      if(path[1]&&path[2]==='participants'){
+        if(request.method!=='GET'&&!(await rateLimit(database,`participants:${sub.id}:${path[1]}`,40,3600)))return json(request,env,429,{ok:false,error:'rate_limited'});
+        const config=supabaseConfig(env);if(!config)return json(request,env,503,{ok:false,error:'participant_source_not_configured'});
+        let participantContext=await ownedParticipantContext(database,sub,path[1],config);
+        if(participantContext.error)return json(request,env,participantContext.status,{ok:false,error:participantContext.error});
+        if(request.method==='GET'&&!path[3])return json(request,env,200,{ok:true,...participantPayload(participantContext)});
+        if(participantContext.booking.status!=='accepted')return json(request,env,409,{ok:false,error:'participant_booking_not_editable'});
+        if(request.method==='POST'&&!path[3]){
+          const parsed=await body(request,4096);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});
+          const rawName=String(parsed.value.fullName??'').trim();const cleanName=text(rawName,120);
+          if(!rawName||rawName.length>120||!cleanName)return json(request,env,400,{ok:false,error:'participant_name_invalid'});
+          const organizer=parsed.value.isOrganizer===true;
+          const participantType=organizer?'adult':text(parsed.value.participantType,20);
+          if(!['adult','minor'].includes(participantType))return json(request,env,400,{ok:false,error:'participant_type_invalid'});
+          const guardianId=participantType==='minor'?uuidValue(parsed.value.guardianParticipantId):null;
+          if(participantType==='minor'&&!guardianId)return json(request,env,400,{ok:false,error:'participant_guardian_required'});
+          if(organizer&&participantContext.participants.some((item)=>item.is_organizer&&item.status==='active'))return json(request,env,409,{ok:false,error:'participant_organizer_exists'});
+          try{
+            await backendInsert(config,'booking_participants',{booking_request_id:participantContext.bookingId,full_name:cleanName,participant_type:participantType,is_organizer:organizer,guardian_participant_id:guardianId,status:'active'});
+          }catch{return json(request,env,409,{ok:false,error:'participant_change_rejected'});}
+          participantContext=await ownedParticipantContext(database,sub,path[1],config);
+          return json(request,env,201,{ok:true,...participantPayload(participantContext)});
+        }
+        if(request.method==='PATCH'&&path[3]){
+          const participantId=uuidValue(path[3]);if(!participantId)return json(request,env,400,{ok:false,error:'participant_id_invalid'});
+          const current=participantContext.participants.find((item)=>item.id===participantId);
+          if(!current)return json(request,env,404,{ok:false,error:'participant_not_found'});
+          const parsed=await body(request,4096);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});
+          const changes={};
+          if(parsed.value.fullName!==undefined){const rawName=String(parsed.value.fullName??'').trim();const cleanName=text(rawName,120);if(!rawName||rawName.length>120||!cleanName)return json(request,env,400,{ok:false,error:'participant_name_invalid'});changes.full_name=cleanName;}
+          if(parsed.value.participantType!==undefined){const participantType=text(parsed.value.participantType,20);if(!['adult','minor'].includes(participantType)||current.is_organizer)return json(request,env,400,{ok:false,error:'participant_type_invalid'});changes.participant_type=participantType;}
+          const resultingType=changes.participant_type||current.participant_type;
+          if(parsed.value.guardianParticipantId!==undefined)changes.guardian_participant_id=resultingType==='minor'?uuidValue(parsed.value.guardianParticipantId):null;
+          if(resultingType==='minor'&&!(changes.guardian_participant_id||current.guardian_participant_id))return json(request,env,400,{ok:false,error:'participant_guardian_required'});
+          if(parsed.value.status!==undefined){if(parsed.value.status!=='removed'||current.is_organizer)return json(request,env,400,{ok:false,error:'participant_status_invalid'});changes.status='removed';}
+          if(!Object.keys(changes).length)return json(request,env,400,{ok:false,error:'participant_change_required'});
+          try{
+            const rows=await backendUpdateRows(config,'booking_participants',new URLSearchParams({id:`eq.${participantId}`,booking_request_id:`eq.${participantContext.bookingId}`}),changes);
+            if(!rows.length)return json(request,env,404,{ok:false,error:'participant_not_found'});
+          }catch{return json(request,env,409,{ok:false,error:'participant_change_rejected'});}
+          participantContext=await ownedParticipantContext(database,sub,path[1],config);
+          return json(request,env,200,{ok:true,...participantPayload(participantContext)});
+        }
+        return json(request,env,405,{ok:false,error:'method_not_allowed'});
       }
       if(path[1]&&path[2]==='preferences'&&request.method==='PATCH'){
         const parsed=await body(request,2048);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});

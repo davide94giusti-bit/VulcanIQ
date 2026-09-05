@@ -37,10 +37,11 @@ import AnalyticsCanonicalFunnels from './features/analytics/AnalyticsCanonicalFu
 import ReviewsPage from './features/reviews/ReviewsPage.jsx';
 import GoogleReviewsAdminStatus from './features/reviews/GoogleReviewsAdminStatus.jsx';
 import NotificationsPage from './features/notifications/NotificationsPage.jsx';
-import NotificationOnboarding from './features/notifications/NotificationOnboarding.jsx';
+import FirstRunOnboarding from './features/onboarding/FirstRunOnboarding.jsx';
 import NotificationUnreadBadge from './features/notifications/NotificationUnreadBadge.jsx';
 import PrivacyPreferences from './features/privacy/PrivacyPreferences.jsx';
 import { PRIVACY_PREFERENCES_EVENT, readPrivacyPreferences, writePrivacyPreferences } from './services/privacyPreferences.js';
+import { readInitialPublicLanguage, storePublicLanguage } from './services/languagePreference.js';
 import { notificationUnreadAriaLabel, unreadNotificationCount } from './domain/notificationInbox.js';
 import AskNeoPanel from './features/neo/AskNeoPanel.jsx';
 import { normalizeReviewText, reviewSourceLabel } from './features/reviews/reviewModel.js';
@@ -1048,23 +1049,6 @@ function normalizeLatestNewsTitle(value, lang) {
   const normalized = normalizedKeyText(clean);
   if (!clean || normalized === 'ultime notizie' || normalized === 'latest news') return lang === 'it' ? LATEST_NEWS_DEFAULTS.title_it : LATEST_NEWS_DEFAULTS.title_en;
   return clean;
-}
-
-function readInitialPublicLanguage() {
-  if (typeof window === 'undefined') return 'it';
-  try {
-    const queryLang = new URLSearchParams(window.location.search).get('lang');
-    if (queryLang === 'en' || queryLang === 'it') return queryLang;
-    const stored = window.localStorage.getItem('vulcaniq_public_language');
-    if (stored === 'en' || stored === 'it') return stored;
-  } catch {}
-  return 'it';
-}
-
-function storePublicLanguage(lang) {
-  if (typeof window === 'undefined') return;
-  if (lang !== 'en' && lang !== 'it') return;
-  try { window.localStorage.setItem('vulcaniq_public_language', lang); } catch {}
 }
 
 function navigatePublicRoute(path, lang) {
@@ -3215,6 +3199,7 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
   const sourceMetadata = { language: lang, source_section: sourceSection, source_cta: sourceCta, cta_location: ctaLocation, flow_type: flowType };
   const formJourneyRef = useRef(null);
   const fastRequestModalRef = useRef(null);
+  const fastRequestTitleRef = useRef(null);
   const fastRequestContactHeadingRef = useRef(null);
   const fastRequestSubmissionErrorRef = useRef(null);
   const [step, setStep] = useState(1);
@@ -3244,6 +3229,8 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
 
   useEffect(() => {
     if (fastRequestModalRef.current) fastRequestModalRef.current.scrollTop = 0;
+    const timer = window.setTimeout(() => fastRequestTitleRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
   }, [step]);
 
   useEffect(() => {
@@ -3464,7 +3451,7 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
     <div className="modal-backdrop fast-request-backdrop" role="dialog" aria-modal="true" aria-labelledby="fastRequestTitle">
       <section className="admin-modal fast-request-modal" ref={fastRequestModalRef}>
         <header className="admin-modal-header">
-          <div><span className="kicker">{lang === 'it' ? 'Richiesta rapida' : 'Fast request'}</span><h2 id="fastRequestTitle">{lang === 'it' ? 'Verifica disponibilità in pochi passaggi' : 'Check availability in a few steps'}</h2></div>
+          <div><h2 id="fastRequestTitle" ref={fastRequestTitleRef} tabIndex="-1">{lang === 'it' ? 'Verifica disponibilità in pochi passaggi' : 'Check availability in a few steps'}</h2></div>
           <button className="modal-close-button" type="button" onClick={handleClose}>{text(lang, 'close')}</button>
         </header>
         {step === 1 && (
@@ -3516,14 +3503,11 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
               </div>
             ) : (
               <>
-                <div className="fast-request-method-header">
-                  <div className="fast-request-send-heading">
-                    <h3>{lang === 'it' ? 'Come vuoi inviare la richiesta?' : 'How would you like to send your request?'}</h3>
-                    <p>{lang === 'it' ? 'Useremo le informazioni già inserite.' : 'We will use the information you already entered.'}</p>
-                  </div>
-                  <button className="button secondary fast-request-method-back" type="button" onClick={() => setStep(4)}>{lang === 'it' ? 'Indietro' : 'Back'}</button>
+                <div className="fast-request-send-heading">
+                  <h3>{lang === 'it' ? 'Come vuoi inviare la richiesta?' : 'How would you like to send your request?'}</h3>
+                  <p>{lang === 'it' ? 'Useremo le informazioni già inserite.' : 'We will use the information you already entered.'}</p>
                 </div>
-                <div className="fast-request-delivery-actions"><button className="button primary" type="button" onClick={() => setDeliveryChoice('website')}>{lang === 'it' ? 'Invia tramite il sito' : 'Send via website'}</button><a className="button secondary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>{lang === 'it' ? 'Invia su WhatsApp' : 'Send via WhatsApp'}</a></div>
+                <div className="fast-request-delivery-actions"><button className="button secondary" type="button" onClick={() => setStep(4)}>{lang === 'it' ? 'Indietro' : 'Back'}</button><button className="button primary" type="button" onClick={() => setDeliveryChoice('website')}>{lang === 'it' ? 'Invia tramite il sito' : 'Send via website'}</button><a className="button secondary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>{lang === 'it' ? 'Invia su WhatsApp' : 'Send via WhatsApp'}</a></div>
               </>
             )}
           </div>
@@ -7278,10 +7262,10 @@ function AdminCalendarPage({ lang, session, navigate, adminContent = {} }) {
                           <div><dt>{adminCopy(lang, 'Stato', 'Status')}</dt><dd>{item.status || (item.active ? 'active' : 'inactive')}</dd></div>
                         </dl>
                         <div className="guest-detail-list">
-                          <strong>{adminCopy(lang, 'Ospiti prenotati', 'Booked guests')}</strong>
+                          <strong>{adminCopy(lang, 'Prenotazioni accettate', 'Accepted bookings')}</strong>
                           {bookedGuests.length ? bookedGuests.map((guest) => (
                             <p className="small-note" key={guest.id}>{guest.customer_name || '-'} · {guest.customer_email || '-'} · {guest.customer_phone || '-'} · {Number(guest.adults || 0) + Number(guest.children || 0) || '-'} {adminCopy(lang, 'ospiti', 'guests')}{guest.booking_code ? ` · ${guest.booking_code}` : ''}</p>
-                          )) : <p className="small-note">{adminCopy(lang, 'Nessun ospite prenotato per questa data.', 'No guests booked for this date yet.')}</p>}
+                          )) : <p className="small-note">{adminCopy(lang, 'Nessuna prenotazione accettata per questa data.', 'No accepted bookings for this date yet.')}</p>}
                         </div>
                         <button type="button" className="button secondary" onClick={() => setSelectedFixed(item)}>{adminCopy(lang, 'Modifica', 'Edit')}</button>
                       </article>
@@ -13869,6 +13853,7 @@ function RequestCard({ request, lang, session = null, navigate = null, onApprove
         <div><dt>{adminCopy(lang, 'Privata', 'Private')}</dt><dd>{request.private_experience === true ? adminCopy(lang, 'Sì', 'Yes') : request.private_experience === false ? adminCopy(lang, 'No', 'No') : '-'}</dd></div>
         {request.fixed_excursion_id && <div><dt>{adminCopy(lang, 'Escursione fissa', 'Fixed excursion')}</dt><dd>{request.fixed_excursion_id}</dd></div>}
       </dl>
+      <AdminParticipantSummary request={request} lang={lang} />
       <BookingPaymentSummary request={request} lang={lang} />
       <NotificationStatusControl record={request} table="booking_requests" lang={lang} onUpdated={onUpdated} />
       {request.children_under_3 && <div className="admin-alert warning compact-alert">{adminCopy(lang, 'Attenzione: bambini sotto i 3 anni. Percorso da valutare con particolare cura.', 'Warning: children under 3. Route must be assessed carefully.')}</div>}
@@ -13903,6 +13888,12 @@ function RequestCard({ request, lang, session = null, navigate = null, onApprove
       )}
     </article>
   );
+}
+
+function AdminParticipantSummary({ request, lang }) {
+  const participants = Array.isArray(request.booking_participants) ? request.booking_participants.filter((item) => item.status === 'active') : [];
+  const guardianById = Object.fromEntries(participants.map((item) => [item.id, item]));
+  return <section className="admin-participant-summary"><div><strong>{adminCopy(lang, 'Partecipanti', 'Participants')}</strong><span className="small-note">{adminCopy(lang, `${Number(request.adults || 0)} adulti · ${Number(request.children || 0)} minori`, `${Number(request.adults || 0)} adults · ${Number(request.children || 0)} minors`)}</span></div>{request.participant_foundation_available === false?<p className="small-note">{adminCopy(lang, 'Fondazione partecipanti non ancora disponibile in questo ambiente.', 'Participant foundation is not available in this environment yet.')}</p>:participants.length===0?<p className="small-note">{adminCopy(lang, 'Dettagli partecipanti non raccolti.', 'Participant details not collected.')}</p>:<div className="admin-participant-list">{participants.map((item)=><p key={item.id}><strong>{item.full_name}</strong><span>{item.is_organizer?adminCopy(lang,'Organizzatore · Adulto','Organizer · Adult'):item.participant_type==='minor'?adminCopy(lang,'Minore','Minor'):adminCopy(lang,'Adulto','Adult')}{item.guardian_participant_id&&guardianById[item.guardian_participant_id]?` · ${adminCopy(lang,'Responsabile','Guardian')}: ${guardianById[item.guardian_participant_id].full_name}`:''}</span></p>)}</div>}</section>;
 }
 
 function ReplyTools({ request, lang, children = null }) {
@@ -15775,7 +15766,7 @@ function App() {
   const [siteContent, setSiteContent] = useState({});
   const [publicUnreadCount, setPublicUnreadCount] = useState(null);
   const [privacyPreferences, setPrivacyPreferences] = useState(() => readPrivacyPreferences());
-  const [privacyPreferencesOpen, setPrivacyPreferencesOpen] = useState(() => readPrivacyPreferences().analytics === null);
+  const [privacyPreferencesOpen, setPrivacyPreferencesOpen] = useState(false);
   const contactRef = useRef(null);
   const analyticsContextRef = useRef({ section: 'home', language: 'it' });
   const analyticsDisabledForRoute = pathname.startsWith('/admin');
@@ -16038,7 +16029,7 @@ function App() {
       </main>
       <Footer lang={lang} siteContent={siteContent} onOpenPrivacyPreferences={() => setPrivacyPreferencesOpen(true)} />
       <StickyMobileBar lang={lang} siteContent={siteContent} />
-      <NotificationOnboarding lang={lang} activePage={activePage} blocked={privacyPreferencesOpen || privacyPreferences.analytics === null} />
+      <FirstRunOnboarding lang={lang} eligible={!legalPageFromPathname(pathname)} blocked={privacyPreferencesOpen} privacyPreferences={privacyPreferences} onLanguage={setPublicLanguage} onPrivacy={savePrivacyPreferences} />
       <PrivacyPreferences lang={lang} open={privacyPreferencesOpen} current={privacyPreferences} onSave={savePrivacyPreferences} onClose={() => setPrivacyPreferencesOpen(false)} />
     </>
   );

@@ -40,10 +40,19 @@ export async function issueNotificationOwnershipClaim(database, { entityType, en
   const now = new Date();
   const expiresAt = new Date(now.getTime() + Math.max(60_000, Math.min(CLAIM_TTL_MS, Number(expiresInMs) || CLAIM_TTL_MS))).toISOString();
   const id = uuid();
-  await database.prepare(`INSERT INTO notification_ownership_claims
-    (id,token_hash,entity_type,entity_ref,journey_type,status,expires_at,created_at)
-    VALUES(?,?,?,?,?,'pending',?,?)`)
-    .bind(id, tokenHash, entityType, entityRef, journeyType, expiresAt, now.toISOString()).run();
+  let locatorSupported = true;
+  try { await database.prepare('SELECT entity_id FROM notification_ownership_claims LIMIT 0').all(); } catch { locatorSupported = false; }
+  if (locatorSupported) {
+    await database.prepare(`INSERT INTO notification_ownership_claims
+      (id,token_hash,entity_type,entity_ref,entity_id,journey_type,status,expires_at,created_at)
+      VALUES(?,?,?,?,?,?,'pending',?,?)`)
+      .bind(id, tokenHash, entityType, entityRef, entityId.trim(), journeyType, expiresAt, now.toISOString()).run();
+  } else {
+    await database.prepare(`INSERT INTO notification_ownership_claims
+      (id,token_hash,entity_type,entity_ref,journey_type,status,expires_at,created_at)
+      VALUES(?,?,?,?,?,'pending',?,?)`)
+      .bind(id, tokenHash, entityType, entityRef, journeyType, expiresAt, now.toISOString()).run();
+  }
   return { token, expiresAt, entityType, journeyType };
 }
 

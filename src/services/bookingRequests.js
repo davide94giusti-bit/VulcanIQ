@@ -452,7 +452,7 @@ export async function listBookingRequests(filters = {}) {
 
   const requestIds = requests.map((request) => request.id).filter(Boolean);
   const fixedIds = [...new Set(requests.map((request) => request.fixed_excursion_id).filter(Boolean))];
-  const [fixedResult, financeResult] = await Promise.all([
+  const [fixedResult, financeResult, participantResult] = await Promise.all([
     fixedIds.length
       ? supabase.from('fixed_excursions').select('id, date, start_time, end_time, experience_id, title_it, title_en').in('id', fixedIds)
       : Promise.resolve({ data: [], error: null }),
@@ -462,13 +462,27 @@ export async function listBookingRequests(filters = {}) {
           .in('booking_request_id', requestIds)
           .eq('type', 'income')
           .order('created_at', { ascending: true })
+      : Promise.resolve({ data: [], error: null }),
+    requestIds.length
+      ? supabase.from('booking_participants')
+          .select('id, booking_request_id, full_name, participant_type, is_organizer, guardian_participant_id, status, created_at, updated_at')
+          .in('booking_request_id', requestIds)
+          .order('created_at', { ascending: true })
       : Promise.resolve({ data: [], error: null })
   ]);
   if (fixedResult.error) throw fixedResult.error;
   if (financeResult.error) throw financeResult.error;
+  const participantSchemaUnavailable = ['42P01', 'PGRST205'].includes(participantResult.error?.code);
+  if (participantResult.error && !participantSchemaUnavailable) throw participantResult.error;
 
   const fixedById = (fixedResult.data || []).reduce((acc, row) => ({ ...acc, [row.id]: row }), {});
   const financeByRequest = (financeResult.data || []).reduce((acc, row) => {
+    if (!row.booking_request_id) return acc;
+    if (!acc[row.booking_request_id]) acc[row.booking_request_id] = [];
+    acc[row.booking_request_id].push(row);
+    return acc;
+  }, {});
+  const participantsByRequest = (participantResult.data || []).reduce((acc, row) => {
     if (!row.booking_request_id) return acc;
     if (!acc[row.booking_request_id]) acc[row.booking_request_id] = [];
     acc[row.booking_request_id].push(row);
@@ -478,7 +492,9 @@ export async function listBookingRequests(filters = {}) {
   return requests.map((request) => ({
     ...request,
     fixed_excursion: fixedById[request.fixed_excursion_id] || null,
-    finance_entries: financeByRequest[request.id] || []
+    finance_entries: financeByRequest[request.id] || [],
+    booking_participants: participantsByRequest[request.id] || [],
+    participant_foundation_available: !participantSchemaUnavailable
   }));
 }
 

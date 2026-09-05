@@ -225,6 +225,15 @@ export async function revokeNotificationOwnership(id) { return api('public', `ow
 export async function updateNotificationOwnershipPreferences(id, preferences) {
   return api('public', `ownership/${encodeURIComponent(id)}/preferences`, { method: 'PATCH', body: JSON.stringify(preferences) });
 }
+export async function getOwnedBookingParticipants(ownershipId) {
+  return api('public', `ownership/${encodeURIComponent(ownershipId)}/participants`, { method: 'GET' });
+}
+export async function addOwnedBookingParticipant(ownershipId, participant) {
+  return api('public', `ownership/${encodeURIComponent(ownershipId)}/participants`, { method: 'POST', body: JSON.stringify(participant) });
+}
+export async function updateOwnedBookingParticipant(ownershipId, participantId, changes) {
+  return api('public', `ownership/${encodeURIComponent(ownershipId)}/participants/${encodeURIComponent(participantId)}`, { method: 'PATCH', body: JSON.stringify(changes) });
+}
 export async function publishCustomerNotificationEvent() {
   return api('admin', 'personalized-events/reconcile', { method: 'POST', body: '{}' });
 }

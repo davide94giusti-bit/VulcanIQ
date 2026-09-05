@@ -1,6 +1,6 @@
-# PWA onboarding, browser storage audit, and deferred Terms architecture
+# Unified onboarding, participant foundation, and deferred Terms architecture
 
-Status: implementation record for PWA/privacy preference work and **design only** for contractual acceptance. No database migration is part of this change.
+Status: implementation record for unified PWA/privacy onboarding and the Phase 1 participant foundation. **Terms acceptance remains deferred and design-only.** The additive participant migrations are authored for local validation but are not applied to shared Preview or Production.
 
 ## Browser storage and tracker audit
 
@@ -8,7 +8,8 @@ The source audit found no `document.cookie`, Google Analytics/Tag Manager, Meta/
 
 | Technology / storage | Provider | Purpose | Party / category | Device access and retention | Pre-choice behavior after this change | Consent decision | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Public language | vulcanIQ | Remember IT/EN | First-party, functional | `localStorage`, until cleared | Allowed | Necessary to remember an explicit UI choice | `src/main.jsx` |
+| Public language | vulcanIQ | Remember IT/EN | First-party, functional | Existing `vulcaniq_public_language` localStorage key, until cleared | Allowed | Necessary to remember an explicit UI choice | `src/services/languagePreference.js` |
+| First-run completion | vulcanIQ | Avoid repeating completed setup steps | First-party, functional | `localStorage`, until cleared; no PII | Allowed | Necessary to respect completed language/privacy/notification choices | `src/services/firstRunOnboarding.js` |
 | Last-known Hero media | vulcanIQ | Prevent stale/skeleton first paint | First-party, functional | `localStorage`, replaced by latest valid media | Allowed | Necessary UI performance state | `src/main.jsx` |
 | Fast Request draft | vulcanIQ | Recover non-contact answers for 24 hours | First-party, functional | `localStorage`, explicit 24-hour expiry; no name/email/phone | Allowed | Necessary request recovery | `src/main.jsx` |
 | Form journey state | vulcanIQ | Request recovery, abandonment state and stable submission idempotency | First-party, functional | `localStorage`, 24-hour TTL; no contact PII | Allowed; analytics emission is blocked | Necessary for reliable user-requested form submission; not permission to emit analytics | `src/analytics.js` |
@@ -24,37 +25,40 @@ The source audit found no `document.cookie`, Google Analytics/Tag Manager, Meta/
 
 Decision: **Case B**. Persistent custom analytics identifiers are not required to deliver the page, PWA, request, or notification service. The release therefore blocks custom analytics events/heartbeat, analytics visitor/session/first-touch persistence, and Cloudflare Web Analytics until a positive analytics choice. Reject, Customize, and Accept are available; the only optional category is unchecked in Customize for a visitor who has not decided. “Privacy preferences” in the footer permits withdrawal/change. Rejecting analytics does not block PWA install, forms, referrals, notifications, language, or Hero caching. This engineering control is not itself a claim of legal compliance; controller disclosures, processor terms and retention still require owner/counsel confirmation.
 
-## PWA and notification onboarding contract
+## Unified first-run onboarding contract
 
+- A single focus-trapped dialog coordinates Language → Privacy & analytics → installation-aware notifications; the three choices remain independent.
+- Browser/device locale recommends Italiano for `it*` and English otherwise, but the visitor must activate a visible language choice. The existing public language key and Header control remain authoritative.
+- Privacy remains required when unresolved. Reject and Not now both complete setup without restricting application use.
 - Installed state is derived from `display-mode: standalone` or iOS `navigator.standalone`; `appinstalled` and display-mode changes refresh the Header.
-- A captured `beforeinstallprompt` is invoked only from the Header's **Install app** click. iOS without standalone mode goes to the existing `/install` Add to Home Screen instructions.
+- A captured `beforeinstallprompt` is invoked only from an explicit **Install app** click. iOS without standalone mode receives Add to Home Screen guidance and no invalid push-permission call.
 - Installed clients see **My notifications** and the existing device-scoped unread badge; the action opens `/install`, not a duplicate settings area.
-- Notification onboarding is eligible only in installed standalone mode, on the home page, after the privacy choice is resolved, and when no body-scroll-lock modal is active.
+- Notification onboarding follows privacy in the same state machine. Returning users retain the existing 30-day Not now re-prompt interval.
 - The application dialog never calls `Notification.requestPermission()` on load. The existing `enableNotifications()` flow is invoked synchronously from the explicit **Enable notifications** click.
 - States are: installation required, unsupported, never asked, deferred, permission granted without an active subscription, permission denied, and active subscription. Permission-denied and active-subscription clients are not prompted.
 - **Not now**, Escape, backdrop dismissal, or a dismissed browser permission prompt defers the application prompt for 30 days. The preference contains no PII.
 - On supported installed clients, `setAppBadge`/`clearAppBadge` uses the same authoritative public unread count. Failure or lack of support is non-fatal.
 
-## Verified legal architecture gap
+## Verified legal architecture boundary
 
-Current `booking_requests` stores aggregate `adults`, `children`, and `children_under_3` data. It has no canonical participant row, stable participant identity, guardian relationship, accepting actor, immutable Terms version, content hash, or transaction-linked acceptance event. A request is `pending` until an Admin decision; accepted/confirmed/completed lifecycle concepts exist, but a submitted request is not represented as an online paid order. Gift Card payment is recorded by an Admin lifecycle function, and Gift Card redemption creates a booking without creating new revenue. The current static Terms cannot serve as immutable evidence.
+`booking_requests` remains the canonical booking entity. Initial requests continue to store aggregate `adults`, `children`, and `children_under_3` data and remain lightweight. Phase 1 adds stable named participant rows only after `status = accepted`; it still has no accepting actor, immutable Terms version, content hash, or transaction-linked acceptance event. Gift Card payment remains an Admin lifecycle event, and Gift Card redemption still creates a booking without creating new revenue. The current static Terms cannot serve as immutable acceptance evidence.
 
-Because the seven owner/legal decisions below are unresolved, live Terms checkboxes, participant UI, reminder jobs, tables, RLS and migrations are intentionally not implemented.
+Because the owner/legal decisions below are unresolved, live Terms checkboxes, acceptance links, acceptance evidence, and reminder jobs are intentionally not implemented.
 
-## Proposed participant model
+## Implemented Phase 1 participant model
 
-Add a canonical `booking_participants` aggregate only after approval. Candidate minimized fields:
+The additive `booking_participants` model uses the verified `booking_requests.id` lifecycle key:
 
 | Concept | Proposed representation |
 | --- | --- |
 | Identity | UUID primary key; `booking_request_id` foreign key; immutable creation timestamp |
-| Role | constrained `organizer`, `adult`, or `minor`; exactly one organizer unless an approved exception exists |
-| Display/contact | participant name and optional individual acceptance-delivery contact only when operationally/legal necessary; do not require accounts |
-| Minor representation | nullable guardian participant/actor reference plus explicit relationship/representation type; no child self-acceptance |
-| Lifecycle | active/removed timestamps and append-only change audit; never delete merely to rewrite evidence |
+| Role | constrained adult/minor plus one active adult organizer per booking |
+| Display/contact | full name only; no participant email, phone, account or identity document |
+| Minor representation | required active adult guardian participant from the same booking; no legal acceptance is implied |
+| Lifecycle | active/removed status and timestamps; booking deletion is restricted so records are preserved |
 | Privacy boundary | no health data, document number, raw IP, device fingerprint, or unnecessary user agent in the base model |
 
-Preferred staged flow: the organizer submits an initial availability request without naming every participant. After explicit booking confirmation, the organizer completes the participant list, accepts personally, identifies minors and guardians, and additional adults receive secure one-purpose acceptance links. `accepted_by_organizer` for unrelated adults is a distinct representation state and must not be enabled without legal approval.
+The organizer submits an initial availability request without naming every participant. For new bookings that become accepted, a reliable canonical lead name may create the organizer prospectively. No historical identities are backfilled. In the protected owned-device area, actual participants may be completed and mismatches are shown without changing aggregate party totals. Admin has authorized read-only inspection in Phase 1. Acceptance remains a later phase: an organizer cannot be recorded as another adult's self-accepting actor.
 
 ## Proposed immutable Terms versions
 
@@ -112,17 +116,16 @@ Gift Card purchase Terms, recipient redemption Terms, and excursion/booking Term
 
 After approval, a `customer_terms_required` personalized event could be generated only for an active confirmed booking with pending required acceptance and valid notification ownership. Copy must be generic and privacy-safe; destination must be an owned internal completion route. Dedupe by transaction/version/participant requirement revision; stop on completion; cancel/supersede on cancellation, material reschedule or ownership revocation; never include guest names, codes, payment or health data; never broadcast when ownership is absent. Cron remains off, so scheduled reminders remain scheduler-dependent and are not enabled by this design.
 
-## Migration sequence (proposal only)
+## Migration sequence
 
-1. Resolve legal/product decisions and approve final document purposes/content.
-2. Add immutable `terms_versions`, then publish approved initial versions without altering the current static page in place.
-3. Add `booking_participants` and representation constraints; define conversion for future bookings only. Do not fabricate historical participants.
-4. Add hashed one-time acceptance invitations and append-only `terms_acceptances` with server-only mutation functions.
-5. Add least-privilege grants/RLS and transactional role fixtures.
-6. Add Admin/customer status UI and explicit per-transaction server enforcement behind a rollout gate.
-7. Only then add personalized reminder event/outbox integration; scheduler/Cron remains a separate approval.
+1. **Now:** add `booking_participants`, guardian/organizer constraints, least-privilege access, owned-device locator, and guarded customer/Admin UI. Do not fabricate historical participants.
+2. Resolve legal/product decisions and approve final document purposes/content.
+3. **Later:** add immutable `terms_versions`, then publish approved initial versions without altering the current static page in place.
+4. **Later:** add hashed one-time acceptance invitations and append-only `terms_acceptances` with server-only mutation functions.
+5. Add explicit per-transaction server enforcement only after legal approval and transactional role tests.
+6. Only then add personalized reminder event/outbox integration; scheduler/Cron remains a separate approval.
 
-No migration file is created in this branch. A future migration must be additive and forward-only, pass a fresh local reset, preserve historical rows as unknown/not-required according to an approved policy, and must not be applied to shared Preview/Production without explicit approval.
+Migration files `20260905100000_booking_participants_foundation.sql` and `0006_participant_ownership_locator.sql` are additive and forward-only. They preserve historical rows without backfill and must pass local migration checks. Neither may be applied to shared Preview/Production without explicit approval. If rollback is required after application, use a reviewed forward migration; do not rewrite applied history.
 
 ## Unresolved owner/legal decisions
 
