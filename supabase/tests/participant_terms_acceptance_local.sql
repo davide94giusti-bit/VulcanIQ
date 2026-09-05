@@ -17,6 +17,7 @@ declare
   superseded_adult_id uuid := '32000000-0000-4000-8000-000000000008';
   other_organizer_id uuid := '32000000-0000-4000-8000-000000000009';
   other_adult_id uuid := '32000000-0000-4000-8000-000000000010';
+  delivery_failure_adult_id uuid := '32000000-0000-4000-8000-000000000011';
   request_version_id uuid := '33000000-0000-4000-8000-000000000001';
   excursion_en_v1_id uuid := '33000000-0000-4000-8000-000000000002';
   excursion_it_v1_id uuid := '33000000-0000-4000-8000-000000000003';
@@ -31,6 +32,7 @@ declare
   cancelled_hash text := repeat('2', 64);
   italian_hash text := repeat('3', 64);
   superseded_hash text := repeat('4', 64);
+  delivery_failure_hash text := repeat('8', 64);
   issued record;
   reissued record;
   resolved record;
@@ -44,6 +46,9 @@ declare
   revoked_rejected boolean := false;
   cross_booking_rejected boolean := false;
   organizer_rejected boolean := false;
+  organizer_guardian_link_rejected boolean := false;
+  unrelated_guardian_rejected boolean := false;
+  delivery_failure_revoked boolean := false;
   guardian_reaccept_rejected boolean := false;
   guardian_change_rejected boolean := false;
   removed_rejected boolean := false;
@@ -76,7 +81,8 @@ begin
     (italian_adult_id, booking_id, 'Adulto Italiano', 'adult', false, null, 'active'),
     (superseded_adult_id, booking_id, 'Superseded Adult', 'adult', false, null, 'active'),
     (other_organizer_id, other_booking_id, 'Other Organizer', 'adult', true, null, 'active'),
-    (other_adult_id, other_booking_id, 'Other Adult', 'adult', false, null, 'active');
+    (other_adult_id, other_booking_id, 'Other Adult', 'adult', false, null, 'active'),
+    (delivery_failure_adult_id, booking_id, 'Delivery Failure Adult', 'adult', false, null, 'active');
 
   begin
     perform public.issue_participant_terms_acceptance_invitation(
@@ -163,6 +169,21 @@ begin
       'service_role',
       'public.accept_participant_terms_acceptance_invitation(text)',
       'execute'
+    )
+    or has_function_privilege(
+      'authenticated',
+      'public.record_owned_organizer_guardian_terms_acceptance(uuid,uuid,uuid,uuid,text)',
+      'execute'
+    )
+    or has_function_privilege(
+      'anon',
+      'public.revoke_failed_participant_terms_email_invitation(uuid,text)',
+      'execute'
+    )
+    or not has_function_privilege(
+      'service_role',
+      'public.record_owned_organizer_guardian_terms_acceptance(uuid,uuid,uuid,uuid,text)',
+      'execute'
     ) then
     raise exception 'participant_terms_test_writer_privilege';
   end if;
@@ -198,7 +219,7 @@ begin
       and invitation.issued_by_participant_id = organizer_id
       and invitation.terms_version_id = excursion_en_v1_id
       and invitation.token_hash = first_hash
-      and invitation.source_context = 'owned_booking_copy_link'
+      and invitation.source_context = 'participant_email_delivery'
       and invitation.expires_at = invitation.issued_at + interval '24 hours'
       and invitation.created_at = invitation.issued_at
       and invitation.consumed_at is null
@@ -309,25 +330,36 @@ begin
     raise exception 'participant_terms_test_consumed_invitation_revoked';
   end if;
 
-  select * into issued
-  from public.issue_participant_terms_acceptance_invitation(
-    booking_id, minor_id, organizer_id, 'en', guardian_hash
-  );
-  if issued.representation_type <> 'parent_or_guardian'
-    or not exists (
-      select 1
-      from public.terms_acceptance_invitations invitation
-      where invitation.id = issued.invitation_id
-        and invitation.participant_id = minor_id
-        and invitation.actor_participant_id = organizer_id
-    ) then
-    raise exception 'participant_terms_test_guardian_invitation';
+  begin
+    perform public.issue_participant_terms_acceptance_invitation(
+      booking_id, minor_id, organizer_id, 'en', guardian_hash
+    );
+  exception when others then
+    organizer_guardian_link_rejected := sqlerrm = 'terms_invitation_guardian_owned_flow_required';
+  end;
+  if not organizer_guardian_link_rejected then
+    raise exception 'participant_terms_test_organizer_guardian_link_allowed';
   end if;
+
+  begin
+    perform public.record_owned_organizer_guardian_terms_acceptance(
+      booking_id, minor_id, other_guardian_id, excursion_en_v1_id, 'en'
+    );
+  exception when others then
+    unrelated_guardian_rejected := sqlerrm = 'terms_guardian_invalid';
+  end;
+  if not unrelated_guardian_rejected then
+    raise exception 'participant_terms_test_unrelated_guardian_allowed';
+  end if;
+
   select * into guardian_accepted
-  from public.accept_participant_terms_acceptance_invitation(guardian_hash);
-  if guardian_accepted.participant_name <> 'Local Minor'
-    or guardian_accepted.actor_name <> 'Local Organizer'
+  from public.record_owned_organizer_guardian_terms_acceptance(
+    booking_id, minor_id, organizer_id, excursion_en_v1_id, 'en'
+  );
+  if guardian_accepted.participant_id <> minor_id
+    or guardian_accepted.actor_participant_id <> organizer_id
     or guardian_accepted.representation_type <> 'parent_or_guardian'
+    or guardian_accepted.source_context <> 'owned_booking_guardian'
     or not exists (
       select 1
       from public.terms_acceptances acceptance
@@ -336,6 +368,33 @@ begin
         and acceptance.representation_type = 'parent_or_guardian'
     ) then
     raise exception 'participant_terms_test_guardian_evidence';
+  end if;
+  perform public.record_owned_organizer_guardian_terms_acceptance(
+    booking_id, minor_id, organizer_id, excursion_en_v1_id, 'en'
+  );
+  if (select count(*) from public.terms_acceptances where participant_id = minor_id and terms_version_id = excursion_en_v1_id) <> 1 then
+    raise exception 'participant_terms_test_guardian_idempotency';
+  end if;
+
+  select * into issued
+  from public.issue_participant_terms_acceptance_invitation(
+    booking_id, delivery_failure_adult_id, organizer_id, 'en', delivery_failure_hash
+  );
+  select public.revoke_failed_participant_terms_email_invitation(issued.invitation_id, delivery_failure_hash)
+  into delivery_failure_revoked;
+  if not delivery_failure_revoked
+    or not exists (
+      select 1 from public.terms_acceptance_invitations invitation
+      where invitation.id = issued.invitation_id
+        and invitation.revocation_reason = 'delivery_failed'
+        and invitation.revoked_at is not null
+    ) then
+    raise exception 'participant_terms_test_delivery_failure_scope';
+  end if;
+  select public.revoke_failed_participant_terms_email_invitation(issued.invitation_id, repeat('9', 64))
+  into delivery_failure_revoked;
+  if delivery_failure_revoked then
+    raise exception 'participant_terms_test_delivery_failure_scope';
   end if;
 
   -- Changing the configured guardian after a valid acceptance does not
@@ -385,12 +444,15 @@ begin
     raise exception 'participant_terms_test_cross_booking_issue_allowed';
   end if;
 
+  update public.booking_participants
+  set guardian_participant_id = other_guardian_id
+  where id = changed_minor_id;
   select * into issued
   from public.issue_participant_terms_acceptance_invitation(
     booking_id, changed_minor_id, organizer_id, 'en', changed_guardian_hash
   );
   update public.booking_participants
-  set guardian_participant_id = other_guardian_id
+  set guardian_participant_id = organizer_id
   where id = changed_minor_id;
   begin
     perform public.accept_participant_terms_acceptance_invitation(changed_guardian_hash);
