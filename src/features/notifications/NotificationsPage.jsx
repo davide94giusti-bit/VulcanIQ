@@ -45,6 +45,7 @@ function InstallCard({ variant, lang }) {
       {state === 'already_installed' && <p className="notification-status success">{c(lang, 'App installata o aperta in modalità standalone.', 'App installed or running standalone.')}</p>}
       {state === 'install_available' && <button className="button primary" type="button" onClick={async () => { await promptInstall(); setState(installState()); }}>{c(lang, `Installa ${name}`, `Install ${name}`)}</button>}
       {state === 'needs_ios_home_screen' && <div className="ios-install-guide"><p>{c(lang, 'Su iPhone/iPad usa Safari:', 'On iPhone/iPad use Safari:')}</p><ol><li>{c(lang, <>Apri <a href={installRoute}>{installRoute}</a> in Safari.</>, <>Open <a href={installRoute}>{installRoute}</a> in Safari.</>)}</li><li>{c(lang, 'Tocca Condividi. Tocca Aggiungi alla schermata Home.', 'Tap Share. Tap Add to Home Screen.')}</li><li>{c(lang, `Avvia ${name} dalla schermata Home.`, `Launch ${name} from the Home Screen.`)}</li></ol></div>}
+      {state === 'install_dismissed' && <p>{c(lang, 'Installazione non completata. Il browser potrà riproporre l’installazione in seguito.', 'Installation was not completed. The browser may offer it again later.')}</p>}
       {state === 'unsupported' && <p>{c(lang, 'Il browser non espone un prompt di installazione.', 'This browser does not expose an install prompt.')}</p>}
     </div>
   </DisclosureCard>;

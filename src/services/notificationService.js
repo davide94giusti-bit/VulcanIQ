@@ -1,14 +1,19 @@
 import { supabase } from '../lib/supabaseClient.js';
 
 let deferredInstallPrompt = null;
+let installPromptDismissed = false;
+const PUBLIC_ONBOARDING_KEY = 'vulcaniq.notifications.public.onboarding.v1';
+const PUBLIC_ONBOARDING_DEFER_MS = 30 * 24 * 60 * 60 * 1000;
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault();
     deferredInstallPrompt = event;
+    installPromptDismissed = false;
     window.dispatchEvent(new CustomEvent('vulcaniq-install-state-changed'));
   });
   window.addEventListener('appinstalled', () => {
     deferredInstallPrompt = null;
+    installPromptDismissed = false;
     window.dispatchEvent(new CustomEvent('vulcaniq-install-state-changed'));
   });
 }
@@ -31,18 +36,78 @@ function isIos() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navi
 function isSafari() { return /safari/i.test(navigator.userAgent) && !/chrome|crios|android/i.test(navigator.userAgent); }
 export function isStandalone() { return window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true; }
 export function installState() {
-  if (!('serviceWorker' in navigator)) return 'unsupported';
   if (isStandalone()) return 'already_installed';
+  if (!('serviceWorker' in navigator)) return 'unsupported';
   if (deferredInstallPrompt) return 'install_available';
   if (isIos()) return 'needs_ios_home_screen';
+  if (installPromptDismissed) return 'install_dismissed';
   return 'unsupported';
 }
 export async function promptInstall() {
   if (!deferredInstallPrompt) return { outcome: 'unavailable' };
-  await deferredInstallPrompt.prompt();
-  const choice = await deferredInstallPrompt.userChoice.catch(() => ({ outcome: 'dismissed' }));
-  if (choice?.outcome === 'accepted') deferredInstallPrompt = null;
+  const prompt = deferredInstallPrompt;
+  deferredInstallPrompt = null;
+  let choice;
+  try {
+    await prompt.prompt();
+    choice = await prompt.userChoice.catch(() => ({ outcome: 'dismissed' }));
+  } catch {
+    choice = { outcome: 'dismissed' };
+  }
+  installPromptDismissed = choice?.outcome !== 'accepted';
+  window.dispatchEvent(new CustomEvent('vulcaniq-install-state-changed'));
   return choice || { outcome: 'dismissed' };
+}
+export function readPublicNotificationOnboarding() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PUBLIC_ONBOARDING_KEY) || '{}');
+    return {
+      status: ['not_now', 'enabled'].includes(parsed.status) ? parsed.status : 'never_asked',
+      nextPromptAt: Number(parsed.nextPromptAt || 0)
+    };
+  } catch {
+    return { status: 'never_asked', nextPromptAt: 0 };
+  }
+}
+export function deferPublicNotificationOnboarding(now = Date.now()) {
+  const next = { status: 'not_now', nextPromptAt: Number(now) + PUBLIC_ONBOARDING_DEFER_MS };
+  try { window.localStorage.setItem(PUBLIC_ONBOARDING_KEY, JSON.stringify(next)); } catch {}
+  return next;
+}
+export function completePublicNotificationOnboarding() {
+  const next = { status: 'enabled', nextPromptAt: 0 };
+  try { window.localStorage.setItem(PUBLIC_ONBOARDING_KEY, JSON.stringify(next)); } catch {}
+  return next;
+}
+export async function publicNotificationOnboardingState(now = Date.now()) {
+  if (!isStandalone()) return 'installation_required';
+  const capability = capabilityState();
+  if (capability === 'unsupported') return 'unsupported';
+  if (capability === 'permission_denied') return 'permission_denied';
+  if (capability === 'permission_granted') {
+    try {
+      const registration = await navigator.serviceWorker.getRegistration('/');
+      if (await registration?.pushManager?.getSubscription?.()) return 'subscription_active';
+    } catch { /* an explicit Enable action can retry registration safely */ }
+  }
+  const onboarding = readPublicNotificationOnboarding();
+  if (onboarding.status === 'not_now' && onboarding.nextPromptAt > Number(now)) return 'deferred';
+  return capability === 'permission_granted' ? 'permission_granted' : 'never_asked';
+}
+export async function syncPublicAppBadge(unreadCount) {
+  if (!isStandalone()) return false;
+  const count = Math.max(0, Number(unreadCount || 0));
+  try {
+    if (count > 0 && typeof navigator.setAppBadge === 'function') {
+      await navigator.setAppBadge(count);
+      return true;
+    }
+    if (count === 0 && typeof navigator.clearAppBadge === 'function') {
+      await navigator.clearAppBadge();
+      return true;
+    }
+  } catch { /* browser-level badging failure is non-fatal */ }
+  return false;
 }
 function base64UrlToBytes(value) {
   const padding = '='.repeat((4 - value.length % 4) % 4);

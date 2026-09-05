@@ -16,6 +16,7 @@ import {
   summaryToAdminModelPatch,
   uniquePageViewVisitors
 } from '../src/features/analytics/contract.js';
+import { readPrivacyPreferences, writePrivacyPreferences } from '../src/services/privacyPreferences.js';
 
 const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -165,6 +166,59 @@ const recap = read('supabase/functions/send-weekly-admin-recap/index.ts');
 const email = read('supabase/functions/_shared/weeklyRecapEmail.ts');
 const ingestion = read('functions/api/analytics/event.js');
 const browserAnalytics = read('src/analytics.js');
+const privacyPreferences = read('src/features/privacy/PrivacyPreferences.jsx');
+const privacyService = read('src/services/privacyPreferences.js');
+const privacyArchitecture = read('docs/PWA_PRIVACY_TERMS_ARCHITECTURE_20260905.md');
+
+test('privacy preference storage preserves an explicit analytics choice', () => {
+  const priorWindow = globalThis.window;
+  const priorCustomEvent = globalThis.CustomEvent;
+  const values = new Map();
+  globalThis.CustomEvent = class { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } };
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => values.get(key) || null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => values.delete(key)
+    },
+    dispatchEvent: () => true
+  };
+  try {
+    assert.equal(readPrivacyPreferences().analytics, null);
+    writePrivacyPreferences({ analytics: false });
+    assert.equal(readPrivacyPreferences().analytics, false);
+    writePrivacyPreferences({ analytics: true });
+    assert.equal(readPrivacyPreferences().analytics, true);
+  } finally {
+    if (priorWindow === undefined) delete globalThis.window; else globalThis.window = priorWindow;
+    if (priorCustomEvent === undefined) delete globalThis.CustomEvent; else globalThis.CustomEvent = priorCustomEvent;
+  }
+});
+
+test('optional analytics and Cloudflare beacon are blocked before positive consent', () => {
+  assert.match(browserAnalytics, /analyticsConsentGranted\(\).*![\s\S]*analyticsOptedOut\(\)/);
+  assert.match(browserAnalytics, /const storage = analyticsConsentGranted\(\) \? browserStorage\('local'\) : null/);
+  assert.match(adminSource, /if \(!analyticsAllowed\) \{ existing\?\.remove\(\); return undefined; \}/);
+  assert.match(adminSource, /if \(analyticsAllowed\) trackPageView/);
+  assert.match(adminSource, /analyticsDisabledForRoute \|\| !analyticsAllowed/);
+});
+
+test('analytics preference UX supports reject, customize, accept, withdrawal and separation', () => {
+  for (const label of ['Reject', 'Customize', 'Accept analytics', 'Privacy preferences']) assert.ok(`${privacyPreferences}\n${adminSource}`.includes(label), label);
+  assert.match(privacyPreferences, /checked=\{analytics\}/);
+  assert.match(privacyPreferences, /current\?\.analytics === true/);
+  assert.match(adminSource, /onOpenPrivacyPreferences/);
+  assert.match(privacyArchitecture, /Rejecting analytics does not block PWA install, forms, referrals, notifications/);
+  assert.match(privacyService, /typeof analytics !== 'boolean'/);
+});
+
+test('rejecting analytics removes only optional analytics identifiers', () => {
+  const clearStart = browserAnalytics.indexOf('export function clearOptionalAnalyticsStorage');
+  const clearEnd = browserAnalytics.indexOf("if (typeof window !== 'undefined')", clearStart);
+  const clearBlock = browserAnalytics.slice(clearStart, clearEnd);
+  for (const key of ['VISITOR_KEY', 'FIRST_TOUCH_KEY', 'SESSION_KEY', 'PAGEVIEW_COUNT_KEY']) assert.ok(clearBlock.includes(`removeItem(${key})`), key);
+  assert.doesNotMatch(clearBlock, /FORM_JOURNEY_STORAGE_KEY|vulcaniq_fast_request|vulcaniq_public_language|notifications/);
+});
 
 test('canonical experience demand includes compatible database request counts', () => {
   assert.match(migration, /'database_requests', coalesce\(r\.database_requests, 0\)/);

@@ -22,7 +22,7 @@ import { createCustomerReferralCode, disableCustomerReferralCode, listCustomerRe
 import { trackPageView, trackLanguageSwitch, trackExcursionView, trackExperienceCardView, trackExperienceDetailOpen, trackCalendarDateSelect, trackBookingFormOpen, trackBookingFormStarted, trackBookingFormStepCompleted, trackBookingFormFieldStart, trackBookingSubmitValidationError, trackContactClick, trackMapsClick, trackReviewView, trackEvent, startAnalyticsHeartbeat, getAnalyticsIdentitySnapshot, isAnalyticsBrowserExcluded, setAnalyticsBrowserExcluded, createFormJourney, markFormFieldStarted, markFormActivity, markFormSubmitted, markFormAbandoned, markFormRecoveredViaWhatsApp } from './analytics.js';
 import { buildApprovalReply, buildDeclineReply, replySubject, requestLang, normalizePhoneForWhatsApp, hasLikelyCountryCode } from './services/replyMessages.js';
 import { submitPublicBookingRequestWithTracking } from './services/publicBookingSubmit.js';
-import { claimRequestedNotificationOwnership, listNotificationInbox, publishCustomerNotificationEvent } from './services/notificationService.js';
+import { claimRequestedNotificationOwnership, installState, listNotificationInbox, promptInstall, publishCustomerNotificationEvent, syncPublicAppBadge } from './services/notificationService.js';
 import { formatCurrencyAmount, normalizeCurrency, parseMoneyAmount } from './utils/money.js';
 import { paymentSummary, financeEntryHasBusinessSource, financeEntryIsRecognized, calculateLedgerSummary, buildFinancialReconciliation } from './domain/financeModel.js';
 import { applySeo } from './seo.js';
@@ -37,7 +37,10 @@ import AnalyticsCanonicalFunnels from './features/analytics/AnalyticsCanonicalFu
 import ReviewsPage from './features/reviews/ReviewsPage.jsx';
 import GoogleReviewsAdminStatus from './features/reviews/GoogleReviewsAdminStatus.jsx';
 import NotificationsPage from './features/notifications/NotificationsPage.jsx';
+import NotificationOnboarding from './features/notifications/NotificationOnboarding.jsx';
 import NotificationUnreadBadge from './features/notifications/NotificationUnreadBadge.jsx';
+import PrivacyPreferences from './features/privacy/PrivacyPreferences.jsx';
+import { PRIVACY_PREFERENCES_EVENT, readPrivacyPreferences, writePrivacyPreferences } from './services/privacyPreferences.js';
 import { notificationUnreadAriaLabel, unreadNotificationCount } from './domain/notificationInbox.js';
 import AskNeoPanel from './features/neo/AskNeoPanel.jsx';
 import { normalizeReviewText, reviewSourceLabel } from './features/reviews/reviewModel.js';
@@ -2258,9 +2261,22 @@ function BrandLogo({ compact = false, siteMedia, editor }) {
 const publicPages = ['home', 'experiences', 'partnerships', 'about', 'reviews', 'social', 'latestNews', 'contact'];
 function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor, publicUnreadCount = null }) {
   const [open, setOpen] = useState(false);
+  const [pwaInstallState, setPwaInstallState] = useState(() => installState());
   const switchLanguage = () => setLang(lang === 'it' ? 'en' : 'it');
   const languageAria = lang === 'it' ? 'Switch to English' : "Passa all'italiano";
-  const notificationLabel = lang === 'it' ? 'Installazione e notifiche' : 'Install & Notifications';
+  const installed = pwaInstallState === 'already_installed';
+  const contextualLabel = installed ? (lang === 'it' ? 'Le mie notifiche' : 'My notifications') : (lang === 'it' ? 'Installa app' : 'Install app');
+
+  useEffect(() => {
+    const sync = () => setPwaInstallState(installState());
+    window.addEventListener('vulcaniq-install-state-changed', sync);
+    const media = window.matchMedia?.('(display-mode: standalone)');
+    media?.addEventListener?.('change', sync);
+    return () => {
+      window.removeEventListener('vulcaniq-install-state-changed', sync);
+      media?.removeEventListener?.('change', sync);
+    };
+  }, []);
 
   function choose(page) {
     setActivePage(page);
@@ -2269,15 +2285,27 @@ function Header({ lang, setLang, activePage, setActivePage, siteMedia, editor, p
     window.setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
   }
 
+  async function useContextualAction() {
+    if (installed) { choose('install'); return; }
+    if (pwaInstallState === 'install_available') {
+      await promptInstall();
+      setPwaInstallState(installState());
+      return;
+    }
+    choose('install');
+  }
+
   return (
     <header className="site-header">
       <div className="container nav-shell">
-        <button className="nav-toggle" type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-controls="site-nav">Menu</button>
+        <div className="header-context-actions">
+          <button className="nav-toggle" type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-controls="site-nav">Menu</button>
+          <button type="button" className={`header-pwa-action ${installed && activePage === 'install' ? 'active' : ''}`} aria-label={installed ? notificationUnreadAriaLabel(contextualLabel, publicUnreadCount, lang) : contextualLabel} onClick={useContextualAction}><span className="public-notification-nav-label"><span>{contextualLabel}</span>{installed && <NotificationUnreadBadge count={publicUnreadCount}/>}</span></button>
+        </div>
         <nav id="site-nav" className={`nav-links ${open ? 'open' : ''}`} aria-label="Primary navigation">
           {publicPages.map((page, index) => (
             <button key={page} type="button" className={activePage === page ? 'active' : ''} onClick={() => choose(page)}>{i18n[lang].nav[index]}</button>
           ))}
-          <button type="button" className={activePage === 'install' ? 'active' : ''} aria-label={notificationUnreadAriaLabel(notificationLabel, publicUnreadCount, lang)} onClick={() => choose('install')}><span className="public-notification-nav-label"><span>{notificationLabel}</span><NotificationUnreadBadge count={publicUnreadCount}/></span></button>
           <button className="language-toggle desktop-language-toggle" type="button" onClick={switchLanguage} aria-label={languageAria}>{i18n[lang].switchLabel}</button>
         </nav>
         <button className="mobile-language-switch" type="button" onClick={switchLanguage} aria-label={languageAria}>{i18n[lang].switchLabel}</button>
@@ -5800,7 +5828,7 @@ function LegalPage({ lang, page, siteContent, modal = false }) {
       sections: [
         [adminCopy(lang, 'Titolare del trattamento', 'Data controller'), adminCopy(lang, 'Il sito è gestito da vulcanIQ. Per richieste privacy puoi usare l’indirizzo email indicato nei contatti del sito.', 'The site is managed by vulcanIQ. For privacy requests, use the email address listed in the website contact details.')],
         [adminCopy(lang, 'Dati raccolti', 'Data collected'), adminCopy(lang, 'Possiamo ricevere dati inseriti nei moduli di contatto o prenotazione, come nome, telefono, email, preferenze di contatto, data richiesta, numero di partecipanti e testo del messaggio.', 'We may receive data entered in contact or booking forms, such as name, phone, email, contact preference, requested date, party size and message text.')],
-        [adminCopy(lang, 'Dati analytics', 'Analytics data'), adminCopy(lang, 'Il sito usa metriche anonime e privacy-first per capire visite, azioni di contatto, sorgenti UTM e percorso verso la richiesta di prenotazione. Nomi, email, numeri di telefono e testo dei messaggi non vengono inclusi negli analytics.', 'The site uses anonymous privacy-first metrics to understand visits, contact actions, UTM sources and the path toward booking requests. Names, emails, phone numbers and message text are not included in analytics.')],
+        [adminCopy(lang, 'Dati analytics', 'Analytics data'), adminCopy(lang, 'Solo dopo una scelta positiva, il sito usa metriche pseudonime e privacy-first per capire visite, azioni di contatto, sorgenti UTM e percorso verso la richiesta di prenotazione. Nomi, email, numeri di telefono e testo dei messaggi non vengono inclusi negli analytics. La scelta è modificabile dal piè di pagina.', 'Only after a positive choice, the site uses pseudonymous, privacy-first metrics to understand visits, contact actions, UTM sources and the path toward booking requests. Names, emails, phone numbers and message text are not included in analytics. The choice can be changed from the footer.')],
         [adminCopy(lang, 'Finalità', 'Purposes'), adminCopy(lang, 'I dati sono usati per rispondere alle richieste, gestire disponibilità e prenotazioni, migliorare il sito e mantenere sicurezza tecnica.', 'Data is used to answer requests, manage availability and bookings, improve the site and maintain technical security.')],
         [adminCopy(lang, 'Servizi terzi', 'Third-party services'), adminCopy(lang, 'Il sito può collegarsi a servizi esterni come WhatsApp, email, Google Maps, social network, Supabase e Cloudflare. Quando apri un link esterno, si applicano anche le policy del relativo servizio.', 'The site may link to external services such as WhatsApp, email, Google Maps, social networks, Supabase and Cloudflare. When you open an external link, that service’s policies also apply.')],
         [adminCopy(lang, 'Conservazione e diritti', 'Retention and rights'), adminCopy(lang, 'I dati vengono conservati per il tempo necessario alla gestione della richiesta e agli obblighi organizzativi o legali. Puoi chiedere accesso, rettifica o cancellazione contattando il team.', 'Data is retained for the time needed to manage the request and organizational or legal obligations. You may request access, correction or deletion by contacting the team.')],
@@ -5825,10 +5853,10 @@ function LegalPage({ lang, page, siteContent, modal = false }) {
       intro: adminCopy(lang, 'Questa pagina spiega l’uso di cookie e tecnologie simili sul sito vulcanIQ.', 'This page explains the use of cookies and similar technologies on the vulcanIQ website.'),
       sections: [
         [adminCopy(lang, 'Cosa sono i cookie', 'What cookies are'), adminCopy(lang, 'I cookie sono piccoli file o identificatori tecnici usati dal browser per far funzionare un sito o ricordare alcune informazioni.', 'Cookies are small files or technical identifiers used by the browser to operate a site or remember certain information.')],
-        [adminCopy(lang, 'Cookie essenziali', 'Essential cookies'), adminCopy(lang, 'Il sito può usare dati tecnici essenziali per lingua, sessione, sicurezza, invio dei moduli e funzionamento dell’interfaccia.', 'The site may use essential technical data for language, session, security, form submission and interface operation.')],
-        [adminCopy(lang, 'Analytics', 'Analytics'), adminCopy(lang, 'Le metriche del sito sono configurate per essere anonime e diagnostiche. Se il browser invia preferenze Do Not Track o segnali simili, il tracciamento viene limitato quando supportato dal sito.', 'Site metrics are configured to be anonymous and diagnostic. If the browser sends Do Not Track preferences or similar signals, tracking is limited where supported by the site.')],
+        [adminCopy(lang, 'Tecnologie necessarie', 'Necessary technologies'), adminCopy(lang, 'Il sito usa dati tecnici essenziali per lingua, sicurezza, invio e recupero dei moduli, installazione PWA, notifiche richieste e attribuzione dei referral. Queste funzioni restano disponibili anche rifiutando gli analytics.', 'The site uses essential technical data for language, security, form submission and recovery, PWA installation, requested notifications and referral attribution. These functions remain available when analytics is rejected.')],
+        [adminCopy(lang, 'Analytics facoltativi', 'Optional analytics'), adminCopy(lang, 'Solo dopo una scelta positiva, le metriche proprietarie creano identificatori casuali di visitatore e sessione e conservano l’attribuzione first-touch; viene inoltre caricato Cloudflare Web Analytics se configurato. Non sono presenti pixel pubblicitari. Do Not Track continua a disattivare le metriche proprietarie.', 'Only after a positive choice, first-party metrics create random visitor and session identifiers and retain first-touch attribution; Cloudflare Web Analytics is also loaded when configured. No advertising pixels are present. Do Not Track continues to disable first-party metrics.')],
         [adminCopy(lang, 'Servizi terzi', 'Third-party services'), adminCopy(lang, 'Link a Google Maps, social network, WhatsApp o altri servizi possono usare cookie propri solo dopo l’apertura del servizio esterno.', 'Links to Google Maps, social networks, WhatsApp or other services may use their own cookies only after the external service is opened.')],
-        [adminCopy(lang, 'Gestione cookie', 'Managing cookies'), adminCopy(lang, 'Puoi gestire o cancellare i cookie dalle impostazioni del browser. Il blocco di alcuni elementi tecnici può ridurre il corretto funzionamento del sito.', 'You can manage or delete cookies in your browser settings. Blocking some technical elements may reduce proper site functionality.')],
+        [adminCopy(lang, 'Gestione preferenze', 'Managing preferences'), adminCopy(lang, 'Puoi accettare, rifiutare o personalizzare gli analytics e cambiare scelta in seguito tramite “Preferenze privacy” nel piè di pagina. Quando gli analytics vengono rifiutati, gli identificatori analytics facoltativi salvati dal sito vengono rimossi.', 'You can accept, reject or customize analytics and later change your choice through “Privacy preferences” in the footer. When analytics is rejected, optional analytics identifiers stored by the site are removed.')],
         [adminCopy(lang, 'Contatto', 'Contact'), contact.email]
       ]
     }
@@ -5869,7 +5897,7 @@ function FinalCTA({ lang, siteContent }) {
   );
 }
 
-function Footer({ lang, siteContent, editor }) {
+function Footer({ lang, siteContent, editor, onOpenPrivacyPreferences }) {
   const contact = resolvePublicContactDetails(siteContent);
   const [footerBookNowOpen, setFooterBookNowOpen] = useState(false);
   const [phoneChoicesOpen, setPhoneChoicesOpen] = useState(false);
@@ -5956,6 +5984,7 @@ function Footer({ lang, siteContent, editor }) {
           <button className="footer-link-button" type="button" onClick={() => setLegalModalPage('privacy')}>Privacy Policy</button>
           <button className="footer-link-button" type="button" onClick={() => setLegalModalPage('terms')}>{adminCopy(lang, 'Termini e condizioni', 'Terms and Conditions')}</button>
           <button className="footer-link-button" type="button" onClick={() => setLegalModalPage('cookies')}>Cookie Policy</button>
+          <button className="footer-link-button" type="button" onClick={onOpenPrivacyPreferences}>{adminCopy(lang, 'Preferenze privacy', 'Privacy preferences')}</button>
         </section>
         <section className="footer-column">
           <h3>{adminCopy(lang, 'Social', 'Social')}</h3>
@@ -15745,9 +15774,18 @@ function App() {
   const [siteMedia, setSiteMedia] = useState(() => readCachedPublicHeroMedia());
   const [siteContent, setSiteContent] = useState({});
   const [publicUnreadCount, setPublicUnreadCount] = useState(null);
+  const [privacyPreferences, setPrivacyPreferences] = useState(() => readPrivacyPreferences());
+  const [privacyPreferencesOpen, setPrivacyPreferencesOpen] = useState(() => readPrivacyPreferences().analytics === null);
   const contactRef = useRef(null);
   const analyticsContextRef = useRef({ section: 'home', language: 'it' });
   const analyticsDisabledForRoute = pathname.startsWith('/admin');
+  const analyticsAllowed = privacyPreferences.analytics === true;
+
+  useEffect(() => {
+    const sync = (event) => setPrivacyPreferences(event.detail || readPrivacyPreferences());
+    window.addEventListener(PRIVACY_PREFERENCES_EVENT, sync);
+    return () => window.removeEventListener(PRIVACY_PREFERENCES_EVENT, sync);
+  }, []);
 
   const refreshPublicUnread = useCallback(async () => {
     try {
@@ -15814,9 +15852,9 @@ function App() {
   }, [activePage, lang]);
 
   useEffect(() => {
-    if (analyticsDisabledForRoute) return undefined;
+    if (analyticsDisabledForRoute || !analyticsAllowed) return undefined;
     return startAnalyticsHeartbeat(() => analyticsContextRef.current);
-  }, [analyticsDisabledForRoute]);
+  }, [analyticsAllowed, analyticsDisabledForRoute]);
 
   useEffect(() => {
     if (pathname.startsWith('/admin')) return;
@@ -15825,8 +15863,8 @@ function App() {
     const notFound = !legalPage && !route && !isReferralPath(pathname);
     const trackedSection = notFound ? 'not_found' : (legalPage ? `legal_${legalPage}` : activePage);
     const trackedPath = notFound || legalPage ? pathname : `/${activePage === 'home' ? '' : activePage}`;
-    trackPageView(trackedSection, { path: trackedPath, language: lang });
-  }, [activePage, lang, pathname]);
+    if (analyticsAllowed) trackPageView(trackedSection, { path: trackedPath, language: lang });
+  }, [activePage, analyticsAllowed, lang, pathname]);
 
   useEffect(() => {
     if (pathname.startsWith('/admin') || legalPageFromPathname(pathname)) return;
@@ -15844,14 +15882,22 @@ function App() {
 
   useEffect(() => {
     const token = import.meta.env.VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN;
-    if (!token || typeof document === 'undefined' || document.getElementById('cloudflare-web-analytics')) return;
+    const existing = typeof document === 'undefined' ? null : document.getElementById('cloudflare-web-analytics');
+    if (!analyticsAllowed) { existing?.remove(); return undefined; }
+    if (!token || typeof document === 'undefined' || existing) return undefined;
     const script = document.createElement('script');
     script.id = 'cloudflare-web-analytics';
     script.defer = true;
     script.src = 'https://static.cloudflareinsights.com/beacon.min.js';
     script.setAttribute('data-cf-beacon', JSON.stringify({ token }));
     document.head.appendChild(script);
-  }, []);
+    return () => script.remove();
+  }, [analyticsAllowed]);
+
+  useEffect(() => {
+    if (pathname.startsWith('/admin') || publicUnreadCount === null) return;
+    syncPublicAppBadge(publicUnreadCount);
+  }, [pathname, publicUnreadCount]);
 
   useEffect(() => {
     if (pathname.startsWith('/admin')) return;
@@ -15901,6 +15947,12 @@ function App() {
       }
       return resolved || current;
     });
+  }
+
+  function savePrivacyPreferences(next) {
+    const saved = writePrivacyPreferences(next);
+    setPrivacyPreferences(saved);
+    setPrivacyPreferencesOpen(false);
   }
 
   function scrollContactIntoView() {
@@ -15984,8 +16036,10 @@ function App() {
       <main ref={contactRef} className={`public-page-shell public-page-${activePage}`}>
         <DomainErrorBoundary resetKey={`${pathname}:${lang}`} lang={lang}>{renderPublicPage()}</DomainErrorBoundary>
       </main>
-      <Footer lang={lang} siteContent={siteContent} />
+      <Footer lang={lang} siteContent={siteContent} onOpenPrivacyPreferences={() => setPrivacyPreferencesOpen(true)} />
       <StickyMobileBar lang={lang} siteContent={siteContent} />
+      <NotificationOnboarding lang={lang} activePage={activePage} blocked={privacyPreferencesOpen || privacyPreferences.analytics === null} />
+      <PrivacyPreferences lang={lang} open={privacyPreferencesOpen} current={privacyPreferences} onSave={savePrivacyPreferences} onClose={() => setPrivacyPreferencesOpen(false)} />
     </>
   );
 }

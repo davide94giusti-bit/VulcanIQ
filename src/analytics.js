@@ -1,3 +1,5 @@
+import { analyticsConsentGranted, PRIVACY_PREFERENCES_EVENT } from './services/privacyPreferences.js';
+
 // Keep this analytics allowlist synchronized with functions/api/analytics/event.js.
 const EVENT_NAMES = new Set([
   'page_view',
@@ -204,7 +206,24 @@ export function setAnalyticsBrowserExcluded(excluded) {
 }
 
 function canTrack() {
-  return typeof window !== 'undefined' && !analyticsOptedOut() && !hasDoNotTrack() && !isAdminPath() && !isLikelyBot();
+  return typeof window !== 'undefined' && analyticsConsentGranted() && !analyticsOptedOut() && !hasDoNotTrack() && !isAdminPath() && !isLikelyBot();
+}
+
+export function clearOptionalAnalyticsStorage() {
+  const local = browserStorage('local');
+  const session = browserStorage('session');
+  try {
+    local?.removeItem(VISITOR_KEY);
+    local?.removeItem(FIRST_TOUCH_KEY);
+    session?.removeItem(SESSION_KEY);
+    session?.removeItem(PAGEVIEW_COUNT_KEY);
+  } catch {}
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(PRIVACY_PREFERENCES_EVENT, (event) => {
+    if (event.detail?.analytics === false) clearOptionalAnalyticsStorage();
+  });
 }
 
 
@@ -403,7 +422,7 @@ function captureFirstTouchAttribution() {
 
 export function getFirstTouchAttribution() {
   if (typeof window === 'undefined') return {};
-  const storage = browserStorage('local');
+  const storage = analyticsConsentGranted() ? browserStorage('local') : null;
   if (storage) {
     try {
       const existing = JSON.parse(storage.getItem(FIRST_TOUCH_KEY) || '{}');
