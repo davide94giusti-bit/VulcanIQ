@@ -51,6 +51,11 @@ test('one dialog sequences independent language, privacy and notification decisi
   assert.ok(onboarding.indexOf("{step === 'language' &&") < onboarding.indexOf("{step === 'privacy' &&") && onboarding.indexOf("{step === 'privacy' &&") < onboarding.indexOf("{step === 'notifications' &&"));
 });
 
+test('analytics acceptance action spans the complete choice row', () => {
+  contains(onboarding, ['first-run-analytics-accept', 'Accept analytics']);
+  assert.ok(css.includes('.first-run-actions .first-run-analytics-accept { grid-column: 1 / -1; }'));
+});
+
 test('analytics and notification choices are not coupled', () => {
   const privacyBlock = onboarding.slice(onboarding.indexOf('function choosePrivacy'), onboarding.indexOf('function finishNotifications'));
   const notificationBlock = onboarding.slice(onboarding.indexOf('async function enable()'), onboarding.indexOf("if (!step || typeof document"));
@@ -154,10 +159,11 @@ test('participant UI is responsive and not table-only', () => {
   assert.ok(!notificationUi.includes('<table'));
 });
 
-test('Terms acceptance remains unimplemented and participant records are not evidence', () => {
+test('Terms evidence remains separate from participant records', () => {
   assert.ok(!/terms_versions|terms_acceptances|self_accepted|accepted_by_guardian/.test(participantMigration));
   assert.ok(participantMigration.includes('This table is not Terms acceptance evidence.'));
-  assert.ok(termsDoc.includes('Terms acceptance remains deferred'));
+  assert.ok(termsDoc.includes('Phase 2 Terms evidence is implemented'));
+  assert.ok(termsDoc.includes('Individual-adult and guardian journeys remain deferred'));
 });
 
 test('Finance and notification ownership remain independent of participant rows', () => {

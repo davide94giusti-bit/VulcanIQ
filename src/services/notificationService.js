@@ -234,6 +234,15 @@ export async function addOwnedBookingParticipant(ownershipId, participant) {
 export async function updateOwnedBookingParticipant(ownershipId, participantId, changes) {
   return api('public', `ownership/${encodeURIComponent(ownershipId)}/participants/${encodeURIComponent(participantId)}`, { method: 'PATCH', body: JSON.stringify(changes) });
 }
+export async function getOwnedBookingTerms(ownershipId, locale = 'it') {
+  return api('public', `ownership/${encodeURIComponent(ownershipId)}/terms?locale=${encodeURIComponent(locale === 'en' ? 'en' : 'it')}`, { method: 'GET' });
+}
+export async function acceptOwnedOrganizerTerms(ownershipId, termsVersionId, locale = 'it') {
+  return api('public', `ownership/${encodeURIComponent(ownershipId)}/terms`, {
+    method: 'POST',
+    body: JSON.stringify({ termsVersionId, locale: locale === 'en' ? 'en' : 'it' })
+  });
+}
 export async function publishCustomerNotificationEvent() {
   return api('admin', 'personalized-events/reconcile', { method: 'POST', body: '{}' });
 }

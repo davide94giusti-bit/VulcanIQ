@@ -15244,6 +15244,28 @@ section#reviews.compact-section,
 .finance-reconciliation-list { display: grid; gap: .75rem; }
 .admin-participant-summary { display: grid; gap: .6rem; margin: .8rem 0; padding: .8rem; border: 1px solid var(--admin-border, rgba(16,27,45,.14)); border-radius: 12px; background: rgba(255,255,255,.58); min-width: 0; }
 .admin-participant-summary>div:first-child { display: flex; justify-content: space-between; gap: .7rem; flex-wrap: wrap; }
+.terms-acceptance-control { display: grid; gap: .6rem; width: 100%; min-width: 0; padding: .85rem; border: 1px solid rgba(16,27,45,.18); border-radius: 12px; background: rgba(255,255,255,.72); text-align: left; }
+.terms-acceptance-check { display: flex; align-items: flex-start; gap: .65rem; min-width: 0; }
+.terms-acceptance-check input[type="checkbox"] { flex: 0 0 1.25rem; width: 1.25rem; min-width: 1.25rem; min-height: 1.25rem; margin-top: .12rem; }
+.terms-acceptance-check label { line-height: 1.45; overflow-wrap: anywhere; cursor: pointer; }
+.terms-acceptance-links { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
+.terms-acceptance-links button { padding: 0; border: 0; background: transparent; color: inherit; text-decoration: underline; font: inherit; cursor: pointer; }
+.terms-acceptance-links button,.terms-acceptance-links a { min-height: 44px; display: inline-flex; align-items: center; }
+.terms-document-backdrop { position: fixed; inset: 0; z-index: 13000; display: grid; place-items: center; padding: clamp(.65rem,3vw,2rem); background: rgba(8,15,25,.72); }
+.terms-document-dialog { width: min(760px,100%); max-height: min(88dvh,900px); display: grid; grid-template-rows: auto minmax(0,1fr); overflow: hidden; border-radius: 18px; background: var(--surface,#fff); box-shadow: 0 24px 70px rgba(0,0,0,.32); }
+.terms-document-dialog>header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem 1.15rem; border-bottom: 1px solid rgba(16,27,45,.14); }
+.terms-document-dialog h2,.terms-document-dialog header p { margin: .2rem 0 0; }
+.terms-document-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 1rem 1.15rem calc(1.25rem + env(safe-area-inset-bottom)); }
+.terms-document-body section+section { margin-top: 1.15rem; }
+.terms-document-body h3 { font-size: 1.05rem; margin-bottom: .35rem; }
+.admin-terms-summary { display: grid; gap: .65rem; margin: .8rem 0; padding: .8rem; border: 1px solid var(--admin-border,rgba(16,27,45,.14)); border-radius: 12px; background: rgba(255,255,255,.58); min-width: 0; }
+.admin-terms-summary>div:first-child { display: flex; justify-content: space-between; gap: .7rem; flex-wrap: wrap; }
+.admin-terms-list { display: grid; gap: .55rem; }
+.admin-terms-list p { display: grid; gap: .15rem; margin: 0; padding: .6rem; border: 1px solid rgba(16,27,45,.1); border-radius: 10px; min-width: 0; }
+.admin-terms-list small { overflow-wrap: anywhere; }
+.status-success { color: #176447; font-weight: 700; }
+.status-warning { color: #8a5a12; font-weight: 700; }
+@media(max-width:480px){.terms-document-backdrop{padding:0}.terms-document-dialog{width:100%;max-height:100dvh;height:100dvh;border-radius:0}.terms-document-dialog>header{padding-top:calc(.9rem + env(safe-area-inset-top))}.terms-acceptance-links{align-items:flex-start;flex-direction:column;gap:.15rem}}
 .admin-participant-list { display: grid; gap: .45rem; }
 .admin-participant-list p { display: grid; gap: .1rem; margin: 0; min-width: 0; }
 .admin-participant-list strong,.admin-participant-list span { overflow-wrap: anywhere; }
@@ -15353,6 +15375,7 @@ section#reviews.compact-section,
 .first-run-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
 .first-run-actions .button,
 .first-run-language-actions .button { width: 100%; min-height: 48px; justify-content: center; }
+.first-run-actions .first-run-analytics-accept { grid-column: 1 / -1; }
 
 .notification-onboarding-actions,
 .privacy-preferences-actions {

@@ -232,6 +232,20 @@ async function backendInsert(config, table, payload) {
   return Array.isArray(rows) ? rows : [];
 }
 
+async function backendRpc(config, functionName, payload) {
+  const response = await fetch(`${config.url}/rest/v1/rpc/${functionName}`, {
+    method: 'POST',
+    headers: supabaseBackendHeaders(config.backendCredential, { headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    } }),
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error(`personalized_source_rpc_${functionName}_${response.status}`);
+  const result = await response.json();
+  return Array.isArray(result) ? result : [];
+}
+
 async function backendUpdateRows(config, table, parameters, payload) {
   const response = await fetch(`${config.url}/rest/v1/${table}?${parameters}`, {
     method: 'PATCH',
@@ -289,6 +303,65 @@ function participantPayload(context) {
       expectedAdults, expectedChildren, actualAdults, actualChildren, organizerPresent,
       matches: organizerPresent && actualAdults === expectedAdults && actualChildren === expectedChildren
     }
+  };
+}
+
+async function ownedTermsPayload(config, context, locale) {
+  const [versions, acceptances] = await Promise.all([
+    backendRpc(config, 'resolve_current_terms_version', { p_document_purpose: 'excursion_booking', p_locale: locale }),
+    backendRows(config, 'terms_acceptances', new URLSearchParams({
+      select: 'terms_version_id,document_purpose,participant_id,actor_participant_id,actor_type,actor_name_snapshot,representation_type,locale,source_context,accepted_at,terms_versions(version,document_purpose,locale)',
+      booking_request_id: `eq.${context.bookingId}`,
+      order: 'accepted_at.asc',
+      limit: '100'
+    }))
+  ]);
+  const version = versions[0] || null;
+  const activeParticipants = context.participants.filter((item) => item.status === 'active');
+  const currentAcceptanceByParticipant = new Map(
+    acceptances
+      .filter((item) => item.document_purpose === 'excursion_booking' && item.terms_version_id === version?.id && item.participant_id)
+      .map((item) => [item.participant_id, item])
+  );
+  const requestAcceptance = acceptances.find((item) => item.document_purpose === 'booking_request' && !item.participant_id) || null;
+  const summarizeAcceptance = (item) => item ? {
+    purpose: item.document_purpose,
+    version: item.terms_versions?.version || '',
+    locale: item.locale,
+    acceptedAt: item.accepted_at,
+    actorName: item.actor_name_snapshot,
+    actorType: item.actor_type,
+    representation: item.representation_type,
+    source: item.source_context
+  } : null;
+  return {
+    bookingStatus: context.booking.status,
+    requestTerms: summarizeAcceptance(requestAcceptance),
+    excursionTerms: version ? {
+      current: {
+        id: version.id,
+        purpose: version.document_purpose,
+        version: version.version,
+        locale: version.locale,
+        effectiveAt: version.effective_at,
+        content: {
+          intro: String(version.content_snapshot?.intro || ''),
+          sections: Array.isArray(version.content_snapshot?.sections)
+            ? version.content_snapshot.sections.map((section) => ({ title: String(section?.title || ''), body: String(section?.body || '') })).filter((section) => section.title && section.body)
+            : []
+        }
+      },
+      participants: activeParticipants.map((participant) => {
+        const acceptance = currentAcceptanceByParticipant.get(participant.id) || null;
+        return {
+          name: participant.full_name,
+          participantType: participant.participant_type,
+          isOrganizer: participant.is_organizer === true,
+          status: acceptance ? 'accepted' : participant.participant_type === 'minor' ? 'pending_guardian' : 'pending',
+          acceptance: summarizeAcceptance(acceptance)
+        };
+      })
+    } : null
   };
 }
 
@@ -487,6 +560,43 @@ export async function onRequest(context) {
         if(claimed.error)return json(request,env,claimed.error==='ownership_claim_invalid'?404:409,{ok:false,error:claimed.error});
         await audit(database,'notification_ownership_claimed',{audience:'public',subscriptionId:sub.id,metadata:{journeyType:claimed.ownership.journey_type,idempotent:claimed.idempotent}});
         return json(request,env,claimed.idempotent?200:201,{ok:true,item:claimed.ownership,idempotent:claimed.idempotent});
+      }
+      if(path[1]&&path[2]==='terms'&&!path[3]){
+        if(request.method!=='GET'&&request.method!=='POST')return json(request,env,405,{ok:false,error:'method_not_allowed'});
+        if(request.method==='POST'&&!(await rateLimit(database,`terms:${sub.id}:${path[1]}`,12,3600)))return json(request,env,429,{ok:false,error:'rate_limited'});
+        const config=supabaseConfig(env);if(!config)return json(request,env,503,{ok:false,error:'terms_source_not_configured'});
+        const locale=cleanLocale(request.method==='GET'?url.searchParams.get('locale'):undefined);
+        let termsContext;
+        try{
+          termsContext=await ownedParticipantContext(database,sub,path[1],config);
+          if(termsContext.error)return json(request,env,termsContext.status,{ok:false,error:termsContext.error});
+          if(request.method==='POST'){
+            const parsed=await body(request,2048);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});
+            const requestedLocale=cleanLocale(parsed.value.locale);
+            const termsVersionId=uuidValue(parsed.value.termsVersionId);
+            if(!termsVersionId)return json(request,env,400,{ok:false,error:'terms_version_invalid'});
+            if(termsContext.booking.status!=='accepted')return json(request,env,409,{ok:false,error:'terms_booking_not_confirmed'});
+            const organizer=termsContext.participants.find((item)=>item.status==='active'&&item.is_organizer===true&&item.participant_type==='adult');
+            if(!organizer)return json(request,env,409,{ok:false,error:'terms_organizer_required'});
+            try{
+              await backendRpc(config,'record_owned_organizer_terms_acceptance',{
+                p_booking_request_id:termsContext.bookingId,
+                p_participant_id:organizer.id,
+                p_terms_version_id:termsVersionId,
+                p_locale:requestedLocale
+              });
+            }catch(error){
+              if(String(error?.message||'').endsWith('_404'))return json(request,env,503,{ok:false,error:'terms_foundation_unavailable'});
+              return json(request,env,409,{ok:false,error:'terms_acceptance_rejected'});
+            }
+            const payload=await ownedTermsPayload(config,termsContext,requestedLocale);
+            return json(request,env,200,{ok:true,...payload});
+          }
+          const payload=await ownedTermsPayload(config,termsContext,locale);
+          return json(request,env,200,{ok:true,...payload});
+        }catch{
+          return json(request,env,503,{ok:false,error:'terms_foundation_unavailable'});
+        }
       }
       if(path[1]&&path[2]==='participants'){
         if(request.method!=='GET'&&!(await rateLimit(database,`participants:${sub.id}:${path[1]}`,40,3600)))return json(request,env,429,{ok:false,error:'rate_limited'});

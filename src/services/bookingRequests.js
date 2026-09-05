@@ -383,6 +383,9 @@ export async function createPublicBookingRequest(input) {
   payload.website = textOrNull(input.website);
   payload.turnstile_token = textOrNull(input.turnstile_token);
   payload.notification_ownership_requested = input.notification_ownership_requested === true;
+  payload.terms_accepted = input.terms_accepted === true;
+  payload.terms_version_id = textOrNull(input.terms_version_id);
+  payload.terms_source = textOrNull(input.terms_source);
 
   const response = await fetch('/api/public/booking-request', {
     method: 'POST',
@@ -452,7 +455,7 @@ export async function listBookingRequests(filters = {}) {
 
   const requestIds = requests.map((request) => request.id).filter(Boolean);
   const fixedIds = [...new Set(requests.map((request) => request.fixed_excursion_id).filter(Boolean))];
-  const [fixedResult, financeResult, participantResult] = await Promise.all([
+  const [fixedResult, financeResult, participantResult, termsResult, termsVersionsResult] = await Promise.all([
     fixedIds.length
       ? supabase.from('fixed_excursions').select('id, date, start_time, end_time, experience_id, title_it, title_en').in('id', fixedIds)
       : Promise.resolve({ data: [], error: null }),
@@ -468,12 +471,26 @@ export async function listBookingRequests(filters = {}) {
           .select('id, booking_request_id, full_name, participant_type, is_organizer, guardian_participant_id, status, created_at, updated_at')
           .in('booking_request_id', requestIds)
           .order('created_at', { ascending: true })
-      : Promise.resolve({ data: [], error: null })
+      : Promise.resolve({ data: [], error: null }),
+    requestIds.length
+      ? supabase.from('terms_acceptances')
+          .select('id, booking_request_id, terms_version_id, document_purpose, participant_id, actor_participant_id, actor_type, actor_name_snapshot, representation_type, locale, source_context, accepted_at, terms_versions(version, document_purpose, locale)')
+          .in('booking_request_id', requestIds)
+          .order('accepted_at', { ascending: true })
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from('terms_versions')
+      .select('id, document_purpose, version, locale, effective_at, published_at')
+      .eq('status', 'published')
+      .lte('effective_at', new Date().toISOString())
+      .order('effective_at', { ascending: false })
   ]);
   if (fixedResult.error) throw fixedResult.error;
   if (financeResult.error) throw financeResult.error;
   const participantSchemaUnavailable = ['42P01', 'PGRST205'].includes(participantResult.error?.code);
   if (participantResult.error && !participantSchemaUnavailable) throw participantResult.error;
+  const termsSchemaUnavailable = [termsResult.error?.code, termsVersionsResult.error?.code].some((code) => ['42P01', 'PGRST200', 'PGRST205'].includes(code));
+  if (termsResult.error && !termsSchemaUnavailable) throw termsResult.error;
+  if (termsVersionsResult.error && !termsSchemaUnavailable) throw termsVersionsResult.error;
 
   const fixedById = (fixedResult.data || []).reduce((acc, row) => ({ ...acc, [row.id]: row }), {});
   const financeByRequest = (financeResult.data || []).reduce((acc, row) => {
@@ -488,13 +505,22 @@ export async function listBookingRequests(filters = {}) {
     acc[row.booking_request_id].push(row);
     return acc;
   }, {});
+  const termsByRequest = (termsResult.data || []).reduce((acc, row) => {
+    if (!row.booking_request_id) return acc;
+    if (!acc[row.booking_request_id]) acc[row.booking_request_id] = [];
+    acc[row.booking_request_id].push(row);
+    return acc;
+  }, {});
 
   return requests.map((request) => ({
     ...request,
     fixed_excursion: fixedById[request.fixed_excursion_id] || null,
     finance_entries: financeByRequest[request.id] || [],
     booking_participants: participantsByRequest[request.id] || [],
-    participant_foundation_available: !participantSchemaUnavailable
+    participant_foundation_available: !participantSchemaUnavailable,
+    terms_acceptances: termsByRequest[request.id] || [],
+    current_terms_versions: termsVersionsResult.data || [],
+    terms_foundation_available: !termsSchemaUnavailable
   }));
 }
 

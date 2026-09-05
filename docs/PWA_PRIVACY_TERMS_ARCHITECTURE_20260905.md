@@ -1,6 +1,6 @@
-# Unified onboarding, participant foundation, and deferred Terms architecture
+# Unified onboarding, participant foundation, and Terms architecture
 
-Status: implementation record for unified PWA/privacy onboarding and the Phase 1 participant foundation. **Terms acceptance remains deferred and design-only.** The additive participant migrations are authored for local validation but are not applied to shared Preview or Production.
+Status: implementation record for unified PWA/privacy onboarding and the applied Phase 1 participant foundation. Phase 2 Terms evidence is implemented in source and in the unapplied migration `20260905110000_terms_evidence_foundation.sql`; see `TERMS_EVIDENCE_FOUNDATION_20260905.md`. Individual-adult and guardian journeys remain deferred.
 
 ## Browser storage and tracker audit
 
@@ -41,9 +41,9 @@ Decision: **Case B**. Persistent custom analytics identifiers are not required t
 
 ## Verified legal architecture boundary
 
-`booking_requests` remains the canonical booking entity. Initial requests continue to store aggregate `adults`, `children`, and `children_under_3` data and remain lightweight. Phase 1 adds stable named participant rows only after `status = accepted`; it still has no accepting actor, immutable Terms version, content hash, or transaction-linked acceptance event. Gift Card payment remains an Admin lifecycle event, and Gift Card redemption still creates a booking without creating new revenue. The current static Terms cannot serve as immutable acceptance evidence.
+`booking_requests` remains the canonical booking entity. Initial requests continue to store aggregate `adults`, `children`, and `children_under_3` data and remain lightweight. Phase 1 adds stable named participant rows only after `status = accepted`. Phase 2 adds an immutable database content snapshot and transaction-linked acceptance event without overloading participant records. Gift Card payment remains an Admin lifecycle event, and Gift Card redemption still creates a booking without creating new revenue.
 
-Because the owner/legal decisions below are unresolved, live Terms checkboxes, acceptance links, acceptance evidence, and reminder jobs are intentionally not implemented.
+Direct website request acceptance and confirmed-organizer self-acceptance are implemented but fail closed until the new Supabase migration is approved and applied. Individual acceptance links, guardian completion, Gift Card acceptance, reminder jobs, and Cron are intentionally not implemented.
 
 ## Implemented Phase 1 participant model
 
@@ -58,11 +58,11 @@ The additive `booking_participants` model uses the verified `booking_requests.id
 | Lifecycle | active/removed status and timestamps; booking deletion is restricted so records are preserved |
 | Privacy boundary | no health data, document number, raw IP, device fingerprint, or unnecessary user agent in the base model |
 
-The organizer submits an initial availability request without naming every participant. Accepted bookings do not create participant rows automatically; the organizer is created explicitly through the trusted participant-completion/backend flow when that feature is active. No historical identities are backfilled. Aggregate booking counts remain canonical while participant collection is incomplete, and composition mismatches are allowed but surfaced without changing those totals. Admin has authorized read-only inspection in Phase 1. Acceptance remains a later phase: an organizer cannot be recorded as another adult's self-accepting actor.
+The organizer submits an initial availability request without naming every participant. Accepted bookings do not create participant rows automatically; the organizer is created explicitly through the trusted participant-completion/backend flow. No historical identities are backfilled. Aggregate booking counts remain canonical while participant collection is incomplete, and composition mismatches are allowed but surfaced without changing those totals. Admin has authorized read-only inspection. Phase 2 permits the organizer to self-accept only for the organizer participant; another adult cannot be marked accepted by that action.
 
-## Proposed immutable Terms versions
+## Implemented Phase 2 immutable Terms versions
 
-`terms_versions` should be append-only after publication:
+`terms_versions` is immutable after publication:
 
 - UUID/version identifier, document purpose (`request`, `booking`, `gift_card_purchase`, `gift_card_redemption`, or other approved purpose), locale, effective timestamp and publication state;
 - immutable rendered content snapshot or immutable canonical object reference, SHA-256 content checksum, creation actor/time, and optional supersedes reference;
@@ -71,9 +71,9 @@ The organizer submits an initial availability request without naming every parti
 
 Draft/editor content must be separate from published immutable evidence. Whether IT and EN are two linked rows or one legal version with immutable locale variants is an owner/legal decision.
 
-## Proposed append-only acceptance evidence
+## Implemented Phase 2 append-only acceptance evidence
 
-`terms_acceptances` should contain an immutable event ID, `terms_version_id`, transaction type/reference, participant reference where applicable, accepting actor reference/type, representation type, locale, source context, and server-generated `accepted_at`. Candidate statuses are `self_accepted`, `accepted_by_booking_organizer`, `accepted_by_parent_or_guardian`, `pending`, and `not_required`; pending/not-required may be derived state rather than false “acceptance” events.
+`terms_acceptances` contains an immutable event ID, `terms_version_id`, authoritative hash snapshot, booking reference, participant reference where applicable, accepting actor reference/type, representation type, locale, source context, and server-generated `accepted_at`. Pending/not-required remain derived state rather than false “acceptance” events.
 
 The service must never infer acceptance from name, email, phone, booking-code possession, PWA install, push permission, or notification ownership. It must not allow an Admin to casually toggle pending to accepted. If an exceptional Admin-attested flow is later approved, it needs separate authorization, reason, actor and audit evidence.
 
@@ -85,8 +85,8 @@ Secure adult acceptance links should use high-entropy, expiring, single-purpose 
 
 | Flow | Current business effect / payment obligation | Candidate acceptance actor and evidence | Required / reacceptance decision |
 | --- | --- | --- | --- |
-| Fast Request website | Creates a pending request; no online payment obligation | Organizer request-purpose acceptance linked to request | Counsel decides if request-level Terms are mandatory; every new request is a new event |
-| Full questionnaire | Creates a pending website request; no online payment obligation | Same request-purpose organizer event | Same as Fast Request; never reuse a checked client state |
+| Fast Request website | Creates a pending request; no online payment obligation | Organizer request-purpose acceptance linked atomically to request | Mandatory in Phase 2; counsel must approve the seeded current text before Production release |
+| Full questionnaire | Creates a pending website request; no online payment obligation | Same request-purpose organizer event | Mandatory in Phase 2; never reuse a checked client state |
 | Fast Request WhatsApp | Opens external prefilled conversation; site creates no canonical request at click | Cannot truthfully record contractual acceptance in current flow | Decide whether WhatsApp process supplies/records Terms later |
 | Private excursion | Request first; Admin confirmation/payment lifecycle later | Request event, then booking/participant events if booking Terms differ | Reaccept only on approved material-change rules |
 | Fixed excursion | Request tied to fixed excursion; no immediate online charge | Organizer request event, later participant coverage | Reschedule/material itinerary rule requires legal decision |
@@ -118,14 +118,13 @@ After approval, a `customer_terms_required` personalized event could be generate
 
 ## Migration sequence
 
-1. **Now:** add `booking_participants`, guardian/organizer constraints, least-privilege access, owned-device locator, and guarded customer/Admin UI. Do not fabricate historical participants.
-2. Resolve legal/product decisions and approve final document purposes/content.
-3. **Later:** add immutable `terms_versions`, then publish approved initial versions without altering the current static page in place.
-4. **Later:** add hashed one-time acceptance invitations and append-only `terms_acceptances` with server-only mutation functions.
-5. Add explicit per-transaction server enforcement only after legal approval and transactional role tests.
-6. Only then add personalized reminder event/outbox integration; scheduler/Cron remains a separate approval.
+1. **Applied Phase 1:** `booking_participants`, guardian/organizer constraints, least-privilege access, owned-device locator, and guarded customer/Admin UI. No historical participants were fabricated.
+2. **Authored Phase 2:** immutable `terms_versions`, append-only `terms_acceptances`, atomic website request enforcement, and owned organizer self-acceptance. Remote application awaits approval.
+3. Resolve remaining legal/product decisions and approve final document purposes/content before Production release.
+4. **Later:** add hashed one-time acceptance invitations for individual adults and an approved guardian flow.
+5. Only then add personalized reminder event/outbox integration; scheduler/Cron remains a separate approval.
 
-Migration files `20260905100000_booking_participants_foundation.sql` and `0006_participant_ownership_locator.sql` are additive and forward-only. They preserve historical rows without backfill and must pass local migration checks. Neither may be applied to shared Preview/Production without explicit approval. If rollback is required after application, use a reviewed forward migration; do not rewrite applied history.
+Migration files `20260905100000_booking_participants_foundation.sql` and `0006_participant_ownership_locator.sql` are already applied to their authorized targets and were not rewritten. New Terms migration `20260905110000_terms_evidence_foundation.sql` is additive, forward-only, and unapplied remotely. If rollback is required after application, use a reviewed forward migration; do not rewrite applied history or delete legal evidence.
 
 ## Unresolved owner/legal decisions
 
@@ -142,4 +141,4 @@ Migration files `20260905100000_booking_participants_foundation.sql` and `0006_p
 11. Historical and offline/Admin-created booking treatment.
 12. Controller/processor disclosures and exact retention for current custom and Cloudflare analytics.
 
-Until these decisions are resolved, the repository must continue to describe Terms acceptance as deferred architecture, not a completed legal system.
+Until these decisions are resolved, the repository must describe Phase 2 as a technical evidence foundation—not a completed legal/compliance conclusion. Production release of substantive Terms remains gated on counsel approval.

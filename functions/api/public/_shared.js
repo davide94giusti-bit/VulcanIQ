@@ -48,7 +48,7 @@ export function corsHeaders(request, env = {}) {
     : allowed[0];
   return {
     'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Idempotency-Key',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
@@ -227,6 +227,9 @@ export function publicErrorMessage(error) {
     turnstile_failed: 'Human verification failed.',
     rate_limited: 'Too many requests. Please try again later.',
     invalid_contact: 'Enter a valid email address or phone number.',
+    terms_actor_name_required: 'Enter the organizer name.',
+    terms_acceptance_required: 'Read and accept the applicable Terms before sending the request.',
+    terms_or_request_rejected: 'The request or Terms acceptance could not be recorded. Refresh the Terms and try again.',
     recipient_name_invalid: 'Enter the recipient name.',
     recipient_contact_required: 'Enter a recipient email address or phone number.',
     recipient_email_invalid: 'Enter a valid recipient email address.',

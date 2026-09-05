@@ -4,12 +4,11 @@ import {
   cleanInteger,
   cleanText,
   clientActorHash,
-  existingRequestByIdempotency,
   idempotencyKey,
   json,
   publicErrorMessage,
   readJsonBody,
-  supabaseRpc,
+  supabaseRequest,
   validDate,
   validEmail,
   validPhone,
@@ -100,14 +99,20 @@ export async function onRequestPost(context) {
   const key = idempotencyKey(context.request, input, 'booking');
   if (!key) return respond(400, { ok: false, code: 'invalid_idempotency_key', message: publicErrorMessage('invalid_idempotency_key') });
 
-  const existing = await existingRequestByIdempotency(context.env, 'booking_requests', key);
-  if (existing?.id) return respond(200, { ok: true, duplicate: true, id: existing.id, created_at: existing.created_at });
-
   if (!validEmail(input.customer_email) || !validPhone(input.customer_phone) || (!cleanText(input.customer_email) && !cleanText(input.customer_phone))) {
     return respond(400, { ok: false, code: 'invalid_contact', message: publicErrorMessage('invalid_contact') });
   }
   if (!validDate(input.requested_date) || !validDate(input.alternative_date) || !validDate(input.selected_date)) {
     return respond(400, { ok: false, code: 'invalid_date', message: publicErrorMessage('invalid_date') });
+  }
+  const rawActorName = String(input.customer_name || '').trim();
+  const termsVersionId = String(input.terms_version_id || '').trim();
+  const termsSource = ['fast_request_website', 'questionnaire_website'].includes(input.terms_source) ? input.terms_source : '';
+  if (!rawActorName || rawActorName.length > 120) {
+    return respond(400, { ok: false, code: 'terms_actor_name_required', message: publicErrorMessage('terms_actor_name_required') });
+  }
+  if (input.terms_accepted !== true || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(termsVersionId) || !termsSource) {
+    return respond(400, { ok: false, code: 'terms_acceptance_required', message: publicErrorMessage('terms_acceptance_required') });
   }
 
   const actorHash = await clientActorHash(context.request, context.env);
@@ -115,11 +120,19 @@ export async function onRequestPost(context) {
   if (!allowed) return respond(429, { ok: false, code: 'rate_limited', message: publicErrorMessage('rate_limited') });
 
   try {
-    const result = await supabaseRpc(context.env, 'create_public_booking_request', { request_payload: bookingPayload(input, key, actorHash) }, { traceId });
+    const response = await supabaseRequest(context.env, 'rpc/create_public_booking_request_with_terms', {
+      method: 'POST',
+      body: JSON.stringify({ request_payload: bookingPayload(input, key, actorHash), p_terms_version_id: termsVersionId, p_terms_source: termsSource })
+    });
+    if (!response.ok) {
+      console.error('vulcanIQ public Terms booking RPC failed', { status: response.status, traceId, code: 'terms_or_request_rejected' });
+      return respond(409, { ok: false, code: 'terms_or_request_rejected', message: publicErrorMessage('terms_or_request_rejected') });
+    }
+    const result = await response.json().catch(() => null);
     const created = Array.isArray(result) ? result[0] : result;
     if (!created?.id) throw new Error('request_creation_failed');
     let notificationOwnershipClaim = null;
-    if (input.notification_ownership_requested === true && context.env.NOTIFICATIONS_DB) {
+    if (!created.duplicate && input.notification_ownership_requested === true && context.env.NOTIFICATIONS_DB) {
       try {
         notificationOwnershipClaim = await issueNotificationOwnershipClaim(context.env.NOTIFICATIONS_DB, {
           entityType: 'booking_request', entityId: created.id, journeyType: 'booking'
@@ -129,8 +142,9 @@ export async function onRequestPost(context) {
         // without exposing or logging the one-time claim.
       }
     }
-    return respond(201, {
+    return respond(created.duplicate ? 200 : 201, {
       ok: true,
+      duplicate: created.duplicate === true,
       id: created.id,
       status: created.status || 'pending',
       created_at: created.created_at,

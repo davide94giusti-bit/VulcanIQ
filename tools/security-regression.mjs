@@ -65,6 +65,8 @@ const notificationService = read('src/services/notificationService.js');
 const privacyPreferenceService = read('src/services/privacyPreferences.js');
 const privacyPreferenceUi = read('src/features/privacy/PrivacyPreferences.jsx');
 const termsArchitecture = read('docs/PWA_PRIVACY_TERMS_ARCHITECTURE_20260905.md');
+const termsFoundation = read('docs/TERMS_EVIDENCE_FOUNDATION_20260905.md');
+const termsMigration = read('supabase/migrations/20260905110000_terms_evidence_foundation.sql');
 const financeAuditEndpoint = read('functions/api/admin/finance-audit.js');
 const financeAuditService = read('src/services/financeAuditService.js');
 const bootstrapFoundation = read('supabase/migrations/20260601000000_vulcaniq_bootstrap_foundation.sql');
@@ -219,9 +221,9 @@ check('Financial Audit generation is logged before export response', financeAudi
 check('activity_log grants and RLS authorize active owner/finance bearer callers', privilegeReconciliation.includes('grant select, insert on table public.activity_log to authenticated;') && bootstrapFoundation.includes('create policy "Admins can insert activity log"') && bootstrapFoundation.includes('with check (public.is_admin());') && revenueFollowup.includes('ap.user_id = auth.uid()') && revenueFollowup.includes('ap.active = true') && revenueFollowup.includes("'owner', 'manager', 'guide', 'finance', 'content_editor'"));
 check('Financial Audit logs the caller identity with the caller bearer token', financeAuditEndpoint.includes("supabaseFetch(settings, token, '/rest/v1/activity_log'") && financeAuditEndpoint.includes('actor_id: userId') && financeAuditEndpoint.includes('logAudit(auth.settings,auth.token,auth.user.id,auditId,metadata)'));
 check('security headers include HSTS and CSP remains report-only', securityHeaders.includes('Strict-Transport-Security: max-age=31536000') && securityHeaders.includes('Content-Security-Policy-Report-Only:') && !/^\s*Content-Security-Policy:/m.test(securityHeaders));
-check('participant foundation remains separate from deferred Terms acceptance', repositoryFiles.some((name) => /supabase[\\/]migrations[\\/].*booking_participants_foundation/i.test(name)) && !repositoryFiles.some((name) => /supabase[\\/]migrations[\\/].*terms_acceptances/i.test(name)) && termsArchitecture.includes('Terms acceptance remains deferred'));
-check('deferred legal design keeps evidence immutable, versioned, represented and transaction scoped', ['terms_versions', 'terms_acceptances', 'append-only', 'accepted_by_parent_or_guardian', 'accepted_by_booking_organizer', 'transaction type/reference'].every((token) => termsArchitecture.includes(token)));
-check('deferred legal design does not infer acceptance from identifiers or notification state', ['name, email, phone, booking-code possession, PWA install, push permission, or notification ownership', 'cannot silently accept for a later recipient', 'never broadcast when ownership is absent'].every((token) => termsArchitecture.includes(token)));
+check('participant foundation remains separate from Terms evidence', repositoryFiles.some((name) => /supabase[\\/]migrations[\\/].*booking_participants_foundation/i.test(name)) && !read('supabase/migrations/20260905100000_booking_participants_foundation.sql').includes('terms_acceptances') && termsArchitecture.includes('Phase 2 Terms evidence is implemented'));
+check('Terms evidence is immutable, versioned, represented and transaction scoped', ['terms_versions', 'terms_acceptances', 'append-only', 'parent_or_guardian', 'request_organizer', 'booking_request_id'].every((token) => termsMigration.toLowerCase().includes(token)) && termsFoundation.includes('server acceptance time'));
+check('Terms acceptance is not inferred from identifiers or notification state', ['Booking-code redemption is not a document purpose and is not acceptance proof', 'no raw IP', 'Notification unsubscribe'].every((token) => termsFoundation.includes(token)));
 
 for (const name of passes) console.log(`PASS  ${name}`);
 for (const name of failures) console.error(`FAIL  ${name}`);

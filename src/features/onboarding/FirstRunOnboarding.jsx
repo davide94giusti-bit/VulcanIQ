@@ -156,7 +156,7 @@ export default function FirstRunOnboarding({ lang, eligible = true, blocked = fa
           </div> : <div className="first-run-actions">
             <button ref={firstActionRef} className="button secondary" type="button" onClick={() => choosePrivacy(false)}>{c(lang, 'Rifiuta', 'Reject')}</button>
             <button className="button secondary" type="button" onClick={() => { setAnalytics(false); setCustomizing(true); }}>{c(lang, 'Personalizza', 'Customize')}</button>
-            <button className="button primary" type="button" onClick={() => choosePrivacy(true)}>{c(lang, 'Accetta analytics', 'Accept analytics')}</button>
+            <button className="button primary first-run-analytics-accept" type="button" onClick={() => choosePrivacy(true)}>{c(lang, 'Accetta analytics', 'Accept analytics')}</button>
           </div>}
           <p className="small-note">{c(lang, 'Installazione, notifiche e richieste restano disponibili anche rifiutando gli analytics.', 'Installation, notifications and requests remain available when analytics is rejected.')}</p>
         </>}
