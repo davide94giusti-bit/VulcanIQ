@@ -92,12 +92,14 @@ test('Fast Request routing, attribution and website-only opt-in remain intact', 
 });
 
 test('participant schema references canonical booking requests without historical backfill', () => {
-  contains(participantMigration, ['booking_request_id uuid not null references public.booking_requests(id) on delete restrict', "new.status = 'accepted'", 'after insert or update of status on public.booking_requests']);
+  contains(participantMigration, ['booking_request_id uuid not null references public.booking_requests(id) on delete restrict', "booking_status <> 'accepted'", 'participant_booking_not_confirmed']);
   assert.ok(!/insert\s+into\s+public\.booking_participants[\s\S]*select\s+.*from\s+public\.booking_requests/i.test(participantMigration));
 });
 
 test('participant type, organizer and lifecycle invariants are constrained', () => {
   contains(participantMigration, ["participant_type in ('adult', 'minor')", "status in ('active', 'removed')", 'booking_participants_one_active_organizer_idx', "participant_type = 'adult'", 'participant_booking_immutable']);
+  assert.ok(!participantMigration.includes('create_confirmed_booking_organizer'), 'foundation migration changes accepted-booking behavior automatically');
+  assert.ok(!participantMigration.includes('booking_requests_create_confirmed_organizer'), 'foundation migration installs an automatic organizer trigger');
 });
 
 test('guardian must be an active adult in the same booking', () => {

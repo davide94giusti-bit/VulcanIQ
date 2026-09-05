@@ -99,33 +99,6 @@ create trigger booking_participants_set_updated_at
 before update on public.booking_participants
 for each row execute function public.set_updated_at();
 
-create or replace function public.create_confirmed_booking_organizer()
-returns trigger
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-begin
-  if new.status = 'accepted'
-    and (tg_op = 'INSERT' or old.status is distinct from new.status)
-    and char_length(btrim(coalesce(new.customer_name, ''))) between 1 and 120 then
-    insert into public.booking_participants (
-      booking_request_id, full_name, participant_type, is_organizer
-    )
-    values (new.id, btrim(new.customer_name), 'adult', true)
-    on conflict (booking_request_id) where is_organizer and status = 'active' do nothing;
-  end if;
-  return new;
-end;
-$$;
-
-revoke all on function public.create_confirmed_booking_organizer() from public, anon, authenticated, service_role;
-
-drop trigger if exists booking_requests_create_confirmed_organizer on public.booking_requests;
-create trigger booking_requests_create_confirmed_organizer
-after insert or update of status on public.booking_requests
-for each row execute function public.create_confirmed_booking_organizer();
-
 alter table public.booking_participants enable row level security;
 
 drop policy if exists "Admins can view booking participants" on public.booking_participants;

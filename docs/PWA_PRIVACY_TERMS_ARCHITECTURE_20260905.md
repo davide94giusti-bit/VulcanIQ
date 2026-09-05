@@ -58,7 +58,7 @@ The additive `booking_participants` model uses the verified `booking_requests.id
 | Lifecycle | active/removed status and timestamps; booking deletion is restricted so records are preserved |
 | Privacy boundary | no health data, document number, raw IP, device fingerprint, or unnecessary user agent in the base model |
 
-The organizer submits an initial availability request without naming every participant. For new bookings that become accepted, a reliable canonical lead name may create the organizer prospectively. No historical identities are backfilled. In the protected owned-device area, actual participants may be completed and mismatches are shown without changing aggregate party totals. Admin has authorized read-only inspection in Phase 1. Acceptance remains a later phase: an organizer cannot be recorded as another adult's self-accepting actor.
+The organizer submits an initial availability request without naming every participant. Accepted bookings do not create participant rows automatically; the organizer is created explicitly through the trusted participant-completion/backend flow when that feature is active. No historical identities are backfilled. Aggregate booking counts remain canonical while participant collection is incomplete, and composition mismatches are allowed but surfaced without changing those totals. Admin has authorized read-only inspection in Phase 1. Acceptance remains a later phase: an organizer cannot be recorded as another adult's self-accepting actor.
 
 ## Proposed immutable Terms versions
 
