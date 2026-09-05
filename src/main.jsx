@@ -190,6 +190,64 @@ function buildMediaMap(items = []) {
   }, {});
 }
 
+const PUBLIC_HERO_MEDIA_CACHE_KEY = 'vulcaniq_public_hero_media_v1';
+const PUBLIC_HERO_MEDIA_KEYS = [
+  'home_hero_background',
+  'home_hero_background_poster',
+  'home_hero_feature_image',
+  'home_hero_video'
+];
+
+function safeCachedPublicMediaUrl(value) {
+  const candidate = String(value || '').trim();
+  if (!candidate) return '';
+  if (candidate.startsWith('/') && !candidate.startsWith('//')) return candidate;
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === 'https:' ? parsed.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function publicHeroMediaSnapshot(siteMedia = {}) {
+  return PUBLIC_HERO_MEDIA_KEYS.reduce((snapshot, key) => {
+    const item = siteMedia?.[key];
+    if (!item) return snapshot;
+    const fileUrl = safeCachedPublicMediaUrl(item.file_url);
+    if (!fileUrl && item.active !== false) return snapshot;
+    snapshot[key] = {
+      media_key: key,
+      file_url: fileUrl,
+      media_kind: item.media_kind === 'video' ? 'video' : 'image',
+      alt_it: String(item.alt_it || '').slice(0, 240),
+      alt_en: String(item.alt_en || '').slice(0, 240),
+      active: item.active !== false
+    };
+    return snapshot;
+  }, {});
+}
+
+function readCachedPublicHeroMedia() {
+  if (typeof window === 'undefined') return {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PUBLIC_HERO_MEDIA_CACHE_KEY) || '{}');
+    return parsed?.version === 1 ? publicHeroMediaSnapshot(parsed.media) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeCachedPublicHeroMedia(siteMedia) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(PUBLIC_HERO_MEDIA_CACHE_KEY, JSON.stringify({
+      version: 1,
+      media: publicHeroMediaSnapshot(siteMedia)
+    }));
+  } catch {}
+}
+
 function mediaUrl(siteMedia, key, fallback) {
   const item = siteMedia?.[key];
   if (item?.active === false) return '';
@@ -3430,12 +3488,14 @@ function FastRequestModal({ lang, siteContent, onClose, sourceSection = 'sticky_
               </div>
             ) : (
               <>
-                <div className="fast-request-send-heading">
-                  <h3>{lang === 'it' ? 'Come vuoi inviare la richiesta?' : 'How would you like to send your request?'}</h3>
-                  <p>{lang === 'it' ? 'Useremo le informazioni già inserite.' : 'We will use the information you already entered.'}</p>
+                <div className="fast-request-method-header">
+                  <div className="fast-request-send-heading">
+                    <h3>{lang === 'it' ? 'Come vuoi inviare la richiesta?' : 'How would you like to send your request?'}</h3>
+                    <p>{lang === 'it' ? 'Useremo le informazioni già inserite.' : 'We will use the information you already entered.'}</p>
+                  </div>
+                  <button className="button secondary fast-request-method-back" type="button" onClick={() => setStep(4)}>{lang === 'it' ? 'Indietro' : 'Back'}</button>
                 </div>
                 <div className="fast-request-delivery-actions"><button className="button primary" type="button" onClick={() => setDeliveryChoice('website')}>{lang === 'it' ? 'Invia tramite il sito' : 'Send via website'}</button><a className="button secondary" href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsApp}>{lang === 'it' ? 'Invia su WhatsApp' : 'Send via WhatsApp'}</a></div>
-                <button className="button secondary fast-request-delivery-back" type="button" onClick={() => setStep(4)}>{lang === 'it' ? 'Indietro' : 'Back'}</button>
               </>
             )}
           </div>
@@ -15682,7 +15742,7 @@ function App() {
   const [lang, setLang] = useState(() => readInitialPublicLanguage());
   const [formState, setFormState] = useState(() => ({ language: lang, requestType: 'private', partyType: 'solo', adults: '1', children: '0', childrenUnder3Count: '0', heardAboutUs: '', heardAboutUsDetail: '', message: text(lang, 'defaultMessage') }));
   const [activePage, setActivePage] = useState(() => publicPageFromPathname(window.location.pathname) || 'home');
-  const [siteMedia, setSiteMedia] = useState({});
+  const [siteMedia, setSiteMedia] = useState(() => readCachedPublicHeroMedia());
   const [siteContent, setSiteContent] = useState({});
   const [publicUnreadCount, setPublicUnreadCount] = useState(null);
   const contactRef = useRef(null);
@@ -15807,10 +15867,12 @@ function App() {
     Promise.allSettled([listSiteMedia({ activeOnly: true }), loadPublicSiteContent()])
       .then(([mediaResult, contentResult]) => {
         if (!active) return;
-        const mediaReady = mediaResult.status === 'fulfilled';
-        const contentReady = contentResult.status === 'fulfilled';
-        setSiteMedia(mediaReady ? buildMediaMap(mediaResult.value) : {});
-        setSiteContent(contentReady ? buildSiteContentMap(contentResult.value) : {});
+        if (mediaResult.status === 'fulfilled') {
+          const nextMedia = buildMediaMap(mediaResult.value);
+          setSiteMedia(nextMedia);
+          writeCachedPublicHeroMedia(nextMedia);
+        }
+        if (contentResult.status === 'fulfilled') setSiteContent(buildSiteContentMap(contentResult.value));
       });
     return () => { active = false; };
   }, []);

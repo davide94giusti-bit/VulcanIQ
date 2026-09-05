@@ -341,7 +341,6 @@ button:not(:disabled):active,
   overflow: hidden;
   background:
     linear-gradient(90deg, rgba(13,22,38,0.94), rgba(13,22,38,0.78) 48%, rgba(13,22,38,0.54)),
-    url('/images/etna-eruption-hero.jpg') center / cover no-repeat,
     radial-gradient(circle at 72% 22%, rgba(240,107,79,0.38), transparent 32%),
     linear-gradient(135deg, #101a28, #243850);
   color: var(--night);
@@ -3927,7 +3926,6 @@ body.modal-scroll-lock { overflow: hidden; }
 .hero {
   background:
     linear-gradient(90deg, rgba(5,10,20,0.72), rgba(5,10,20,0.50) 50%, rgba(5,10,20,0.34)),
-    url('/images/etna-eruption-hero.jpg') center / cover no-repeat,
     radial-gradient(circle at 72% 22%, rgba(240,107,79,0.24), transparent 32%),
     linear-gradient(135deg, #101a28, #243850);
 }
@@ -15293,6 +15291,27 @@ section#reviews.compact-section,
   display: grid;
   gap: .35rem;
   min-width: 0;
+}
+
+.fast-request-method-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .75rem;
+  min-width: 0;
+}
+
+.fast-request-method-header .fast-request-send-heading {
+  flex: 1 1 12rem;
+}
+
+.fast-request-method-back {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 44px;
+  margin: 0;
+  padding: .55rem .85rem;
 }
 
 .fast-request-contact-heading h3,
