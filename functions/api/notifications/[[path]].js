@@ -9,7 +9,7 @@ const CAMPAIGN_CATEGORIES = new Set(['experiences', 'events', 'news', 'promotion
 const CUSTOMER_CATEGORIES = new Set([
   'customer_booking_confirmed', 'customer_payment_received', 'customer_upcoming_reminder',
   'customer_operational_change', 'customer_booking_rescheduled', 'customer_booking_cancelled',
-  'customer_review_reminder'
+  'customer_review_reminder', 'customer_participant_terms_reminder'
 ]);
 const CUSTOMER_EVENT_TYPES = new Set([
   'booking_confirmed', 'payment_received', 'operational_change',
@@ -325,7 +325,7 @@ function participantPayload(context) {
   };
 }
 
-async function ownedTermsPayload(config, context, locale) {
+async function ownedTermsPayload(database, config, context, locale, ownershipId) {
   const [versions, acceptances] = await Promise.all([
     backendRpc(config, 'resolve_current_terms_version', { p_document_purpose: 'excursion_booking', p_locale: locale }),
     backendRows(config, 'terms_acceptances', new URLSearchParams({
@@ -416,6 +416,7 @@ async function ownedTermsPayload(config, context, locale) {
   const requiredParticipants = Math.max(expectedParticipants, activeParticipants.length);
   const pendingParticipants = Math.max(0, requiredParticipants - acceptedParticipants);
   const termsAvailable = Boolean(version);
+  const reminderJob = await database.prepare("SELECT status,scheduled_for,created_at,sent_at,cancelled_at,failure_reason FROM notification_jobs WHERE ownership_id=? AND category='customer_participant_terms_reminder' ORDER BY created_at DESC LIMIT 1").bind(ownershipId).first();
   return {
     bookingStatus: context.booking.status,
     termsAvailable,
@@ -429,6 +430,18 @@ async function ownedTermsPayload(config, context, locale) {
       compositionComplete,
       complete: termsAvailable && compositionComplete && acceptedParticipants === requiredParticipants
     },
+    reminder: reminderJob ? {
+      status: reminderJob.status,
+      scheduledAt: reminderJob.scheduled_for,
+      createdAt: reminderJob.created_at,
+      sentAt: reminderJob.sent_at || null,
+      cancelledAt: reminderJob.cancelled_at || null,
+      deliveryState: reminderJob.status === 'failed'
+        ? 'failed'
+        : reminderJob.status === 'scheduled' && reminderJob.failure_reason === 'terms_state_unavailable'
+          ? 'retrying'
+          : reminderJob.status
+    } : null,
     excursionTerms: version ? {
       current: {
         id: version.id,
@@ -466,6 +479,20 @@ async function ownedTermsPayload(config, context, locale) {
       })
     } : null
   };
+}
+
+async function cancelParticipantTermsReminderJobs(database, ownershipId, reason) {
+  try {
+    const cancelledAt = nowIso();
+    const result = await database.prepare("UPDATE notification_jobs SET status='cancelled',cancelled_at=?,failure_reason=?,terminal_reason=? WHERE ownership_id=? AND source_type='participant_terms_reminder' AND status='scheduled'")
+      .bind(cancelledAt, reason, reason, ownershipId).run();
+    if (result.meta?.changes) await audit(database, 'participant_terms_reminder_cancelled', { audience: 'public', outcome: reason, metadata: { count: result.meta.changes } });
+    return Number(result.meta?.changes || 0);
+  } catch {
+    // Supabase participant/Terms state is authoritative; the Worker revalidates
+    // before delivery if this best-effort cross-system cleanup is unavailable.
+    return 0;
+  }
 }
 
 function customerPreferenceColumn(eventType) {
@@ -603,6 +630,7 @@ async function processPersonalizedEvent(database, env, config, actorId, entityTy
   if(existing)return {ok:true,deduped:true,status:existing.status,recipientCount:existing.recipient_count,jobCount:existing.job_count};
   const eventId=uuid(),createdAt=nowIso();
   if(['booking_rescheduled','booking_cancelled','operational_change'].includes(eventType))await database.prepare("UPDATE notification_jobs SET status='cancelled',cancelled_at=?,failure_reason=?,terminal_reason='superseded' WHERE source_type='owned_journey' AND source_id=? AND category='customer_upcoming_reminder' AND status='scheduled'").bind(createdAt,`superseded_by_${eventType}`,entityRef).run();
+  if(eventType==='booking_cancelled')await database.prepare("UPDATE notification_jobs SET status='cancelled',cancelled_at=?,failure_reason='booking_closed',terminal_reason='booking_closed' WHERE source_type='participant_terms_reminder' AND source_id=? AND status='scheduled'").bind(createdAt,entityRef).run();
   const rule=await database.prepare("SELECT enabled FROM notification_automation_rules WHERE rule_key=? AND audience='public' LIMIT 1").bind(eventConfig.ruleKey).first();
   const preferenceColumn=customerPreferenceColumn(eventType);
   const ownerships=await database.prepare(`SELECT o.id,o.subscription_id,o.push_enabled,o.inapp_enabled,o.reminders_enabled FROM notification_subscription_ownership o
@@ -688,14 +716,15 @@ export async function onRequest(context) {
                 p_terms_version_id:termsVersionId,
                 p_locale:requestedLocale
               });
+              await cancelParticipantTermsReminderJobs(database,path[1],'terms_state_changed');
             }catch(error){
               if(String(error?.message||'').endsWith('_404'))return json(request,env,503,{ok:false,error:'terms_foundation_unavailable'});
               return json(request,env,409,{ok:false,error:'terms_acceptance_rejected'});
             }
-            const payload=await ownedTermsPayload(config,termsContext,requestedLocale);
+            const payload=await ownedTermsPayload(database,config,termsContext,requestedLocale,path[1]);
             return json(request,env,200,{ok:true,...payload});
           }
-          const payload=await ownedTermsPayload(config,termsContext,locale);
+          const payload=await ownedTermsPayload(database,config,termsContext,locale,path[1]);
           return json(request,env,200,{ok:true,...payload});
         }catch{
           return json(request,env,503,{ok:false,error:'terms_foundation_unavailable'});
@@ -782,7 +811,8 @@ export async function onRequest(context) {
             p_terms_version_id:termsVersionId,
             p_locale:locale
           });
-          return json(request,env,200,{ok:true,...await ownedTermsPayload(config,termsContext,locale)});
+          await cancelParticipantTermsReminderJobs(database,ownershipId,'terms_state_changed');
+          return json(request,env,200,{ok:true,...await ownedTermsPayload(database,config,termsContext,locale,ownershipId)});
         }catch(error){
           if(String(error?.message||'').endsWith('_404'))return json(request,env,503,{ok:false,error:'terms_guardian_foundation_unavailable'});
           return json(request,env,409,{ok:false,error:'terms_guardian_acceptance_rejected'});
@@ -808,6 +838,7 @@ export async function onRequest(context) {
           try{
             await backendInsert(config,'booking_participants',{booking_request_id:participantContext.bookingId,full_name:cleanName,participant_type:participantType,is_organizer:organizer,guardian_participant_id:guardianId,status:'active'});
           }catch{return json(request,env,409,{ok:false,error:'participant_change_rejected'});}
+          await cancelParticipantTermsReminderJobs(database,path[1],'participant_state_changed');
           participantContext=await ownedParticipantContext(database,sub,path[1],config);
           return json(request,env,201,{ok:true,...participantPayload(participantContext)});
         }
@@ -828,6 +859,7 @@ export async function onRequest(context) {
             const rows=await backendUpdateRows(config,'booking_participants',new URLSearchParams({id:`eq.${participantId}`,booking_request_id:`eq.${participantContext.bookingId}`}),changes);
             if(!rows.length)return json(request,env,404,{ok:false,error:'participant_not_found'});
           }catch{return json(request,env,409,{ok:false,error:'participant_change_rejected'});}
+          await cancelParticipantTermsReminderJobs(database,path[1],'participant_state_changed');
           participantContext=await ownedParticipantContext(database,sub,path[1],config);
           return json(request,env,200,{ok:true,...participantPayload(participantContext)});
         }
@@ -848,7 +880,9 @@ export async function onRequest(context) {
           inapp_enabled:typeof parsed.value.inappEnabled==='boolean'?(parsed.value.inappEnabled?1:0):current.inapp_enabled
         };
         if(!next.push_enabled&&!next.inapp_enabled)return json(request,env,400,{ok:false,error:'ownership_delivery_channel_required'});
-        await database.prepare('UPDATE notification_subscription_ownership SET status_updates_enabled=?,operational_updates_enabled=?,reminders_enabled=?,review_reminders_enabled=?,push_enabled=?,inapp_enabled=? WHERE id=? AND subscription_id=? AND revoked_at IS NULL').bind(next.status_updates_enabled,next.operational_updates_enabled,next.reminders_enabled,next.review_reminders_enabled,next.push_enabled,next.inapp_enabled,path[1],sub.id).run();
+        const preferenceStatements=[database.prepare('UPDATE notification_subscription_ownership SET status_updates_enabled=?,operational_updates_enabled=?,reminders_enabled=?,review_reminders_enabled=?,push_enabled=?,inapp_enabled=? WHERE id=? AND subscription_id=? AND revoked_at IS NULL').bind(next.status_updates_enabled,next.operational_updates_enabled,next.reminders_enabled,next.review_reminders_enabled,next.push_enabled,next.inapp_enabled,path[1],sub.id)];
+        if(!next.reminders_enabled)preferenceStatements.push(database.prepare("UPDATE notification_jobs SET status='cancelled',cancelled_at=?,failure_reason='terms_reminders_disabled',terminal_reason='terms_reminders_disabled' WHERE ownership_id=? AND source_type='participant_terms_reminder' AND status='scheduled'").bind(nowIso(),path[1]));
+        await database.batch(preferenceStatements);
         await audit(database,'notification_ownership_preferences_updated',{audience:'public',subscriptionId:sub.id,metadata:{journeyType:'booking'}});
         return json(request,env,200,{ok:true,id:path[1],...next});
       }

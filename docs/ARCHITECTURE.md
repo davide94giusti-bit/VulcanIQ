@@ -27,7 +27,7 @@ PostgreSQL/RLS is the source of authorization truth. SECURITY DEFINER RPCs have 
 
 ### Supabase Edge Functions
 
-Own email provider credentials, Google OAuth refresh credentials and scheduled/manual privileged integrations. Participant Terms invitations are generated here and delivered directly through Resend so the organizer-facing browser/API never receives another participant's bearer credential. Manual admin actions verify the authenticated user and apply action throttles.
+Own email provider credentials, Google OAuth refresh credentials and scheduled/manual privileged integrations. Participant Terms invitations are generated here and delivered directly through Resend so the organizer-facing browser/API never receives another participant's bearer credential. The notification Worker asks a bounded, service-role-only Supabase resolver for PII-free participant Terms completion state before scheduling or sending an owned reminder; D1 never becomes legal-evidence authority. Manual admin actions verify the authenticated user and apply action throttles.
 
 ### External providers
 

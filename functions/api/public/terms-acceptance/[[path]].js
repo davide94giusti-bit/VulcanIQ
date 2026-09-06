@@ -6,6 +6,7 @@ import {
   supabaseRequest
 } from '../_shared.js';
 import { isParticipantTermsToken, participantTermsTokenHash } from '../_participantTerms.js';
+import { notificationEntityRef } from '../../notifications/_ownership.js';
 
 const ENDPOINTS = new Set(['resolve', 'confirm']);
 const SCHEMA_ERROR_CODES = new Set(['42P01', '42883', 'PGRST202', 'PGRST205']);
@@ -65,6 +66,31 @@ async function rpc(env, functionName, payload) {
   });
   const result = await response.json().catch(() => null);
   return { response, result };
+}
+
+async function cancelCompletedTermsReminder(env, tokenHash) {
+  if (!env.NOTIFICATIONS_DB) return;
+  try {
+    const query = new URLSearchParams({
+      select: 'booking_request_id',
+      token_hash: `eq.${tokenHash}`,
+      consumed_at: 'not.is.null',
+      limit: '1'
+    });
+    const response = await supabaseRequest(env, `terms_acceptance_invitations?${query}`);
+    if (!response.ok) return;
+    const rows = await response.json();
+    const bookingId = Array.isArray(rows) ? String(rows[0]?.booking_request_id || '') : '';
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingId)) return;
+    const entityRef = await notificationEntityRef('booking_request', bookingId);
+    const cancelledAt = new Date().toISOString();
+    const cancelled = await env.NOTIFICATIONS_DB.prepare("UPDATE notification_jobs SET status='cancelled',cancelled_at=?,failure_reason='terms_state_changed',terminal_reason='terms_state_changed' WHERE source_type='participant_terms_reminder' AND source_id=? AND status='scheduled'")
+      .bind(cancelledAt, entityRef).run();
+    if (cancelled.meta?.changes) await env.NOTIFICATIONS_DB.prepare("INSERT INTO notification_audit_log(id,event_type,audience,outcome,metadata_json,created_at) VALUES(?,'participant_terms_reminder_cancelled','public','terms_state_changed',?,?)")
+      .bind(crypto.randomUUID(), JSON.stringify({ count: cancelled.meta.changes }), cancelledAt).run();
+  } catch {
+    // Acceptance evidence is authoritative; cross-system reminder cleanup is best-effort.
+  }
 }
 
 function exactKeys(value, allowed) {
@@ -131,6 +157,7 @@ export async function onRequest(context) {
     if (!response.ok) return schemaUnavailable(result) ? json(request, env, 503, { ok: false, code: 'terms_invitation_unavailable' }) : unavailable(request, env);
     const row = databaseRow(result);
     if (!row?.accepted_at) return unavailable(request, env);
+    await cancelCompletedTermsReminder(env, tokenHash);
     return json(request, env, 200, {
       ok: true,
       accepted: true,

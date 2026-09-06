@@ -14,6 +14,7 @@ const notificationsUi=read('src/features/notifications/NotificationsPage.jsx');
 const notificationsService=read('src/services/notificationService.js');
 const bookingService=read('src/services/bookingRequests.js');
 const notificationConfig=read('workers/notifications/wrangler.toml');
+const termsReminderD1=read('workers/notifications/migrations/0007_participant_terms_reminders.sql');
 const onboarding=read('src/features/onboarding/FirstRunOnboarding.jsx');
 const docs=read('docs/TERMS_EVIDENCE_FOUNDATION_20260905.md');
 const packageJson=read('package.json');
@@ -78,7 +79,7 @@ test('42 Fast Request preserves canonical tracking and website source',()=>has(f
 test('43 Gift Card and Finance semantics are untouched',()=>{lacks(migration,'finance_entries','booking_code_expected','gift_card_requests');});
 test('44 PWA onboarding has no Terms coupling',()=>lacks(onboarding,'termsAccepted','terms_versions','TermsAcceptanceControl'));
 test('45 cookie and privacy preferences remain separate',()=>{lacks(control,'writePrivacyPreferences','readPrivacyPreferences');lacks(migration,'privacy_preferences','cookie');});
-test('46 contractual evidence is stored in Supabase not D1',()=>{assert.ok(!fs.readdirSync('workers/notifications/migrations').some((name)=>/terms/i.test(name)));has(docs,'Terms evidence is stored in Supabase, not D1.');});
+test('46 contractual evidence is stored in Supabase while D1 contains reminder state only',()=>{lacks(termsReminderD1,'terms_acceptances','terms_versions','terms_acceptance_invitations','content_sha256','token_hash');has(termsReminderD1,'terms_reminder_checked_at','customer_participant_terms_reminder');has(docs,'Terms evidence is stored in Supabase, not D1.');});
 test('47 public Terms response omits raw checksum',()=>{has(termsApi,'content_snapshot','effectiveAt');lacks(termsApi,'content_sha256','hash:');});
 test('48 owned customer response omits booking locator and checksum',()=>{const payload=section(notificationsApi,'async function ownedTermsPayload','function customerPreferenceColumn');lacks(payload,'bookingId:','terms_content_sha256:','content_sha256:');});
 test('49 infrastructure migration publishes no placeholder or unapproved Terms',()=>{lacks(migration,'insert into public.terms_versions','2026-06-30','Queste condizioni regolano','These terms govern');has(migration,'Intentionally publish no contractual text','resolver returns no row');});
@@ -86,7 +87,7 @@ test('50 documentation keeps publication legal review and retention unresolved',
 test('51 customer UI exposes only organizer acceptance action',()=>{has(ownedTerms,"organizerPending&&",'Accept for myself');lacks(ownedTerms,'accept for participant','participantId,versionId');});
 test('52 source services use only trusted endpoints',()=>{has(termsService,"fetch(`/api/public/terms?","method: 'GET'");has(notificationsService,'ownership/${encodeURIComponent(ownershipId)}/terms');});
 test('53 missing schema fails direct request UI safely',()=>{has(control,'Terms are unavailable. The website request cannot be sent.','disabled={loading||Boolean(loadError)||!terms}');has(termsApi,"503, { ok: false, code: 'terms_unavailable'");});
-test('54 terms regression is part of the full quality gate',()=>has(packageJson,'"test:terms": "node tools/terms-regression.mjs"','npm run test:participants && npm run test:terms && npm run test:participant-terms && npm run test:backup'));
+test('54 Terms acceptance and automation regressions are part of the full quality gate',()=>has(packageJson,'"test:terms": "node tools/terms-regression.mjs"','"test:participant-terms-automation": "node tools/participant-terms-automation-regression.mjs"','npm run test:participants && npm run test:terms && npm run test:participant-terms && npm run test:participant-terms-automation && npm run test:backup'));
 test('55 transactional local SQL covers empty resolver hashes privileges locale idempotency and self-acceptance',()=>has(localSqlTest,'terms_test_unapproved_version_published','Local test only.','terms_test_hash_mismatch','terms_test_browser_table_privilege','terms_test_locale_mismatch_allowed','terms_test_idempotency','terms_test_organizer_self_acceptance','rollback;'));
 test('56 legal sources are valid UTF-8 and contain no common mojibake markers',()=>{const files=['supabase/migrations/20260905110000_terms_evidence_foundation.sql','src/main.jsx','src/features/legal/TermsAcceptanceControl.jsx','docs/TERMS_EVIDENCE_FOUNDATION_20260905.md'];for(const file of files){const bytes=fs.readFileSync(file);assert.doesNotThrow(()=>new TextDecoder('utf-8',{fatal:true}).decode(bytes),`${file} is not valid UTF-8`);const source=new TextDecoder().decode(bytes);for(const marker of ['Ã','Â','â€™','â€œ','â€','�'])assert.ok(!source.includes(marker),`${file} contains mojibake marker ${marker}`);}});
 test('57 no current version fails closed without fabricating request acceptance',()=>{has(termsApi,"503, { ok: false, code: 'terms_unavailable'",'!row?.id');has(control,'Terms are unavailable. The website request cannot be sent.');lacks(bookingApi,'create_public_booking_request(request_payload)');});
