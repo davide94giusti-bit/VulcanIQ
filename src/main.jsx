@@ -28,12 +28,14 @@ import { paymentSummary, financeEntryHasBusinessSource, financeEntryIsRecognized
 import { applySeo } from './seo.js';
 import { ADMIN_ROLES, listAdminUsers, updateAdminUser } from './services/adminUsers.js';
 import OperationalSafeguardsBanner from './features/admin/OperationalSafeguardsBanner.jsx';
+import { AdminDashboardDrawer, AdminDashboardHeader, AdminDashboardSection, AdminDashboardSkeleton } from './features/admin/AdminDashboardUI.jsx';
 import VideoOptimizer from './features/admin/media/VideoOptimizer.jsx';
 import WeeklyReportsAdminPanel from './features/system/WeeklyReportsAdminPanel.jsx';
 import { CURRENT_TRACKING_ACTIVATION_MS, SMALL_SAMPLE_VISITOR_THRESHOLD, isCurrentTrackingRecord } from './features/analytics/integrity.js';
 import { ANALYTICS_PERIODS as CANONICAL_ANALYTICS_PERIODS, analyticsPeriodLabel as canonicalAnalyticsPeriodLabel, analyticsDateRange as canonicalAnalyticsDateRange, summaryToAdminModelPatch, defaultAnalyticsCustomRange } from './features/analytics/contract.js';
 import AnalyticsHealthPanel from './features/analytics/AnalyticsHealthPanel.jsx';
 import AnalyticsCanonicalFunnels from './features/analytics/AnalyticsCanonicalFunnels.jsx';
+import { AnalyticsHelperNote, AnalyticsPanel, AnalyticsRowList, AnalyticsStaticPanel, AnalyticsSubsection, AnalyticsTable, AnalyticsWarningList } from './features/analytics/AnalyticsDashboardPresentation.jsx';
 import ReviewsPage from './features/reviews/ReviewsPage.jsx';
 import GoogleReviewsAdminStatus from './features/reviews/GoogleReviewsAdminStatus.jsx';
 import NotificationsPage from './features/notifications/NotificationsPage.jsx';
@@ -48,6 +50,7 @@ import DomainErrorBoundary from './app/DomainErrorBoundary.jsx';
 import './styles.css';
 import './styles/admin-system.css';
 import './styles/analytics-consolidated.css';
+import './styles/admin-dashboard.css';
 
 const PHONE_DISPLAY = '+39 334 929 8246';
 const PHONE_WA = '393349298246';
@@ -7651,6 +7654,7 @@ function WebsiteAdminPage({ lang, session }) {
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [sourceFailures, setSourceFailures] = useState([]);
   const [feedback, setFeedback] = useState('');
   const [notice, setNotice] = useState('');
   const [saving, setSaving] = useState(false);
@@ -10304,72 +10308,8 @@ function buildAnalyticsModel({ events: inputEvents = [], sessions: inputSessions
   };
 }
 
-function AnalyticsRowList({ rows, total, empty, helperLabel }) {
-  if (!rows.length || rows.every((row) => !row.count)) return <p className="small-note analytics-empty-row">{empty}</p>;
-  const max = Math.max(...rows.map((row) => Number(row.count || 0)), 1);
-  return (
-    <div className="analytics-row-list">
-      {rows.map((row) => (
-        <div className="analytics-row" key={row.label}>
-          <span>{row.label}{row.helper !== undefined && <small>{helperLabel}: {row.helper}</small>}</span>
-          <strong>{row.count}</strong>
-          <em>{rowPercent(row.count, total)}</em>
-          <i><b style={{ width: `${Math.max(3, (Number(row.count || 0) / max) * 100)}%` }} /></i>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function AnalyticsWarningList({ warnings = [], lang = 'it', onOpenDetails }) {
-  if (!warnings.length) return null;
-  const normalized = warnings.map((warning) => (typeof warning === 'string' ? { type: 'diagnostic', message: warning, helper: '', detail: '' } : warning));
-  const groups = [
-    ['critical', adminCopy(lang, 'Problemi critici di tracciamento', 'Critical tracking issues')],
-    ['warning', adminCopy(lang, 'Avvisi da verificare', 'Warnings to review')],
-    ['historical', adminCopy(lang, 'Diagnostica storica', 'Historical diagnostics')],
-    ['diagnostic', adminCopy(lang, 'Note diagnostiche', 'Diagnostic notes')],
-    ['attribution', adminCopy(lang, 'Note attribuzione', 'Attribution notes')],
-    ['ux', adminCopy(lang, 'Note test UX', 'UX testing notes')]
-  ];
-  return (
-    <div className="analytics-warning-list grouped" role="status">
-      {groups.map(([type, fallbackTitle]) => {
-        const items = normalized.filter((warning) => warning.type === type);
-        if (!items.length) return null;
-        return (
-          <section className={`analytics-warning-group ${type}`} key={type}>
-            <h3>{fallbackTitle}</h3>
-            {items.map((warning, index) => (
-              <p key={`${type}-${index}`}>
-                <span>{warning.message}</span>
-                {warning.helper && <small>{warning.helper}</small>}
-              </p>
-            ))}
-          </section>
-        );
-      })}
-      {onOpenDetails && (
-        <div className="analytics-warning-actions">
-          <button className="button secondary analytics-details-button" type="button" onClick={onOpenDetails}>
-            {adminCopy(lang, 'Dettagli analytics', 'Analytics details')}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function AnalyticsDetailsModal({ lang = 'it', model, onClose }) {
   useBodyScrollLock(true);
-  useEffect(() => {
-    function handleKeyDown(event) {
-      if (event.key === 'Escape') onClose?.();
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
   const warnings = Array.isArray(model?.warnings) ? model.warnings : [];
   const utmExamples = [
     '?utm_source=instagram&utm_medium=social&utm_campaign=july_2026',
@@ -10379,17 +10319,15 @@ function AnalyticsDetailsModal({ lang = 'it', model, onClose }) {
   ];
 
   return (
-    <div className="modal-backdrop analytics-details-backdrop" role="presentation" onClick={onClose}>
-      <section className="admin-modal full-screen-admin-modal analytics-details-modal" role="dialog" aria-modal="true" aria-labelledby="analyticsDetailsTitle" onClick={(event) => event.stopPropagation()}>
-        <div className="admin-modal-header analytics-details-header">
-          <div>
-            <span className="kicker">vulcanIQ</span>
-            <h2 id="analyticsDetailsTitle">{adminCopy(lang, 'Dettagli analytics', 'Analytics details')}</h2>
-            <p>{adminCopy(lang, 'Diagnostica tecnica del funnel, qualità dati, attribuzione e percorso mobile. Usare questi dettagli per correggere il tracciamento, non come prova marketing.', 'Technical diagnostics for funnel integrity, data quality, attribution, and mobile paths. Use these details to fix tracking, not as marketing proof.')}</p>
-          </div>
-          <button className="modal-close-button" type="button" onClick={onClose}>{adminCopy(lang, 'Chiudi', 'Close')}</button>
-        </div>
-
+    <AdminDashboardDrawer
+      titleId="analyticsDetailsTitle"
+      eyebrow="vulcanIQ"
+      title={adminCopy(lang, 'Dettagli analytics', 'Analytics details')}
+      description={adminCopy(lang, 'Diagnostica tecnica del funnel, qualità dati, attribuzione e percorso mobile. Usare questi dettagli per correggere il tracciamento, non come prova marketing.', 'Technical diagnostics for funnel integrity, data quality, attribution, and mobile paths. Use these details to fix tracking, not as marketing proof.')}
+      closeLabel={adminCopy(lang, 'Chiudi', 'Close')}
+      onClose={onClose}
+      wide
+    >
         <div className="admin-summary-grid analytics-mini-summary-grid analytics-details-summary">
           <SummaryCard label={adminCopy(lang, 'Richieste sito', 'Website requests')} value={model?.websiteRequests ?? 0} helper={adminCopy(lang, 'Tutti i record business storici', 'All historical business records')} />
           <SummaryCard label={adminCopy(lang, 'Submit success tracciati', 'Tracked submit successes')} value={model?.submitSuccesses ?? 0} />
@@ -10486,63 +10424,9 @@ function AnalyticsDetailsModal({ lang = 'it', model, onClose }) {
             empty={adminCopy(lang, 'Nessun dato attribuzione disponibile.', 'No attribution data available.')}
           />
         </AnalyticsSubsection>
-      </section>
-    </div>
+    </AdminDashboardDrawer>
   );
 }
-
-function AnalyticsHelperNote({ children }) {
-  if (!children) return null;
-  return <p className="small-note analytics-helper-note">{children}</p>;
-}
-
-function AnalyticsTable({ columns = [], rows = [], empty }) {
-  if (!rows.length) return <p className="small-note analytics-empty-row">{empty}</p>;
-  return (
-    <div className="analytics-table-scroll" role="region" tabIndex="0">
-      <table className="analytics-drilldown-table">
-        <thead>
-          <tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={row.id || row.path || row.experience || row.step || `${index}-${columns.map((column) => row[column.key]).join('-')}`}>
-              {columns.map((column) => <td key={column.key}>{row[column.key] ?? '—'}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function AnalyticsPanel({ title, children }) {
-  return (
-    <details className="admin-panel analytics-panel analytics-collapsible-panel">
-      <summary className="analytics-collapsible-summary"><h2>{title}</h2></summary>
-      <div className="analytics-collapsible-body">{children}</div>
-    </details>
-  );
-}
-
-function AnalyticsStaticPanel({ title, children }) {
-  return (
-    <section className="admin-panel analytics-panel analytics-static-panel">
-      <header className="analytics-static-header"><h2>{title}</h2></header>
-      <div className="analytics-static-body">{children}</div>
-    </section>
-  );
-}
-
-function AnalyticsSubsection({ title, children }) {
-  return (
-    <section className="analytics-subsection">
-      <h3>{title}</h3>
-      <div className="analytics-subsection-body">{children}</div>
-    </section>
-  );
-}
-
 
 function safeBookingRequestRows(requests = [], range, lang) {
   return (requests || [])
@@ -11612,14 +11496,22 @@ function AdminAnalyticsPage({ lang, profile, adminContent = {} }) {
           from: summary?.meta?.effective_from || '',
           to: summary?.meta?.effective_to || range.to || ''
         };
-        const [eventPage, sessionPage, requests] = await Promise.all([
+        const detailResults = await Promise.allSettled([
           listAnalyticsEventPage({ ...drilldownRange, page: 0, pageSize: 250 }),
           listAnalyticsSessionPage({ ...drilldownRange, page: 0, pageSize: 250 }),
-          listBookingRequests({ limit: 1000 }).catch(() => [])
+          listBookingRequests({ limit: 1000 })
         ]);
         if (!alive) return;
+        const detailFailures = detailResults.filter((result) => result.status === 'rejected');
+        const detailValue = (index, fallback) => detailResults[index].status === 'fulfilled' ? detailResults[index].value : fallback;
+        const eventPage = detailValue(0, { rows: [], total: 0 });
+        const sessionPage = detailValue(1, { rows: [], total: 0 });
+        const requests = detailValue(2, []);
         setState({
-          loading: false, error: '', technicalError: '', summary,
+          loading: false,
+          error: detailFailures.length ? adminCopy(lang, `Le metriche canoniche sono disponibili, ma ${detailFailures.length}/3 sorgenti diagnostiche non sono state caricate.`, `Canonical metrics are available, but ${detailFailures.length}/3 diagnostic sources did not load.`) : '',
+          technicalError: detailFailures.map((result) => analyticsTechnicalError(result.reason)).filter(Boolean).join(' | '),
+          summary,
           events: eventPage.rows || [], sessions: sessionPage.rows || [], bookingRequests: requests || [],
           eventTotal: eventPage.total || 0, sessionTotal: sessionPage.total || 0,
           lastRefreshed: new Date().toISOString()
@@ -11695,14 +11587,11 @@ function AdminAnalyticsPage({ lang, profile, adminContent = {} }) {
   }
 
   return (
-    <section className="admin-subpage analytics-admin-page">
-      <div className="admin-page-header analytics-page-header">
-        <div>
-          <span className="kicker">vulcanIQ</span>
-          <AdminEditableText as="h1" itemKey="admin.analytics.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Dati', 'Analytics')} />
-          <AdminEditableText as="p" itemKey="admin.analytics.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Metriche anonime e privacy-first sulle visite pubbliche, le azioni e il percorso verso la prenotazione.', 'Anonymous privacy-first metrics about public visits, actions, and movement toward booking.')} />
-        </div>
-        <div className="analytics-header-actions">
+    <section className="admin-subpage analytics-admin-page admin-dashboard-page">
+      <AdminDashboardHeader
+        title={<AdminEditableText as="h1" itemKey="admin.analytics.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Dati', 'Analytics')} />}
+        description={<AdminEditableText as="span" itemKey="admin.analytics.helper" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Metriche anonime e privacy-first sulle visite pubbliche, le azioni e il percorso verso la prenotazione.', 'Anonymous privacy-first metrics about public visits, actions, and movement toward booking.')} />}
+        actions={<>
           <label className="analytics-period-filter">
             <span>{adminCopy(lang, 'Periodo', 'Period')}</span>
             <select value={period} onChange={(event) => setPeriod(event.target.value)}>
@@ -11714,28 +11603,13 @@ function AdminAnalyticsPage({ lang, profile, adminContent = {} }) {
             <label><span>{adminCopy(lang, 'Al', 'To')}</span><input type="date" value={customRange.to} onChange={(event) => setCustomRange((current) => ({ ...current, to: event.target.value }))} /></label>
           </div>}
           <button className="button secondary analytics-export-button" type="button" disabled={state.loading || (period === 'custom' && range.valid === false)} onClick={() => downloadAnalyticsExport({ lang, period, range, model, canonicalSummary: state.summary, events: state.events, sessions: state.sessions, bookingRequests: state.bookingRequests, eventTotal: state.eventTotal, sessionTotal: state.sessionTotal })}>{adminCopy(lang, 'Esporta metriche', 'Export metrics')}</button>
-        </div>
-      </div>
-
-      {state.summary && <AnalyticsHealthPanel
-        lang={lang}
-        meta={state.summary.meta}
-        lastRefreshed={state.lastRefreshed}
-        busy={state.loading}
-        browserExcluded={browserExcluded}
-        onRefresh={() => setReloadToken((value) => value + 1)}
-        onStartBaseline={startNewBaseline}
-        onClearBaseline={clearBaseline}
-        canManageBaseline={['owner', 'manager'].includes(profile?.role) && profile?.active !== false}
-        onToggleBrowserExclusion={toggleBrowserExclusion}
-      />}
-
-      <ShortLinksPanel lang={lang} />
+        </>}
+      />
 
       {state.error && (
         <div className="admin-alert warning" role="status">
           <p>{state.error}</p>
-          <p>{setupText}</p>
+          {!state.summary && <p>{setupText}</p>}
           {state.technicalError && (
             <details className="admin-technical-details">
               <summary>{adminCopy(lang, 'Dettagli tecnici', 'Technical details')}</summary>
@@ -11744,12 +11618,16 @@ function AdminAnalyticsPage({ lang, profile, adminContent = {} }) {
           )}
         </div>
       )}
-      {state.loading ? <p>{adminCopy(lang, 'Caricamento dati...', 'Loading analytics...')}</p> : (
+      {state.loading ? <AdminDashboardSkeleton label={adminCopy(lang, 'Caricamento dati...', 'Loading analytics...')} cards={8} /> : (
         <>
           {!hasData && <div className="admin-alert warning" role="status">{emptyText}<br />{setupText}</div>}
           {(state.eventTotal > state.events.length || state.sessionTotal > state.sessions.length) && <p className="analytics-raw-sample-note">{adminCopy(lang, `Le metriche principali sono aggregate sul server e complete. I dettagli tecnici sotto mostrano solo un campione paginato (${state.events.length}/${state.eventTotal} eventi; ${state.sessions.length}/${state.sessionTotal} sessioni).`, `Primary metrics are complete server-side aggregates. Technical drilldowns below show only a paginated sample (${state.events.length}/${state.eventTotal} events; ${state.sessions.length}/${state.sessionTotal} sessions).`)}</p>}
 
-          <AnalyticsStaticPanel title={<AdminEditableText itemKey="admin.analytics.overview.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Panoramica', 'Overview')} />}>
+          <AdminDashboardSection
+            eyebrow={adminCopy(lang, 'Panoramica', 'Overview')}
+            title={<AdminEditableText itemKey="admin.analytics.overview.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Segnali principali', 'Key signals')} />}
+            description={adminCopy(lang, 'Metriche canoniche server-side per il periodo selezionato.', 'Canonical server-side metrics for the selected period.')}
+          >
             <AnalyticsWarningList warnings={model.warnings} lang={lang} onOpenDetails={() => setAnalyticsDetailsOpen(true)} />
             <div className="admin-summary-grid analytics-summary-grid">
               <SummaryCard label={adminCopy(lang, 'Visitatori unici stimati', 'Approx. unique visitors')} value={model.visitors || '—'} helper={adminCopy(lang, 'Profili browser anonimi', 'Anonymous browser profiles')} />
@@ -11765,7 +11643,26 @@ function AdminAnalyticsPage({ lang, profile, adminContent = {} }) {
               <SummaryCard label={adminCopy(lang, 'Errori invio sito', 'Website submit errors')} value={model.submitErrors} />
               <SummaryCard label={adminCopy(lang, 'Tempo medio di coinvolgimento', 'Average engagement time')} value={model.averageEngagement} />
             </div>
-          </AnalyticsStaticPanel>
+          </AdminDashboardSection>
+
+          {state.summary && <AdminDashboardSection
+            eyebrow={adminCopy(lang, 'Stato', 'Status')}
+            title={adminCopy(lang, 'Integrità e aggiornamento', 'Integrity and freshness')}
+            description={adminCopy(lang, 'Copertura del dato, baseline e controlli operativi.', 'Data coverage, reporting baseline, and operational controls.')}
+          >
+            <AnalyticsHealthPanel
+              lang={lang}
+              meta={state.summary.meta}
+              lastRefreshed={state.lastRefreshed}
+              busy={state.loading}
+              browserExcluded={browserExcluded}
+              onRefresh={() => setReloadToken((value) => value + 1)}
+              onStartBaseline={startNewBaseline}
+              onClearBaseline={clearBaseline}
+              canManageBaseline={['owner', 'manager'].includes(profile?.role) && profile?.active !== false}
+              onToggleBrowserExclusion={toggleBrowserExclusion}
+            />
+          </AdminDashboardSection>}
 
           {state.summary && <AnalyticsCanonicalFunnels lang={lang} payload={state.summary} />}
 
@@ -12030,6 +11927,7 @@ function AdminAnalyticsPage({ lang, profile, adminContent = {} }) {
               </AnalyticsSubsection>
             </div>
           </AnalyticsPanel>
+          <ShortLinksPanel lang={lang} />
         </>
       )}
       {analyticsDetailsOpen && <AnalyticsDetailsModal lang={lang} model={model} onClose={() => setAnalyticsDetailsOpen(false)} />}
@@ -12125,18 +12023,31 @@ const [filters, setFilters] = useState({
   async function refresh() {
     setLoading(true);
     setError('');
+    setSourceFailures([]);
     const dateRange = resolveFinanceDateRange(filters, lang);
     try {
-      const [entryData, requestData, fixedData, leafletData, commissionSummaryData, allFinanceData, codeData, giftCardData] = await Promise.all([
+      const results = await Promise.allSettled([
         listFinanceEntries({ ...filters, fromDate: dateRange.startDate, toDate: dateRange.endDate }),
         listBookingRequests({ limit: 250 }),
         listFixedExcursions({ activeOnly: false }),
         listMonthlyLeaflets({ activeOnly: false }),
-        listPartnerCommissionSummary({ limit: 1000 }).catch(() => ({ commissions: [], pendingAmount: 0, approvedUnpaidAmount: 0, paidAmount: 0, cancelledAmount: 0, unpaidLiability: 0, pendingCount: 0, approvedCount: 0, paidCount: 0, cancelledCount: 0, byPartner: [], byCurrency: [] })),
+        listPartnerCommissionSummary({ limit: 1000 }),
         listFinanceEntries({ limit: 1000, includeArchived: true }),
         listBookingCodes({ limit: 500 }),
         listGiftCardRequests({ limit: 500 })
       ]);
+      const failures = results.filter((result) => result.status === 'rejected');
+      const sourceNames = ['finance_entries_filtered', 'booking_requests', 'fixed_excursions', 'monthly_leaflets', 'partner_commissions', 'finance_entries_reconciliation', 'booking_codes', 'gift_cards'];
+      const failedSources = results.flatMap((result, index) => result.status === 'rejected' ? [sourceNames[index]] : []);
+      const value = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback;
+      const entryData = value(0, []);
+      const requestData = value(1, []);
+      const fixedData = value(2, []);
+      const leafletData = value(3, []);
+      const commissionSummaryData = value(4, { commissions: [], pendingAmount: 0, approvedUnpaidAmount: 0, paidAmount: 0, cancelledAmount: 0, unpaidLiability: 0, pendingCount: 0, approvedCount: 0, paidCount: 0, cancelledCount: 0, byPartner: [], byCurrency: [] });
+      const allFinanceData = value(5, []);
+      const codeData = value(6, []);
+      const giftCardData = value(7, []);
       setEntries(entryData);
       setRequests(requestData);
       setFixedExcursions(fixedData);
@@ -12146,7 +12057,12 @@ const [filters, setFilters] = useState({
       setReconciliationEntries(allFinanceData);
       setReconciliationCodes(codeData);
       setReconciliationGiftCards(giftCardData);
+      setSourceFailures(failedSources);
+      if (failures.length) {
+        setError(adminCopy(lang, `Alcune sezioni non sono disponibili (${failures.length}/8). I dati caricati restano visibili; aggiorna per riprovare.`, `Some sections are unavailable (${failures.length}/8). Loaded data remains visible; refresh to retry.`));
+      }
     } catch (err) {
+      setSourceFailures(['finance_entries_filtered']);
       setError(err?.message || adminCopy(lang, 'Finanze non caricate.', 'Finance data not loaded.'));
     } finally {
       setLoading(false);
@@ -12237,27 +12153,27 @@ const [filters, setFilters] = useState({
   const linkedEntries = reportEntries.filter(financeEntryIsLinked);
   const unlinkedExpenseEntries = financeSummary.expenseEntries.filter((entry) => !financeEntryIsLinked(entry));
   const categories = filters.type === 'expense' ? FINANCE_CATEGORIES.expense : filters.type === 'income' ? FINANCE_CATEGORIES.income : [...FINANCE_CATEGORIES.income, ...FINANCE_CATEGORIES.expense];
+  const financeExperienceRows = useMemo(() => {
+    const counts = new Map();
+    requests.forEach((request) => {
+      const key = request.experience_id || 'unsure';
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return [...counts.entries()]
+      .map(([key, count]) => ({ label: adminExperienceLabel(key, lang), count }))
+      .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
+      .slice(0, 6);
+  }, [requests, lang]);
 
   return (
-    <section className="admin-page">
-      <div className="admin-page-header">
-        <div>
-          <AdminEditableText as="h1" itemKey="admin.finance.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Finanze', 'Finance')} />
-        </div>
-        <button className="button secondary" type="button" onClick={refresh}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>
-      </div>
+    <section className="admin-page admin-dashboard-page finance-dashboard-page">
+      <AdminDashboardHeader
+        title={<AdminEditableText as="h1" itemKey="admin.finance.title" lang={lang} adminContent={adminContent} fallback={adminCopy(lang, 'Finanze', 'Finance')} />}
+        description={adminCopy(lang, 'Entrate, uscite, riconciliazione e movimenti operativi.', 'Income, expenses, reconciliation, and operational movements.')}
+        actions={<button className="button secondary" type="button" onClick={refresh} disabled={loading}>{adminCopy(lang, 'Aggiorna', 'Refresh')}</button>}
+      />
       {feedback && <div className="admin-alert success" role="status">{feedback}</div>}
       {error && <div className="admin-alert error" role="alert">{error}</div>}
-      <div className="admin-summary-grid finance-summary-grid">
-        <SummaryCard label={adminCopy(lang, 'Incassato', 'Recorded payments')} value={aggregateMoney('income')} onClick={() => setActiveFinanceDetail({ key: 'income', title: adminCopy(lang, 'Entrate', 'Income'), entries: financeSummary.incomeEntries, total: financeSummary.income })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
-        <SummaryCard label={adminCopy(lang, 'Entrate attese', 'Expected revenue')} value={aggregateMoney('expectedIncome')} onClick={() => setActiveFinanceDetail({ key: 'expected-income', title: adminCopy(lang, 'Entrate attese', 'Expected income'), entries: financeSummary.expectedEntries, total: financeSummary.expectedIncome })} helper={adminCopy(lang, 'Non confermate', 'Not confirmed')} />
-        <SummaryCard label={adminCopy(lang, 'Uscite', 'Expenses')} value={aggregateMoney('expenses')} onClick={() => setActiveFinanceDetail({ key: 'expenses', title: adminCopy(lang, 'Uscite', 'Expenses'), entries: financeSummary.expenseEntries, total: financeSummary.expenses })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
-        <SummaryCard label={adminCopy(lang, 'Risultato netto', 'Net result')} value={aggregateMoney('net')} onClick={() => setActiveFinanceDetail({ key: 'net', title: adminCopy(lang, 'Utile netto', 'Net profit'), entries: reportEntries, total: financeSummary.net })} helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
-        <SummaryCard label={adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings')} value={linkedEntries.length} onClick={() => setActiveFinanceDetail({ key: 'linked', title: adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings'), entries: linkedEntries, total: linkedEntries.length })} helper={adminCopy(lang, 'Vedi movimenti', 'View entries')} />
-        <SummaryCard label={adminCopy(lang, 'Spese non collegate', 'Unlinked expenses')} value={unlinkedExpenseEntries.length} onClick={() => setActiveFinanceDetail({ key: 'unlinked-expenses', title: adminCopy(lang, 'Spese non collegate', 'Unlinked expenses'), entries: unlinkedExpenseEntries, total: unlinkedExpenseEntries.length })} helper={adminCopy(lang, 'Vedi spese', 'View expenses')} />
-        {Number(partnerCommissionSummary?.unpaidLiability || 0) > 0 && <SummaryCard label={adminCopy(lang, 'Liabilità commissioni partner', 'Partner commission liabilities')} value={formatCurrencyMetricRows(partnerCommissionSummary.byCurrency || [], 'unpaidLiability', lang)} helper={adminCopy(lang, 'In attesa + approvate non pagate', 'Pending + approved unpaid')} />}
-        <SummaryCard label={adminCopy(lang, 'Commissioni pagate', 'Paid commissions')} value={formatCurrencyMetricRows(partnerCommissionSummary?.byCurrency || [], 'paidAmount', lang)} helper={`${partnerCommissionSummary?.paidCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
-      </div>
       <div className="admin-filter-bar finance-filter-bar">
         <select value={filters.dateMode} onChange={(event) => updateFilter('dateMode', event.target.value)} aria-label={adminCopy(lang, 'Filtro date', 'Date filter')}>
           {FINANCE_DATE_FILTERS.map(([key]) => <option key={key} value={key}>{financeDateFilterLabel(key, lang)}</option>)}
@@ -12272,10 +12188,39 @@ const [filters, setFilters] = useState({
         <label className="finance-archive-filter"><input type="checkbox" checked={filters.includeArchived} onChange={(event) => updateFilter('includeArchived', event.target.checked)} /><span>{adminCopy(lang, 'Includi archivio', 'Include archive')}</span></label>
         <p className="small-note finance-filter-range-note">{adminCopy(lang, 'Periodo', 'Period')}: {resolvedDateRange.label}</p>
       </div>
-      <FinanceReconciliationPanel lang={lang} reconciliation={reconciliation} requestById={requestById} financeById={financeById} session={session} onChanged={refresh} onOpenEntry={(entry) => setActiveFinanceDetail({ key: 'movement', title: adminCopy(lang, 'Dettaglio movimento', 'Movement detail'), entries: [entry], total: Number(entry.amount || 0), selectedEntry: entry })} onRefundEntry={(entry) => setRefundTarget(entry)} />
-      {['owner', 'finance'].includes(profile?.role) && <FinancialAuditPanel lang={lang} />}
-      <FinanceOverview lang={lang} summary={financeSummary} rangeLabel={resolvedDateRange.label} onOpen={setActiveFinanceDetail} />
-      <FinanceProfitLoss lang={lang} summary={financeSummary} adminContent={adminContent} />
+      {loading && entries.length === 0 ? <AdminDashboardSkeleton label={adminCopy(lang, 'Caricamento...', 'Loading...')} cards={8} /> : sourceFailures.includes('finance_entries_filtered') ? (
+        <div className="admin-alert error" role="alert">{adminCopy(lang, 'I KPI finanziari non sono disponibili perché i movimenti filtrati non sono stati caricati.', 'Financial KPIs are unavailable because filtered Finance entries did not load.')}</div>
+      ) : <AdminDashboardSection
+        eyebrow="KPI"
+        title={adminCopy(lang, 'Posizione finanziaria', 'Financial position')}
+        description={adminCopy(lang, 'Totali calcolati dai movimenti Finance nel filtro attivo. Le valute non vengono consolidate senza FX.', 'Totals calculated from Finance entries in the active filter. Currencies are not consolidated without FX.')}
+      ><div className="admin-summary-grid finance-summary-grid">
+        <SummaryCard label={adminCopy(lang, 'Incassato', 'Recorded payments')} value={aggregateMoney('income')} onClick={() => setActiveFinanceDetail({ key: 'income', title: adminCopy(lang, 'Entrate', 'Income'), entries: financeSummary.incomeEntries, total: financeSummary.income })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Entrate attese', 'Expected revenue')} value={aggregateMoney('expectedIncome')} onClick={() => setActiveFinanceDetail({ key: 'expected-income', title: adminCopy(lang, 'Entrate attese', 'Expected income'), entries: financeSummary.expectedEntries, total: financeSummary.expectedIncome })} helper={adminCopy(lang, 'Non confermate', 'Not confirmed')} />
+        <SummaryCard label={adminCopy(lang, 'Uscite', 'Expenses')} value={aggregateMoney('expenses')} onClick={() => setActiveFinanceDetail({ key: 'expenses', title: adminCopy(lang, 'Uscite', 'Expenses'), entries: financeSummary.expenseEntries, total: financeSummary.expenses })} helper={adminCopy(lang, 'Apri dettaglio', 'Open details')} />
+        <SummaryCard label={adminCopy(lang, 'Risultato netto', 'Net result')} value={aggregateMoney('net')} onClick={() => setActiveFinanceDetail({ key: 'net', title: adminCopy(lang, 'Utile netto', 'Net profit'), entries: reportEntries, total: financeSummary.net })} helper={adminCopy(lang, 'Entrate meno uscite', 'Income minus expenses')} />
+        <SummaryCard label={adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings')} value={linkedEntries.length} onClick={() => setActiveFinanceDetail({ key: 'linked', title: adminCopy(lang, 'Prenotazioni collegate', 'Linked bookings'), entries: linkedEntries, total: linkedEntries.length })} helper={adminCopy(lang, 'Vedi movimenti', 'View entries')} />
+        <SummaryCard label={adminCopy(lang, 'Spese non collegate', 'Unlinked expenses')} value={unlinkedExpenseEntries.length} onClick={() => setActiveFinanceDetail({ key: 'unlinked-expenses', title: adminCopy(lang, 'Spese non collegate', 'Unlinked expenses'), entries: unlinkedExpenseEntries, total: unlinkedExpenseEntries.length })} helper={adminCopy(lang, 'Vedi spese', 'View expenses')} />
+        {Number(partnerCommissionSummary?.unpaidLiability || 0) > 0 && <SummaryCard label={adminCopy(lang, 'Liabilità commissioni partner', 'Partner commission liabilities')} value={formatCurrencyMetricRows(partnerCommissionSummary.byCurrency || [], 'unpaidLiability', lang)} helper={adminCopy(lang, 'In attesa + approvate non pagate', 'Pending + approved unpaid')} />}
+        <SummaryCard label={adminCopy(lang, 'Commissioni pagate', 'Paid commissions')} value={formatCurrencyMetricRows(partnerCommissionSummary?.byCurrency || [], 'paidAmount', lang)} helper={`${partnerCommissionSummary?.paidCount || 0} ${adminCopy(lang, 'record', 'records')}`} />
+      </div></AdminDashboardSection>}
+      <AdminDashboardSection eyebrow={adminCopy(lang, 'Andamento', 'Trend')} title={adminCopy(lang, 'Entrate, uscite e composizione', 'Income, expenses, and composition')}>
+        <FinanceProfitLoss lang={lang} summary={financeSummary} adminContent={adminContent} />
+        <FinanceOverview lang={lang} summary={financeSummary} rangeLabel={resolvedDateRange.label} onOpen={setActiveFinanceDetail} />
+      </AdminDashboardSection>
+      <AdminDashboardSection
+        eyebrow={adminCopy(lang, 'Volume', 'Volume')}
+        title={adminCopy(lang, 'Esperienze più richieste', 'Most requested experiences')}
+        description={adminCopy(lang, `Distribuzione sulle ${requests.length} richieste caricate per il contesto Finance.`, `Distribution across the ${requests.length} booking requests loaded for Finance context.`)}
+      >
+        <div className="admin-panel finance-volume-panel">
+          <AnalyticsRowList rows={financeExperienceRows} total={Math.max(1, requests.length)} empty={adminCopy(lang, 'Nessuna richiesta disponibile.', 'No booking requests available.')} />
+        </div>
+      </AdminDashboardSection>
+      <AdminDashboardSection eyebrow={adminCopy(lang, 'Operazioni', 'Operations')} title={adminCopy(lang, 'Riconciliazione e audit', 'Reconciliation and audit')}>
+        <FinanceReconciliationPanel lang={lang} reconciliation={reconciliation} requestById={requestById} financeById={financeById} session={session} onChanged={refresh} onOpenEntry={(entry) => setActiveFinanceDetail({ key: 'movement', title: adminCopy(lang, 'Dettaglio movimento', 'Movement detail'), entries: [entry], total: Number(entry.amount || 0), selectedEntry: entry })} onRefundEntry={(entry) => setRefundTarget(entry)} />
+        {['owner', 'finance'].includes(profile?.role) && <FinancialAuditPanel lang={lang} />}
+      </AdminDashboardSection>
       <PartnerCommissionsFinancePanel lang={lang} session={session} commissions={partnerCommissions} summary={partnerCommissionSummary} onChanged={async (message) => { setFeedback(message); await refresh(); }} />
       <div className="admin-two-column finance-layout">
         <details className="admin-panel finance-collapsible-panel finance-form-panel" open={Boolean(editing)}>
@@ -12532,20 +12477,23 @@ function FinanceDetailModal({ detail, lang, onClose }) {
   const isCountOnly = detail.key === 'linked' || detail.key === 'linked-bookings' || detail.key === 'linked-fixed' || detail.key === 'unlinked' || detail.key === 'unlinked-expenses';
   useBodyScrollLock(true);
   useEffect(() => { setSelectedEntry(detail.selectedEntry || null); }, [detail]);
+  const drawerDescription = !selectedEntry && (isCountOnly
+    ? `${detail.entries.length} ${adminCopy(lang, 'movimenti', 'entries')}`
+    : detailCurrencies.length === 1
+      ? formatMoney(numericTotal, detailCurrencies[0].currency, lang)
+      : detailCurrencies.length > 1
+        ? adminCopy(lang, 'Più valute — vedi movimenti', 'Multiple currencies — see entries')
+        : formatMoney(0, 'EUR', lang));
   return (
-    <div className="modal-backdrop finance-detail-backdrop" role="presentation" onClick={onClose}>
-      <section className="admin-modal finance-detail-modal full-screen-admin-modal" role="dialog" aria-modal="true" aria-labelledby="financeDetailTitle" onClick={(event) => event.stopPropagation()}>
-        <div className="admin-modal-header">
-          <div>
-            <span className="kicker">{selectedEntry ? adminCopy(lang, 'Dettaglio movimento', 'Movement detail') : adminCopy(lang, 'Dettaglio finanze', 'Finance details')}</span>
-            <h2 id="financeDetailTitle">{selectedEntry ? selectedEntry.title || detail.title : detail.title}</h2>
-            {!selectedEntry && <p>{isCountOnly ? `${detail.entries.length} ${adminCopy(lang, 'movimenti', 'entries')}` : detailCurrencies.length === 1 ? formatMoney(numericTotal, detailCurrencies[0].currency, lang) : detailCurrencies.length > 1 ? adminCopy(lang, 'Più valute — vedi movimenti', 'Multiple currencies — see entries') : formatMoney(0, 'EUR', lang)}</p>}
-          </div>
-          <div className="modal-actions inline-actions">
-            {selectedEntry && detail.entries.length > 1 && <button className="button secondary" type="button" onClick={() => setSelectedEntry(null)}>{adminCopy(lang, 'Indietro', 'Back')}</button>}
-            <button className="modal-close-button" type="button" onClick={onClose}>{adminCopy(lang, 'Chiudi', 'Close')}</button>
-          </div>
-        </div>
+    <AdminDashboardDrawer
+      titleId="financeDetailTitle"
+      eyebrow={selectedEntry ? adminCopy(lang, 'Dettaglio movimento', 'Movement detail') : adminCopy(lang, 'Dettaglio finanze', 'Finance details')}
+      title={selectedEntry ? selectedEntry.title || detail.title : detail.title}
+      description={drawerDescription}
+      closeLabel={adminCopy(lang, 'Chiudi', 'Close')}
+      onClose={onClose}
+    >
+        {selectedEntry && detail.entries.length > 1 && <button className="button secondary" type="button" onClick={() => setSelectedEntry(null)}>{adminCopy(lang, 'Indietro', 'Back')}</button>}
         {selectedEntry ? <FinanceMovementDetail entry={selectedEntry} lang={lang} /> : (
           detail.entries.length === 0 ? <p>{adminCopy(lang, 'Nessun movimento disponibile.', 'No entries available.')}</p> : (
             <div className="finance-detail-entry-list">
@@ -12553,8 +12501,7 @@ function FinanceDetailModal({ detail, lang, onClose }) {
             </div>
           )
         )}
-      </section>
-    </div>
+    </AdminDashboardDrawer>
   );
 }
 

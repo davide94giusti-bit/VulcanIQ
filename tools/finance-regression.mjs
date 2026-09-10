@@ -17,6 +17,8 @@ const mainSource = read('src/main.jsx');
 const claimMigration = read('supabase/migrations/20260824100000_booking_code_gift_card_claim_notifications.sql');
 const auditEndpoint = read('functions/api/admin/finance-audit.js');
 const auditService = read('src/services/financeAuditService.js');
+const dashboardUi = read('src/features/admin/AdminDashboardUI.jsx');
+const dashboardCss = read('src/styles/admin-dashboard.css');
 
 function schemaColumns(tableName) {
   const migrationDirectory = path.join(root, 'supabase', 'migrations');
@@ -261,6 +263,17 @@ test('multi-currency P&L stays separated with no implicit FX', () => {
   const summary = calculateLedgerSummary([payment('eur', 100), { ...payment('usd', 50), currency: 'USD' }]);
   eq(summary.byCurrency.length, 2, 'currency buckets');
   ok(mainSource.includes('Nessun totale consolidato') && mainSource.includes('No consolidated total'), 'UI lacks no-FX guard');
+});
+
+test('Finance dashboard presentation preserves contracts and responsive drilldowns', () => {
+  ok(mainSource.includes('finance-dashboard-page'), 'Finance dashboard scope missing');
+  ok(mainSource.includes('<FinanceProfitLoss') && mainSource.includes('<FinanceOverview'), 'existing Finance calculations are not rendered');
+  ok(mainSource.includes('Promise.allSettled(['), 'partial Finance source loading is not preserved');
+  ok(mainSource.includes('financeExperienceRows'), 'loaded booking volume breakdown missing');
+  ok(dashboardUi.includes("event.key === 'Escape'") && dashboardUi.includes("event.key !== 'Tab'"), 'drawer keyboard contract missing');
+  ok(dashboardUi.includes('returnFocusTo?.focus?.()'), 'drawer does not return focus');
+  ok(dashboardCss.includes('.admin-dashboard-drawer') && dashboardCss.includes('@media (max-width: 720px)'), 'responsive drawer styles missing');
+  ok(dashboardCss.includes('--admin-dashboard-bg: #0d0e0d') && dashboardCss.includes('--admin-dashboard-accent: #f06b4f'), 'dark Admin visual tokens missing');
 });
 
 for (const name of passes) console.log(`PASS  ${name}`);

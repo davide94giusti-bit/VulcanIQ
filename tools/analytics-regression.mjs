@@ -21,6 +21,8 @@ const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const passes = [];
 const failures = [];
+const dashboardUi = read('src/features/admin/AdminDashboardUI.jsx');
+const dashboardCss = read('src/styles/admin-dashboard.css');
 function test(name, fn) {
   try { fn(); passes.push(name); }
   catch (error) { failures.push(`${name}: ${error.message}`); }
@@ -351,6 +353,19 @@ test('analytics overview distinguishes historical business totals from compatibl
   assert.match(adminSource, /All historical business records/);
   assert.match(read('src/features/analytics/AnalyticsCanonicalFunnels.jsx'), /Compatible tracked requests/);
   assert.match(read('src/features/analytics/AnalyticsCanonicalFunnels.jsx'), /current tracking contract/);
+});
+
+test('Admin Analytics dashboard retains canonical truth and responsive accessible drilldowns', () => {
+  assert.match(adminSource, /analytics-admin-page admin-dashboard-page/);
+  assert.match(adminSource, /Canonical server-side metrics for the selected period/);
+  assert.match(adminSource, /Promise\.allSettled\(\[/);
+  assert.match(adminSource, /Canonical metrics are available, but/);
+  assert.match(dashboardUi, /role="dialog"/);
+  assert.match(dashboardUi, /aria-modal="true"/);
+  assert.match(dashboardUi, /event\.key === 'Escape'/);
+  assert.match(dashboardUi, /returnFocusTo\?\.focus\?\.\(\)/);
+  assert.match(dashboardCss, /\.admin-dashboard-drawer\.is-wide/);
+  assert.match(dashboardCss, /@media \(max-width: 720px\)/);
 });
 
 for (const name of passes) console.log(`PASS  ${name}`);
