@@ -2,6 +2,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { filterAndSortReviews, reviewSource, reviewDate, reviewGuide, reviewRating } from '../src/features/reviews/reviewModel.js';
+import { translateReviewText } from '../src/features/reviews/reviewTranslation.js';
+import {
+  beginReviewTranslation,
+  changeReviewTranslationTarget,
+  completeReviewTranslation,
+  displayedReviewTranslationText,
+  failReviewTranslation,
+  initialReviewTranslationState,
+  reviewTranslationCacheKey,
+  toggleReviewTranslationDisplay
+} from '../src/features/reviews/reviewTranslationState.js';
 
 const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -10,6 +21,42 @@ const failures = [];
 function test(name, fn) {
   try { fn(); passes.push(name); }
   catch (error) { failures.push(`${name}: ${error.message}`); }
+}
+async function testAsync(name, fn) {
+  try { await fn(); passes.push(name); }
+  catch (error) { failures.push(`${name}: ${error.message}`); }
+}
+
+async function withBrowserTranslationMocks({ detectedLanguage = 'fr', translatedText = 'Une traduction' } = {}, fn) {
+  const originalDetector = Object.getOwnPropertyDescriptor(globalThis, 'LanguageDetector');
+  const originalTranslator = Object.getOwnPropertyDescriptor(globalThis, 'Translator');
+  let translatorOptions = null;
+  Object.defineProperty(globalThis, 'LanguageDetector', {
+    configurable: true,
+    value: {
+      create: async () => ({
+        detect: async () => [{ detectedLanguage, confidence: 0.99 }],
+        destroy() {}
+      })
+    }
+  });
+  Object.defineProperty(globalThis, 'Translator', {
+    configurable: true,
+    value: {
+      create: async (options) => {
+        translatorOptions = options;
+        return { translate: async () => translatedText, destroy() {} };
+      }
+    }
+  });
+  try {
+    await fn(() => translatorOptions);
+  } finally {
+    if (originalDetector) Object.defineProperty(globalThis, 'LanguageDetector', originalDetector);
+    else delete globalThis.LanguageDetector;
+    if (originalTranslator) Object.defineProperty(globalThis, 'Translator', originalTranslator);
+    else delete globalThis.Translator;
+  }
 }
 
 const compact = read('src/features/reviews/ReviewCompactCard.jsx');
@@ -24,6 +71,7 @@ const googleProvider = read('supabase/functions/_shared/googleBusiness.ts');
 const migration = read('supabase/migrations/20260818150000_reviews_google_session_hardening.sql');
 const browserAnalytics = read('src/analytics.js');
 const translationClient = read('src/features/reviews/reviewTranslation.js');
+const translationStateModel = read('src/features/reviews/reviewTranslationState.js');
 const styles = read('src/styles.css');
 
 const fixtures = [
@@ -97,15 +145,25 @@ test('review detail translation is on-demand, browser-local, and preserves the o
   assert.match(detail, /review-translation-toolbar/);
   assert.match(detail, /translateReviewText/);
   assert.match(detail, /browserReviewTranslationSupported/);
-  assert.match(detail, /sourceLanguage:\s*safeReview\.language/);
-  assert.match(detail, /showTranslated/);
+  assert.doesNotMatch(detail, /sourceLanguage:\s*safeReview\.language/);
+  assert.doesNotMatch(detail, /showTranslated/);
+  assert.match(detail, /detectReviewSourceLanguage\(sourceText/);
+  assert.match(detail, /sourceLanguageSource:\s*'detected'/);
+  assert.match(detail, /reviewTranslationCacheKey/);
+  assert.match(detail, /translationRequestRef/);
+  assert.match(detail, /displayedReviewTranslationText/);
   assert.match(detail, /displayedReviewText/);
   assert.match(detail, /showOriginal/);
+  assert.match(detail, /aria-live="polite"/);
+  assert.match(detail, /aria-busy=/);
   assert.match(translationClient, /globalThis\.Translator/);
   assert.match(translationClient, /globalThis\.LanguageDetector/);
   assert.match(translationClient, /TranslatorApi\.create/);
   assert.match(translationClient, /detector\.detect/);
   assert.match(translationClient, /downloadprogress/);
+  assert.match(translationClient, /sourceLanguageSource === 'detected'/);
+  assert.match(translationClient, /translation_unchanged_result/);
+  assert.match(translationStateModel, /displayMode:\s*'original'/);
   assert.doesNotMatch(translationClient, /fetch\s*\(/);
   assert.doesNotMatch(translationClient, /translation\.googleapis\.com/);
 });
@@ -115,7 +173,7 @@ test('review translation is desktop-only and hidden on mobile or unsupported bro
   assert.match(detail, /translationEnabled\s*=\s*translationApiSupported && desktopTranslationViewport/);
   assert.match(detail, /\{translationEnabled && \(\s*<div className="review-translation-toolbar"/);
   assert.match(detail, /if \(!isOpen \|\| !translationEnabled\) return undefined/);
-  assert.match(detail, /displayedReviewText = translationEnabled && showTranslated/);
+  assert.match(detail, /displayedReviewText = translationEnabled \? displayedReviewTranslationText\(translationState\)/);
   assert.doesNotMatch(detail, /!translationSupported && <span className="review-translation-error"/);
 });
 
@@ -185,6 +243,103 @@ test('public reviews gracefully retain manual Google fallback if provider is una
   assert.match(service, /loadPublicGoogleReviews/);
   assert.match(service, /googleRows\.length/);
   assert.match(googleService, /return \[\]/);
+});
+
+await testAsync('review translation detects the text language instead of trusting stored locale metadata', async () => {
+  await withBrowserTranslationMocks({ detectedLanguage: 'fr', translatedText: 'Un’esperienza magnifica sull’Etna.' }, async (translatorOptions) => {
+    const result = await translateReviewText({
+      text: 'Une expérience magnifique sur l’Etna.',
+      sourceLanguage: 'en',
+      targetLanguage: 'it'
+    });
+    assert.equal(result.detected_source_language, 'fr');
+    assert.equal(result.target_language, 'it');
+    assert.equal(result.translated_text, 'Un’esperienza magnifica sull’Etna.');
+    assert.equal(translatorOptions().sourceLanguage, 'fr');
+    assert.equal(translatorOptions().targetLanguage, 'it');
+  });
+});
+
+await testAsync('review translation with missing source metadata still detects the actual language', async () => {
+  await withBrowserTranslationMocks({ detectedLanguage: 'de', translatedText: 'A wonderful experience.' }, async (translatorOptions) => {
+    const result = await translateReviewText({ text: 'Ein wunderbares Erlebnis.', targetLanguage: 'en' });
+    assert.equal(result.detected_source_language, 'de');
+    assert.equal(translatorOptions().sourceLanguage, 'de');
+  });
+});
+
+await testAsync('review translation fails closed on empty or unchanged browser output', async () => {
+  await withBrowserTranslationMocks({ detectedLanguage: 'fr', translatedText: '' }, async () => {
+    await assert.rejects(
+      translateReviewText({ text: 'Texte français.', targetLanguage: 'it' }),
+      (error) => error?.code === 'translation_empty_result'
+    );
+  });
+  await withBrowserTranslationMocks({ detectedLanguage: 'fr', translatedText: '  TEXTE   FRANÇAIS. ' }, async () => {
+    await assert.rejects(
+      translateReviewText({ text: 'Texte français.', targetLanguage: 'it' }),
+      (error) => error?.code === 'translation_unchanged_result'
+    );
+  });
+});
+
+test('translation state keeps body, labels, and toggle action on one authoritative result', () => {
+  let state = initialReviewTranslationState({ reviewId: 'review-a', originalText: 'Texte français.', targetLanguage: 'it' });
+  state = beginReviewTranslation(state);
+  state = completeReviewTranslation(state, { reviewId: 'review-a', translatedText: 'Testo francese.', sourceLanguage: 'fr', targetLanguage: 'it' });
+  assert.equal(state.status, 'translated');
+  assert.equal(state.sourceLanguage, 'fr');
+  assert.equal(state.targetLanguage, 'it');
+  assert.equal(state.displayMode, 'translation');
+  assert.equal(displayedReviewTranslationText(state), 'Testo francese.');
+  state = toggleReviewTranslationDisplay(state);
+  assert.equal(state.displayMode, 'original');
+  assert.equal(displayedReviewTranslationText(state), 'Texte français.');
+  state = toggleReviewTranslationDisplay(state);
+  assert.equal(displayedReviewTranslationText(state), 'Testo francese.');
+});
+
+test('changing target language clears the previous translation before a new result is accepted', () => {
+  const original = 'Texte français.';
+  let state = initialReviewTranslationState({ reviewId: 'review-a', originalText: original, targetLanguage: 'it' });
+  state = completeReviewTranslation(state, { reviewId: 'review-a', translatedText: 'Testo francese.', sourceLanguage: 'fr', targetLanguage: 'it' });
+  state = changeReviewTranslationTarget(state, 'en');
+  assert.equal(state.status, 'idle');
+  assert.equal(state.displayMode, 'original');
+  assert.equal(state.translatedText, '');
+  assert.equal(displayedReviewTranslationText(state), original);
+  assert.throws(
+    () => completeReviewTranslation(state, { reviewId: 'review-a', translatedText: 'Testo francese.', sourceLanguage: 'fr', targetLanguage: 'it' }),
+    (error) => error?.code === 'translation_stale_result'
+  );
+  state = completeReviewTranslation(state, { reviewId: 'review-a', translatedText: 'French text.', sourceLanguage: 'fr', targetLanguage: 'en' });
+  assert.equal(displayedReviewTranslationText(state), 'French text.');
+});
+
+test('switching reviews and failures always preserve the active original text', () => {
+  let reviewA = initialReviewTranslationState({ reviewId: 'review-a', originalText: 'Avis A.', targetLanguage: 'it' });
+  reviewA = completeReviewTranslation(reviewA, { reviewId: 'review-a', translatedText: 'Recensione A.', sourceLanguage: 'fr', targetLanguage: 'it' });
+  const reviewB = initialReviewTranslationState({ reviewId: 'review-b', originalText: 'Bewertung B.', targetLanguage: 'it' });
+  assert.equal(reviewB.translatedText, '');
+  assert.equal(displayedReviewTranslationText(reviewB), 'Bewertung B.');
+  assert.throws(
+    () => completeReviewTranslation(reviewB, { reviewId: 'review-a', translatedText: 'Recensione A.', sourceLanguage: 'fr', targetLanguage: 'it' }),
+    (error) => error?.code === 'translation_stale_result'
+  );
+  const failed = failReviewTranslation(beginReviewTranslation(reviewB), 'Translation unavailable.');
+  assert.equal(failed.status, 'error');
+  assert.equal(failed.displayMode, 'original');
+  assert.equal(failed.translatedText, '');
+  assert.equal(displayedReviewTranslationText(failed), 'Bewertung B.');
+});
+
+test('translation cache keys isolate review, content, detected source, and target language', () => {
+  const base = { reviewId: 'review-a', originalText: 'Texte français.', sourceLanguage: 'fr', targetLanguage: 'it' };
+  const key = reviewTranslationCacheKey(base);
+  assert.notEqual(key, reviewTranslationCacheKey({ ...base, reviewId: 'review-b' }));
+  assert.notEqual(key, reviewTranslationCacheKey({ ...base, originalText: 'Autre texte.' }));
+  assert.notEqual(key, reviewTranslationCacheKey({ ...base, sourceLanguage: 'de' }));
+  assert.notEqual(key, reviewTranslationCacheKey({ ...base, targetLanguage: 'en' }));
 });
 
 for (const name of passes) console.log(`PASS  ${name}`);

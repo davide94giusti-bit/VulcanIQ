@@ -90,7 +90,7 @@ export function normalizeReviewTranslationLanguage(value) {
   return normalizedLanguage(value);
 }
 
-async function detectReviewLanguage(text, { onProgress } = {}) {
+export async function detectReviewSourceLanguage(text, { onProgress } = {}) {
   const Detector = globalThis.LanguageDetector;
   if (!Detector || typeof Detector.create !== 'function') {
     throw translationError('translation_browser_unsupported', 'This browser does not support on-device language detection.');
@@ -118,7 +118,7 @@ async function detectReviewLanguage(text, { onProgress } = {}) {
   }
 }
 
-export async function translateReviewText({ text, targetLanguage, sourceLanguage, onProgress } = {}) {
+export async function translateReviewText({ text, targetLanguage, sourceLanguage, sourceLanguageSource = 'untrusted', onProgress } = {}) {
   const sourceText = String(text || '').trim();
   const target = normalizedLanguage(targetLanguage);
   if (!sourceText || !target) throw translationError('translation_input_incomplete', 'Translation input is incomplete.');
@@ -126,8 +126,10 @@ export async function translateReviewText({ text, targetLanguage, sourceLanguage
     throw translationError('translation_browser_unsupported', 'This browser does not support on-device review translation.');
   }
 
-  let source = normalizedLanguage(sourceLanguage);
-  if (!source) source = await detectReviewLanguage(sourceText, { onProgress });
+  const suppliedSource = normalizedLanguage(sourceLanguage);
+  const source = sourceLanguageSource === 'detected' && suppliedSource
+    ? suppliedSource
+    : await detectReviewSourceLanguage(sourceText, { onProgress });
   if (source === target) {
     throw translationError('translation_same_language', 'The review is already in the selected language.');
   }
@@ -143,7 +145,12 @@ export async function translateReviewText({ text, targetLanguage, sourceLanguage
     });
     onProgress?.({ phase: 'translating', progress: null });
     const translatedText = String(await translator.translate(sourceText) || '').trim();
-    if (!translatedText) throw translationError('translation_failed', 'The browser returned an empty translation.');
+    if (!translatedText) throw translationError('translation_empty_result', 'The browser returned an empty translation.');
+    const comparableOriginal = sourceText.normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase();
+    const comparableTranslation = translatedText.normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase();
+    if (comparableTranslation === comparableOriginal) {
+      throw translationError('translation_unchanged_result', 'The browser returned unchanged review text.');
+    }
     onProgress?.({ phase: 'complete', progress: 100 });
     return {
       ok: true,
