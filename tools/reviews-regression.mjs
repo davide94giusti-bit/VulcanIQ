@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { filterAndSortReviews, reviewSource, reviewDate, reviewGuide, reviewRating } from '../src/features/reviews/reviewModel.js';
-import { translateReviewText } from '../src/features/reviews/reviewTranslation.js';
+import { translateReviewText, withReviewTranslationTimeout } from '../src/features/reviews/reviewTranslation.js';
 import {
   beginReviewTranslation,
   changeReviewTranslationTarget,
@@ -163,6 +163,8 @@ test('review detail translation is on-demand, browser-local, and preserves the o
   assert.match(translationClient, /downloadprogress/);
   assert.match(translationClient, /sourceLanguageSource === 'detected'/);
   assert.match(translationClient, /translation_unchanged_result/);
+  assert.match(detail, /withReviewTranslationTimeout\(detectReviewSourceLanguage/);
+  assert.match(detail, /withReviewTranslationTimeout\(translateReviewText/);
   assert.match(translationStateModel, /displayMode:\s*'original'/);
   assert.doesNotMatch(translationClient, /fetch\s*\(/);
   assert.doesNotMatch(translationClient, /translation\.googleapis\.com/);
@@ -281,6 +283,13 @@ await testAsync('review translation fails closed on empty or unchanged browser o
       (error) => error?.code === 'translation_unchanged_result'
     );
   });
+});
+
+await testAsync('stalled browser translation APIs fail closed within the configured bound', async () => {
+  await assert.rejects(
+    withReviewTranslationTimeout(new Promise(() => {}), 5),
+    (error) => error?.code === 'translation_timeout'
+  );
 });
 
 test('translation state keeps body, labels, and toggle action on one authoritative result', () => {

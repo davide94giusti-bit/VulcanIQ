@@ -22,6 +22,15 @@ function translationError(code, message) {
   return error;
 }
 
+export function withReviewTranslationTimeout(operation, timeoutMs = 60000) {
+  const boundedTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 60000;
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(translationError('translation_timeout', 'On-device translation did not become available in time.')), boundedTimeout);
+  });
+  return Promise.race([Promise.resolve(operation), timeout]).finally(() => clearTimeout(timer));
+}
+
 function normalizedLanguage(value) {
   const raw = String(value || '').trim().replace(/_/g, '-');
   if (!raw) return '';

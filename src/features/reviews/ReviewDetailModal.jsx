@@ -8,7 +8,8 @@ import {
   detectReviewSourceLanguage,
   loadReviewTranslationLanguages,
   reviewTranslationFallbackLanguages,
-  translateReviewText
+  translateReviewText,
+  withReviewTranslationTimeout
 } from './reviewTranslation.js';
 import {
   beginReviewTranslation,
@@ -34,6 +35,7 @@ function translationErrorCopy(copy, error) {
     case 'translation_empty_result': return copy.translationEmptyResult;
     case 'translation_unchanged_result': return copy.translationUnchangedResult;
     case 'translation_stale_result': return copy.translationStaleResult;
+    case 'translation_timeout': return copy.translationTimeout;
     default: return copy.translationFailed;
   }
 }
@@ -120,7 +122,7 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
     };
     setTranslationState((current) => beginReviewTranslation(current));
     try {
-      const detectedSourceLanguage = await detectReviewSourceLanguage(sourceText, { onProgress: reportProgress });
+      const detectedSourceLanguage = await withReviewTranslationTimeout(detectReviewSourceLanguage(sourceText, { onProgress: reportProgress }));
       if (!requestIsCurrent()) return;
       const cacheKey = reviewTranslationCacheKey({ reviewId, originalText: sourceText, sourceLanguage: detectedSourceLanguage, targetLanguage });
       const cached = translationCacheRef.current.get(cacheKey);
@@ -128,13 +130,13 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
         setTranslationState((current) => completeReviewTranslation(current, cached));
         return;
       }
-      const result = await translateReviewText({
+      const result = await withReviewTranslationTimeout(translateReviewText({
         text: sourceText,
         targetLanguage,
         sourceLanguage: detectedSourceLanguage,
         sourceLanguageSource: 'detected',
         onProgress: reportProgress
-      });
+      }));
       if (!requestIsCurrent()) return;
       const translatedText = String(result?.translated_text || '').trim();
       const resolvedSourceLanguage = String(result?.detected_source_language || detectedSourceLanguage).trim();
@@ -143,6 +145,7 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
       translationCacheRef.current.set(cacheKey, completed);
     } catch (error) {
       if (!requestIsCurrent()) return;
+      translationRequestRef.current += 1;
       const unavailable = error?.code === 'translation_browser_unsupported' || error?.code === 'translation_pair_unsupported';
       setTranslationState((current) => failReviewTranslation(current, translationErrorCopy(copy, error), { unavailable }));
     }
