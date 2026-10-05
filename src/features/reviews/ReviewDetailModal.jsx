@@ -42,6 +42,7 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
   const guide = reviewGuide(safeReview);
   const rating = reviewRating(safeReview);
   const reviewer = reviewBookedBy(safeReview, lang);
+  const ratingLabel = rating == null ? copy.ratingUnavailable : `${rating}/5`;
   const defaultTargetLanguage = lang === 'it' ? 'it' : 'en';
   const translationApiSupported = browserReviewTranslationSupported();
   const [desktopTranslationViewport, setDesktopTranslationViewport] = useState(() => (
@@ -147,11 +148,11 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
           <div>
             <div className="review-card-source-row">
               <span className={`review-source-badge ${source}`}>{reviewSourceLabel(review, lang)}</span>
-              <span className="stars review-rating-stars" aria-label={`${rating}/5`}>{'★'.repeat(rating)}</span>
+              <span className="stars review-rating-stars" aria-label={ratingLabel}>{rating == null ? '—' : '★'.repeat(rating)}</span>
             </div>
             <h2 id="reviewDetailTitle">{reviewer}</h2>
             <div className="review-info-list review-detail-meta">
-              <span><b>{source === 'google' ? copy.name : copy.bookedBy}:</b> {reviewer}</span>
+              <span><b>{source === 'google' ? copy.reviewer : copy.bookedBy}:</b> {reviewer}</span>
               <span><b>{copy.date}:</b> {reviewDate(review, lang)}</span>
               {source !== 'google' && guide && <span><b>{copy.guide}:</b> {guide}</span>}
             </div>
@@ -161,7 +162,7 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
 
         {source === 'google' && (
           <div className="google-review-attribution" aria-label={copy.googleAttribution}>
-            {safeReview.profile_photo_url && <img src={safeReview.profile_photo_url} alt="" loading="lazy" referrerPolicy="no-referrer" />}
+            {safeReview.profile_photo_url && <img src={safeReview.profile_photo_url} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.hidden = true; }} />}
             <span>{copy.googleAttribution}</span>
           </div>
         )}
@@ -193,7 +194,7 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
 
         {safeReview.admin_reply && (
           <div className="public-admin-reply review-detail-reply">
-            <strong>{copy.response}</strong>
+            <strong>{source === 'google' ? copy.googleResponse : copy.response}</strong>
             <div className="formatted-review-text admin-reply-text">
               {normalizeReviewText(safeReview.admin_reply).map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 12)}`}>{paragraph}</p>)}
             </div>

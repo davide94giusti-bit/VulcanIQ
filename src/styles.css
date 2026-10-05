@@ -14253,6 +14253,7 @@ section#reviews.compact-section,
   width: 100% !important;
   display: flex !important;
   flex-direction: row !important;
+  flex-wrap: wrap !important;
   align-items: center !important;
   justify-content: space-between !important;
   gap: 16px !important;
@@ -14263,8 +14264,20 @@ section#reviews.compact-section,
   order: 1 !important;
 }
 
-.redesigned-reviews-panel .review-filter-dropdown {
+.redesigned-reviews-panel .reviews-google-review-button {
   order: 2 !important;
+}
+
+.redesigned-reviews-panel .reviews-google-maps-link {
+  order: 3 !important;
+  color: var(--basalt);
+  font-size: 0.88rem;
+  font-weight: 850;
+  text-underline-offset: 3px;
+}
+
+.redesigned-reviews-panel .review-filter-dropdown {
+  order: 4 !important;
   margin-left: auto !important;
   position: relative !important;
 }
@@ -14284,9 +14297,19 @@ section#reviews.compact-section,
   }
 
   .redesigned-reviews-panel .reviews-header-actions .button.primary,
+  .redesigned-reviews-panel .reviews-google-review-button,
+  .redesigned-reviews-panel .reviews-google-maps-link,
   .redesigned-reviews-panel .review-filter-dropdown,
   .redesigned-reviews-panel .review-filter-trigger {
     width: 100% !important;
+  }
+
+  .redesigned-reviews-panel .reviews-google-maps-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
   }
 }
 
@@ -14883,6 +14906,47 @@ section#reviews.compact-section,
   font-size: 0.92rem;
 }
 
+.reviewer-identity-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.reviewer-identity-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.google-review-avatar {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(13, 22, 38, 0.08);
+}
+
+.google-reviews-summary {
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: -4px 0 20px;
+  padding: 11px 14px;
+  border: 1px solid rgba(13, 22, 38, 0.10);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--basalt);
+}
+
+.google-reviews-summary strong,
+.google-reviews-summary span {
+  overflow-wrap: anywhere;
+}
+
 .compact-review-card-action {
   align-self: flex-end;
   color: var(--ash);
@@ -15154,6 +15218,11 @@ section#reviews.compact-section,
     min-height: 158px;
     padding: 20px;
     border-radius: 22px;
+  }
+
+  .google-reviews-summary {
+    width: 100%;
+    align-items: flex-start;
   }
 
   .review-detail-backdrop {

@@ -1,5 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
-import { loadPublicGoogleReviews } from './googleReviewsService.js';
+import { loadPublicGoogleReviewFeed } from './googleReviewsService.js';
 
 const publicReviewFields = 'id, created_at, reviewer_name, review_text, rating, language, admin_reply, admin_reply_at, source, review_date, external_review_url, profile_photo_url, display_order';
 const legacyPublicReviewFields = 'id, created_at, reviewer_name, review_text, rating, language, admin_reply, admin_reply_at';
@@ -76,9 +76,7 @@ function stripExtendedReviewPayload(payload) {
   return clone;
 }
 
-export async function loadPublicReviews() {
-  if (!isSupabaseConfigured) return [];
-
+async function loadPublicWebsiteReviews() {
   let response = await supabase
     .from('public_reviews')
     .select(publicReviewFields)
@@ -96,40 +94,50 @@ export async function loadPublicReviews() {
   }
 
   if (response.error) throw response.error;
+  return response.data || [];
+}
 
-  let googleRows = [];
-  try {
-    googleRows = await loadPublicGoogleReviews();
-  } catch {
-    // Provider failure must never blank first-party reviews.
-    googleRows = [];
+export async function loadPublicReviewsResult() {
+  if (!isSupabaseConfigured) {
+    return { reviews: [], websiteStatus: 'unavailable', googleStatus: 'unavailable', googleSummary: null };
   }
 
-  const firstPartyRows = response.data || [];
+  const [websiteResult, googleResult] = await Promise.allSettled([
+    loadPublicWebsiteReviews(),
+    loadPublicGoogleReviewFeed()
+  ]);
+
+  if (websiteResult.status === 'rejected' && googleResult.status === 'rejected') {
+    throw websiteResult.reason || googleResult.reason;
+  }
+
+  const firstPartyRows = websiteResult.status === 'fulfilled' ? websiteResult.value : [];
+  const googleFeed = googleResult.status === 'fulfilled'
+    ? googleResult.value
+    : { reviews: [], summary: null, status: 'unavailable' };
+  const googleRows = googleFeed.reviews;
+  const manualGoogleRows = firstPartyRows.filter((row) => normalizeSource(row.source) === 'google');
   const nativeRows = googleRows.length
     ? firstPartyRows.filter((row) => normalizeSource(row.source) !== 'google')
     : firstPartyRows;
-  const providerRows = googleRows.map((row) => ({
-    id: `google:${row.provider_review_id}`,
-    created_at: row.published_at,
-    reviewer_name: row.author_display_name || null,
-    review_text: row.review_text || '',
-    rating: row.rating || null,
-    language: row.review_language || null,
-    admin_reply: row.provider_reply_text || null,
-    admin_reply_at: row.provider_reply_updated_at || null,
-    source: 'google',
-    review_date: row.published_at ? String(row.published_at).slice(0, 10) : null,
-    external_review_url: row.google_maps_uri || null,
-    profile_photo_url: row.author_photo_uri || null,
-    display_order: 0,
-    provider_review_id: row.provider_review_id,
-    provider: 'google_business_profile',
-    provider_attribution: 'Google',
-    provider_cached_until: row.expires_at || null
-  }));
+  const normalizedNativeRows = nativeRows.map((row) => (
+    normalizeSource(row.source) === 'google' ? { ...row, provider: 'manual_google' } : row
+  ));
 
-  return [...nativeRows, ...providerRows];
+  return {
+    reviews: [...normalizedNativeRows, ...googleRows],
+    websiteStatus: websiteResult.status === 'fulfilled' ? 'available' : 'unavailable',
+    googleStatus: googleRows.length
+      ? 'available'
+      : manualGoogleRows.length
+        ? 'manual'
+        : googleFeed.status,
+    googleSummary: googleFeed.summary
+  };
+}
+
+export async function loadPublicReviews() {
+  return (await loadPublicReviewsResult()).reviews;
 }
 
 export async function submitPublicReview(input) {

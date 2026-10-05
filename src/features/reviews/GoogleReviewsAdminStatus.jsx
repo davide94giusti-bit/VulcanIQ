@@ -66,6 +66,8 @@ export default function GoogleReviewsAdminStatus({ lang = 'it' }) {
           <div><dt>{it ? 'Stato' : 'Status'}</dt><dd>{stateLabel}</dd></div>
           <div><dt>{it ? 'Ultimo aggiornamento' : 'Last successful refresh'}</dt><dd>{formatWhen(status?.last_success_at, lang)}</dd></div>
           <div><dt>{it ? 'Posizione' : 'Location'}</dt><dd>{status?.location_resource_name ? (it ? 'Configurata' : 'Configured') : '—'}</dd></div>
+          <div><dt>{it ? 'Recensioni Google' : 'Google reviews'}</dt><dd>{Number.isInteger(status?.total_review_count) ? status.total_review_count : '—'}</dd></div>
+          <div><dt>{it ? 'Valutazione Google' : 'Google rating'}</dt><dd>{status?.average_rating !== null && status?.average_rating !== undefined && Number.isFinite(Number(status.average_rating)) ? `${Number(status.average_rating).toFixed(1)}/5` : '—'}</dd></div>
           <div><dt>{it ? 'Ultimo errore' : 'Last error'}</dt><dd>{status?.last_error_code || '—'}</dd></div>
         </dl>
       )}

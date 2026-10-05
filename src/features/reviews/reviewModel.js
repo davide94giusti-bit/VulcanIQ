@@ -3,7 +3,8 @@ export const REVIEW_FILTER_OPTIONS = Object.freeze([
   { key: 'google_reviews', it: 'Google', en: 'Google' },
   { key: 'website_reviews', it: 'Sito', en: 'Website' },
   { key: 'highest_rating', it: 'Valutazione più alta', en: 'Highest rating' },
-  { key: 'lowest_rating', it: 'Valutazione più bassa', en: 'Lowest rating' }
+  { key: 'lowest_rating', it: 'Valutazione più bassa', en: 'Lowest rating' },
+  { key: 'most_recent', it: 'Più recenti', en: 'Most recent' }
 ]);
 
 export const REVIEW_COPY = Object.freeze({
@@ -13,15 +14,25 @@ export const REVIEW_COPY = Object.freeze({
     publish: 'Pubblica una recensione',
     filter: 'Filtra',
     bookedBy: 'Prenotato da',
+    reviewer: 'Recensore',
     name: 'Nome',
     date: 'Data',
     guide: 'Guida',
     close: 'Chiudi',
     openReview: 'Apri recensione',
     openGoogle: 'Apri il profilo Google',
+    viewGoogleMaps: 'Vedi su Google Maps',
+    writeGoogleReview: 'Lascia una recensione su Google',
     response: 'Risposta vulcanIQ',
+    googleResponse: 'Risposta del profilo vulcanIQ su Google',
     loading: 'Caricamento recensioni...',
     empty: 'Nessuna recensione pubblicata al momento.',
+    googleEmpty: 'Non ci sono ancora recensioni Google disponibili.',
+    googleUnavailable: 'Le recensioni Google non sono disponibili al momento. Le recensioni del sito restano consultabili.',
+    googleGuest: 'Ospite Google',
+    ratingUnavailable: 'Valutazione non disponibile',
+    googleSummaryLabel: 'Valutazione Google',
+    googleReviewCount: (count) => `${count} ${count === 1 ? 'recensione' : 'recensioni'} su Google`,
     leaveTitle: 'Pubblica una recensione',
     leaveIntro: 'Inserisci il codice prenotazione ricevuto dopo la conferma per pubblicare una recensione.',
     bookingCode: 'Codice prenotazione',
@@ -61,15 +72,25 @@ export const REVIEW_COPY = Object.freeze({
     publish: 'Publish a review',
     filter: 'Filter',
     bookedBy: 'Booked by',
+    reviewer: 'Reviewer',
     name: 'Name',
     date: 'Date',
     guide: 'Guide',
     close: 'Close',
     openReview: 'Open review',
     openGoogle: 'Open Google Business Profile',
+    viewGoogleMaps: 'View on Google Maps',
+    writeGoogleReview: 'Review us on Google',
     response: 'vulcanIQ response',
+    googleResponse: 'vulcanIQ reply on Google',
     loading: 'Loading reviews...',
     empty: 'No published reviews yet.',
+    googleEmpty: 'There are no Google reviews available yet.',
+    googleUnavailable: 'Google reviews are unavailable right now. Website reviews remain available.',
+    googleGuest: 'Google guest',
+    ratingUnavailable: 'Rating unavailable',
+    googleSummaryLabel: 'Google rating',
+    googleReviewCount: (count) => `${count} ${count === 1 ? 'review' : 'reviews'} on Google`,
     leaveTitle: 'Publish a review',
     leaveIntro: 'Enter the booking code you received after confirmation to publish a review.',
     bookingCode: 'Booking code',
@@ -124,7 +145,10 @@ export function reviewSource(review = {}) {
 }
 
 export function reviewSourceLabel(review = {}, lang = 'it') {
-  return reviewSource(review) === 'google' ? 'Google' : (lang === 'en' ? 'Website' : 'Sito');
+  if (reviewSource(review) !== 'google') return lang === 'en' ? 'Website' : 'Sito';
+  return review?.provider === 'google_business_profile'
+    ? 'Google'
+    : (lang === 'en' ? 'Google (manual)' : 'Google (manuale)');
 }
 
 export function reviewSortTimestamp(review = {}) {
@@ -147,8 +171,9 @@ export function reviewDate(review = {}, lang = 'it') {
 export function reviewRating(review = {}, fallback = 5) {
   review = review && typeof review === 'object' ? review : {};
   const value = Number(review.rating);
+  if (reviewSource(review) === 'google' && (!Number.isInteger(value) || value < 1 || value > 5)) return null;
   const fallbackValue = Math.max(1, Math.min(5, Number(fallback) || 5));
-  return Number.isFinite(value) && value > 0
+  return Number.isInteger(value) && value > 0
     ? Math.max(1, Math.min(5, Math.round(value)))
     : fallbackValue;
 }
@@ -165,7 +190,10 @@ export function reviewGuide(review = {}) {
 
 export function reviewBookedBy(review = {}, lang = 'it') {
   review = review && typeof review === 'object' ? review : {};
-  return String(review.reviewer_name || review.customer_name || review.booked_by || '').trim() || (lang === 'en' ? 'Guest' : 'Ospite');
+  const reviewer = String(review.reviewer_name || review.customer_name || review.booked_by || '').trim();
+  if (reviewer) return reviewer;
+  if (reviewSource(review) === 'google') return lang === 'en' ? 'Google guest' : 'Ospite Google';
+  return lang === 'en' ? 'Guest' : 'Ospite';
 }
 
 export function isLeonardoPlaceholderReview(review) {

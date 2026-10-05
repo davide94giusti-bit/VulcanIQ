@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../functions/api/_shared/supabaseBackend.js';
 import { resolveSupabaseEdgeSecretKey } from '../supabase/functions/_shared/supabaseSecretKey.js';
 
 const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
+const trackedFiles = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
+const repositoryFiles = trackedFiles;
 const failures = [];
 const passes = [];
 
@@ -54,7 +57,9 @@ const weeklyPanelComponent = read('src/features/system/WeeklyReportsAdminPanel.j
 const premodernMigration = read('supabase/migrations/20260818150000_reviews_google_session_hardening.sql');
 const googleReviewsSync = read('supabase/functions/google-reviews-sync/index.ts');
 const googleBusinessShared = read('supabase/functions/_shared/googleBusiness.ts');
+const googleBusinessClient = read('supabase/functions/_shared/googleBusinessClient.js');
 const googleReviewsClient = read('src/services/googleReviewsService.js');
+const googleSummaryMigration = read('supabase/migrations/20261005100000_google_reviews_public_summary.sql');
 const securityHeaders = read('public/_headers');
 const requestNotificationEmail = read('supabase/functions/_shared/requestNotificationEmail.ts');
 const paymentFinanceMigration = read('supabase/migrations/20260821070000_payment_finance_semantics.sql');
@@ -149,13 +154,9 @@ check('weekly recap rejects an empty recipient list', recapFunction.includes("if
 check('migration has one transaction boundary', (migration.match(/^begin;$/gm) || []).length === 1 && (migration.match(/^commit;$/gm) || []).length === 1);
 check('media optimizer storage migration has one transaction boundary', (mediaOptimizerMigration.match(/^begin;$/gm) || []).length === 1 && (mediaOptimizerMigration.match(/^commit;$/gm) || []).length === 1);
 check('Gift Card RPC has no duplicate declaration', !migration.includes('inserted public.gift_card_requests%rowtype;\n  inserted public.gift_card_requests%rowtype;'));
-const repositoryFiles = fs.readdirSync(root, { recursive: true })
-  .filter((name) => typeof name === 'string' && !name.startsWith('.git/') && !name.includes('node_modules/'));
-const keyFiles = repositoryFiles.filter((name) => /(^|\/)(?!.*example)([^/]+\.(pem|key)|id_rsa)$/i.test(name));
+const keyFiles = trackedFiles.filter((name) => /(^|\/)(?!.*example)([^/]+\.(pem|key)|id_rsa)$/i.test(name));
 check('private key material is not committed', keyFiles.length === 0, keyFiles.join(', '));
-check('no service-role VITE variable', !fs.readdirSync(root, { recursive: true }).filter((name) => typeof name === 'string' && !name.startsWith('.git/') && !name.includes('node_modules/')).some((name) => {
-  try { return fs.statSync(path.join(root, name)).isFile() && /VITE_[A-Z0-9_]*SERVICE_ROLE/i.test(fs.readFileSync(path.join(root, name), 'utf8')); } catch { return false; }
-}));
+check('no service-role VITE variable', !trackedFiles.some((name) => /VITE_[A-Z0-9_]*SERVICE_ROLE/i.test(read(name))));
 check('no Supabase Secret VITE variable or browser capability', !repositoryFiles.filter((name) => { const normalized = String(name).replaceAll('\\', '/'); return /\.(?:js|jsx|ts|tsx|md|toml|ya?ml)$/i.test(normalized) && !normalized.startsWith('tools/'); }).some((name) => { try { return /VITE_SUPABASE_SECRET_KEY/.test(read(name)); } catch { return false; } }) && !/SUPABASE_SECRET_KEY/.test(mainSource + bookingService + giftService + notificationService + financeAuditService));
 check('no concrete Supabase Secret key value is committed', !/sb_secret_[A-Za-z0-9]{20,}_[A-Za-z0-9]{8}/.test([backendCredentialHelper, notificationWorker, notificationApi, publicApiShared, analyticsIngestion, backupShared, storageExport, storageRestore, backupWorkflow, edgeFunctionShared].join('\n')));
 
@@ -186,12 +187,16 @@ check('Google public review RPC is narrow and hardened', premodernMigration.incl
 check('Google sync manual action requires admin and rate limiting', googleReviewsSync.includes('requireAdmin(req)') && googleReviewsSync.includes("claimAdminAction('google-reviews-sync-manual'"));
 check('Google sync cron requires dedicated server secret', googleReviewsSync.includes('GOOGLE_REVIEWS_SYNC_SECRET') && googleReviewsSync.includes('x-vulcaniq-google-reviews-sync-secret'));
 check('Google OAuth credentials remain server-only', googleBusinessShared.includes('GOOGLE_BUSINESS_CLIENT_SECRET') && googleBusinessShared.includes('GOOGLE_BUSINESS_REFRESH_TOKEN') && !googleReviewsClient.includes('GOOGLE_BUSINESS_CLIENT_SECRET') && !googleReviewsClient.includes('GOOGLE_BUSINESS_REFRESH_TOKEN'));
+check('Google provider account and location are server-configured, never public request inputs', googleBusinessShared.includes("env('GOOGLE_BUSINESS_ACCOUNT_ID')") && googleBusinessShared.includes("env('GOOGLE_BUSINESS_LOCATION_ID')") && !googleReviewsSync.includes('readJson(req'));
+check('Google provider bounds external reads and fails closed on malformed responses', googleBusinessClient.includes('maxReviewPages = 2') && googleBusinessClient.includes('google_business_timeout') && googleBusinessClient.includes('google_business_malformed_response'));
+check('Google public summary is narrow, expiring, and read-only', googleSummaryMigration.includes('get_public_google_reviews_summary') && googleSummaryMigration.includes('security definer') && googleSummaryMigration.includes('summary_expires_at > now()') && !googleSummaryMigration.includes('alter table public.reviews'));
+check('Google provider cache cleanup deletes expired and stale content', googleReviewsSync.includes('expires_at: `lte.${startedAt}`') && googleReviewsSync.includes('last_seen_at: `lt.${seenAt}`') && (googleReviewsSync.match(/method: 'DELETE'/g) || []).length === 2);
 check('analytics session mutation is service-role-only', premodernMigration.includes('upsert_analytics_session') && premodernMigration.includes('revoke all on function public.upsert_analytics_session') && premodernMigration.includes('to service_role'));
 check('analytics session upsert is monotonic', ['greatest(public.analytics_sessions.last_seen_at, excluded.last_seen_at)', 'greatest(public.analytics_sessions.duration_seconds, excluded.duration_seconds)', 'greatest(public.analytics_sessions.pageview_count, excluded.pageview_count)'].every((value) => premodernMigration.includes(value)));
 check('premodernization migration has one transaction boundary', (premodernMigration.match(/^begin;$/gm) || []).length === 1 && (premodernMigration.match(/^commit;$/gm) || []).length === 1);
 check('security headers add browser hardening without enforced CSP rollout', securityHeaders.includes('X-Content-Type-Options: nosniff') && securityHeaders.includes('Referrer-Policy: strict-origin-when-cross-origin') && securityHeaders.includes('Content-Security-Policy-Report-Only:') && !/^\s*Content-Security-Policy:/m.test(securityHeaders));
 check('admin routes carry noindex response header', /\/admin\/\*[\s\S]*X-Robots-Tag: noindex, nofollow/.test(securityHeaders));
-check('no Google provider secret is exposed through VITE variables', !fs.readdirSync(root, { recursive: true }).filter((name) => typeof name === 'string' && !name.startsWith('.git/') && !name.includes('node_modules/')).some((name) => { try { return fs.statSync(path.join(root, name)).isFile() && /VITE_[A-Z0-9_]*GOOGLE_BUSINESS_(CLIENT_SECRET|REFRESH_TOKEN)/i.test(fs.readFileSync(path.join(root, name), 'utf8')); } catch { return false; } }));
+check('no Google provider secret is exposed through VITE variables', !trackedFiles.some((name) => /VITE_[A-Z0-9_]*GOOGLE_BUSINESS_(CLIENT_SECRET|REFRESH_TOKEN)/i.test(read(name))));
 
 check('immediate operational emails use branded responsive template', notifyFunction.includes('buildRequestNotificationEmail') && requestNotificationEmail.includes('VULCANIQ · OPERATIONS') && requestNotificationEmail.includes('@media(max-width:620px)') && requestNotificationEmail.includes('replyTo'));
 check('immediate operational notifications use source-aware trusted ingest', notifyFunction.includes('ingestAdminNotification') && notifyFunction.includes('NOTIFICATION_INGEST_SECRET') && notifyFunction.includes("source === 'website'") && notifyFunction.includes("source === 'booking_code'") && !notifyFunction.includes('customer_name:'));
