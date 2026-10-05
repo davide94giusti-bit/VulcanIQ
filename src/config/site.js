@@ -15,6 +15,14 @@ export const SITE_MEDIA = Object.freeze({
   ogImage: '/brand/vulcaniq/og-image.png'
 });
 
+// Public, non-secret Google Business Profile destinations supplied by the
+// vulcanIQ profile administrators. OAuth/account/location configuration stays
+// server-side and is deliberately not represented here.
+export const GOOGLE_BUSINESS_PROFILE = Object.freeze({
+  mapsUrl: 'https://maps.app.goo.gl/efLnfxBxYvei22YY6?g_st=aw',
+  writeReviewUrl: 'https://g.page/r/CfYT-ORvmFjiEBI/review'
+});
+
 export function absoluteSiteUrl(path = '/') {
   const clean = String(path || '/').trim();
   if (/^https?:\/\//i.test(clean)) return clean;

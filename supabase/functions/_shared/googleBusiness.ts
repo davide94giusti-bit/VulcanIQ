@@ -1,45 +1,28 @@
 import { clean, env } from './vulcaniq.ts';
+import { createGoogleBusinessClient } from './googleBusinessClient.js';
 
-export type GoogleBusinessReview = {
-  reviewId?: string;
-  reviewer?: { profilePhotoUrl?: string; displayName?: string; isAnonymous?: boolean };
-  starRating?: string;
-  comment?: string;
-  createTime?: string;
-  updateTime?: string;
-  reviewReply?: { comment?: string; updateTime?: string };
-};
-
-type GoogleReviewPage = {
-  reviews?: GoogleBusinessReview[];
-  nextPageToken?: string;
-};
+const googleClient = createGoogleBusinessClient();
 
 function resourceId(value: string, prefix: string): string {
   const cleanValue = clean(value, 180).replace(/^\/+|\/+$/g, '');
-  return cleanValue.startsWith(`${prefix}/`) ? cleanValue.slice(prefix.length + 1) : cleanValue;
+  const id = cleanValue.startsWith(`${prefix}/`) ? cleanValue.slice(prefix.length + 1) : cleanValue;
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error(`invalid_google_business_${prefix.slice(0, -1)}_id`);
+  return id;
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 12000): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+function publicGoogleUrl(value: string): string | null {
+  const candidate = clean(value, 1000);
+  if (!candidate) return null;
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
+    const url = new URL(candidate);
+    const host = url.hostname.toLowerCase();
+    const isGoogleHost = /^(?:[a-z0-9-]+\.)*google\.[a-z]{2,3}(?:\.[a-z]{2})?$/.test(host)
+      || host === 'maps.app.goo.gl'
+      || host === 'goo.gl';
+    return url.protocol === 'https:' && isGoogleHost ? url.toString() : null;
+  } catch {
+    return null;
   }
-}
-
-async function retryFetch(url: string, init: RequestInit, attempts = 3): Promise<Response> {
-  let last: Response | null = null;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const response = await fetchWithTimeout(url, init);
-    last = response;
-    if (response.ok || ![429, 500, 502, 503, 504].includes(response.status) || attempt === attempts - 1) return response;
-    await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1) * (attempt + 1)));
-  }
-  if (!last) throw new Error('google_business_network_failed');
-  return last;
 }
 
 export function googleBusinessConfig() {
@@ -51,59 +34,16 @@ export function googleBusinessConfig() {
     refreshToken: env('GOOGLE_BUSINESS_REFRESH_TOKEN'),
     accountId,
     locationId,
-    mapsUri: env('GOOGLE_BUSINESS_PROFILE_URL', false) || null,
+    mapsUri: publicGoogleUrl(env('GOOGLE_BUSINESS_PROFILE_URL', false)),
     locationResourceName: `accounts/${accountId}/locations/${locationId}`
   };
 }
 
 export async function googleBusinessAccessToken(): Promise<string> {
-  const config = googleBusinessConfig();
-  const body = new URLSearchParams({
-    client_id: config.clientId,
-    client_secret: config.clientSecret,
-    refresh_token: config.refreshToken,
-    grant_type: 'refresh_token'
-  });
-  const response = await retryFetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body
-  }, 2);
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !clean(payload?.access_token, 4096)) {
-    throw new Error(response.status === 400 || response.status === 401 ? 'google_oauth_refresh_failed' : 'google_oauth_unavailable');
-  }
-  return clean(payload.access_token, 4096);
+  return googleClient.refreshAccessToken(googleBusinessConfig());
 }
 
-export async function listAllGoogleBusinessReviews(accessToken: string): Promise<GoogleBusinessReview[]> {
+export async function listAllGoogleBusinessReviews(accessToken: string) {
   const config = googleBusinessConfig();
-  const all: GoogleBusinessReview[] = [];
-  let pageToken = '';
-
-  for (let page = 0; page < 100; page += 1) {
-    const params = new URLSearchParams({ pageSize: '50', orderBy: 'updateTime desc' });
-    if (pageToken) params.set('pageToken', pageToken);
-    const url = `https://mybusiness.googleapis.com/v4/${config.locationResourceName}/reviews?${params.toString()}`;
-    const response = await retryFetch(url, {
-      method: 'GET',
-      headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' }
-    });
-    const payload = await response.json().catch(() => ({})) as GoogleReviewPage;
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) throw new Error('google_business_forbidden');
-      if (response.status === 429) throw new Error('google_business_rate_limited');
-      throw new Error('google_business_reviews_unavailable');
-    }
-    if (Array.isArray(payload.reviews)) all.push(...payload.reviews);
-    pageToken = clean(payload.nextPageToken, 2048);
-    if (!pageToken) return all;
-  }
-
-  throw new Error('google_business_reviews_pagination_limit');
-}
-
-export function numericStarRating(value: unknown): number | null {
-  const ratings: Record<string, number> = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
-  return ratings[clean(value, 30).toUpperCase()] || null;
+  return googleClient.listReviews({ accessToken, locationResourceName: config.locationResourceName });
 }

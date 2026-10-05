@@ -3,3 +3,8 @@ verify_jwt = false
 
 [functions.send-weekly-admin-recap]
 verify_jwt = false
+
+[functions.google-reviews-sync]
+# The function performs its own authorization: admin bearer token for manual
+# refresh, or the dedicated server-only sync secret for scheduled refresh.
+verify_jwt = false
