@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 const main = fs.readFileSync('src/main.jsx', 'utf8');
 const styles = fs.readFileSync('src/styles.css', 'utf8');
+const serviceWorker = fs.readFileSync('public/sw.js', 'utf8');
 const passes=[]; const failures=[];
 function test(name, fn){try{fn();passes.push(name);}catch(e){failures.push(`${name}: ${e.message}`);}}
 function yes(value,msg){if(!value)throw new Error(msg);}
 function no(value,msg){if(value)throw new Error(msg);}
 const hero = main.slice(main.indexOf('function Hero('), main.indexOf('function ExperienceAccordion'));
+const loadingShellStyles = styles.match(/\.hero-cms-loading\s*\{([^}]*)\}/s)?.[1] || '';
 
 test('CMS has an explicit loading/ready/error lifecycle',()=>{
   yes(main.includes("const [cmsStatus, setCmsStatus]"),'cmsStatus state missing');
@@ -18,6 +20,18 @@ test('unresolved CMS renders a stable modern shell',()=>{
   yes(hero.includes('hero-cms-loading'),'modern loading shell missing');
   yes(styles.includes('.hero-cms-loading'),'loading shell CSS missing');
   yes(/100(?:svh|dvh)/.test(styles),'dynamic viewport geometry missing');
+});
+test('CMS loading shell uses a neutral branded background without historical media',()=>{
+  yes(loadingShellStyles,'loading shell style block missing');
+  yes(/(?:linear|radial)-gradient\(/.test(loadingShellStyles),'loading shell neutral background missing');
+  no(/url\(/i.test(loadingShellStyles),'loading shell must not load an image');
+  no(styles.includes('etna-eruption-hero.jpg'),'historical Hero background remains in public CSS');
+  no(main.includes('vulcaniq_public_hero_media'),'stale persisted Hero media cache must not drive first render');
+});
+test('notification service worker cannot cache or replay historical Hero media',()=>{
+  no(/addEventListener\(\s*['"]fetch['"]/.test(serviceWorker),'public service worker unexpectedly intercepts app fetches');
+  no(/caches\.(?:open|match)\s*\(/.test(serviceWorker),'public service worker unexpectedly manages an app cache');
+  no(serviceWorker.includes('etna-eruption-hero'),'public service worker references historical Hero media');
 });
 test('unresolved/public Hero never renders legacy intro/feature media',()=>{
   no(/fallbackSrc:\s*MEDIA\.introVideo/.test(hero),'legacy intro video fallback remains');
