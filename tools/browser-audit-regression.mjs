@@ -92,9 +92,16 @@ try {
   await test('Italian Fast Request360px heading does not overlap Close;200% zoom retains usable controls',async()=>{
     await page.goto(`${base}/audit-harness`);
     await page.getByRole('button',{name:'Open Fast Request IT'}).click();const modal=page.getByRole('dialog',{name:'Verifica disponibilità in pochi passaggi'});await modal.waitFor();
-    const boxes=await modal.locator('header').evaluate(el=>{const title=el.querySelector('h2').getBoundingClientRect(),close=el.querySelector('button').getBoundingClientRect();return{title:{left:title.left,right:title.right},close:{left:close.left,right:close.right,width:close.width,height:close.height},wordBreak:getComputedStyle(el.querySelector('h2')).wordBreak};});
-    assert.ok(boxes.title.right<=boxes.close.left+1);assert.ok(boxes.close.width>=44&&boxes.close.height>=44);assert.notEqual(boxes.wordBreak,'break-all');
-    await page.evaluate(()=>document.documentElement.style.zoom='2');assert.equal(await modal.locator('.modal-close-button').isVisible(),true);assert.equal(await modal.locator('select').isVisible(),true);await page.keyboard.press('Escape');await page.evaluate(()=>document.documentElement.style.zoom='');
+    try {
+      // Native system fonts vary across platforms. Increased text size must not
+      // exhaust a fixed-width gap between the heading and its close control.
+      for (const fontSize of ['100%', '125%']) {
+        await page.evaluate(value=>document.documentElement.style.fontSize=value,fontSize);
+        const boxes=await modal.locator('header').evaluate(el=>{const title=el.querySelector('h2').getBoundingClientRect(),close=el.querySelector('button').getBoundingClientRect();return{title:{left:title.left,right:title.right},close:{left:close.left,right:close.right,width:close.width,height:close.height},wordBreak:getComputedStyle(el.querySelector('h2')).wordBreak};});
+        assert.ok(boxes.title.right<=boxes.close.left+1,`Heading overlaps Close at ${fontSize}: ${JSON.stringify(boxes)}`);assert.ok(boxes.close.width>=44&&boxes.close.height>=44);assert.notEqual(boxes.wordBreak,'break-all');
+      }
+      await page.evaluate(()=>{document.documentElement.style.fontSize='';document.documentElement.style.zoom='2';});assert.equal(await modal.locator('.modal-close-button').isVisible(),true);assert.equal(await modal.locator('select').isVisible(),true);await page.keyboard.press('Escape');
+    } finally { await page.evaluate(()=>{document.documentElement.style.zoom='';document.documentElement.style.fontSize='';}); }
   });
   await test('notification settings delayed GET never PATCHes defaults; explicit language/empty categories/quiet hours survive',async()=>{
     await page.goto(`${base}/audit-harness`);
@@ -122,7 +129,16 @@ try{const modal=await readyFastRequest();const send=modal.locator('.fast-request
   });
   await test('booking code challenge blocks missing/expired tokens and double-submit sends one guarded request',async()=>{
     await page.goto(`${base}/audit-harness`);const calls=[];await page.route('**/api/public/booking-code-redeem',async route=>{calls.push(route.request().postDataJSON());await route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({code:'BOOKING_CODE_NOT_FOUND',message:'BOOKING_CODE_NOT_FOUND'})});});
-    try{await page.getByRole('button',{name:'Open booking code'}).click();const modal=page.locator('.booking-code-modal');await modal.locator('#publicBookingCodeInput').fill('SYNTHETIC-CODE');const submit=modal.locator('.booking-code-submit');assert.equal(await submit.isDisabled(),true);await modal.locator('form').evaluate(form=>form.requestSubmit());assert.equal(calls.length,0);await modal.getByRole('button',{name:'Complete synthetic security check'}).click();await page.evaluate(()=>window.auditExpireChallenge());assert.equal(await submit.isDisabled(),true);await modal.locator('form').evaluate(form=>form.requestSubmit());assert.equal(calls.length,0);await modal.getByRole('button',{name:'Retry security check'}).click();await modal.getByRole('button',{name:'Complete synthetic security check'}).click();await modal.locator('form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});await modal.locator('.form-status.error').waitFor();assert.equal(calls.length,1);assert.match(calls[0].turnstile_token,/^synthetic-challenge-/);}
+    try{
+      await page.getByRole('button',{name:'Open booking code'}).click();const modal=page.locator('.booking-code-modal');await modal.locator('#publicBookingCodeInput').fill('SYNTHETIC-CODE');const submit=modal.locator('.booking-code-submit');assert.equal(await submit.isDisabled(),true);await modal.locator('form').evaluate(form=>form.requestSubmit());assert.equal(calls.length,0);
+      await modal.getByRole('button',{name:'Complete synthetic security check'}).click();
+      await modal.locator('form').evaluate(form=>{window.auditExpireChallenge();form.requestSubmit();});
+      // The submit guard must revoke authorization in the callback's same turn;
+      // the DOM disabled state is a React render and is awaited separately.
+      await modal.getByRole('button',{name:'Retry security check'}).waitFor();await page.waitForFunction(()=>document.querySelector('.booking-code-submit')?.disabled);
+      await modal.locator('form').evaluate(form=>form.requestSubmit());assert.equal(calls.length,0,'Expiry must block same-turn and later submissions');
+      await modal.getByRole('button',{name:'Retry security check'}).click();await modal.getByRole('button',{name:'Complete synthetic security check'}).click();await modal.locator('form').evaluate(form=>{form.requestSubmit();form.requestSubmit();});await modal.locator('.form-status.error').waitFor();assert.equal(calls.length,1);assert.match(calls[0].turnstile_token,/^synthetic-challenge-/);
+    }
     finally{await page.unroute('**/api/public/booking-code-redeem');}
   });
   await test('review challenge gates actual form and request carries token without duplicate submission',async()=>{

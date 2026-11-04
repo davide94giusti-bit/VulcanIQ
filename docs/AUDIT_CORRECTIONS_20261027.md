@@ -1,6 +1,6 @@
 # Focused audit corrections — 27 October 2026
 
-This pass follows the independent review of the first audit-remediation source snapshot. It preserves that remediation on `codex/audit-remediation-20261027`, based on `35de12dc8dd0ba360a888417ca7d076f8e62d71b`. The previous ZIP/report remain historical artifacts; a new ZIP and manifest identify this corrected, still-uncommitted source. The external completion report records final artifact hashes and exact integrated results after source freeze.
+This record begins with the October correction pass following the independent review of the first audit-remediation snapshot. It preserves that remediation on `codex/audit-remediation-20261027`, based on `35de12dc8dd0ba360a888417ca7d076f8e62d71b`. The October source was uncommitted at that checkpoint. Later release corrections and verification are recorded below; the external completion report identifies the current commit, artifact hashes and integrated results.
 
 ## P1: stale customer reminders
 
@@ -34,3 +34,15 @@ Actual PostgreSQL reproduction before the migration: **26 passed / 10 failed**, 
 - Real-device push/PWA, real providers, deployed RLS/Storage, Cloudflare capacity, recovery login and the CI wrapper remain separate acceptance gates. Prior synthetic Auth restore results are historical evidence, not a new restore run in this correction pass.
 - Owner/legal policy is still needed for MFA/recovery, retention/erasure, audit evidence, legacy-code sunset, commission reimbursement and complimentary Gifts. No policy is silently activated.
 - No deploy, remote migration, production data repair, real send, Cron enablement, push, merge or commit is performed. Use the coordinated client/API/schema cutover in the [release runbook](AUDIT_RELEASE_RUNBOOK_20261027.md); do not restore unsafe privileges for old clients.
+
+## 4 November 2026 release CI corrections
+
+The preceding release-status bullets describe the October checkpoint. Reconciliation subsequently restored the historical participant migrations; live read-only comparison now confirms the 38-migration Supabase baseline and both D1 schemas, including Preview 0006/0007 provenance. Commit `78b7e1912e5a33d8fe7ed63fc007ed31627fba2e` was pushed only after excluding this exact branch from automatic shared Preview deployment. Cloudflare skipped it with `branch_config`; Production and both participant Previews remain unchanged.
+
+The first remote run passed all 552 quality checks, 160 syntax/JSX checks, build and dependency audit. Database CI stopped before execution because resolving the latest Supabase CLI exceeded GitHub's unauthenticated rate limit. The workflow now pins **2.116.0**, matching the executed local PostgreSQL 17 gate.
+
+Linux Chromium exposed two reproducible browser defects. Enlarged text could exhaust the Fast Request header's fixed allowance for Close; separate grid columns now size the close control from its actual font metrics. A challenge expiry callback could leave an existing submit closure with its previous token until React repainted. A shared ref and live getters now revoke token readiness synchronously, while state still updates the rendered controls.
+
+The strengthened browser reproduction failed **13/15** before the fixes, using 125% text and an expiry callback immediately followed by form submission in the same browser turn. It passes **15/15** after the fixes; the production browser suite passes **23/23**. No overlap or expired-token assertion was removed. Full local quality remains **552 passed**, syntax **160 passed**, and build passes with the existing chunk-size warning. The new exact-commit Linux CI result belongs in the external completion report.
+
+Additional synthetic loopback acceptance passed **70 Auth/PostgREST checks** and **10 Storage checks**, including actual password login, role denials, payment retry idempotency, private-object denial and signed-byte integrity. These do not establish hosted Preview isolation, real provider delivery or installed-device acceptance. No remote database migration, provider send, Cron activation or application deployment accompanies this correction.

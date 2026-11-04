@@ -15331,6 +15331,9 @@ section#reviews.compact-section,
 .privacy-preferences-dialog { width: min(100%, 34rem); max-height: calc(100dvh - 2rem); overflow-y: auto; padding: clamp(1rem, 4vw, 2rem); border-radius: 24px; background: var(--paper); box-shadow: var(--shadow); }
 .privacy-preferences-actions { display: grid; grid-template-columns: 1fr; gap: .75rem; }
 .privacy-preferences-actions .button { width: 100%; min-height: 48px; }
+/* Size the close column from its actual font metrics, including enlarged text. */
+.fast-request-modal .admin-modal-header { display: grid !important; grid-template-columns: minmax(0, 1fr) max-content; align-items: start; gap: 1rem; padding-right: 0 !important; }
+.fast-request-modal .admin-modal-header .modal-close-button { position: static !important; justify-self: end; }
 .fast-request-modal .admin-modal-header > div { min-width: 0; }
 .fast-request-modal .admin-modal-header h2 { overflow-wrap: normal; word-break: normal; font-size: clamp(1.25rem, 5vw, 2rem); }
 .fast-request-modal .modal-close-button { flex: 0 0 auto; }

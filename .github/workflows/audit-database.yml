@@ -16,7 +16,8 @@ jobs:
           node-version: '22'
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Match the executed local PostgreSQL 17 release gate; avoid latest-release API rate limits.
+          version: 2.116.0
       - name: Disposable fresh replay, prior-schema upgrade, RLS and concurrent transactions
         shell: pwsh
         run: ./tools/audit-database-local.ps1

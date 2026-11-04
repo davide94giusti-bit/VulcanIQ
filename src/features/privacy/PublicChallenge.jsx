@@ -5,10 +5,15 @@ export const PUBLIC_CHALLENGE_ENABLED = Boolean(import.meta.env.VITE_TURNSTILE_S
 
 export function usePublicChallenge(language) {
   const [token, setToken] = useState('');
+  const currentToken = useRef(token);
   const [resetKey, setResetKey] = useState(0);
-  return { token, ready: !PUBLIC_CHALLENGE_ENABLED || Boolean(token),
-    reset: () => { setToken(''); setResetKey(value => value + 1); },
-    element: <PublicChallenge language={language} onTokenChange={setToken} resetKey={resetKey} /> };
+  const updateToken = (value) => { currentToken.current = value; setToken(value); };
+  // Provider callbacks can expire a token before React commits the disabled
+  // button. Existing submit closures must observe that revocation immediately.
+  return { get token() { return currentToken.current; },
+    get ready() { return !PUBLIC_CHALLENGE_ENABLED || Boolean(currentToken.current); },
+    reset: () => { updateToken(''); setResetKey(value => value + 1); },
+    element: <PublicChallenge language={language} onTokenChange={updateToken} resetKey={resetKey} /> };
 }
 
 export default function PublicChallenge({ language = 'it', onTokenChange, onStatusChange, resetKey = 0,
