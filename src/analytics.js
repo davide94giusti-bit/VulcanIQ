@@ -1,3 +1,6 @@
+import { analyticsConsentGranted, PRIVACY_PREFERENCES_EVENT } from './services/privacyPreferences.js';
+import { TRUSTED_ANALYTICS_EVENTS } from '../shared/analyticsTrust.js';
+
 // Keep this analytics allowlist synchronized with functions/api/analytics/event.js.
 const EVENT_NAMES = new Set([
   'page_view',
@@ -200,11 +203,25 @@ export function setAnalyticsBrowserExcluded(excluded) {
   if (!storage) return false;
   if (excluded) storage.setItem(ANALYTICS_OPT_OUT_KEY, '1');
   else storage.removeItem(ANALYTICS_OPT_OUT_KEY);
+  if (excluded) clearOptionalAnalyticsStorage();
   return analyticsOptedOut();
 }
 
-function canTrack() {
-  return typeof window !== 'undefined' && !analyticsOptedOut() && !hasDoNotTrack() && !isAdminPath() && !isLikelyBot();
+export function canTrack() {
+  return typeof window !== 'undefined' && analyticsConsentGranted() && !analyticsOptedOut() && !hasDoNotTrack() && !isAdminPath() && !isLikelyBot();
+}
+
+export function clearOptionalAnalyticsStorage() {
+  try {
+    const local = browserStorage('local');
+    const session = browserStorage('session');
+    [VISITOR_KEY, FIRST_TOUCH_KEY, 'vulcaniq_form_journeys', 'vulcaniq_customer_referral'].forEach((key) => local?.removeItem(key));
+    [SESSION_KEY, PAGEVIEW_COUNT_KEY, 'vulcaniq_form_journeys'].forEach((key) => session?.removeItem(key));
+  } catch { /* blocked storage */ }
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener(PRIVACY_PREFERENCES_EVENT, (event) => { if (event.detail?.analytics === false) clearOptionalAnalyticsStorage(); });
+  window.addEventListener('storage', () => { if (!canTrack()) clearOptionalAnalyticsStorage(); });
 }
 
 
@@ -242,7 +259,7 @@ function getVisitorId() {
 function getSafePath() {
   if (typeof window === 'undefined') return '/';
 
-  const path = `${window.location.pathname || '/'}${window.location.hash || ''}`;
+  const path = window.location.pathname || '/';
 
   return path.slice(0, 240);
 }
@@ -402,7 +419,7 @@ function captureFirstTouchAttribution() {
 }
 
 export function getFirstTouchAttribution() {
-  if (typeof window === 'undefined') return {};
+  if (!canTrack()) return {};
   const storage = browserStorage('local');
   if (storage) {
     try {
@@ -661,6 +678,7 @@ function buildPayload(eventName, metadata = {}, options = {}) {
 }
 
 export function getAnalyticsIdentitySnapshot(section = '') {
+  if (!canTrack()) return {};
   const fallbackInfo = deviceInfo();
   const fallbackReferrer = referrerParts();
   const firstTouch = getFirstTouchAttribution();
@@ -740,6 +758,8 @@ async function sendPayload(payload, options = {}) {
 }
 
 export async function trackEvent(eventName, metadata = {}, options = {}) {
+  // Saved/paid outcomes are written only by trusted mutations, never browser assertions.
+  if (TRUSTED_ANALYTICS_EVENTS.has(eventName)) return undefined;
   if (!EVENT_NAMES.has(eventName) || !canTrack()) return undefined;
 
   const payload = buildPayload(eventName, metadata, options);
@@ -968,6 +988,7 @@ const FORM_JOURNEY_STORAGE_KEY = 'vulcaniq_form_journeys';
 const FORM_JOURNEY_TTL_MS = 24 * 60 * 60 * 1000;
 
 function readFormJourneyStore() {
+  if (!canTrack()) return {};
   const storage = browserStorage('local');
   if (!storage) return {};
 
@@ -993,6 +1014,7 @@ function readFormJourneyStore() {
 }
 
 function writeFormJourneyStore(store) {
+  if (!canTrack()) return;
   const storage = browserStorage('local');
   if (!storage) return;
 

@@ -1,8 +1,8 @@
+import { collectKeysetRows } from './keysetRows.js';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
 import { FINANCE_SELECT_FIELDS } from './financeService.js';
 
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const BOOKING_CODE_FIELDS = `
   id, code, customer_name, customer_email, customer_phone,
   experience_id, fixed_excursion_id, experience_name_it, experience_name_en, experience_type,
@@ -58,30 +58,6 @@ export function normalizeBookingCode(value) {
     .replace(/[^A-Z0-9-]/g, '');
 }
 
-function randomSuffix(length = 4) {
-  let suffix = '';
-  const cryptoApi = typeof crypto !== 'undefined' ? crypto : null;
-  for (let index = 0; index < length; index += 1) {
-    let random = Math.random();
-    if (cryptoApi?.getRandomValues) {
-      const array = new Uint32Array(1);
-      cryptoApi.getRandomValues(array);
-      random = array[0] / 0xffffffff;
-    }
-    suffix += CODE_ALPHABET[Math.floor(random * CODE_ALPHABET.length) % CODE_ALPHABET.length];
-  }
-  return suffix;
-}
-
-function compactDate(value = new Date()) {
-  const source = value instanceof Date ? value.toISOString() : String(value || new Date().toISOString());
-  const match = source.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return match ? `${match[1]}${match[2]}${match[3]}` : new Date().toISOString().slice(0, 10).replaceAll('-', '');
-}
-
-export function generateBookingCode(prefix = 'VUL') {
-  return `${prefix}-${compactDate()}-${randomSuffix(4)}`;
-}
 
 function normalizeBookingCodeRow(row) {
   if (!row) return null;
@@ -97,10 +73,6 @@ function normalizeBookingCodeRow(row) {
   };
 }
 
-function isMissingRedeemFunctionError(error) {
-  const message = String(error?.message || error?.details || error?.hint || error?.code || '').toLowerCase();
-  return message.includes('redeem_booking_code') || message.includes('schema cache') || message.includes('function') || error?.code === 'PGRST202';
-}
 
 function parseRpcResult(data) {
   const result = typeof data === 'string' ? JSON.parse(data) : data;
@@ -116,11 +88,11 @@ function parseRpcResult(data) {
 
 export async function listBookingCodes(filters = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const data = await collectKeysetRows(() => {
   let query = supabase
     .from('booking_codes')
     .select(BOOKING_CODE_FIELDS)
-    .order('created_at', { ascending: false })
-    .limit(Number(filters.limit || 250));
+        ;
 
   if (filters.status && filters.status !== 'all') query = query.eq('status', filters.status);
   const search = cleanText(filters.search).replaceAll(',', ' ');
@@ -128,10 +100,13 @@ export async function listBookingCodes(filters = {}) {
     query = query.or(`code.ilike.%${search}%,customer_name.ilike.%${search}%,customer_email.ilike.%${search}%,customer_phone.ilike.%${search}%,experience_name_it.ilike.%${search}%,experience_name_en.ilike.%${search}%`);
   }
 
-  const { data, error } = await query;
-  if (error) throw error;
+  return query;
+  });
   const codes = (data || []).map(normalizeBookingCodeRow);
   if (codes.length === 0) return codes;
+  const { data: canReadFinance, error: roleError } = await supabase.rpc('can_manage_finance');
+  if (roleError) throw roleError;
+  if (!canReadFinance) return codes.map((code) => ({ ...code, finance_entries: [], finance_access: false }));
 
   const financeByCode = new Map(codes.map((item) => [item.id, new Map()]));
   const ids = codes.map((item) => item.id);
@@ -139,12 +114,10 @@ export async function listBookingCodes(filters = {}) {
   for (let index = 0; index < ids.length; index += 100) chunks.push(ids.slice(index, index + 100));
   for (const chunk of chunks) {
     const [linked, sourced] = await Promise.all([
-      supabase.from('finance_entries').select(FINANCE_SELECT_FIELDS).in('booking_code_id', chunk),
-      supabase.from('finance_entries').select(FINANCE_SELECT_FIELDS).eq('source_type', 'booking_code').in('source_id', chunk)
+      collectKeysetRows(() => supabase.from('finance_entries').select(FINANCE_SELECT_FIELDS).in('booking_code_id', chunk)),
+      collectKeysetRows(() => supabase.from('finance_entries').select(FINANCE_SELECT_FIELDS).eq('source_type', 'booking_code').in('source_id', chunk))
     ]);
-    if (linked.error) throw linked.error;
-    if (sourced.error) throw sourced.error;
-    for (const entry of [...(linked.data || []), ...(sourced.data || [])]) {
+    for (const entry of [...linked, ...sourced]) {
       const codeId = entry.booking_code_id || entry.source_id;
       if (financeByCode.has(codeId)) financeByCode.get(codeId).set(entry.id, entry);
     }
@@ -156,7 +129,8 @@ export async function createBookingCode(input = {}, userId = null) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
   const expiresDate = nullableText(input.expires_at || input.expiry_date);
-  let code = normalizeBookingCode(input.code) || generateBookingCode();
+  // The database INSERT trigger issues the high-entropy credential.
+  const code = null;
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const payload = {
@@ -200,7 +174,6 @@ export async function createBookingCode(input = {}, userId = null) {
 
     if (!error) return normalizeBookingCodeRow(data);
     if (error.code !== '23505') throw error;
-    code = generateBookingCode();
   }
 
   throw new Error('Could not generate a unique booking code.');
@@ -277,97 +250,15 @@ export async function getBookingCodePaymentState(id) {
   return { code, entries, expected, recognized, paid, agreed, balance, paymentStatus };
 }
 
-export async function recordBookingCodePayment({ id, amount, currency, entryDate, paymentMethod, idempotencyKey = '', userId = null } = {}) {
+export async function recordBookingCodePayment({ id, amount, currency, entryDate, paymentMethod, idempotencyKey = '' } = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-  const normalizedAmount = parseMoneyAmount(amount);
-  if (!(normalizedAmount > 0)) throw new Error('A positive payment amount is required.');
-  const normalizedDate = cleanText(entryDate);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) throw new Error('A valid payment date is required.');
-  const normalizedMethod = cleanText(paymentMethod);
-  if (!normalizedMethod) throw new Error('Payment method is required.');
-
-  const state = await getBookingCodePaymentState(id);
-  if (state.expected.length > 1) {
-    const error = new Error('Multiple expected Finance entries are linked to this booking code. Reconcile them in Finance first.');
-    error.code = 'BOOKING_CODE_MULTIPLE_EXPECTED';
-    throw error;
-  }
-  const cleanKey = cleanText(idempotencyKey);
-  if (cleanKey) {
-    const existing = state.entries.find((entry) => entry.idempotency_key === cleanKey);
-    if (existing) return { status: 'already_recorded', entry: existing, state };
-  }
-
-  const now = new Date().toISOString();
-  const shared = {
-    entry_date: normalizedDate,
-    type: 'income',
-    amount: normalizedAmount,
-    currency: normalizeCurrency(currency || state.code.currency),
-    title: state.code.experience_name_it || state.code.experience_name_en || state.code.code || 'Booking code payment',
-    description: `Recorded payment for booking code ${state.code.code}`,
-    category: 'booking_code_payment',
-    payment_method: normalizedMethod,
-    booking_request_id: state.code.redeemed_booking_request_id || null,
-    booking_code_id: state.code.id,
-    source_type: 'booking_code',
-    source_id: state.code.id,
-    status: 'confirmed',
-    active: true,
-    recognized_at: now,
-    admin_confirmed_at: now,
-    admin_confirmed_by: userId || null,
-    updated_by: userId || null,
-    idempotency_key: cleanKey || null
-  };
-
-  let entry;
-  let resultStatus = 'created_payment';
-  if (state.expected.length === 1) {
-    const pending = state.expected[0];
-    const pendingAmount = parseMoneyAmount(pending.amount);
-    if (pendingAmount > normalizedAmount) {
-      const { error: remainingError } = await supabase
-        .from('finance_entries')
-        .update({ amount: Number((pendingAmount - normalizedAmount).toFixed(2)), status: 'expected', updated_by: userId || null, updated_at: now })
-        .eq('id', pending.id);
-      if (remainingError) throw remainingError;
-      const { data, error } = await supabase.from('finance_entries').insert({ ...shared, created_by: userId || null }).select('*').single();
-      if (error) throw error;
-      entry = data;
-      resultStatus = 'created_partial_payment';
-    } else {
-      const { data, error } = await supabase.from('finance_entries').update(shared).eq('id', pending.id).select('*').single();
-      if (error) throw error;
-      entry = data;
-      resultStatus = 'confirmed_expected';
-    }
-  } else {
-    const { data, error } = await supabase.from('finance_entries').insert({ ...shared, created_by: userId || null }).select('*').single();
-    if (error) throw error;
-    entry = data;
-  }
-
-  const paid = state.paid + normalizedAmount;
-  const agreed = state.agreed;
-  const paymentStatus = agreed > 0 && paid < agreed ? 'deposit_paid' : 'paid';
-  const fullyPaid = paymentStatus === 'paid';
-  const { data: updatedCode, error: codeError } = await supabase
-    .from('booking_codes')
-    .update({
-      payment_status: paymentStatus,
-      income_status: fullyPaid ? 'confirmed' : 'pending',
-      admin_confirmed_income: fullyPaid,
-      income_confirmed_at: fullyPaid ? now : null,
-      income_confirmed_by: userId || null,
-      updated_by: userId || null
-    })
-    .eq('id', id)
-    .select(BOOKING_CODE_FIELDS)
-    .single();
-  if (codeError) throw codeError;
-
-  return { status: resultStatus, entry, code: normalizeBookingCodeRow(updatedCode), paid, balance: Math.max(0, agreed - paid) };
+  const { data, error } = await supabase.rpc('admin_record_booking_payment', {
+    p_source_type: 'booking_code', p_source_id: id,
+    p_amount: parseMoneyAmount(amount), p_currency: normalizeCurrency(currency),
+    p_entry_date: entryDate, p_payment_method: paymentMethod, p_idempotency_key: idempotencyKey
+  });
+  if (error) throw error;
+  return { ...data, code: normalizeBookingCodeRow(data.code) };
 }
 
 export async function markBookingCodeCompleted(id, userId = null) {
@@ -403,40 +294,18 @@ export async function markBookingCodeNoShow(id, userId = null) {
   return normalizeBookingCodeRow(data);
 }
 
-export async function redeemBookingCode(code, { language = 'it' } = {}) {
-  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-  const cleanCode = normalizeBookingCode(code);
-  if (!cleanCode) {
-    const error = new Error('BOOKING_CODE_REQUIRED');
-    error.code = 'BOOKING_CODE_REQUIRED';
+export async function redeemBookingCode(code, { language = 'it', turnstile_token = '' } = {}) {
+  const response = await fetch('/api/public/booking-code-redeem', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ booking_code: normalizeBookingCode(code), language: language === 'en' ? 'en' : 'it', turnstile_token })
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    const error = new Error(result.message || 'BOOKING_CODE_INVALID');
+    error.code = result.code || 'BOOKING_CODE_INVALID';
     throw error;
   }
-
-  const languageValue = language === 'en' ? 'en' : 'it';
-  const first = await supabase.rpc('redeem_booking_code', {
-    p_code: cleanCode,
-    p_language: languageValue
-  });
-
-  if (!first.error) return parseRpcResult(first.data);
-
-  if (isMissingRedeemFunctionError(first.error)) {
-    const fallback = await supabase.rpc('redeem_booking_code', {
-      input_code: cleanCode,
-      input_language: languageValue
-    });
-    if (!fallback.error) return parseRpcResult(fallback.data);
-
-    if (isMissingRedeemFunctionError(fallback.error)) {
-      const missingError = new Error('BOOKING_CODE_RPC_MISSING');
-      missingError.code = 'BOOKING_CODE_RPC_MISSING';
-      missingError.cause = fallback.error;
-      throw missingError;
-    }
-    throw fallback.error;
-  }
-
-  throw first.error;
+  return parseRpcResult(result);
 }
 
 export async function claimGiftCardBookingCode(code, input = {}) {
@@ -455,7 +324,8 @@ export async function claimGiftCardBookingCode(code, input = {}) {
       recipient_name: cleanText(input.recipient_name),
       recipient_email: cleanText(input.recipient_email) || null,
       recipient_phone: cleanText(input.recipient_phone) || null,
-      language: input.language === 'en' ? 'en' : 'it'
+      language: input.language === 'en' ? 'en' : 'it',
+      turnstile_token: input.turnstile_token || ''
     })
   });
   const result = await response.json().catch(() => ({}));

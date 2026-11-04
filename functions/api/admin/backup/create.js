@@ -28,7 +28,7 @@ async function dispatchWorkflow(env, user, language) {
       body: JSON.stringify({
         ref: config.ref,
         inputs: {
-          requested_by: cleanText(user.email || user.id, 160),
+          requested_by: cleanText(user.id, 80),
           language: language === 'it' ? 'it' : 'en'
         }
       })

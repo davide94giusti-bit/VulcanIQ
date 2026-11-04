@@ -55,7 +55,15 @@ async function authToken(variant) {
   return data?.session?.access_token || '';
 }
 async function api(variant, path, options = {}) {
-  const { deviceId, deviceToken } = identity(variant);
+  let identityScope=variant;
+  if(variant==='admin'){
+    const {data}=await supabase.auth.getSession();const userId=data?.session?.user?.id;
+    if(!userId)throw new Error('admin_auth_required');
+    const previous=localStorage.getItem(keyFor('admin','user_id'));
+    if(previous!==userId){const registration=await navigator.serviceWorker?.getRegistration('/admin/');await (await registration?.pushManager?.getSubscription())?.unsubscribe();}
+    localStorage.setItem(keyFor('admin','user_id'),userId);identityScope='admin.'+userId;
+  }
+  const { deviceId, deviceToken } = identity(identityScope);
   const token = await authToken(variant);
   const response = await fetch(`/api/notifications/${path}?audience=${variant}`, {
     ...options,
@@ -118,6 +126,12 @@ export async function enableNotifications({ variant, currentLanguage, languagePr
   const status = await getNotificationStatus(variant);
   if (!status.vapidPublicKey) throw new Error('vapid_public_key_missing');
   let pushSubscription = await registration.pushManager.getSubscription();
+  if (pushSubscription) {
+    const expected = base64UrlToBytes(status.vapidPublicKey), actual = new Uint8Array(pushSubscription.options?.applicationServerKey || []);
+    if (expected.length !== actual.length || expected.some((value,index)=>value!==actual[index])) {
+      await pushSubscription.unsubscribe(); pushSubscription = null;
+    }
+  }
   if (!pushSubscription) pushSubscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToBytes(status.vapidPublicKey) });
   const locale = resolveNotificationLocale(languagePreference, currentLanguage);
   registration.active?.postMessage({ type: 'notification-config', variant, locale });
@@ -125,10 +139,31 @@ export async function enableNotifications({ variant, currentLanguage, languagePr
   const payload = await api(variant, 'subscribe', { method: 'POST', body: JSON.stringify({ audience: variant, appVariant: variant, subscription: pushSubscription.toJSON(), platform: isIos() ? (isSafari() ? 'ios_safari' : 'ios') : navigator.platform || 'web', languagePreference, resolvedLocale: locale, categories, quietHoursEnabled, quietStart, quietEnd, timezone: timeZone }) });
   return { ...payload, permission, locale };
 }
+export async function forgetNotificationDevice(variant){
+  const result=await api(variant,'forget-device',{method:'POST',body:'{}'});
+  const registration=await navigator.serviceWorker?.getRegistration(variant==='admin'?'/admin/':'/');await (await registration?.pushManager?.getSubscription())?.unsubscribe();
+  const scope=variant==='admin'?'admin.'+localStorage.getItem(keyFor('admin','user_id')):variant;
+  for(const part of ['device_id','device_token'])localStorage.removeItem(keyFor(scope,part));return result;
+}
 export async function disableNotifications(variant) {
   const result = await api(variant, 'unsubscribe', { method: 'POST', body: '{}' });
   try { const registration = await navigator.serviceWorker.getRegistration(variant === 'admin' ? '/admin/' : '/'); const subscription = await registration?.pushManager?.getSubscription(); await subscription?.unsubscribe?.(); } catch { /* backend disable remains authoritative */ }
   return result;
+}
+export async function updateNotificationLocale(variant, currentLanguage) {
+  return api(variant,'preferences',{method:'PATCH',body:JSON.stringify({resolvedLocale:resolveNotificationLocale('auto',currentLanguage)})});
+}
+export async function reconcileNotificationSubscription(variant) {
+  const registration=await navigator.serviceWorker?.getRegistration(variant==='admin'?'/admin/':'/');
+  const subscription=await registration?.pushManager?.getSubscription();
+  const stored=await getNotificationPreferences(variant);
+  if(typeof Notification==='undefined'||Notification.permission!=='granted'||!subscription){if(stored.pushEnabled)await api(variant,'unsubscribe',{method:'POST',body:'{}'});return false;}
+  const status=await getNotificationStatus(variant),expected=base64UrlToBytes(status.vapidPublicKey||''),actual=new Uint8Array(subscription.options?.applicationServerKey||[]);
+  if(!expected.length||expected.length!==actual.length||!expected.every((value,index)=>value===actual[index]))return false;
+  if(!stored.pushEnabled)return false;
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(subscription.endpoint));const fingerprint=[...new Uint8Array(digest)].map(value=>value.toString(16).padStart(2,'0')).join('');
+  if(fingerprint!==stored.endpointFingerprint)await api(variant,'subscribe',{method:'POST',body:JSON.stringify({audience:variant,subscription:subscription.toJSON(),...stored.preferences})});
+  return true;
 }
 export async function getNotificationPreferences(variant) { return api(variant, 'preferences', { method: 'GET' }); }
 export async function updateNotificationPreferences(variant, preferences, currentLanguage) {
@@ -169,6 +204,7 @@ export async function retryCustomerNotificationOutbox(outboxId) {
 export async function getNotificationHealth() { return api('admin', 'health', { method: 'GET' }); }
 export async function listNotificationCampaigns() { return api('admin', 'campaigns', { method: 'GET' }); }
 export async function createNotificationCampaign(input) { return api('admin', 'campaigns', { method: 'POST', body: JSON.stringify(input) }); }
+export async function updateNotificationCampaign(id,input){return api('admin',`campaigns/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(input)});}
 export async function cancelNotificationCampaign(id) { return api('admin', `campaigns/${encodeURIComponent(id)}/cancel`, { method: 'PATCH', body: '{}' }); }
 export async function listNotificationAutomationRules() { return api('admin', 'automations/rules', { method: 'GET' }); }
 export async function listPersonalizedNotificationEvents() { return api('admin', 'automations/personalized', { method: 'GET' }); }

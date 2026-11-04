@@ -124,7 +124,11 @@ Supported owner-controlled settings:
 - Day of week for weekly backups
 - Day of month from 1 to 28 for monthly backups
 
-After a successful upload, the workflow lists GitHub Actions artifacts whose name starts with `vulcaniq-supabase-backup-`, sorts them newest to oldest by `created_at`, keeps the newest 3, and deletes older matching artifacts. Unrelated artifacts are not deleted.
+After upload, the workflow retains the newest three `-complete` database/Storage artifacts and the newest three `-partial` diagnostic artifacts independently. It preserves legacy artifacts whose completeness is unknown. Partial runs fail after uploading diagnostics and do not mark the scheduled backup complete. Three partial runs cannot displace the last complete artifact.
+
+Automatic GitHub expiry still applies: this workflow requests 30 days, subject to repository/organization limits and quota. No indefinite retention is promised. The workflow fails when no unexpired complete artifact remains and reports the newest complete expiry. A monthly schedule is insufficient to guarantee a recovery point inside a 30-day expiry: owners must approve a shorter successful-backup cadence and observe failure alerts before relying on it. No schedule was enabled or changed by this repair.
+
+`database_complete` and `storage_complete` are distinct from `system_complete`, which remains false: Supabase Auth identity recovery, D1 and secret recovery are separate scopes. Never label a database/Storage-only artifact as a full-system backup.
 
 ## Restore checklist
 
@@ -152,13 +156,13 @@ After a successful upload, the workflow lists GitHub Actions artifacts whose nam
 Bash:
 
 ```bash
-./restore-supabase.sh 'postgresql://postgres:[PASSWORD]@db.YOUR-REF.supabase.co:5432/postgres'
+./restore-supabase.sh 'postgresql://postgres:[LOCAL-PASSWORD]@127.0.0.1:54322/vulcaniq_restore_drill'
 ```
 
 Windows PowerShell:
 
 ```powershell
-.\restore-supabase.ps1 -NewDbUrl 'postgresql://postgres:[PASSWORD]@db.YOUR-REF.supabase.co:5432/postgres'
+.\restore-supabase.ps1 -NewDbUrl 'postgresql://postgres:[LOCAL-PASSWORD]@127.0.0.1:54322/vulcaniq_restore_drill'
 ```
 
 ## Check and restore Supabase Storage
@@ -170,18 +174,29 @@ This backup includes Supabase Storage files under storage-assets/. After restore
 Run this from the extracted backup folder:
 
 ```bash
-SUPABASE_URL="https://target-project.supabase.co" SUPABASE_SECRET_KEY="..." node restore-storage.js
+RESTORE_ISOLATED=true SUPABASE_URL="http://127.0.0.1:54321" SUPABASE_SECRET_KEY="[LOCAL-SECRET]" node restore-storage.js
 ```
 
 Windows PowerShell:
 
 ```powershell
-$env:SUPABASE_URL="https://target-project.supabase.co"
-$env:SUPABASE_SECRET_KEY="..."
+$env:RESTORE_ISOLATED="true"
+$env:SUPABASE_URL="http://127.0.0.1:54321"
+$env:SUPABASE_SECRET_KEY="[LOCAL-SECRET]"
 node restore-storage.js
 ```
 
-The restore script reads `storage-assets/manifest.json`, creates missing buckets where possible, and uploads files with upsert enabled. It prints uploaded, skipped, failed, and bucket counts. If `storage-assets/manifest.json` or `restore-storage.js` is missing, this is an older database-only backup; check Storage manually and re-upload missing files.
+Restore helpers now require an isolated local target, `RESTORE_ISOLATED=true`, and a verified SHA-256 manifest before any writes. Run `node validate-backup.mjs .` first. The database helper only accepts a loopback database named `vulcaniq_restore_*`; remote restoration requires a separately reviewed procedure. Set `SUPABASE_URL` to a loopback Storage API for a local Storage drill. The Storage helper reads `storage-assets/manifest.json`, creates missing buckets where possible, and uploads files with upsert enabled. If the backup is partial or legacy/unverified, reconcile it before attempting restore.
+
+## Full-system recovery gate (not yet a completed live drill)
+
+1. Record application/Worker commit and all Supabase/D1 migration versions. Retain compatible source/build separately from confidential business data.
+2. Verify hashes and database/Storage completeness locally. Recreate a disposable Supabase stack and restore roles/schema/data with providers disabled; restore fails on missing required Auth UUIDs rather than silently dropping foreign keys.
+3. Recover Auth identities through the separately approved Supabase Auth process. Preserve original UUIDs where supported; otherwise review an explicit old→new UUID map for every FK, admin role and ownership record. Do not bulk substitute IDs or enable a frontend recovery bypass. Prove isolated owner login before release.
+4. Restore Storage bytes and verify manifest object count/bytes/hash and public/private bucket authorization. Failed leaflets must keep their previous valid bytes.
+5. Export/import D1 only against a positively identified isolated binding. Notification credentials must be treated as confidential. Restore consent/ownership semantics; keep jobs and delivery processing disabled and reconcile accepted/unknown attempts before any replay. Device re-enrollment is the safe fallback when credentials cannot be recovered.
+6. Restore secrets separately from the owner-controlled secret inventory (names only in artifacts). No secret values are included in source or metadata. Verify bindings target the isolated Supabase/D1 projects before starting compatible Pages/Worker builds.
+7. Record counts/FK checks, owner login, Storage read, synthetic booking, test-device enrollment, pending-job reconciliation and measured elapsed times. The real cross-system drill and provider/device acceptance remain pending explicit isolated environment authorization. RPO equals the last successful complete backup age, bounded by provider expiry; no measured RTO is claimed until that drill runs.
 
 ## Verifica e ripristino Supabase Storage
 

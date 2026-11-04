@@ -57,6 +57,8 @@ export async function getActiveAdminProfile(userId) {
 export async function getAdminAccess() {
   const session = await getCurrentSession();
   if (!session?.user) return { session: null, profile: null, isAdmin: false };
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data?.user || data.user.id !== session.user.id) return { session: null, profile: null, isAdmin: false };
   const profile = await getActiveAdminProfile(session.user.id);
   return { session, profile, isAdmin: Boolean(profile?.active) };
 }

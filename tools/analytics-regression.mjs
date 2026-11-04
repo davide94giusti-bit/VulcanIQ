@@ -1,3 +1,4 @@
+import { readApplicationSource } from './application-source.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -160,7 +161,7 @@ test('raw sample size cannot alter canonical summary KPI values', () => {
 const contract = read('src/features/analytics/contract.js');
 const migration = read('supabase/migrations/20260818090000_analytics_consolidation.sql');
 const analyticsService = read('src/services/analyticsService.js');
-const adminSource = read('src/main.jsx') + '\n' + read('src/features/analytics/AnalyticsHealthPanel.jsx');
+const adminSource = readApplicationSource() + '\n' + read('src/features/analytics/AnalyticsHealthPanel.jsx');
 const recap = read('supabase/functions/send-weekly-admin-recap/index.ts');
 const email = read('supabase/functions/_shared/weeklyRecapEmail.ts');
 const ingestion = read('functions/api/analytics/event.js');

@@ -17,7 +17,7 @@ type RecapData = {
     bySource: CountMap;
   };
   giftCards: { total: number; compatible: number; byStatus: CountMap; missingCode: number };
-  finance: { recordedRevenue: number; reversals: number; netRecorded: number; entries: number };
+  finance: { byCurrency: Array<{ currency: string; income: number; expense: number; expected: number }>; entries: number };
   analytics: {
     events: number;
     sessions: number;
@@ -112,7 +112,8 @@ export function buildWeeklyRecapEmail(periodLabel: string, data: RecapData, test
   const websiteConversion = pct(data.analytics.submitSuccess, data.analytics.formOpen);
   const bookingCodeConversion = pct(data.analytics.bookingCodeRedeemSuccess, data.analytics.bookingCodeRedeemAttempt);
   const fastRequestConversion = pct(data.analytics.fastRequestSuccesses, data.analytics.fastRequestStarts);
-  const netRevenue = money(data.finance.netRecorded);
+  const currencyTotals = (field: 'income' | 'expense' | 'net') => data.finance.byCurrency.map((row) => `${row.currency} ${Number(field === 'net' ? Number(row.income) - Number(row.expense) : row[field]).toFixed(2)}`).join(' · ') || '—';
+  const netRevenue = currencyTotals('income');
 
   const deviceRows = mapRows(data.analytics.byDevice);
   const trafficRows = mapRows(data.analytics.byTrafficSource);
@@ -132,7 +133,7 @@ body{margin:0;background:#f3eee7;color:#102033;font-family:Arial,Helvetica,sans-
       ${metricCard('Website requests', data.bookings.website, `${data.bookings.confirmedWebsite} confirmed`)}
       ${metricCard('Booking-code requests', data.bookings.bookingCode, `${data.bookings.confirmedBookingCode} confirmed`)}
       ${metricCard('Gift Cards', data.giftCards.total, `${data.giftCards.missingCode} missing code`)}
-      ${metricCard('Net recorded revenue', netRevenue, `${data.finance.entries} finance entries`)}
+      ${metricCard('Net income by currency', netRevenue, `${data.finance.entries} finance entries`)}
     </tr></table></div>
 
     <div class="section"><h2>Operational attention</h2><table class="urgency-table" role="presentation"><tr>
@@ -148,7 +149,8 @@ body{margin:0;background:#f3eee7;color:#102033;font-family:Arial,Helvetica,sans-
     <div class="section"><h2>Conversion funnels</h2><table class="two-col" role="presentation"><tr><td>
       ${funnelChart(`Website booking funnel · ${websiteConversion}`, [['Form opens', data.analytics.formOpen], ['Form starts', data.analytics.formStarted], ['Submit attempts', data.analytics.submitAttempt], ['Submit successes', data.analytics.submitSuccess], ['Compatible DB requests', data.bookings.websiteCompatible]])}
     </td><td>
-      ${funnelChart(`Fast Request / WhatsApp · ${fastRequestConversion}`, [['Starts', data.analytics.fastRequestStarts], ['Submit successes', data.analytics.fastRequestSuccesses], ['WhatsApp outcomes', data.analytics.fastRequestWhatsapp]])}
+      ${funnelChart(`Fast Request / WhatsApp · ${fastRequestConversion}`, [['Starts', data.analytics.fastRequestStarts], ['Saved requests (current contract)', data.analytics.fastRequestSuccesses], ['WhatsApp handoffs (intent only)', data.analytics.fastRequestWhatsapp]])}
+      <p class="muted">Opening WhatsApp does not prove that a message was sent or a booking request was saved. Historical mixed-contract handoffs are not persisted-request conversions.</p>
     </td></tr><tr><td>
       ${funnelChart('Gift Card funnel', [['Views', data.analytics.giftCardViews], ['Questionnaire starts', data.analytics.giftCardStarts], ['Requests created event', data.analytics.giftCardRequestCreated], ['Compatible DB requests', data.giftCards.compatible]])}
     </td><td>
@@ -173,7 +175,7 @@ body{margin:0;background:#f3eee7;color:#102033;font-family:Arial,Helvetica,sans-
       ${metricCard('Submission health', data.analytics.coverage.incidentState || 'none')}
     </tr></table></div>
 
-    <div class="section"><h2>Finance</h2><table class="metric-table" role="presentation"><tr>${metricCard('Recorded revenue', money(data.finance.recordedRevenue))}${metricCard('Reversals', money(data.finance.reversals))}${metricCard('Net recorded', netRevenue)}${metricCard('Entries', data.finance.entries)}</tr></table></div>
+    <div class="section"><h2>Finance</h2><table class="metric-table" role="presentation"><tr>${metricCard('Income after reversals', currencyTotals('income'))}${metricCard('Expenses after reversals', currencyTotals('expense'))}${metricCard('Net cash movement', currencyTotals('net'))}${metricCard('Entries', data.finance.entries)}</tr></table></div>
 
     <div class="section"><h2>Reviews</h2><table class="metric-table" role="presentation"><tr>${metricCard('New reviews', data.reviews.total)}${metricCard('Negative reviews', data.reviews.negative)}${metricCard('Replies pending', data.reviews.replyPending)}${metricCard('Pending >12h', data.urgencies.pendingOver12h)}</tr></table></div>
 

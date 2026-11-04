@@ -1,5 +1,7 @@
 import { claimAdminAction, clean, dbJson, env, readJson, recipients, requireAdmin, resendEmail } from '../_shared/vulcaniq.ts';
 import { buildRequestNotificationEmail } from '../_shared/requestNotificationEmail.ts';
+import { deliverOperationalEmail } from '../_shared/emailDelivery.js';
+import { drainAdminNotificationHandoffs } from '../_shared/adminHandoff.js';
 
 const SUPPORTED = new Set(['booking_requests', 'gift_card_requests']);
 
@@ -45,7 +47,6 @@ function preflight(req: Request): Response | null {
 async function ingestAdminNotification(table: string, id: string, record: Record<string, unknown>): Promise<void> {
   const endpoint = env('NOTIFICATION_INGEST_URL', false);
   const secret = env('NOTIFICATION_INGEST_SECRET', false);
-  if (!endpoint || !secret) return;
   const source = clean(record.source, 80).toLowerCase();
   const category = table === 'gift_card_requests'
     ? 'gift_cards'
@@ -60,16 +61,9 @@ async function ingestAdminNotification(table: string, id: string, record: Record
     : category === 'new_bookings'
       ? '/admin/requests'
       : '/admin/gift-cards';
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Notification-Ingest-Key': secret },
-      body: JSON.stringify({ category, dedupeKey: `request:${table}:${id}`, destinationUrl })
-    });
-    if (!response.ok && response.status !== 409) console.warn('admin_notification_ingest_failed', { status: response.status, table });
-  } catch {
-    console.warn('admin_notification_ingest_failed', { status: 'network_error', table });
-  }
+  await dbJson('rpc/enqueue_admin_notification_handoff', { method: 'POST', body: JSON.stringify({ p_key: `request:${table}:${id}`, p_category: category, p_destination: destinationUrl }) });
+  const result = await drainAdminNotificationHandoffs({ dbJson, endpoint, secret });
+  if (result.pending) console.warn('admin_notification_handoff_pending', { code: result.configured ? 'retry_pending' : 'configuration_missing' });
 }
 
 type RecordMap = Record<string, unknown>;
@@ -78,38 +72,6 @@ async function fetchRecord(table: string, id: string): Promise<RecordMap | null>
   const query = new URLSearchParams({ select: '*', id: `eq.${id}`, limit: '1' });
   const rows = await dbJson(`${table}?${query.toString()}`, { method: 'GET' }) as RecordMap[];
   return Array.isArray(rows) ? rows[0] || null : null;
-}
-
-async function claim(table: string, id: string, recipient: string, retry: boolean): Promise<boolean> {
-  if (retry) {
-    const query = new URLSearchParams({ request_table: `eq.${table}`, request_id: `eq.${id}`, channel: 'eq.email', recipient: `eq.${recipient}`, status: 'eq.failed', attempts: 'lt.5' });
-    const rows = await dbJson(`request_notification_log?${query.toString()}`, {
-      method: 'PATCH',
-      headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ status: 'pending', error_message: null, last_attempt_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    }) as RecordMap[];
-    if (Array.isArray(rows) && rows.length) {
-      await dbJson(`request_notification_log?id=eq.${clean(rows[0].id, 80)}`, { method: 'PATCH', body: JSON.stringify({ attempts: Number(rows[0].attempts || 1) + 1 }) });
-      return true;
-    }
-    const inserted = await dbJson('request_notification_log?on_conflict=request_table,request_id,channel,recipient', {
-      method: 'POST',
-      headers: { Prefer: 'return=representation,resolution=ignore-duplicates' },
-      body: JSON.stringify({ request_table: table, request_id: id, channel: 'email', recipient, provider: 'resend', status: 'pending', attempts: 1 })
-    }) as RecordMap[];
-    return Array.isArray(inserted) && inserted.length > 0;
-  }
-  const rows = await dbJson('request_notification_log?on_conflict=request_table,request_id,channel,recipient', {
-    method: 'POST',
-    headers: { Prefer: 'return=representation,resolution=ignore-duplicates' },
-    body: JSON.stringify({ request_table: table, request_id: id, channel: 'email', recipient, provider: 'resend', status: 'pending', attempts: 1 })
-  }) as RecordMap[];
-  return Array.isArray(rows) && rows.length > 0;
-}
-
-async function updateLog(table: string, id: string, recipient: string, patch: RecordMap): Promise<void> {
-  const query = new URLSearchParams({ request_table: `eq.${table}`, request_id: `eq.${id}`, channel: 'eq.email', recipient: `eq.${recipient}` });
-  await dbJson(`request_notification_log?${query.toString()}`, { method: 'PATCH', body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() }) });
 }
 
 async function updateParent(table: string, id: string, status: string, error: string | null, attempts: number): Promise<void> {
@@ -155,17 +117,12 @@ Deno.serve(async (req) => {
     let attempts = Number(record.notification_email_attempts || 0);
 
     for (const recipient of targets) {
-      const claimed = await claim(table, id, recipient, retry);
-      if (!claimed) continue;
+      const delivery = await deliverOperationalEmail({ dbJson, send: resendEmail, key: `email:${table}:${id}:${recipient.toLowerCase()}`, input: { to: recipient, subject: content.subject, html: content.html, replyTo: content.replyTo } });
+      if (delivery.skipped && delivery.status !== 'accepted') { failed += 1; continue; }
       attempts += 1;
-      try {
-        const providerId = await resendEmail({ to: recipient, subject: content.subject, html: content.html, replyTo: content.replyTo });
-        await updateLog(table, id, recipient, { status: 'sent', provider_message_id: providerId, error_message: null, sent_at: new Date().toISOString() });
-        sent += 1;
-      } catch {
-        await updateLog(table, id, recipient, { status: 'failed', error_message: 'Email provider rejected the delivery attempt.' });
-        failed += 1;
-      }
+      await dbJson('request_notification_log?on_conflict=request_table,request_id,channel,recipient', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ request_table: table, request_id: id, channel: 'email', recipient, provider: 'resend', status: delivery.status === 'accepted' ? 'sent' : delivery.status === 'rejected' ? 'failed' : 'pending', provider_message_id: delivery.providerId || null, error_message: delivery.status === 'unknown' ? 'Delivery outcome unknown; reconciliation required.' : null }) });
+      if (delivery.status === 'accepted') sent += 1;
+      else failed += 1;
     }
 
     const skipped = targets.length - sent - failed;

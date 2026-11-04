@@ -1,7 +1,5 @@
 import { resolveSupabaseEdgeSecretKey } from './supabaseSecretKey.js';
 
-const encoder = new TextEncoder();
-
 export const corsHeaders: HeadersInit = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-retry-count, traceparent, tracestate, baggage, x-vulcaniq-cron-secret, x-vulcaniq-webhook-secret, x-vulcaniq-google-reviews-sync-secret',
@@ -32,8 +30,26 @@ export async function readJson(req: Request, maxBytes = 65536): Promise<Record<s
   if (!contentType.includes('application/json')) throw new Error('invalid_content_type');
   const declared = Number(req.headers.get('content-length') || 0);
   if (declared > maxBytes) throw new Error('body_too_large');
-  const text = await req.text();
-  if (encoder.encode(text).byteLength > maxBytes) throw new Error('body_too_large');
+  const reader = req.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  if (reader) {
+    let timer: ReturnType<typeof setTimeout>;
+    const deadline = new Promise<never>((_, reject) => { timer = setTimeout(() => { reject(new Error('request_timeout')); void reader.cancel(); }, 10000); });
+    try {
+      while (true) {
+        const next = await Promise.race([reader.read(), deadline]);
+        if (next.done) break;
+        size += next.value.byteLength;
+        if (size > maxBytes) { void reader.cancel(); throw new Error('body_too_large'); }
+        chunks.push(next.value);
+      }
+    } finally { clearTimeout(timer!); reader.releaseLock(); }
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  const text = new TextDecoder().decode(bytes);
   let value: unknown;
   try {
     value = JSON.parse(text || '{}');
@@ -77,13 +93,15 @@ export function supabaseBackendCredential(): { key: string; kind: 'secret' | 'le
 }
 
 export function supabaseHeaders(extra: HeadersInit = {}): HeadersInit {
+  const additional = new Headers(extra);
+  if (additional.has('apikey') || additional.has('authorization')) throw new Error('backend_auth_header_override');
   const credential = supabaseBackendCredential();
-  return { apikey: credential.key, ...(credential.kind === 'legacy_service_role' ? { authorization: `Bearer ${credential.key}` } : {}), 'content-type': 'application/json', ...extra };
+  return { apikey: credential.key, ...(credential.kind === 'legacy_service_role' ? { authorization: `Bearer ${credential.key}` } : {}), 'content-type': 'application/json', ...Object.fromEntries(additional.entries()) };
 }
 
 export async function db(path: string, init: RequestInit = {}): Promise<Response> {
   const base = env('SUPABASE_URL').replace(/\/$/, '');
-  return fetch(`${base}/rest/v1/${path}`, { ...init, headers: supabaseHeaders(init.headers) });
+  return fetch(`${base}/rest/v1/${path}`, { ...init, signal: AbortSignal.timeout(10000), redirect: 'error', headers: supabaseHeaders(init.headers) });
 }
 
 export async function dbJson(path: string, init: RequestInit = {}): Promise<unknown> {
@@ -95,10 +113,11 @@ export async function dbJson(path: string, init: RequestInit = {}): Promise<unkn
   return response.status === 204 ? null : response.json().catch(() => null);
 }
 
-export async function resendEmail(input: { to: string; subject: string; html: string; replyTo?: string; from?: string }): Promise<string> {
+export async function resendEmail(input: { to: string; subject: string; html: string; replyTo?: string; from?: string; idempotencyKey: string }): Promise<string> {
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { authorization: `Bearer ${env('RESEND_API_KEY')}`, 'content-type': 'application/json' },
+    signal: AbortSignal.timeout(15000), redirect: 'error',
+    headers: { authorization: `Bearer ${env('RESEND_API_KEY')}`, 'content-type': 'application/json', 'Idempotency-Key': input.idempotencyKey },
     body: JSON.stringify({
       from: input.from || env('REQUEST_NOTIFICATION_FROM_EMAIL', false) || 'vulcanIQ Notifications <bookings@notify.vulcaniq.it>',
       to: [input.to],
@@ -110,7 +129,7 @@ export async function resendEmail(input: { to: string; subject: string; html: st
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload?.id) {
     console.error('resend_delivery_failed', { status: response.status });
-    throw new Error('email_delivery_failed');
+    throw new Error(response.status >= 400 && response.status < 500 && ![408, 409].includes(response.status) ? 'email_delivery_rejected' : 'email_delivery_unknown');
   }
   return String(payload.id);
 }
@@ -132,7 +151,7 @@ export async function requireAdmin(req: Request): Promise<string> {
   const auth = clean(req.headers.get('authorization'), 4096);
   if (!auth.toLowerCase().startsWith('bearer ')) throw new Error('unauthorized');
   const supabaseUrl = env('SUPABASE_URL').replace(/\/$/, '');
-  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: supabaseBackendCredential().key, authorization: auth } });
+  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, { signal: AbortSignal.timeout(10000), redirect: 'error', headers: { apikey: supabaseBackendCredential().key, authorization: auth } });
   if (!userResponse.ok) throw new Error('unauthorized');
   const user = await userResponse.json();
   const userId = clean(user?.id, 80);

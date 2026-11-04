@@ -4,7 +4,7 @@ import useBodyScrollLock from '../../hooks/useBodyScrollLock.js';
 import useDialogFocusTrap from '../../hooks/useDialogFocusTrap.js';
 import { reviewCopy } from './reviewModel.js';
 
-export default function ReviewSubmissionModal({ open, lang = 'it', form, state, configured, onChange, onSubmit, onClose }) {
+export default function ReviewSubmissionModal({ open, lang = 'it', form, state, configured, onChange, onSubmit, onClose, challenge }) {
   const panelRef = useRef(null);
   const copy = reviewCopy(lang);
   useBodyScrollLock(open);
@@ -29,8 +29,9 @@ export default function ReviewSubmissionModal({ open, lang = 'it', form, state, 
           <label><span>{copy.reviewText}</span><textarea rows={5} value={form.review_text} onChange={(event) => onChange('review_text', event.target.value)} required /></label>
           {state.error && <div className="admin-alert error" role="alert">{state.error}</div>}
           {state.success && <div className="admin-alert success" role="status">{state.success}</div>}
+          {challenge?.element}
           <div className="modal-actions">
-            <button className="button primary" type="submit" disabled={state.loading || !configured}>{state.loading ? copy.sending : copy.publish}</button>
+            <button className="button primary" type="submit" disabled={state.loading || !configured || challenge?.ready === false}>{state.loading ? copy.sending : copy.publish}</button>
             <button className="button secondary" type="button" onClick={onClose}>{copy.close}</button>
           </div>
         </form>

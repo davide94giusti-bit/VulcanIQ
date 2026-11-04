@@ -1,5 +1,7 @@
 import { importPKCS8, SignJWT } from 'jose';
 import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../../_shared/supabaseBackend.js';
+import { verifiedAdminStepUp } from '../../_shared/adminStepUp.js';
+import { readBoundedText } from '../../_shared/requestSafety.js';
 
 export function json(status, body = {}) {
   if (status === 204) return new Response(null, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -44,8 +46,9 @@ export async function readRequestJsonWithinLimit(request, maxBytes = 8192) {
 
   let rawBody = '';
   try {
-    rawBody = await request.text();
-  } catch {
+    rawBody = await readBoundedText(request, maxBytes);
+  } catch (error) {
+    if (error.message === 'body_too_large') return { ok: false, status: 413, code: 'request_body_too_large' };
     return { ok: false, status: 400, code: 'invalid_request_body' };
   }
 
@@ -136,6 +139,8 @@ export async function requireActiveOwner(request, env = {}, language = 'en') {
     };
   }
 
+  const stepUp = verifiedAdminStepUp(token, user.id, env);
+  if (!stepUp.ok) return { ok: false, response: json(403, { ok: false, code: stepUp.code, message: localized(language, 'Verifica MFA recente richiesta.', 'Recent MFA verification required.') }) };
   const profile = await getOwnerProfile(config, user.id);
   if (!profile?.active || profile.role !== 'owner') {
     return {
@@ -665,6 +670,8 @@ function backupMetadataToStorageSummary(projectInfo, storageManifest) {
 
 export async function readBackupArtifactMetadata(config, artifact) {
   if (!config || !artifact?.id) return null;
+  // Status metadata is optional; never buffer a large recovery artifact in an isolate.
+  if (!Number.isFinite(Number(artifact.size_in_bytes)) || Number(artifact.size_in_bytes) > 8 * 1024 * 1024) return null;
 
   let response = await githubFetch(
     config,

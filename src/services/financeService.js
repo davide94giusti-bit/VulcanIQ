@@ -1,3 +1,4 @@
+import { collectKeysetRows } from './keysetRows.js';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
 
@@ -12,7 +13,9 @@ function normalizeStatus(value) {
   return clean || 'confirmed';
 }
 
+const financeVersions = new Map();
 function normalize(row) {
+  financeVersions.set(row.id, row.updated_at);
   return {
     id: row.id,
     created_at: row.created_at,
@@ -54,12 +57,11 @@ export const FINANCE_SELECT_FIELDS = 'id, created_at, updated_at, entry_date, ty
 
 export async function listFinanceEntries(filters = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const data = await collectKeysetRows(() => {
   let query = supabase
     .from('finance_entries')
     .select(FINANCE_SELECT_FIELDS)
-    .order('entry_date', { ascending: false })
-    .order('created_at', { ascending: false })
-    .limit(filters.limit || 500);
+            ;
 
   if (filters.type && filters.type !== 'all') query = query.eq('type', filters.type);
   if (filters.status && filters.status !== 'all') query = query.eq('status', filters.status);
@@ -70,47 +72,25 @@ export async function listFinanceEntries(filters = {}) {
   if (filters.linked === 'linked') query = query.or('source_id.not.is.null,booking_request_id.not.is.null,booking_code_id.not.is.null,fixed_excursion_id.not.is.null,leaflet_id.not.is.null,gift_card_request_id.not.is.null,partner_commission_id.not.is.null');
   if (filters.linked === 'unlinked') query = query.is('source_id', null).is('booking_request_id', null).is('booking_code_id', null).is('fixed_excursion_id', null).is('leaflet_id', null).is('gift_card_request_id', null).is('partner_commission_id', null);
 
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data || []).map(normalize);
+  return query;
+  });
+  return (data || []).map(normalize).sort((a, b) => String(b.entry_date).localeCompare(String(a.entry_date)) || String(b.created_at).localeCompare(String(a.created_at)));
 }
 
-export async function createFinanceEntry(input, userId) {
+export async function getFinanceTotals(filters = {}) {
+  const { data, error } = await supabase.rpc('get_admin_finance_summary', { p_filters: filters });
+  if (error) throw error;
+  return data;
+}
+
+export async function createFinanceEntry(input) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-  const payload = {
-    entry_date: input.entry_date,
-    type: input.type,
-    amount: parseMoneyAmount(input.amount),
-    currency: normalizeCurrency(input.currency),
-    title: cleanText(input.title),
-    description: cleanText(input.description),
-    category: cleanText(input.category),
-    payment_method: cleanText(input.payment_method),
-    status: normalizeStatus(input.status),
-    source_type: cleanText(input.source_type),
-    source_id: cleanText(input.source_id),
-    booking_request_id: cleanText(input.booking_request_id),
-    booking_code_id: cleanText(input.booking_code_id),
-    fixed_excursion_id: cleanText(input.fixed_excursion_id),
-    leaflet_id: cleanText(input.leaflet_id),
-    gift_card_request_id: cleanText(input.gift_card_request_id),
-    partner_commission_id: cleanText(input.partner_commission_id),
-    idempotency_key: cleanText(input.idempotency_key),
-    recognized_at: input.recognized_at || null,
-    cancelled_at: input.cancelled_at || null,
-    reversed_at: input.reversed_at || null,
-    reversal_of: cleanText(input.reversal_of),
-    admin_confirmed_by: cleanText(input.admin_confirmed_by),
-    admin_confirmed_at: input.admin_confirmed_at || null,
-    created_by: userId || null,
-    updated_by: userId || null,
-    active: input.active !== false
-  };
-  const { data, error } = await supabase
-    .from('finance_entries')
-    .insert(payload)
-    .select('*')
-    .single();
+  if (!input.idempotency_key) throw new Error('A stable Finance operation key is required.');
+  const payload = { ...input, amount: parseMoneyAmount(input.amount), currency: normalizeCurrency(input.currency) };
+  delete payload.idempotency_key;
+  const { data, error } = await supabase.rpc('admin_create_finance_entry', {
+    p_payload: payload, p_idempotency_key: input.idempotency_key
+  });
   if (error) throw error;
   return normalize(data);
 }
@@ -122,6 +102,8 @@ export async function updateFinanceEntry(id, input, userId) {
     updated_by: userId || null,
     updated_at: new Date().toISOString()
   };
+  const expectedVersion = payload.expected_updated_at || financeVersions.get(id);
+  delete payload.expected_updated_at;
   if (payload.amount !== undefined) payload.amount = parseMoneyAmount(payload.amount);
   if (payload.currency !== undefined) payload.currency = normalizeCurrency(payload.currency);
   if (payload.status !== undefined) payload.status = normalizeStatus(payload.status);
@@ -129,13 +111,14 @@ export async function updateFinanceEntry(id, input, userId) {
     if (payload[key] === '') payload[key] = null;
   });
   Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key]);
-  const { data, error } = await supabase
+  let query = supabase
     .from('finance_entries')
     .update(payload)
-    .eq('id', id)
-    .select('*')
-    .single();
+    .eq('id', id);
+  if (expectedVersion) query = query.eq('updated_at', expectedVersion);
+  const { data, error } = await query.select('*').maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error('EDIT_CONFLICT_OR_RECOGNIZED_ENTRY_IMMUTABLE');
   return normalize(data);
 }
 

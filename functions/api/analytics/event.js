@@ -1,4 +1,7 @@
 import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../_shared/supabaseBackend.js';
+import { boundedFetch, readBoundedText } from '../_shared/requestSafety.js';
+import { clientActorHash } from '../public/_shared.js';
+import { TRUSTED_ANALYTICS_EVENTS, publicEventMetadata, canonicalPublicPath, validAnalyticsIdentity, boundedEventTime } from '../../../shared/analyticsTrust.js';
 
 // Keep this analytics allowlist synchronized with src/analytics.js.
 const EVENT_NAMES = new Set([
@@ -101,6 +104,8 @@ const EVENT_NAMES = new Set([
 ]);
 
 const SESSION_LIFECYCLE_EVENTS = new Set(['session_start', 'session_heartbeat', 'session_end']);
+let diagnosticWindow = 0;
+let diagnosticCount = 0;
 
 const UNSAFE_METADATA_KEYS = new Set([
   'name',
@@ -165,8 +170,7 @@ function cleanText(value, maxLength = 220) {
 }
 
 function cleanPath(value) {
-  const raw = cleanText(value, 240) || '/';
-  return raw.split('?')[0].slice(0, 240) || '/';
+  return canonicalPublicPath(value);
 }
 
 function cleanMetadata(metadata = {}) {
@@ -231,7 +235,7 @@ async function supabaseRequest(env, path, options) {
     throw new Error('Missing Supabase analytics environment variables.');
   }
 
-  const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/${path}`, {
+  const response = await boundedFetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/${path}`, {
     ...options,
     headers: {
       ...supabaseBackendHeaders(backendCredential),
@@ -254,8 +258,7 @@ async function sha256(value) {
 }
 
 async function analyticsRateAllowed(request, env) {
-  const ip = cleanText(request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown', 100) || 'unknown';
-  const actor = await sha256(`${env.SUBMISSION_HASH_SALT || env.SUPABASE_SERVICE_ROLE_KEY || 'analytics'}:${ip}`);
+  const actor = await clientActorHash(request, env);
   const response = await supabaseRequest(env, 'rpc/claim_public_submission_rate_limit', {
     method: 'POST',
     body: JSON.stringify({ p_action_key: 'analytics_ingestion', p_actor_key: actor, p_actor_limit: 240, p_global_limit: 20000, p_window_seconds: 3600 })
@@ -328,7 +331,7 @@ function eventRow(payload, geo) {
     device_type: cleanText(payload.device_type, 24),
     browser: cleanText(payload.browser, 40),
     operating_system: cleanText(payload.operating_system, 40),
-    metadata: cleanMetadata(payload.metadata)
+    metadata: publicEventMetadata(payload.event_name, payload.metadata)
   };
 }
 
@@ -337,17 +340,27 @@ export async function onRequestOptions() {
 }
 
 export async function onRequestPost(context) {
+  let stage = 'validation';
+  const diagnostic = (code) => {
+    const window = Math.floor(Date.now() / 60000);
+    if (window !== diagnosticWindow) { diagnosticWindow = window; diagnosticCount = 0; }
+    if (diagnosticCount++ >= 10) return;
+    // Fixed classes only: no visitor IDs, body, URLs, headers or provider errors.
+    console.warn('analytics_ingestion', { code, trace_id: crypto.randomUUID() });
+  };
   try {
     const contentType = String(context.request.headers.get('Content-Type') || '').toLowerCase();
     const contentLength = Number(context.request.headers.get('Content-Length') || 0);
     if (!contentType.includes('application/json') || contentLength > 16384) return json(204);
-    const raw = await context.request.text();
+    const raw = await readBoundedText(context.request, 16384);
     if (new TextEncoder().encode(raw).byteLength > 16384) return json(204);
-    if (!(await analyticsRateAllowed(context.request, context.env))) return json(204);
     const payload = JSON.parse(raw || '{}');
 
     // Analytics is diagnostic. Invalid analytics payloads should not create production noise.
-    if (!EVENT_NAMES.has(payload?.event_name)) return json(204);
+    if (!EVENT_NAMES.has(payload?.event_name) || TRUSTED_ANALYTICS_EVENTS.has(payload.event_name)) { diagnostic('invalid_event'); return json(204); }
+    if (!boundedEventTime(payload.occurred_at) || (payload.started_at && !boundedEventTime(payload.started_at)) || !validAnalyticsIdentity(payload.session_id) || !validAnalyticsIdentity(payload.visitor_id)) { diagnostic('invalid_contract'); return json(204); }
+    stage = 'rate';
+    if (!(await analyticsRateAllowed(context.request, context.env))) { diagnostic('rate_limited'); return json(204); }
 
     const geo = cfGeo(context.request);
     const event = eventRow(payload, geo);
@@ -357,6 +370,7 @@ export async function onRequestPost(context) {
 
     const session = sessionRow(payload, geo);
 
+    stage = 'backend';
     try {
       await supabaseRequest(context.env, 'rpc/upsert_analytics_session', {
         method: 'POST',
@@ -375,12 +389,14 @@ export async function onRequestPost(context) {
       }
     } catch {
       // Analytics write failures must never surface to the public website.
+      diagnostic('backend_failure');
       return json(204);
     }
 
     return json(204);
   } catch {
     // Analytics parsing/runtime failures must never surface to the public website.
+    diagnostic(`${stage}_failure`);
     return json(204);
   }
 }

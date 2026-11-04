@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { isSupabaseConfigured } from '../../lib/supabaseClient.js';
 import { GOOGLE_BUSINESS_PROFILE } from '../../config/site.js';
 import { loadPublicReviewsResult, submitPublicReview } from '../../services/reviewsService.js';
@@ -8,10 +8,16 @@ import ReviewDetailModal from './ReviewDetailModal.jsx';
 import ReviewFilters from './ReviewFilters.jsx';
 import ReviewSubmissionModal from './ReviewSubmissionModal.jsx';
 import { filterAndSortReviews, reviewCopy } from './reviewModel.js';
+import { usePublicChallenge } from '../privacy/PublicChallenge.jsx';
 
 export default function ReviewsPage({ lang = 'it', siteContent, editor, EditableTextComponent }) {
+  const challenge = usePublicChallenge(lang);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [partial, setPartial] = useState(false);
+  const generation = useRef(0);
+  const reviewInFlightRef = useRef(false);
   const [googleStatus, setGoogleStatus] = useState('unavailable');
   const [googleSummary, setGoogleSummary] = useState(null);
   const [selectedReview, setSelectedReview] = useState(null);
@@ -23,27 +29,30 @@ export default function ReviewsPage({ lang = 'it', siteContent, editor, Editable
   const Editable = EditableTextComponent;
 
   async function refreshReviews() {
+    const requestId = ++generation.current;
     setLoading(true);
+    setLoadError(false);
     try {
       const result = await loadPublicReviewsResult();
+      if (requestId !== generation.current) return;
       setReviews(result.reviews);
+      setPartial(Boolean(result.partial));
       setGoogleStatus(result.googleStatus);
       setGoogleSummary(result.googleSummary);
     } catch {
-      setReviews([]);
-      setGoogleStatus('unavailable');
-      setGoogleSummary(null);
+      if (requestId === generation.current) setLoadError(true);
     } finally {
-      setLoading(false);
+      if (requestId === generation.current) setLoading(false);
     }
   }
 
   useEffect(() => {
     trackReviewView();
     refreshReviews();
+    return () => { generation.current += 1; };
   }, []);
 
-  const sortedCards = useMemo(() => filterAndSortReviews(loading ? [] : reviews, filterMode), [reviews, loading, filterMode]);
+  const sortedCards = useMemo(() => filterAndSortReviews(reviews, filterMode), [reviews, filterMode]);
   const rawGoogleSummaryRating = googleSummary?.averageRating;
   const googleSummaryRating = rawGoogleSummaryRating === null || rawGoogleSummaryRating === undefined
     ? Number.NaN
@@ -83,11 +92,13 @@ export default function ReviewsPage({ lang = 'it', siteContent, editor, Editable
 
   async function submitReview(event) {
     event.preventDefault();
+    if (reviewInFlightRef.current || !challenge.ready) return;
+    reviewInFlightRef.current = true;
     const reviewCode = String(form.booking_code || '').trim().toUpperCase();
     setSubmitState({ loading: true, error: '', success: '' });
     await trackEvent('booking_code_review_submit_attempt', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'review_modal', has_code: Boolean(reviewCode), language: lang }, { dedupe: false });
     try {
-      const result = await submitPublicReview({ ...form, booking_code: reviewCode, language: lang });
+      const result = await submitPublicReview({ ...form, booking_code: reviewCode, language: lang, turnstile_token: challenge.token });
       setForm({ booking_code: '', reviewer_name: '', review_text: '', rating: '5' });
       await trackEvent('booking_code_review_submit_success', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'review_modal', review_id: result?.id || '', language: lang }, { dedupe: false });
       setSubmitState({ loading: false, error: '', success: copy.submitted });
@@ -99,7 +110,7 @@ export default function ReviewsPage({ lang = 'it', siteContent, editor, Editable
         await trackEvent('booking_code_review_duplicate', { source: 'booking_code', source_section: 'reviews', source_cta: 'publish_review', cta_location: 'review_modal', language: lang }, { dedupe: false });
       }
       setSubmitState({ loading: false, error: readableSubmitError(error), success: '' });
-    }
+    } finally { reviewInFlightRef.current = false; challenge.reset(); }
   }
 
   function openReview(review) {
@@ -144,8 +155,9 @@ export default function ReviewsPage({ lang = 'it', siteContent, editor, Editable
           </aside>
         )}
 
+        {(loadError || partial) && <p role="status">{lang === 'it' ? 'Alcune recensioni non sono disponibili. Gli eventuali dati precedenti restano visibili.' : 'Some reviews are unavailable. Previously loaded reviews remain visible.'} <button type="button" onClick={refreshReviews} disabled={loading}>{lang === 'it' ? 'Riprova' : 'Retry'}</button></p>}
         <div className="reviews-grid-public balanced-reviews-grid compact-reviews-grid">
-          {!loading && sortedCards.length === 0 && (
+          {!loading && !loadError && sortedCards.length === 0 && (
             <article className="empty-state-card review-empty-card">
               <p>{filterMode === 'google_reviews'
                 ? (googleStatus === 'unavailable' ? copy.googleUnavailable : copy.googleEmpty)
@@ -168,6 +180,7 @@ export default function ReviewsPage({ lang = 'it', siteContent, editor, Editable
         lang={lang}
         form={form}
         state={submitState}
+        challenge={challenge}
         configured={isSupabaseConfigured}
         onChange={update}
         onSubmit={submitReview}

@@ -22,13 +22,9 @@ export async function updateAdminUser(userId, changes = {}) {
   if (Object.prototype.hasOwnProperty.call(changes, 'active')) payload.active = Boolean(changes.active);
   if (Object.prototype.hasOwnProperty.call(changes, 'full_name')) payload.full_name = String(changes.full_name || '').trim() || null;
   if (Object.prototype.hasOwnProperty.call(changes, 'email')) payload.email = String(changes.email || '').trim() || null;
-  payload.updated_at = new Date().toISOString();
-  const { data, error } = await supabase
-    .from('admin_profiles')
-    .update(payload)
-    .eq('user_id', userId)
-    .select(fields)
-    .single();
+  const { data, error } = await supabase.rpc('admin_update_admin_profile', {
+    p_user_id: userId, p_patch: payload, p_expected_updated_at: changes.expected_updated_at || null
+  });
   if (error) throw error;
   return data;
 }

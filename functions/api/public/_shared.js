@@ -1,4 +1,5 @@
 import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../_shared/supabaseBackend.js';
+import { boundedFetch, readBoundedText } from '../_shared/requestSafety.js';
 
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://vulcaniq.it',
@@ -75,7 +76,9 @@ export async function readJsonBody(request, maxBytes = 32768) {
   const contentLength = Number(request.headers.get('Content-Length') || 0);
   if (contentLength > maxBytes) return { ok: false, status: 413, error: 'body_too_large' };
 
-  const text = await request.text();
+  let text;
+  try { text = await readBoundedText(request, maxBytes); }
+  catch (error) { return { ok: false, status: error.message === 'body_too_large' ? 413 : 408, error: error.message === 'body_too_large' ? 'body_too_large' : 'request_timeout' }; }
   if (new TextEncoder().encode(text).byteLength > maxBytes) return { ok: false, status: 413, error: 'body_too_large' };
 
   try {
@@ -97,13 +100,12 @@ function supabaseConfig(env = {}) {
 export async function supabaseRequest(env, path, init = {}) {
   const config = supabaseConfig(env);
   if (!config) throw new Error('public_endpoint_not_configured');
-  const response = await fetch(`${config.url}/rest/v1/${path}`, {
+  const response = await boundedFetch(`${config.url}/rest/v1/${path}`, {
     ...init,
     headers: {
-      ...supabaseBackendHeaders(config.backendCredential),
+      ...supabaseBackendHeaders(config.backendCredential, { headers: init.headers }),
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      ...(init.headers || {})
     }
   });
   return response;
@@ -127,9 +129,12 @@ async function sha256(value) {
 }
 
 export async function clientActorHash(request, env = {}) {
-  const ip = cleanText(request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown', 100) || 'unknown';
-  const salt = String(env.SUBMISSION_HASH_SALT || env.SUPABASE_SERVICE_ROLE_KEY || 'vulcaniq-public-endpoint');
-  return sha256(`${salt}:${ip}`);
+  const ip = request.cf ? cleanText(request.headers.get('CF-Connecting-IP'), 100) || 'unknown' : 'unknown';
+  const salt = String(env.SUBMISSION_HASH_SALT || '');
+  if (salt.length < 32) throw new Error('submission_hash_salt_not_configured');
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(salt), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`public-submission:${ip}`));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 export async function claimPublicRateLimit(env, actionKey, actorHash, options = {}) {
@@ -151,7 +156,7 @@ export async function claimPublicRateLimit(env, actionKey, actorHash, options = 
 export async function verifyTurnstile(request, env, token) {
   const secret = env.TURNSTILE_SECRET_KEY;
   const enforce = String(env.TURNSTILE_ENFORCE || '').toLowerCase() === 'true';
-  if (!secret) return { ok: true, skipped: true };
+  if (!secret) return enforce ? { ok: false, error: 'turnstile_not_configured', status: 503 } : { ok: true, skipped: true };
   if (!token) return enforce ? { ok: false, error: 'turnstile_required' } : { ok: true, skipped: true };
 
   const form = new FormData();
@@ -160,20 +165,25 @@ export async function verifyTurnstile(request, env, token) {
   const ip = cleanText(request.headers.get('CF-Connecting-IP'), 100);
   if (ip) form.set('remoteip', ip);
 
-  const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+  const response = await boundedFetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
     method: 'POST',
     body: form
   });
   const payload = await response.json().catch(() => ({}));
-  return payload?.success === true ? { ok: true } : { ok: false, error: 'turnstile_failed' };
+  const expectedHost = new URL(request.url).hostname;
+  const expectedAction = String(env.TURNSTILE_EXPECTED_ACTION || 'public_submission');
+  return response.ok && payload?.success === true && payload.hostname === expectedHost && payload.action === expectedAction
+    ? { ok: true } : { ok: false, error: 'turnstile_failed' };
 }
 
 export function validEmail(value) {
+  if (String(value || '').trim().length > 254) return false;
   const email = cleanText(value, 254);
   return !email || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email);
 }
 
 export function validPhone(value) {
+  if (String(value || '').trim().length > 40) return false;
   const phone = cleanText(value, 40);
   if (!phone) return true;
   const digits = phone.replace(/\D/g, '');

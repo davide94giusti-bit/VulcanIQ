@@ -1,3 +1,5 @@
+import { notificationFetch } from './notificationRuntime.js';
+import { validPushEndpoint, validatePushSubscription } from './notificationPolicy.js';
 function base64UrlToBytes(value = '') {
   const encoded = String(value).trim();
   if (!encoded || !/^[A-Za-z0-9_-]+$/.test(encoded)) throw new Error('invalid_base64url');
@@ -34,8 +36,8 @@ function presentationUrl(value) {
 function pushPayload(notification) {
   const payload = { type: 'vulcaniq-notification' };
   if (!notification || typeof notification !== 'object' || Array.isArray(notification)) return payload;
-  const title = presentationText(notification.title, 100);
-  const body = presentationText(notification.body, 240);
+  const title = presentationText(notification.title, 120);
+  const body = presentationText(notification.body, 280);
   if (!title || !body) return payload;
   const category = presentationCategory(notification.category);
   return { ...payload, ...(category ? { category } : {}), title, body, url: presentationUrl(notification.url) };
@@ -117,11 +119,15 @@ function failure(error) {
 export async function sendWebPush(subscription, env = {}, options = {}) {
   if (!subscription?.endpoint) return failure(new Error('missing_endpoint'));
   try {
+    if (!validPushEndpoint(subscription.endpoint)) throw new Error('invalid_push_endpoint');
+    if (!await validatePushSubscription(subscription)) throw new Error('invalid_push_p256dh');
     const { token, publicKey } = await vapidJwt(subscription.endpoint, env);
     const payload = JSON.stringify(pushPayload(options.notification));
     const body = await encryptedPushBody(subscription, payload);
-    const response = await fetch(subscription.endpoint, {
+    const response = await notificationFetch(env,subscription.endpoint, {
       method: 'POST',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(8000),
       headers: {
         Authorization: `vapid t=${token}, k=${publicKey}`,
         TTL: String(Math.max(0, Number(options.ttl ?? 86400))),
@@ -141,6 +147,7 @@ export async function sendWebPush(subscription, env = {}, options = {}) {
       status: response.status,
       dead,
       retryable,
+      retryAfterSeconds: Math.min(3600, Math.max(0, Number(response.headers.get('Retry-After')) || 0)),
       unknown: false,
       outcome: accepted ? 'push_service_accepted' : dead ? 'permanent_error' : retryable ? 'retryable_error' : 'permanent_error'
     };

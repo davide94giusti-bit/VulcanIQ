@@ -1,3 +1,4 @@
+import { readApplicationSource } from './application-source.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { paymentSummary, calculateLedgerSummary, financeEntryHasBusinessSource, buildFinancialReconciliation } from '../src/domain/financeModel.js';
@@ -13,7 +14,8 @@ const commissionService = read('src/services/partnerCommissions.js');
 const financeService = read('src/services/financeService.js');
 const paymentMigration = read('supabase/migrations/20260821070000_payment_finance_semantics.sql');
 const refundMigration = read('supabase/migrations/20260821073000_finance_refund_rpc.sql');
-const mainSource = read('src/main.jsx');
+const trustedMigration = read('supabase/migrations/20261027100000_trusted_business_commands.sql');
+const mainSource = readApplicationSource();
 const claimMigration = read('supabase/migrations/20260824100000_booking_code_gift_card_claim_notifications.sql');
 const auditEndpoint = read('functions/api/admin/finance-audit.js');
 const auditService = read('src/services/financeAuditService.js');
@@ -84,7 +86,7 @@ test('Finance service projections match the migration-derived schema contract', 
   ok(columns.has('description'), 'canonical Finance description column missing');
   ok(!columns.has('notes'), 'unexpected Finance notes column in canonical migrations');
   ok(!canonical.split(',').map((field) => field.trim()).includes('notes'), 'canonical Finance projection still requests notes');
-  ok(contracts.length >= 10, `too few Finance projections inspected (${contracts.length})`);
+  for (const file of ['financeService.js', 'bookingRequests.js', 'bookingCodes.js']) ok(contracts.some((contract) => contract.file === file), `Finance projections missing for ${file}`);
   for (const contract of contracts) {
     const unknown = contract.fields.filter((field) => !columns.has(field));
     ok(unknown.length === 0, `${contract.file} selects unknown finance_entries columns: ${unknown.join(', ')}`);
@@ -119,15 +121,16 @@ test('refund retains original and nets through a reversal', () => {
 
 test('booking payments are repeatable/idempotent and do not auto-refund on cancellation', () => {
   ok(bookingService.includes('idempotency_key'), 'missing booking idempotency');
-  ok(bookingService.includes('BOOKING_INCOME_MULTIPLE_PENDING'), 'ambiguous expected guard missing');
+  ok(bookingService.includes("supabase.rpc('admin_record_booking_payment'") && trustedMigration.includes('MULTIPLE_EXPECTATIONS_REQUIRE_RECONCILIATION'), 'transactional ambiguity guard missing');
   ok(!bookingService.includes("status: 'already_confirmed'"), 'single-payment lock remains');
-  ok(bookingService.includes('Reservation cancellation/decline is not evidence that a refund was actually paid.'), 'cancellation/refund semantic boundary missing');
-  ok(!/reverseFinanceEntry|admin_reverse_finance_entry/.test(bookingService.slice(bookingService.indexOf('async function reverseOrVoidFinanceForRequest'), bookingService.indexOf('const CONFIRMED_INCOME_REQUEST_STATUSES'))), 'cancellation still manufactures refund');
+  const cleanup = trustedMigration.match(/create function public\.cascade_booking_cancellation[\s\S]*?end \$\$;/)?.[0] || '';
+  ok(cleanup.includes("status in ('pending','expected')"), 'transactional cancellation must only void outstanding expectations');
+  ok(!/reverseFinanceEntry|admin_reverse_finance_entry/.test(cleanup), 'cancellation must not manufacture refund');
 });
 
 test('booking codes use the actual shared payment semantics', () => {
   for (const value of ['recordBookingCodePayment', 'entryDate', 'paymentMethod', 'idempotency']) ok(codeService.includes(value), `missing ${value}`);
-  ok(codeService.includes('BOOKING_CODE_MULTIPLE_EXPECTED'), 'booking-code ambiguity guard missing');
+  ok(codeService.includes("supabase.rpc('admin_record_booking_payment'") && trustedMigration.includes('MULTIPLE_EXPECTATIONS_REQUIRE_RECONCILIATION'), 'transactional code ambiguity guard missing');
   ok(mainSource.includes("'Registra pagamento', 'Record payment'"), 'Record payment UX missing');
 });
 
@@ -202,7 +205,7 @@ test('read-only audit reports requested classifications without PII', () => {
 test('Financial Audit endpoint enforces backend role authorization and canonical read-only data', () => {
   ok(auditEndpoint.includes("const AUDIT_ROLES = new Set(['owner', 'finance'])"), 'audit role allowlist missing');
   ok(auditEndpoint.includes('/auth/v1/user') && auditEndpoint.includes('/rest/v1/admin_profiles'), 'backend identity/profile verification missing');
-  ok(auditEndpoint.includes("action: 'financial_audit_generated'") && auditEndpoint.includes("entity_type: 'financial_audit'"), 'audit generation log missing');
+  ok(auditEndpoint.includes('/rest/v1/rpc/admin_record_financial_audit') && trustedMigration.includes("'financial_audit_generated','financial_audit'"), 'trusted audit generation log missing');
   ok(auditEndpoint.includes('buildReadOnlyFinancialAudit'), 'canonical finance audit model not reused');
   ok(!/serviceRole|SERVICE_ROLE/.test(auditService), 'service-role credential referenced by browser audit service');
   ok(!/customer_email|customer_phone|buyer_email|buyer_phone|description|title/.test(auditEndpoint.match(/const FINANCE_FIELDS\s*=\s*'([^']+)'/)?.[1] || ''), 'unnecessary PII/free text included in Finance evidence query');

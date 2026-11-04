@@ -66,8 +66,8 @@ function pushPresentation(event, english) {
   let payload;
   try { payload = event.data?.json(); } catch { return fallback; }
   if (!payload || payload.type !== 'vulcaniq-notification') return fallback;
-  const title = cleanPresentationText(payload.title, 100);
-  const body = cleanPresentationText(payload.body, 240);
+  const title = cleanPresentationText(payload.title, 120);
+  const body = cleanPresentationText(payload.body, 280);
   if (!title || !body) return fallback;
   const category = safeCategory(payload.category);
   return { title, body, tag: category ? `vulcaniq-${category}` : fallback.tag, url: safeInternalUrl(payload.url) };

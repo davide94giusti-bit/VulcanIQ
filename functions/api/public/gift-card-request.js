@@ -59,7 +59,7 @@ export async function onRequestPost(context) {
   if (!antiAbuse.ok) return json(context.request, context.env, antiAbuse.status, { ok: false, code: antiAbuse.error, message: publicErrorMessage(antiAbuse.error) });
 
   const turnstile = await verifyTurnstile(context.request, context.env, input.turnstile_token);
-  if (!turnstile.ok) return json(context.request, context.env, 403, { ok: false, code: turnstile.error, message: publicErrorMessage(turnstile.error) });
+  if (!turnstile.ok) return json(context.request, context.env, turnstile.status || 403, { ok: false, code: turnstile.error, message: publicErrorMessage(turnstile.error) });
 
   const key = idempotencyKey(context.request, input, 'gift_card');
   if (!key) return json(context.request, context.env, 400, { ok: false, code: 'invalid_idempotency_key', message: publicErrorMessage('invalid_idempotency_key') });

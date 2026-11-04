@@ -7,7 +7,8 @@ import {
   readJsonBody,
   supabaseRpc,
   validEmail,
-  validPhone
+  validPhone,
+  verifyTurnstile
 } from './_shared.js';
 
 const ALLOWED_LANGUAGES = new Set(['it', 'en']);
@@ -89,6 +90,8 @@ export async function onRequestPost(context) {
   const actorHash = await clientActorHash(context.request, context.env);
   const allowed = await claimPublicRateLimit(context.env, 'gift_card_claim', actorHash, { actorLimit: 8, globalLimit: 600, windowSeconds: 3600 });
   if (!allowed) return respond(429, { ok: false, code: 'rate_limited', message: publicErrorMessage('rate_limited') });
+  const challenge = await verifyTurnstile(context.request, context.env, input.turnstile_token);
+  if (!challenge.ok) return respond(challenge.status || 403, { ok: false, code: challenge.error, message: publicErrorMessage(challenge.error) });
 
   try {
     const result = await supabaseRpc(context.env, 'redeem_gift_card_booking_code', {

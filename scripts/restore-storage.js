@@ -36,7 +36,7 @@ function headers(contentType = 'application/json') {
 }
 
 async function requestJson(url, init = {}) {
-  const response = await fetch(url, init);
+  const response = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(15000) });
   const text = await response.text().catch(() => '');
   let body = null;
   if (text) {
@@ -63,7 +63,7 @@ async function createBucket(bucket) {
   });
 
   if (response.ok || response.status === 409) return true;
-  throw new Error(`Could not create bucket ${bucketName}: HTTP ${response.status} ${typeof body === 'string' ? body : JSON.stringify(body)}`);
+  throw new Error(`Could not create bucket ${bucketName}: HTTP ${response.status}`);
 }
 
 async function uploadObject(object) {
@@ -73,6 +73,8 @@ async function uploadObject(object) {
   const objectUrl = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(object.bucket)}/${encodeObjectPath(object.name)}`;
   const response = await fetch(objectUrl, {
     method: 'POST',
+    redirect: 'error',
+    signal: AbortSignal.timeout(120000),
     headers: {
       ...headers(object.contentType || 'application/octet-stream'),
       'x-upsert': 'true'
@@ -82,12 +84,15 @@ async function uploadObject(object) {
   });
 
   if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(`HTTP ${response.status}${text ? ` - ${text}` : ''}`);
+    throw new Error(`HTTP ${response.status}`);
   }
 }
 
 async function main() {
+  const target = new URL(SUPABASE_URL);
+  if (process.env.RESTORE_ISOLATED !== 'true' || !['localhost', '127.0.0.1', '[::1]'].includes(target.hostname)) throw new Error('Storage restore requires an explicitly isolated local target.');
+  const { verifyBackup } = await import('./validate-backup.mjs');
+  await verifyBackup(ROOT_DIR);
   requireEnv('SUPABASE_URL', SUPABASE_URL);
   requireEnv('SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY', BACKEND_KEY);
 
@@ -150,6 +155,6 @@ async function main() {
 
 main().catch((error) => {
   console.error(`Supabase Storage restore failed: ${error.message}`);
-  console.error('Usage: SUPABASE_URL="https://target-project.supabase.co" SUPABASE_SECRET_KEY="..." node restore-storage.js');
+  console.error('Set isolated local SUPABASE_URL, RESTORE_ISOLATED=true and backend credential before restoring.');
   process.exit(1);
 });

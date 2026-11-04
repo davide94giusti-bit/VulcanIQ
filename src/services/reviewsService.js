@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 import { loadPublicGoogleReviewFeed } from './googleReviewsService.js';
+import { isMissingColumn } from './schemaCompatibility.js';
 
 const publicReviewFields = 'id, created_at, reviewer_name, review_text, rating, language, admin_reply, admin_reply_at, source, review_date, external_review_url, profile_photo_url, display_order';
 const legacyPublicReviewFields = 'id, created_at, reviewer_name, review_text, rating, language, admin_reply, admin_reply_at';
@@ -31,8 +32,7 @@ function normalizeSource(value) {
 }
 
 function isExtendedReviewSchemaError(error) {
-  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
-  return message.includes('booking_code_id') || message.includes('admin_reply') || message.includes('source') || message.includes('review_date') || message.includes('external_review_url') || message.includes('profile_photo_url') || message.includes('display_order') || message.includes('column') || message.includes('schema cache');
+  return isMissingColumn(error, ['booking_code_id', 'admin_reply', 'source', 'review_date', 'external_review_url', 'profile_photo_url', 'display_order']);
 }
 
 function generatedManualBookingCode(source = 'manual') {
@@ -107,7 +107,7 @@ export async function loadPublicReviewsResult() {
     loadPublicGoogleReviewFeed()
   ]);
 
-  if (websiteResult.status === 'rejected' && googleResult.status === 'rejected') {
+  if (websiteResult.status === 'rejected' && (googleResult.status === 'rejected' || googleResult.value.status === 'unavailable')) {
     throw websiteResult.reason || googleResult.reason;
   }
 
@@ -126,7 +126,8 @@ export async function loadPublicReviewsResult() {
 
   return {
     reviews: [...normalizedNativeRows, ...googleRows],
-    websiteStatus: websiteResult.status === 'fulfilled' ? 'available' : 'unavailable',
+    websiteStatus: websiteResult.status === 'fulfilled' ? (firstPartyRows.length ? 'available' : 'empty') : 'unavailable',
+    partial: websiteResult.status === 'rejected' || googleFeed.status === 'unavailable',
     googleStatus: googleRows.length
       ? 'available'
       : manualGoogleRows.length
@@ -150,15 +151,16 @@ export async function submitPublicReview(input) {
   if (!bookingCode) throw new Error('INVALID_BOOKING_CODE');
   if (!reviewText) throw new Error('REVIEW_TEXT_REQUIRED');
 
-  const { data, error } = await supabase.rpc('submit_public_review', {
+  const response = await fetch('/api/public/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
     p_booking_code: bookingCode,
     p_reviewer_name: reviewerName || null,
     p_review_text: reviewText,
     p_rating: normalizeRating(input.rating),
-    p_language: input.language === 'en' ? 'en' : 'it'
-  });
-
-  if (error) throw error;
+    p_language: input.language === 'en' ? 'en' : 'it',
+    turnstile_token: input.turnstile_token || ''
+  }) });
+  const data = await response.json();
+  if (!response.ok || !data.ok) throw new Error(data.code || 'INVALID_BOOKING_CODE');
   return data;
 }
 

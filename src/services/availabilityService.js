@@ -1,10 +1,12 @@
 import { blockedDates } from '../data/availability.js';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
+import { isMissingColumn } from './schemaCompatibility.js';
 
 const FIXED_EXCURSION_FILE_BUCKET = 'vulcaniq-public-assets';
 
 const FIXED_LEAFLET_FILE_COLUMNS = 'leaflet_file_url_it, leaflet_file_path_it, leaflet_file_name_it, leaflet_file_type_it, leaflet_file_url_en, leaflet_file_path_en, leaflet_file_name_en, leaflet_file_type_en';
 const MONTHLY_LEAFLET_FILE_COLUMNS = 'leaflet_file_url_it, leaflet_file_path_it, leaflet_file_name_it, leaflet_file_type_it, leaflet_file_url_en, leaflet_file_path_en, leaflet_file_name_en, leaflet_file_type_en';
+const compatibilityColumns = [...FIXED_LEAFLET_FILE_COLUMNS.split(',').map((name) => name.trim()), 'program_it', 'program_en', 'meeting_point_maps_url', 'description_it', 'description_en', 'notes_it', 'notes_en'];
 
 const PUBLIC_FIXED_EXCURSION_COLUMNS = `id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, program_it, program_en, meeting_point_it, meeting_point_en, meeting_point_maps_url, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, ${FIXED_LEAFLET_FILE_COLUMNS}, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, accepted_count, places_remaining`;
 const PUBLIC_FIXED_EXCURSION_FALLBACK_COLUMNS = 'id, date, start_time, end_time, experience_id, title_it, title_en, description_it, description_en, meeting_point_it, meeting_point_en, difficulty_it, difficulty_en, price_note_it, price_note_en, blocked_dates_file_url, blocked_dates_file_name, blocked_dates_file_type, blocked_dates_file_path, leaflet_id, status, public_visibility, capacity, note_it, note_en, active, accepted_count, places_remaining';
@@ -95,7 +97,8 @@ export async function loadPublicAvailability() {
       if (error) throw error;
       if (Array.isArray(data)) return data.map(normalizeAvailabilityRow);
     } catch (error) {
-      console.warn('Supabase availability unavailable, using fallback availability.', error?.message || error);
+      console.warn('public_availability_unavailable', { code: 'backend_failure' });
+      throw new Error('availability_unavailable');
     }
   }
 
@@ -132,11 +135,12 @@ export async function loadPublicFixedExcursions() {
     try {
       return (await fetchRows(PUBLIC_FIXED_EXCURSION_COLUMNS)).map(normalizeFixedExcursion);
     } catch (fullViewError) {
+      if (!isMissingColumn(fullViewError, compatibilityColumns)) throw fullViewError;
       return (await fetchRows(PUBLIC_FIXED_EXCURSION_FALLBACK_COLUMNS)).map(normalizeFixedExcursion);
     }
   } catch (error) {
-    console.warn('Supabase fixed excursions unavailable.', error?.message || error);
-    return [];
+    console.warn('public_fixed_excursions_unavailable', { code: 'backend_failure' });
+    throw new Error('fixed_excursions_unavailable');
   }
 }
 
@@ -227,7 +231,7 @@ export async function listFixedExcursions({ activeOnly = false, fromDate = null,
   }
 
   let { data, error } = await buildQuery(ADMIN_FIXED_EXCURSION_COLUMNS);
-  if (error) {
+  if (error && isMissingColumn(error, compatibilityColumns)) {
     ({ data, error } = await buildQuery(ADMIN_FIXED_EXCURSION_FALLBACK_COLUMNS));
   }
   if (error) throw error;
@@ -313,7 +317,7 @@ export async function createFixedExcursion(input) {
   return data;
 }
 
-export async function updateFixedExcursion(id, input) {
+export async function updateFixedExcursion(id, input, expectedUpdatedAt) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
   const payload = { ...input, updated_at: new Date().toISOString() };
@@ -324,14 +328,15 @@ export async function updateFixedExcursion(id, input) {
   if (payload.description_en && !payload.note_en) payload.note_en = payload.description_en;
   Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key]);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('fixed_excursions')
     .update(payload)
-    .eq('id', id)
-    .select('*')
-    .single();
+    .eq('id', id);
+  if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
+  const { data, error } = await query.select('*').maybeSingle();
 
   if (error) throw error;
+  if (!data) throw new Error('Record changed. Reload before saving / Record modificato: ricarica prima di salvare.');
   return data;
 }
 
@@ -475,11 +480,12 @@ export async function loadPublicMonthlyLeaflets() {
     try {
       return (await fetchRows(PUBLIC_MONTHLY_LEAFLET_COLUMNS)).map(normalizeMonthlyLeaflet);
     } catch (fullViewError) {
+      if (!isMissingColumn(fullViewError, compatibilityColumns)) throw fullViewError;
       return (await fetchRows(PUBLIC_MONTHLY_LEAFLET_FALLBACK_COLUMNS)).map(normalizeMonthlyLeaflet);
     }
   } catch (error) {
-    console.warn('Supabase public monthly leaflets unavailable.', error?.message || error);
-    return [];
+    console.warn('public_monthly_leaflets_unavailable', { code: 'backend_failure' });
+    throw new Error('monthly_leaflets_unavailable');
   }
 }
 
@@ -498,7 +504,7 @@ export async function listMonthlyLeaflets({ activeOnly = false } = {}) {
   }
 
   let { data, error } = await buildQuery(ADMIN_MONTHLY_LEAFLET_COLUMNS);
-  if (error) ({ data, error } = await buildQuery(ADMIN_MONTHLY_LEAFLET_FALLBACK_COLUMNS));
+  if (error && isMissingColumn(error, compatibilityColumns)) ({ data, error } = await buildQuery(ADMIN_MONTHLY_LEAFLET_FALLBACK_COLUMNS));
   if (error) throw error;
   return Array.isArray(data) ? data.map(normalizeMonthlyLeaflet) : [];
 }
@@ -535,14 +541,17 @@ export async function createMonthlyLeaflet(input) {
   return normalizeMonthlyLeaflet(data);
 }
 
-export async function updateMonthlyLeaflet(id, input) {
+export async function updateMonthlyLeaflet(id, input, expectedUpdatedAt) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
   const payload = { ...input, updated_at: new Date().toISOString() };
   if (payload.month !== undefined) payload.month = Number.parseInt(payload.month, 10);
   if (payload.year !== undefined) payload.year = Number.parseInt(payload.year, 10);
   Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key]);
-  const { data, error } = await supabase.from('monthly_availability_leaflets').update(payload).eq('id', id).select('*').single();
+  let query = supabase.from('monthly_availability_leaflets').update(payload).eq('id', id);
+  if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
+  const { data, error } = await query.select('*').maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error('Record changed. Reload before saving / Record modificato: ricarica prima di salvare.');
   return normalizeMonthlyLeaflet(data);
 }
 

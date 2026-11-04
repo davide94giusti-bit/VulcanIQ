@@ -1,3 +1,4 @@
+import { readApplicationSource } from './application-source.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +17,7 @@ function test(name, fn) {
   }
 }
 
-const mainSource = read('src/main.jsx');
+const mainSource = readApplicationSource();
 const optimizerSource = read('src/features/admin/media/videoOptimizer.js');
 const optimizerUi = read('src/features/admin/media/VideoOptimizer.jsx');
 const optimizerCss = read('src/features/admin/media/videoOptimizer.css');

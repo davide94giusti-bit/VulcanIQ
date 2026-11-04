@@ -1,0 +1,56 @@
+import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import assert from 'node:assert/strict';
+
+const database = process.env.AUDIT_LOCAL_DB || 'vulcaniq_audit_fresh_20261027';
+const container = process.env.AUDIT_LOCAL_CONTAINER || 'supabase_db_VulcanIQ-release-20260821';
+const ci = container === 'supabase_db_VulcanIQ-audit-ci' && database === 'postgres';
+if (!ci && (!/^vulcaniq_audit_(fresh|upgrade2|upgrade_final)_20261027$/.test(database) || container !== 'supabase_db_VulcanIQ-release-20260821')) throw new Error('Only dedicated disposable local audit databases are allowed');
+const args = ['exec', '-i', container, 'psql', '-U', 'supabase_admin', '-d', database, '-X', '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1'];
+const context = spawnSync('docker', ['context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'], { encoding: 'utf8' });
+if (context.status !== 0 || !/^(npipe:\/\/|unix:\/\/\/var\/run\/docker.sock$)/.test(context.stdout.trim())) throw new Error('Verified local Docker socket context required');
+function sql(input) {
+  return new Promise((resolve) => {
+    const child = spawn('docker', args); let out = ''; let err = '';
+    child.stdout.on('data', (data) => out += data); child.stderr.on('data', (data) => err += data);
+    child.on('close', (code) => resolve({ code, out: out.trim(), err })); child.stdin.end(input);
+  });
+}
+const owner = randomUUID(); const owner2 = randomUUID(); const booking = randomUUID(); const expectation = randomUUID();
+const auth = `set request.jwt.claim.sub='${owner}'; set request.jwt.claim.role='authenticated'; set role authenticated;`;
+const setup = await sql(`begin;
+insert into auth.users(id,email) values('${owner}','concurrency@example.invalid'),('${owner2}','delegation@example.invalid');
+insert into public.admin_profiles(user_id,full_name,role,active) values('${owner}','Synthetic concurrency','owner',true),('${owner2}','Synthetic delegation','owner',true);
+insert into public.booking_requests(id,status,source,quoted_amount) values('${booking}','accepted','manual',100);
+insert into public.finance_entries(id,entry_date,type,amount,currency,title,status,booking_request_id) values('${expectation}',current_date,'income',100,'EUR','Synthetic expectation','expected','${booking}'); commit;`);
+assert.equal(setup.code, 0, setup.err);
+const pay = (amount, key) => sql(`${auth} select public.admin_record_booking_payment('booking_request','${booking}',${amount},'EUR',current_date,'cash','${key}');`);
+const same = await Promise.all(Array.from({ length: 6 }, () => pay(40, `same-${booking}`)));
+for (const reply of same) assert.equal(reply.code, 0, reply.err);
+console.log('PASS concurrent same-key calls all return committed result');
+const separate = await Promise.all([pay(10, `part-a-${booking}`), pay(20, `part-b-${booking}`)]);
+for (const reply of separate) assert.equal(reply.code, 0, reply.err);
+const state = await sql(`select json_build_object('payments',count(*) filter(where status='confirmed'),'paid',sum(amount) filter(where status='confirmed'),'expected',sum(amount) filter(where status='expected')) from public.finance_entries where booking_request_id='${booking}';`);
+assert.deepEqual(JSON.parse(state.out), { payments: 3, paid: 70, expected: 30 });
+console.log('PASS distinct simultaneous partial payments serialize to EUR70/EUR30');
+assert.notEqual((await pay(41, `same-${booking}`)).code, 0);
+console.log('PASS concurrent receipt cannot change payload');
+const payment = JSON.parse(same[0].out).entry.id;
+const refunds = await Promise.all([1, 2].map((n) => sql(`${auth} select public.admin_reverse_finance_entry('${payment}',30,current_date,'cash','synthetic','refund-${n}-${booking}');`)));
+assert.equal(refunds.filter((reply) => reply.code === 0).length, 1);
+assert.equal(refunds.filter((reply) => reply.err.includes('REFUND_EXCEEDS_REMAINING_AMOUNT')).length, 1);
+console.log('PASS concurrent refunds cannot exceed remaining balance');
+const owners = await Promise.all([owner, owner2].map((user) => sql(`set request.jwt.claim.sub='${user}'; set request.jwt.claim.role='authenticated'; set role authenticated; select public.admin_update_admin_profile('${user}','{"active":false}');`)));
+assert.equal(owners.filter((reply) => reply.code === 0).length, 1);
+assert.equal(owners.filter((reply) => reply.err.includes('LAST_ACTIVE_OWNER')).length, 1);
+console.log('PASS simultaneous owner removal preserves one active owner');
+const cleanup = await sql(`begin;
+delete from public.finance_entries where booking_request_id='${booking}' and reversal_of is not null;
+delete from public.finance_entries where booking_request_id='${booking}';
+delete from public.booking_requests where id='${booking}';
+delete from public.admin_operation_receipts where actor_id in ('${owner}','${owner2}');
+delete from public.activity_log where actor_id in ('${owner}','${owner2}') or entity_id in ('${booking}','${expectation}');
+delete from public.admin_profiles where user_id in ('${owner}','${owner2}');
+delete from auth.users where id in ('${owner}','${owner2}'); commit;`);
+assert.equal(cleanup.code, 0, cleanup.err);
+console.log('5 concurrency checks passed; only the synthetic fixtures created by this run were removed.');

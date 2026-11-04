@@ -1,3 +1,4 @@
+import { readApplicationSource } from './application-source.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -7,9 +8,10 @@ const exporter = read('scripts/export-supabase-storage.mjs');
 const workflow = read('.github/workflows/vulcaniq-db-backup.yml');
 const shared = read('functions/api/admin/backup/_shared.js');
 const status = read('functions/api/admin/backup/status.js');
-const ui = read('src/main.jsx');
+const ui = readApplicationSource();
 const css = read('src/styles/admin-system.css');
 const docs = read('docs/BACKUP_RESTORE.md');
+const backupMetadata = read('scripts/backup-metadata.mjs');
 const backupValueRule = css.match(/\.backup-summary-grid \.summary-card strong\s*\{([^}]*)\}/)?.[1] || '';
 
 let passed = 0;
@@ -26,8 +28,8 @@ test('Storage download retry is bounded to three attempts', exporter.includes('c
 test('Storage failures sanitize URLs and credential-like values', exporter.includes(".replace(/https?:\\/\\/\\S+/gi, '[url]')") && exporter.includes("'[credential]'"));
 test('failed objects receive a live-list reference diagnostic', exporter.includes('async function referenceDiagnostic') && exporter.includes('listedAtExport'));
 test('failure details are capped and sanitized before Admin response', shared.includes('.slice(0, 25).map') && shared.includes('errorCode: cleanText'));
-test('Auth exclusion and manual recovery semantics are explicit', workflow.includes('"includes_auth_schema": false') && workflow.includes('"includes_auth_data": false') && workflow.includes('"auth_restore_mode": "manual_reprovision"'));
-test('artifact sensitivity classification is explicit', workflow.includes('"data_classification": "confidential_restricted"') && docs.includes('confidential_restricted'));
+test('Auth exclusion and manual recovery semantics are explicit', workflow.includes('node scripts/backup-metadata.mjs') && backupMetadata.includes('includes_auth_schema: false') && backupMetadata.includes('includes_auth_data: false') && backupMetadata.includes("auth_restore_mode: 'manual_reprovision'"));
+test('artifact sensitivity classification is explicit', backupMetadata.includes("data_classification: 'confidential_restricted'") && docs.includes('confidential_restricted'));
 test('actual artifact files receive a SHA-256 manifest', workflow.includes('find . -type f') && workflow.includes('sha256sum') && workflow.includes('backup/checksums.sha256'));
 test('Backup status exposes Storage, Auth, and integrity summaries', status.includes('storage,') && status.includes('auth: metadata?.auth') && status.includes('integrity: metadata?.integrity'));
 test('Admin Storage card reports export status rather than a misleading boolean', ui.includes("'Esportazione Storage', 'Storage export'") && ['Completa', 'Parziale', 'Non riuscita', 'Nessuna esportazione'].every((value) => ui.includes(value)));

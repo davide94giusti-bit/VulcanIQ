@@ -1,3 +1,4 @@
+import { collectKeysetRows } from './keysetRows.js';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 import { DEFAULT_CURRENCY, normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
 
@@ -122,12 +123,11 @@ function normalizeCommission(row = {}, partner = null) {
 async function loadPartnersById(ids = []) {
   const cleanIds = [...new Set(ids.filter(Boolean))];
   if (!cleanIds.length) return new Map();
-  const { data, error } = await supabase
-    .from('partnerships')
-    .select(PARTNER_FIELDS)
-    .in('id', cleanIds);
-  if (error) throw error;
-  return new Map((data || []).map((row) => [row.id, normalizePartner(row)]));
+  const rows = [];
+  for (let offset = 0; offset < cleanIds.length; offset += 100) {
+    rows.push(...await collectKeysetRows(() => supabase.from('partnerships').select(PARTNER_FIELDS).in('id', cleanIds.slice(offset, offset + 100))));
+  }
+  return new Map(rows.map((row) => [row.id, normalizePartner(row)]));
 }
 
 async function loadPartner(partnerId) {
@@ -162,11 +162,11 @@ export function calculatePartnerCommission({ grossAmount, commissionType, commis
 
 export async function listPartnerCommissions(filters = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const data = await collectKeysetRows(() => {
   let query = supabase
     .from('partner_commissions')
     .select(COMMISSION_SELECT_FIELDS)
-    .order('created_at', { ascending: false })
-    .limit(filters.limit || 500);
+        ;
 
   if (filters.partnerId) query = query.eq('partner_id', filters.partnerId);
   if (filters.status && filters.status !== 'all') query = query.eq('status', filters.status);
@@ -175,8 +175,8 @@ export async function listPartnerCommissions(filters = {}) {
   if (filters.fromDate) query = query.gte('created_at', filters.fromDate);
   if (filters.toDate) query = query.lte('created_at', filters.toDate);
 
-  const { data, error } = await query;
-  if (error) throw error;
+  return query;
+  });
   const partnerMap = await loadPartnersById((data || []).map((row) => row.partner_id));
   return (data || []).map((row) => normalizeCommission(row, partnerMap.get(row.partner_id)));
 }

@@ -56,8 +56,16 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json(405, { ok: false, error: 'method_not_allowed' });
 
   const startedAt = new Date().toISOString();
+  // Authorization failures must never enter the privileged state-writing scope.
+  let authorization: { mode: 'cron' | 'manual'; actor: string };
   try {
-    const authorization = await authorize(req);
+    authorization = await authorize(req);
+  } catch (error) {
+    const code = safeErrorCode(error);
+    const status = code === 'unauthorized' ? 401 : code === 'forbidden' ? 403 : code === 'rate_limited' ? 429 : 503;
+    return json(status, { ok: false, error: code });
+  }
+  try {
     await markState({ last_attempt_at: startedAt, last_error_code: null, last_error_at: null });
 
     // Retention is enforced independently of provider availability. An

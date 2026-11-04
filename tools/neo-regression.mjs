@@ -1,9 +1,10 @@
+import { readApplicationSource } from './application-source.mjs';
 import fs from 'node:fs';
 import { buildNeoAnswer, calculateEruptionDuration, matchNeoIntent, selectKpiSummary } from '../src/features/neo/neoEngine.js';
 import { buildMarketingRecommendations } from '../src/features/marketing/marketingIntelligence.js';
 
 const read = (file) => fs.readFileSync(file, 'utf8');
-const main = read('src/main.jsx'); const panel = read('src/features/neo/AskNeoPanel.jsx'); const engine = read('src/features/neo/neoEngine.js');
+const main = readApplicationSource(); const panel = read('src/features/neo/AskNeoPanel.jsx'); const engine = read('src/features/neo/neoEngine.js');
 const neoService = read('src/services/neoService.js'); const auth = read('src/services/adminAuth.js'); const notificationApi = read('functions/api/notifications/[[path]].js');
 const css = read('src/features/neo/ask-neo.css'); const notificationsUi = read('src/features/notifications/NotificationsPage.jsx');
 const passes = []; const failures = [];

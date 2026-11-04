@@ -1,3 +1,4 @@
+import { readApplicationSource } from './application-source.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -6,7 +7,9 @@ import { resolveSupabaseEdgeSecretKey } from '../supabase/functions/_shared/supa
 
 const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
-const trackedFiles = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
+const trackedFiles = fs.existsSync(path.join(root,'RELEASE-MANIFEST.json'))
+  ? JSON.parse(read('RELEASE-MANIFEST.json')).files.map(file=>file.path)
+  : execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
 const repositoryFiles = trackedFiles;
 const failures = [];
 const passes = [];
@@ -39,7 +42,7 @@ const weeklyRecapSetup = read('supabase/setup/20260726_weekly_recap_cron.sql');
 const followupMigration = read('supabase/migrations/20260817090000_operational_analytics_reporting_fix.sql');
 const weeklyEmail = read('supabase/functions/_shared/weeklyRecapEmail.ts');
 const operationsService = read('src/services/operationsService.js');
-const mainSource = read('src/main.jsx');
+const mainSource = readApplicationSource();
 const analyticsIntegrity = read('src/features/analytics/integrity.js');
 const analyticsContract = read('src/features/analytics/contract.js');
 const analyticsConsolidation = read('supabase/migrations/20260818090000_analytics_consolidation.sql');
@@ -169,7 +172,7 @@ check('analytics traffic dimensions use page views', mainSource.includes('topRow
 check('review translation is zero-cost browser-local with no provider endpoint', !fs.existsSync(path.join(root, 'functions/api/public/review-translation.js')) && reviewTranslationClient.includes('globalThis.Translator') && reviewTranslationClient.includes('globalThis.LanguageDetector') && !reviewTranslationClient.includes('fetch('));
 check('review translation exposes no cloud translation credential or provider URL', !reviewTranslationClient.includes('GOOGLE_CLOUD_TRANSLATION_API_KEY') && !reviewTranslationClient.includes('translation.googleapis.com') && !repositoryFiles.some((name) => { if (name.replace(/\\/g, '/') === 'tools/security-regression.mjs') return false; try { return fs.statSync(path.join(root, name)).isFile() && /GOOGLE_CLOUD_TRANSLATION_API_KEY|translation\.googleapis\.com/.test(fs.readFileSync(path.join(root, name), 'utf8')); } catch { return false; } }));
 check('public booking failures expose safe trace ids', bookingEndpoint.includes("'X-Trace-Id': traceId") && bookingEndpoint.includes('trace_id: traceId') && bookingService.includes('error.traceId = traceId'));
-check('system UI is split into feature modules', mainSource.includes("OperationalSafeguardsBanner from './features/admin/OperationalSafeguardsBanner.jsx'") && mainSource.includes("WeeklyReportsAdminPanel from './features/system/WeeklyReportsAdminPanel.jsx'") && safeguardsComponent.includes('admin-operational-chip') && weeklyPanelComponent.includes('weekly-report-table'));
+check('system UI is split into feature modules', mainSource.includes("OperationalSafeguardsBanner from '../../features/admin/OperationalSafeguardsBanner.jsx'") && mainSource.includes("WeeklyReportsAdminPanel from '../../features/system/WeeklyReportsAdminPanel.jsx'") && safeguardsComponent.includes('admin-operational-chip') && weeklyPanelComponent.includes('weekly-report-table'));
 check('legacy unsent-email count is sanitized client-side', operationsService.includes('notifications_historical_excluded') && operationsService.includes('normalized.notifications_not_sent = 0'));
 check('canonical analytics summary RPC is protected', analyticsConsolidation.includes('get_admin_analytics_summary') && analyticsConsolidation.includes('security definer') && analyticsConsolidation.includes('revoke all on function public.get_admin_analytics_summary') && analyticsConsolidation.includes('not public.is_admin()'));
 check('analytics baseline mutation requires privileged admin', analyticsConsolidation.includes('set_analytics_reporting_baseline') && analyticsConsolidation.includes('clear_analytics_reporting_baseline') && analyticsConsolidation.includes('not public.is_privileged_admin()'));
@@ -206,10 +209,10 @@ check('Gift Card Issued does not recognize revenue', (() => { const block = paym
 check('refund RPC is transactional, authorized, and preserves original entry', (financeRefundMigration.match(/^begin;$/gm) || []).length === 1 && (financeRefundMigration.match(/^commit;$/gm) || []).length === 1 && financeRefundMigration.includes('if not public.is_admin()') && financeRefundMigration.includes('reversal_of') && !/delete\s+from\s+public\.finance_entries/i.test(financeRefundMigration));
 check('notification API keeps backend Supabase and VAPID private material server-side', notificationApi.includes('resolveSupabaseBackendCredential') && !notificationService.includes('SUPABASE_SECRET_KEY') && !notificationService.includes('SUPABASE_SERVICE_ROLE_KEY') && !notificationService.includes('VAPID_PRIVATE_KEY'));
 check('notification API enforces trusted CORS and admin authorization', notificationApi.includes('trustedOrigin') && notificationApi.includes('admin_profiles') && notificationApi.includes('requireAdmin') && !notificationApi.includes("'Access-Control-Allow-Origin': '*'"));
-check('notification Worker degrades dead push subscriptions to in-app delivery', notificationWorker.includes('p256dh=NULL,auth=NULL,enabled=1') && notificationWorker.includes('inapp://${event.audience}'));
+check('notification Worker degrades dead push subscriptions to in-app delivery', notificationWorker.includes('const deliver = deliverEvent') && read('shared/notificationDelivery.js').includes('p256dh=NULL,auth=NULL') && read('shared/notificationDelivery.js').includes('inapp://${event.audience}') && !read('shared/notificationDelivery.js').includes('DELETE FROM notification_subscriptions'));
 check('trusted Cloudflare Supabase consumers share Secret-compatible backend headers', [notificationApi, notificationWorker, publicApiShared, analyticsIngestion, backupShared].every((source) => source.includes('resolveSupabaseBackendCredential') && source.includes('supabaseBackendHeaders')));
 check('public API keeps rate limits and server-authoritative RPC boundaries with new credential model', publicApiShared.includes('claim_public_submission_rate_limit') && publicApiShared.includes('supabaseRpc') && bookingEndpoint.includes('create_public_booking_request') && giftEndpoint.includes('create_public_gift_card_request'));
-check('analytics actor continuity remains independent of the preferred Secret key', analyticsIngestion.includes("env.SUBMISSION_HASH_SALT || env.SUPABASE_SERVICE_ROLE_KEY || 'analytics'") && publicApiShared.includes("env.SUBMISSION_HASH_SALT || env.SUPABASE_SERVICE_ROLE_KEY || 'vulcaniq-public-endpoint'"));
+check('analytics actor continuity uses a required dedicated HMAC salt independent of backend keys', analyticsIngestion.includes('clientActorHash(request, env)') && publicApiShared.includes("name: 'HMAC'") && publicApiShared.includes('submission_hash_salt_not_configured') && !publicApiShared.includes("env.SUPABASE_SERVICE_ROLE_KEY ||"));
 check('backup and restore support Secret key primary with legacy fallback', storageExport.includes('resolveSupabaseBackendCredential(process.env)') && storageExport.includes('secretCompatibleFetch') && storageRestore.includes('process.env.SUPABASE_SECRET_KEY') && storageRestore.includes('USE_LEGACY_BEARER') && backupWorkflow.includes('SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}') && backupWorkflow.includes('SUPABASE_SECRET_KEY:-${SUPABASE_SERVICE_ROLE_KEY:-}'));
 check('Supabase Edge Functions support deterministic named Secret maps without replacing user bearer auth', edgeFunctionShared.includes("env('SUPABASE_SECRET_KEYS', false)") && edgeFunctionShared.includes("env('SUPABASE_SECRET_KEY_NAME', false)") && edgeFunctionShared.includes("env('SUPABASE_SERVICE_ROLE_KEY')") && edgeFunctionShared.includes('authorization: auth') && edgeSecretKeyHelper.includes("requestedName || 'default'") && !edgeSecretKeyHelper.includes('Object.values'));
 check('Financial Audit authorization is enforced on the backend', financeAuditEndpoint.includes('/auth/v1/user') && financeAuditEndpoint.includes('/rest/v1/admin_profiles') && financeAuditEndpoint.includes("new Set(['owner', 'finance'])") && financeAuditEndpoint.includes('finance_audit_permission_denied'));
@@ -217,7 +220,7 @@ check('Financial Audit browser code contains no service-role capability', !finan
 check('Financial Audit minimizes PII and neutralizes CSV formulas', financeAuditEndpoint.includes("piiIncluded:false") && financeAuditEndpoint.includes("/^[\\s]*[=+\\-@]/") && !/customer_email|customer_phone|buyer_email|buyer_phone/.test(financeAuditEndpoint));
 check('Financial Audit generation is logged before export response', financeAuditEndpoint.indexOf('await logAudit(') < financeAuditEndpoint.indexOf("if (format === 'csv')"));
 check('activity_log grants and RLS authorize active owner/finance bearer callers', privilegeReconciliation.includes('grant select, insert on table public.activity_log to authenticated;') && bootstrapFoundation.includes('create policy "Admins can insert activity log"') && bootstrapFoundation.includes('with check (public.is_admin());') && revenueFollowup.includes('ap.user_id = auth.uid()') && revenueFollowup.includes('ap.active = true') && revenueFollowup.includes("'owner', 'manager', 'guide', 'finance', 'content_editor'"));
-check('Financial Audit logs the caller identity with the caller bearer token', financeAuditEndpoint.includes("supabaseFetch(settings, token, '/rest/v1/activity_log'") && financeAuditEndpoint.includes('actor_id: userId') && financeAuditEndpoint.includes('logAudit(auth.settings,auth.token,auth.user.id,auditId,metadata)'));
+check('Financial Audit uses trusted actor derivation with the caller bearer token', financeAuditEndpoint.includes("supabaseFetch(settings, token, '/rest/v1/rpc/admin_record_financial_audit'") && financeAuditEndpoint.includes('p_audit_id: auditId, p_metadata: metadata') && !financeAuditEndpoint.includes('actor_id: userId') && financeAuditEndpoint.includes('logAudit(auth.settings,auth.token,auth.user.id,auditId,metadata)'));
 check('security headers include HSTS and CSP remains report-only', securityHeaders.includes('Strict-Transport-Security: max-age=31536000') && securityHeaders.includes('Content-Security-Policy-Report-Only:') && !/^\s*Content-Security-Policy:/m.test(securityHeaders));
 
 for (const name of passes) console.log(`PASS  ${name}`);

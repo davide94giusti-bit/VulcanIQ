@@ -218,7 +218,7 @@ export function pdfExport(metadata, report) {
   return pdf;
 }
 async function logAudit(settings, token, userId, auditId, metadata) {
-  const result = await supabaseFetch(settings, token, '/rest/v1/activity_log', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ actor_id: userId, action: 'financial_audit_generated', entity_type: 'financial_audit', entity_id: auditId, details: metadata }) });
+  const result = await supabaseFetch(settings, token, '/rest/v1/rpc/admin_record_financial_audit', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ p_audit_id: auditId, p_metadata: metadata }) });
   if (!result.ok) throw new Error(`finance_audit_log_${result.status}`);
 }
 

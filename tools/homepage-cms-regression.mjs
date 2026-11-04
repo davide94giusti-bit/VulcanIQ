@@ -1,5 +1,6 @@
+import { readApplicationSource } from './application-source.mjs';
 import fs from 'node:fs';
-const main = fs.readFileSync('src/main.jsx', 'utf8');
+const main = readApplicationSource();
 const styles = fs.readFileSync('src/styles.css', 'utf8');
 const serviceWorker = fs.readFileSync('public/sw.js', 'utf8');
 const passes=[]; const failures=[];

@@ -7,6 +7,7 @@ on:
       - main
       - 'fix/**'
       - 'feat/**'
+      - 'codex/**'
 
 permissions:
   contents: read
@@ -24,28 +25,50 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install dependencies
+      - name: Deterministic clean install (missing lockfile is a failure)
+        run: npm ci --no-audit --no-fund
+
+      - name: All domain suites, behavioral negative/concurrency checks, and build
+        run: npm run test:quality
+
+      - name: Dependency advisories
+        run: npm audit --audit-level=moderate
+
+      - name: Diff whitespace integrity
+        run: git diff --check
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VITE_SUPABASE_URL: https://browser-fixture.invalid
+      VITE_SUPABASE_ANON_KEY: synthetic-browser-public-key
+      VITE_TURNSTILE_SITE_KEY: synthetic-browser-site-key
+      AUDIT_BROWSER_CHANNEL: chromium
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+      - name: Pinned browser test tooling outside application dependencies
+        run: |
+          npm install --prefix "$RUNNER_TEMP/vulcaniq-playwright" --no-save --package-lock=false --ignore-scripts playwright@1.62.1
+          node "$RUNNER_TEMP/vulcaniq-playwright/node_modules/playwright/cli.js" install --with-deps chromium
+          echo "AUDIT_PLAYWRIGHT_MODULE=$RUNNER_TEMP/vulcaniq-playwright/node_modules/playwright/index.mjs" >> "$GITHUB_ENV"
+      - name: Synthetic production build for isolated browser validation
+        run: npx vite build --outDir "$RUNNER_TEMP/vulcaniq-browser-build"
+      - name: Real form, focus, consent, auth and production lazy/deep-link browser gates
         shell: bash
         run: |
-          set -euo pipefail
-          if [ -f package-lock.json ]; then
-            npm ci --no-audit --no-fund
-          else
-            echo "::warning::package-lock.json is missing; run npm install locally and commit it. Falling back to npm install for this transition build."
-            npm install --no-audit --no-fund
-          fi
-
-      - name: Security regressions
-        run: npm run test:security
-
-      - name: Analytics regressions
-        run: npm run test:analytics
-
-      - name: SEO regressions
-        run: npm run test:seo
-
-      - name: Reviews regressions
-        run: npm run test:reviews
-
-      - name: Production build
-        run: npm run build
+          npx vite --host 127.0.0.1 --port 5183 --strictPort > "$RUNNER_TEMP/vulcaniq-vite.log" 2>&1 &
+          dev_pid=$!
+          npx vite preview --host 127.0.0.1 --port 5184 --strictPort --outDir "$RUNNER_TEMP/vulcaniq-browser-build" > "$RUNNER_TEMP/vulcaniq-preview.log" 2>&1 &
+          preview_pid=$!
+          trap 'kill "$dev_pid" "$preview_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:5183/ > /dev/null && curl --fail --silent http://127.0.0.1:5184/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node tools/browser-audit-regression.mjs
+          node tools/browser-release-regression.mjs

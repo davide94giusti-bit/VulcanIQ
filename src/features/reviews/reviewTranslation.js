@@ -22,6 +22,41 @@ function translationError(code, message) {
   return error;
 }
 
+export function withReviewTranslationTimeout(operation, timeoutMs = 60000, onTimeout) {
+  const boundedTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 60000;
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => { onTimeout?.(); reject(translationError('translation_timeout', 'On-device translation did not become available in time.')); }, boundedTimeout);
+  });
+  return Promise.race([Promise.resolve(operation), timeout]).finally(() => clearTimeout(timer));
+}
+
+async function nativeResource(create, signal) {
+  if (signal?.aborted) throw translationError('translation_cancelled', 'Translation cancelled.');
+  let abandoned = Boolean(signal?.aborted);
+  let resource;
+  const abort = () => { abandoned = true; try { resource?.destroy?.(); } catch {} };
+  signal?.addEventListener('abort', abort, { once: true });
+  try {
+    resource = await withReviewTranslationTimeout(cancellableTranslation(Promise.resolve().then(create).then(value => {
+      if (abandoned) { try { value?.destroy?.(); } catch {} throw translationError('translation_cancelled', 'Translation cancelled.'); }
+      return value;
+    }), signal, abort), 30000, abort);
+    return resource;
+  } finally { signal?.removeEventListener('abort', abort); }
+}
+
+async function cancellableTranslation(operation, signal, cancel) {
+  let abort;
+  const cancelled = new Promise((_, reject) => {
+    abort = () => { try { cancel?.(); } catch {} reject(translationError('translation_cancelled', 'Translation cancelled.')); };
+    if (signal?.aborted) abort();
+    else signal?.addEventListener('abort', abort, { once: true });
+  });
+  try { return await Promise.race([operation, cancelled]); }
+  finally { signal?.removeEventListener('abort', abort); }
+}
+
 function normalizedLanguage(value) {
   const raw = String(value || '').trim().replace(/_/g, '-');
   if (!raw) return '';
@@ -90,7 +125,7 @@ export function normalizeReviewTranslationLanguage(value) {
   return normalizedLanguage(value);
 }
 
-async function detectReviewLanguage(text, { onProgress } = {}) {
+export async function detectReviewSourceLanguage(text, { onProgress, signal } = {}) {
   const Detector = globalThis.LanguageDetector;
   if (!Detector || typeof Detector.create !== 'function') {
     throw translationError('translation_browser_unsupported', 'This browser does not support on-device language detection.');
@@ -99,10 +134,10 @@ async function detectReviewLanguage(text, { onProgress } = {}) {
   let detector;
   try {
     onProgress?.({ phase: 'detecting', progress: null });
-    detector = await Detector.create({
+    detector = await nativeResource(() => Detector.create({
       monitor: progressMonitor(onProgress, 'downloading_detector')
-    });
-    const results = await detector.detect(text);
+    }), signal);
+    const results = await withReviewTranslationTimeout(cancellableTranslation(detector.detect(text), signal, () => detector?.destroy?.()), 30000, () => detector?.destroy?.());
     const match = Array.isArray(results)
       ? results.find((item) => item?.detectedLanguage && item.detectedLanguage !== 'und')
       : null;
@@ -118,7 +153,7 @@ async function detectReviewLanguage(text, { onProgress } = {}) {
   }
 }
 
-export async function translateReviewText({ text, targetLanguage, sourceLanguage, onProgress } = {}) {
+export async function translateReviewText({ text, targetLanguage, sourceLanguage, sourceLanguageSource = 'untrusted', onProgress, signal } = {}) {
   const sourceText = String(text || '').trim();
   const target = normalizedLanguage(targetLanguage);
   if (!sourceText || !target) throw translationError('translation_input_incomplete', 'Translation input is incomplete.');
@@ -126,8 +161,10 @@ export async function translateReviewText({ text, targetLanguage, sourceLanguage
     throw translationError('translation_browser_unsupported', 'This browser does not support on-device review translation.');
   }
 
-  let source = normalizedLanguage(sourceLanguage);
-  if (!source) source = await detectReviewLanguage(sourceText, { onProgress });
+  const suppliedSource = normalizedLanguage(sourceLanguage);
+  const source = sourceLanguageSource === 'detected' && suppliedSource
+    ? suppliedSource
+    : await detectReviewSourceLanguage(sourceText, { onProgress, signal });
   if (source === target) {
     throw translationError('translation_same_language', 'The review is already in the selected language.');
   }
@@ -136,14 +173,19 @@ export async function translateReviewText({ text, targetLanguage, sourceLanguage
   let translator;
   try {
     onProgress?.({ phase: 'preparing', progress: null });
-    translator = await TranslatorApi.create({
+    translator = await nativeResource(() => TranslatorApi.create({
       sourceLanguage: source,
       targetLanguage: target,
       monitor: progressMonitor(onProgress, 'downloading_translator')
-    });
+    }), signal);
     onProgress?.({ phase: 'translating', progress: null });
-    const translatedText = String(await translator.translate(sourceText) || '').trim();
-    if (!translatedText) throw translationError('translation_failed', 'The browser returned an empty translation.');
+    const translatedText = String(await withReviewTranslationTimeout(cancellableTranslation(translator.translate(sourceText), signal, () => translator?.destroy?.()), 30000, () => translator?.destroy?.()) || '').trim();
+    if (!translatedText) throw translationError('translation_empty_result', 'The browser returned an empty translation.');
+    const comparableOriginal = sourceText.normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase();
+    const comparableTranslation = translatedText.normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase();
+    if (comparableTranslation === comparableOriginal) {
+      throw translationError('translation_unchanged_result', 'The browser returned unchanged review text.');
+    }
     onProgress?.({ phase: 'complete', progress: 100 });
     return {
       ok: true,

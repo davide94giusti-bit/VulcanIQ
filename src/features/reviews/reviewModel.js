@@ -64,7 +64,11 @@ export const REVIEW_COPY = Object.freeze({
     translationSameLanguage: 'La recensione è già nella lingua selezionata.',
     translationModelDownloadFailed: 'Il browser non è riuscito a scaricare il modello di traduzione.',
     translationTryAgain: 'Interagisci con la pagina e premi di nuovo Traduci.',
-    translationInputTooLarge: 'Questa recensione è troppo lunga per il modello di traduzione del browser.'
+    translationInputTooLarge: 'Questa recensione è troppo lunga per il modello di traduzione del browser.',
+    translationEmptyResult: 'Il browser ha restituito una traduzione vuota. La recensione originale resta visibile.',
+    translationUnchangedResult: 'Il browser non ha tradotto il testo. La recensione originale resta visibile.',
+    translationStaleResult: 'La recensione o la lingua di destinazione è cambiata. Riprova.',
+    translationTimeout: 'La traduzione sul dispositivo non è diventata disponibile in tempo. La recensione originale resta visibile.'
   },
   en: {
     title: 'Reviews from people who experienced Etna with us.',
@@ -122,7 +126,11 @@ export const REVIEW_COPY = Object.freeze({
     translationSameLanguage: 'The review is already in the selected language.',
     translationModelDownloadFailed: 'The browser could not download the translation model.',
     translationTryAgain: 'Interact with the page and press Translate again.',
-    translationInputTooLarge: 'This review is too long for the browser translation model.'
+    translationInputTooLarge: 'This review is too long for the browser translation model.',
+    translationEmptyResult: 'The browser returned an empty translation. The original review remains visible.',
+    translationUnchangedResult: 'The browser did not translate the text. The original review remains visible.',
+    translationStaleResult: 'The review or target language changed. Please try again.',
+    translationTimeout: 'On-device translation did not become available in time. The original review remains visible.'
   }
 });
 
@@ -164,7 +172,9 @@ export function reviewDate(review = {}, lang = 'it') {
   if (!raw) return '-';
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return String(raw).slice(0, 10) || '-';
-  return new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : 'it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+  // A SQL date is a calendar day, not a UTC instant to shift into the visitor's timezone.
+  const calendarDay = /^\d{4}-\d{2}-\d{2}$/.test(String(raw));
+  return new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : 'it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', ...(calendarDay ? { timeZone: 'UTC' } : {}) }).format(date);
 }
 
 

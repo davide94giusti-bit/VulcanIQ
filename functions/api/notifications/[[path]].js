@@ -1,3 +1,7 @@
+import { notificationFetch,notificationDatabase,runtimeBudget } from '../../../shared/notificationRuntime.js';
+import { reconcileOutbox } from '../../../shared/notificationOutbox.js';
+import { deliverEvent, invocationBudget } from '../../../shared/notificationDelivery.js';
+import { validPushEndpoint, validatePushSubscription, claimRate, enrollmentBudget, reservePush, ownedPreferenceColumn } from '../../../shared/notificationPolicy.js';
 import { sendWebPush } from '../../../shared/webPush.js';
 import { resolveSupabaseBackendCredential, supabaseBackendHeaders } from '../_shared/supabaseBackend.js';
 import { isOwnershipClaimToken, notificationEntityRef, ownershipClaimStateError, sha256Hex } from './_ownership.js';
@@ -9,7 +13,7 @@ const CAMPAIGN_CATEGORIES = new Set(['experiences', 'events', 'news', 'promotion
 const CUSTOMER_CATEGORIES = new Set([
   'customer_booking_confirmed', 'customer_payment_received', 'customer_upcoming_reminder',
   'customer_operational_change', 'customer_booking_rescheduled', 'customer_booking_cancelled',
-  'customer_review_reminder'
+  'customer_review_reminder', 'customer_participant_terms_reminder'
 ]);
 const CUSTOMER_EVENT_TYPES = new Set([
   'booking_confirmed', 'payment_received', 'operational_change',
@@ -49,7 +53,14 @@ function cors(request, env) {
 function json(request, env, status, body = {}) { return new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { ...cors(request, env), ...(status === 204 ? {} : { 'Content-Type': 'application/json; charset=utf-8' }) } }); }
 async function body(request, maxBytes = 32768) {
   const length = Number(request.headers.get('Content-Length') || 0); if (length > maxBytes) return { error: 'body_too_large', status: 413 };
-  try { const raw = await request.text(); if (new TextEncoder().encode(raw).byteLength > maxBytes) return { error: 'body_too_large', status: 413 }; const value = JSON.parse(raw || '{}'); if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(); return { value }; } catch { return { error: 'invalid_json', status: 400 }; }
+  const reader=request.body?.getReader();let count=0;const chunks=[];let timer;
+  try {
+    const deadline=new Promise((_,reject)=>{timer=setTimeout(()=>{reader?.cancel().catch(()=>{});reject(new Error('body_timeout'));},5000);});
+    if(reader)while(true){const {done,value}=await Promise.race([reader.read(),deadline]);if(done)break;count+=value.byteLength;if(count>maxBytes){await reader.cancel();return {error:'body_too_large',status:413};}chunks.push(value);}
+    const bytes=new Uint8Array(count);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+    const value=JSON.parse(new TextDecoder().decode(bytes)||'{}');if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('invalid_json');return{value};
+  }catch(error){return{error:error.message==='body_timeout'?'body_timeout':'invalid_json',status:error.message==='body_timeout'?408:400};}finally{clearTimeout(timer);}
+
 }
 async function hash(value) { const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value))); return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join(''); }
 function db(env) { if (!env.NOTIFICATIONS_DB) throw new Error('notifications_db_not_configured'); return env.NOTIFICATIONS_DB; }
@@ -58,15 +69,15 @@ function supabaseConfig(env) {
   const url = text(env.SUPABASE_URL || env.VITE_SUPABASE_URL, 300).replace(/\/$/, '');
   const anon = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
   const backendCredential = resolveSupabaseBackendCredential(env);
-  return url && anon && backendCredential ? { url, anon, backendCredential } : null;
+  return url && anon && backendCredential ? { url, anon, backendCredential, env } : null;
 }
 async function requireAdmin(request, env) {
   const token = bearer(request); const config = supabaseConfig(env); if (!token || !config) return { response: json(request, env, !token ? 401 : 503, { ok: false, error: !token ? 'admin_auth_required' : 'admin_auth_not_configured' }) };
-  const userRes = await fetch(`${config.url}/auth/v1/user`, { headers: { apikey: config.anon, Authorization: `Bearer ${token}` } });
+  const userRes = await notificationFetch(config.env||{},`${config.url}/auth/v1/user`, { headers: { apikey: config.anon, Authorization: `Bearer ${token}` } });
   if (!userRes.ok) return { response: json(request, env, 401, { ok: false, error: 'invalid_admin_session' }) };
   const user = await userRes.json();
   const params = new URLSearchParams({ select: 'user_id,role,active', user_id: `eq.${user.id}`, active: 'eq.true', limit: '1' });
-  const profileRes = await fetch(`${config.url}/rest/v1/admin_profiles?${params}`, { headers: supabaseBackendHeaders(config.backendCredential, { headers: { Accept: 'application/json' } }) });
+  const profileRes = await notificationFetch(config.env||{},`${config.url}/rest/v1/admin_profiles?${params}`, { headers: supabaseBackendHeaders(config.backendCredential, { headers: { Accept: 'application/json' } }) });
   const rows = profileRes.ok ? await profileRes.json() : [];
   const profile = Array.isArray(rows) ? rows[0] : null;
   if (!profile?.active) return { response: json(request, env, 403, { ok: false, error: 'admin_forbidden' }) };
@@ -76,23 +87,17 @@ function cleanLanguage(value) { return ['auto', 'it', 'en'].includes(value) ? va
 function cleanLocale(value) { return value === 'en' ? 'en' : 'it'; }
 function cleanCategories(audience, values) { const allowed = audience === 'admin' ? ADMIN_CATEGORIES : PUBLIC_CATEGORIES; const input = Array.isArray(values) ? values : []; return [...new Set(input.map((v) => text(v, 60)).filter((v) => allowed.has(v)))]; }
 function validTime(value) { return !value || /^([01]\d|2[0-3]):[0-5]\d$/.test(value); }
-function endpointValid(value) { try { return new URL(value).protocol === 'https:'; } catch { return false; } }
-function cleanDestination(value, fallback = '/') { const clean = text(value, 500); if (!clean) return fallback; if (clean.startsWith('/') && !clean.startsWith('//')) return clean; try { const url = new URL(clean); return url.protocol === 'https:' ? url.toString() : fallback; } catch { return fallback; } }
+const endpointValid = validPushEndpoint;
+function cleanDestination(value, fallback = '/') { const clean = text(value, 500); return clean.startsWith('/') && !clean.startsWith('//') && !clean.includes('\\') ? clean : fallback; }
 async function audit(database, eventType, fields = {}) {
   const metadata = fields.metadata ? JSON.stringify(fields.metadata) : null;
   await database.prepare('INSERT INTO notification_audit_log (id,event_type,audience,actor_id,subscription_id,campaign_id,outcome,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)')
     .bind(uuid(), eventType, fields.audience || null, fields.actorId || null, fields.subscriptionId || null, fields.campaignId || null, fields.outcome || 'ok', metadata, nowIso()).run();
 }
-async function rateLimit(database, key, limit, seconds) {
-  const now = Date.now(); const row = await database.prepare('SELECT window_started_at,hits FROM notification_rate_limits WHERE rate_key=?').bind(key).first();
-  const started = row ? Date.parse(row.window_started_at) : 0;
-  if (!row || !Number.isFinite(started) || now - started >= seconds * 1000) { await database.prepare('INSERT INTO notification_rate_limits(rate_key,window_started_at,hits) VALUES(?,?,1) ON CONFLICT(rate_key) DO UPDATE SET window_started_at=excluded.window_started_at,hits=1').bind(key, nowIso()).run(); return true; }
-  if (Number(row.hits || 0) >= limit) return false;
-  await database.prepare('UPDATE notification_rate_limits SET hits=hits+1 WHERE rate_key=?').bind(key).run(); return true;
-}
+const rateLimit = claimRate;
 async function ownerContext(request, env, audience) {
   const deviceId = text(request.headers.get('X-Notification-Device'), 120); const deviceToken = text(request.headers.get('X-Notification-Token'), 240);
-  if (!deviceId || !deviceToken) return { response: json(request, env, 401, { ok: false, error: 'device_identity_required' }) };
+  if (!/^[a-zA-Z0-9_-]{16,120}$/.test(deviceId) || !/^[a-f0-9]{64}$/.test(deviceToken)) return { response: json(request, env, 401, { ok: false, error: 'device_identity_required' }) };
   const tokenHash = await hash(deviceToken);
   if (audience === 'admin') { const auth = await requireAdmin(request, env); if (auth.response) return auth; return { deviceId, tokenHash, ...auth }; }
   return { deviceId, tokenHash };
@@ -136,33 +141,7 @@ async function budget(database, env) {
   const mode = pct >= hard ? 'HARD_SAFETY' : pct >= conservation ? 'CONSERVATION' : pct >= warning ? 'WARNING' : 'NORMAL'; return { mode, attempts, cap, percent: Number(pct.toFixed(1)) };
 }
 function allowedByBudget(mode, event) { if (mode === 'NORMAL' || mode === 'WARNING') return true; if (mode === 'CONSERVATION') return !['promotions','daily_summary','weekly_summary','etna_weekly'].includes(event.category); if (mode === 'HARD_SAFETY') return event.audience === 'admin' && event.priority === 'critical'; return true; }
-async function fanout(database, env, event) {
-  const personalized = CUSTOMER_CATEGORIES.has(event.category);
-  if (personalized && (!event.recipient_subscription_id || event.audience !== 'public')) throw new Error('personalized_recipient_required');
-  const budgetState = await budget(database, env); if (!allowedByBudget(budgetState.mode, event)) { await audit(database, 'notification_suppressed_budget', { audience: event.audience, outcome: budgetState.mode, metadata: { category: event.category } }); return { attempted: 0, sent: 0, failed: 0, suppressed: true, budget: budgetState }; }
-  const maxBatch = Math.max(1, Math.min(1000, Number(env.NOTIFICATION_BROADCAST_BATCH_CAP || 250)));
-  const targetClause = event.recipient_subscription_id ? ' AND s.id=?' : '';
-  const statement = database.prepare(`SELECT s.*,p.language_preference,p.resolved_locale,p.categories_json,p.quiet_hours_enabled,p.quiet_start,p.quiet_end,p.timezone FROM notification_subscriptions s JOIN notification_preferences p ON p.subscription_id=s.id WHERE s.audience=? AND s.enabled=1${targetClause} LIMIT ${maxBatch}`);
-  const result = event.recipient_subscription_id
-    ? await statement.bind(event.audience, event.recipient_subscription_id).all()
-    : await statement.bind(event.audience).all();
-  let attempted=0,accepted=0,failed=0,retryable=0,dead=0,unknown=0;
-  for (const sub of result.results || []) {
-    const categories = parseJson(sub.categories_json, []); if (!personalized && !categories.includes(event.category)) continue;
-    if (event.language_target && event.language_target !== 'all' && sub.resolved_locale !== event.language_target) continue;
-    const locale = cleanLocale(sub.resolved_locale); const title = locale === 'it' ? event.title_it : event.title_en; const bodyText = locale === 'it' ? event.body_it : event.body_en;
-    if(event.inapp_enabled!==false){const inboxId = uuid(); await database.prepare('INSERT OR IGNORE INTO notification_inbox(id,event_id,subscription_id,audience,category,title,body,destination_url,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(inboxId,event.id,sub.id,event.audience,event.category,title,bodyText,event.destination_url || null,nowIso()).run();if(event.job_id)await database.prepare('UPDATE notification_jobs SET inbox_delivered_at=coalesce(inbox_delivered_at,?) WHERE id=?').bind(nowIso(),event.job_id).run();}
-    const quiet = inQuietHours(sub) && event.priority !== 'critical'; if (quiet || !endpointValid(sub.endpoint) || event.push_enabled===false) continue;
-    attempted += 1; await increment(database, 'push_attempts');
-    const attemptNumber=event.job_id?1:0;
-    if(event.job_id){const started=nowIso();await database.prepare('UPDATE notification_jobs SET push_started_at=?,last_attempt_at=?,attempt_count=attempt_count+1 WHERE id=? AND push_started_at IS NULL AND push_delivered_at IS NULL').bind(started,started,event.job_id).run();}
-    const notification = event.audience === 'public' ? { category: event.category, title, body: bodyText, url: event.destination_url } : undefined;
-    const push = await sendWebPush(sub, env, { urgency: event.priority === 'critical' ? 'high' : 'normal', notification });
-    await recordPushAttempt(database,event.job_id,attemptNumber,push);
-    if (push.accepted) { accepted += 1; await increment(database, 'push_success');if(event.job_id)await database.prepare('UPDATE notification_jobs SET push_delivered_at=?,terminal_reason=NULL WHERE id=?').bind(nowIso(),event.job_id).run(); } else { failed += 1; await increment(database, 'push_failed');if(push.dead){dead+=1;await database.prepare('UPDATE notification_subscriptions SET endpoint=?,p256dh=NULL,auth=NULL,enabled=1,updated_at=? WHERE id=?').bind(`inapp://${event.audience}/${(await hash(sub.device_id)).slice(0,32)}`,nowIso(),sub.id).run();if(event.job_id)await database.prepare("UPDATE notification_jobs SET dead_subscription_at=?,terminal_reason='dead_subscription' WHERE id=?").bind(nowIso(),event.job_id).run();}else if(push.retryable){retryable+=1;if(event.job_id)await database.prepare("UPDATE notification_jobs SET push_started_at=NULL,failure_reason='retryable_push_error' WHERE id=?").bind(event.job_id).run();}else if(push.unknown){unknown+=1;if(event.job_id)await database.prepare("UPDATE notification_jobs SET terminal_reason='push_outcome_unknown' WHERE id=?").bind(event.job_id).run();}else if(event.job_id)await database.prepare("UPDATE notification_jobs SET terminal_reason='permanent_push_error' WHERE id=?").bind(event.job_id).run(); }
-  }
-  return { attempted, accepted, sent:accepted, failed, retryable, dead, unknown, deliveryConfirmed:false, suppressed: false, budget: budgetState };
-}
+const fanout = deliverEvent;
 
 async function claimOwnership(database, subscription, rawToken) {
   if (!isOwnershipClaimToken(rawToken)) return { error: 'ownership_claim_invalid' };
@@ -181,8 +160,8 @@ async function claimOwnership(database, subscription, rawToken) {
   await database.batch([
     database.prepare("UPDATE notification_ownership_claims SET status='claimed',claimed_subscription_id=?,claimed_at=? WHERE id=? AND status='pending' AND expires_at>?").bind(subscription.id, now, claim.id, now),
     database.prepare(`INSERT OR IGNORE INTO notification_subscription_ownership
-      (id,claim_id,subscription_id,entity_type,entity_ref,journey_type,verified_at,created_at)
-      SELECT ?,id,?,entity_type,entity_ref,journey_type,?,? FROM notification_ownership_claims
+      (id,claim_id,subscription_id,entity_type,entity_ref,journey_type,verified_at,created_at,entity_id)
+      SELECT ?,id,?,entity_type,entity_ref,journey_type,?,?,entity_id FROM notification_ownership_claims
       WHERE id=? AND status='claimed' AND claimed_subscription_id=?`)
       .bind(ownershipId, subscription.id, now, now, claim.id, subscription.id)
   ]);
@@ -192,13 +171,15 @@ async function claimOwnership(database, subscription, rawToken) {
 }
 
 async function backendRows(config, table, parameters) {
-  const response = await fetch(`${config.url}/rest/v1/${table}?${parameters}`, { headers: supabaseBackendHeaders(config.backendCredential, { headers: { Accept: 'application/json' } }) });
+  const response = await notificationFetch(config.env||{},`${config.url}/rest/v1/${table}?${parameters}`, { headers: supabaseBackendHeaders(config.backendCredential, { headers: { Accept: 'application/json' } }) });
   if (!response.ok) throw new Error(`personalized_source_${table}_${response.status}`);
-  const rows = await response.json(); return Array.isArray(rows) ? rows : [];
+  const rows = await response.json();
+  if (!Array.isArray(rows)) throw new Error(`personalized_source_${table}_invalid_response`);
+  return rows;
 }
 
 async function backendUpdate(config, table, parameters, payload) {
-  const response = await fetch(`${config.url}/rest/v1/${table}?${parameters}`, {
+  const response = await notificationFetch(config.env||{},`${config.url}/rest/v1/${table}?${parameters}`, {
     method: 'PATCH',
     headers: supabaseBackendHeaders(config.backendCredential, { headers: {
       Accept: 'application/json',
@@ -272,33 +253,12 @@ async function insertPersonalizedJob(database, env, eventRecord, ownership, conf
   const now = nowIso(); const jobId = uuid(); const scheduled = scheduledFor || now;
   const destinationUrl = cleanDestination(config.destinationUrl, '/install');
   const dedupeKey = `owned-job:${eventRecord.dedupe_key}:${ownership.id}:${config.category}`;
-  const status = scheduledFor ? 'scheduled' : 'processing';
-  let inserted;
-  try {
-    inserted = await database.prepare(`INSERT OR IGNORE INTO notification_jobs
-      (id,rule_key,source_type,source_id,source_revision,recipient_subscription_id,audience,category,title_it,body_it,title_en,body_en,destination_url,priority,scheduled_for,status,dedupe_key,created_at,processing_at,ownership_id)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'normal',?,?,?,?,?,?)`)
-      .bind(jobId,config.ruleKey,'owned_journey',eventRecord.entity_ref,eventRecord.source_revision,ownership.subscription_id,'public',config.category,config.titleIt,config.bodyIt,config.titleEn,config.bodyEn,destinationUrl,scheduled,status,dedupeKey,now,scheduledFor?null:now,ownership.id).run();
-  } catch (error) {
-    if (String(error?.message || error).includes('personalized_job_requires_active_ownership')) return { error: true, reason: 'revoked_recipient' };
-    throw error;
-  }
-  if(!inserted.meta?.changes)return {deduped:true};
-  if (scheduledFor) return { scheduled: true, jobId };
-  const event = { id: uuid(), audience: 'public', category: config.category, origin: 'owned_journey', title_it: config.titleIt, body_it: config.bodyIt, title_en: config.titleEn, body_en: config.bodyEn, destination_url: destinationUrl, dedupe_key: `owned-event:${dedupeKey}`, priority: 'normal', recipient_subscription_id: ownership.subscription_id,job_id:jobId,push_enabled:ownership.push_enabled!==0,inapp_enabled:ownership.inapp_enabled!==0 };
-  try {
-    await database.prepare('INSERT INTO notification_events(id,audience,category,origin,title_it,body_it,title_en,body_en,destination_url,dedupe_key,priority,created_at,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(event.id,event.audience,event.category,event.origin,event.title_it,event.body_it,event.title_en,event.body_en,event.destination_url,event.dedupe_key,event.priority,now,'sending').run();
-    const result = await fanout(database, env, event); const resolvedAt = nowIso();
-    await database.prepare("UPDATE notification_events SET status='sent',sent_at=? WHERE id=?").bind(resolvedAt,event.id).run();
-    const retryAt=result.retryable?new Date(Date.now()+60000).toISOString():null;
-    const finalStatus=result.suppressed?'cancelled':result.retryable?'scheduled':result.unknown?'failed':'sent';
-    await database.prepare(`UPDATE notification_jobs SET status=?,sent_at=?,cancelled_at=?,failure_reason=?,next_attempt_at=? WHERE id=? AND status='processing'`)
-      .bind(finalStatus,finalStatus==='sent'?resolvedAt:null,finalStatus==='cancelled'?resolvedAt:null,result.suppressed?'budget_suppression':result.retryable?'retryable_push_error':result.unknown?'push_outcome_unknown':null,retryAt,jobId).run();
-    return { jobId, result };
-  } catch (error) {
-    await database.prepare("UPDATE notification_jobs SET status='failed',failure_reason=? WHERE id=? AND status='processing'").bind(String(error?.message || 'delivery_failed').slice(0,120),jobId).run();
-    return { jobId, error: true };
-  }
+  const status = 'scheduled';
+  const inserted = await database.prepare(`INSERT OR IGNORE INTO notification_jobs
+      (id,rule_key,source_type,source_id,source_revision,recipient_subscription_id,audience,category,title_it,body_it,title_en,body_en,destination_url,priority,scheduled_for,status,dedupe_key,created_at,ownership_id,canonical_entity_id,canonical_event_type)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'normal',?,?,?,?,?,?,?)`)
+      .bind(jobId,config.ruleKey,'owned_journey',eventRecord.entity_ref,eventRecord.source_revision,ownership.subscription_id,'public',config.category,config.titleIt,config.bodyIt,config.titleEn,config.bodyEn,destinationUrl,scheduled,status,dedupeKey,now,ownership.id,eventRecord.entity_id,eventRecord.event_type).run();
+  return {scheduled:true,jobId,deduped:!inserted.meta?.changes};
 }
 
 function zonedDateTimeToUtc(date, time, timezone) {
@@ -319,14 +279,33 @@ function zonedDateTimeToUtc(date, time, timezone) {
   return instant;
 }
 
-function upcomingSchedule(activityDate, startTime, timezone, offsetMinutes = -1440) {
+function upcomingSchedule(activityDate, startTime, timezone, offsetMinutes = -1440, futureOnly = true) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(activityDate || ''))) return null;
   const precise = startTime && timezone ? zonedDateTimeToUtc(activityDate, startTime, timezone) : NaN;
   const activity = Number.isFinite(precise) ? precise : Date.parse(`${activityDate}T09:00:00Z`);
   if (!Number.isFinite(activity)) return null;
   const parsedOffset = Number(offsetMinutes);
   const scheduled = activity + (Number.isFinite(parsedOffset) ? parsedOffset : -1440) * 60 * 1000;
-  return scheduled > Date.now() ? new Date(scheduled).toISOString() : null;
+  return !futureOnly || scheduled > Date.now() ? new Date(scheduled).toISOString() : null;
+}
+
+// A confirmation revision proves only that confirmation event, not that its
+// derived reminder still describes an eligible, upcoming activity. Use the same
+// deterministic schedule at publication and dispatch (due jobs are not future).
+async function upcomingReminderState(authoritative, offsetMinutes = -1440) {
+  if (authoritative.error) return authoritative;
+  const { booking, fixedExcursion, activityDate, activityStartTime, activityTimezone, preparationExperienceId } = authoritative;
+  const cancelled = ['declined','cancelled','archived'].includes(booking.status) || ['cancelled','lost','completed','review_requested','review_received'].includes(booking.lead_status);
+  const confirmed = booking.status === 'accepted' || ['deposit_paid','confirmed'].includes(booking.lead_status);
+  const linkedActivityAvailable = !booking.fixed_excursion_id || (fixedExcursion && (fixedExcursion.active === true || fixedExcursion.active === 1) && fixedExcursion.status !== 'cancelled');
+  if (cancelled || !confirmed || !linkedActivityAvailable) return { error: 'personalized_invalid_business_state' };
+  const scheduledFor = upcomingSchedule(activityDate, activityStartTime, activityTimezone, offsetMinutes, false);
+  const activityAt = upcomingSchedule(activityDate, activityStartTime, activityTimezone, 0, false);
+  if (!scheduledFor || !activityAt || Date.parse(activityAt) <= Date.now()) return { error: 'personalized_invalid_business_state' };
+  return {
+    scheduledFor,
+    sourceRevision: await sha256Hex(JSON.stringify(['upcoming_reminder',booking.id,booking.fixed_excursion_id || null,activityDate,activityStartTime,activityTimezone,preparationExperienceId,Number(offsetMinutes),scheduledFor]))
+  };
 }
 
 async function processPersonalizedEvent(database, env, config, actorId, entityType, entityId, eventType) {
@@ -342,8 +321,8 @@ async function processPersonalizedEvent(database, env, config, actorId, entityTy
   }
   const dedupeKey=`personalized:${eventType}:${entityRef}:${authoritative.sourceRevision}`;
   const existing=await database.prepare('SELECT id,status,recipient_count,job_count FROM notification_personalized_events WHERE dedupe_key=? LIMIT 1').bind(dedupeKey).first();
-  if(existing)return {ok:true,deduped:true,status:existing.status,recipientCount:existing.recipient_count,jobCount:existing.job_count};
-  const eventId=uuid(),createdAt=nowIso();
+  if(existing&&!['processing','failed'].includes(existing.status))return {ok:true,deduped:true,status:existing.status,recipientCount:existing.recipient_count,jobCount:existing.job_count};
+  const eventId=existing?.id||uuid(),createdAt=nowIso();
   if(['booking_rescheduled','booking_cancelled','operational_change'].includes(eventType))await database.prepare("UPDATE notification_jobs SET status='cancelled',cancelled_at=?,failure_reason=?,terminal_reason='superseded' WHERE source_type='owned_journey' AND source_id=? AND category='customer_upcoming_reminder' AND status='scheduled'").bind(createdAt,`superseded_by_${eventType}`,entityRef).run();
   const rule=await database.prepare("SELECT enabled FROM notification_automation_rules WHERE rule_key=? AND audience='public' LIMIT 1").bind(eventConfig.ruleKey).first();
   const preferenceColumn=customerPreferenceColumn(eventType);
@@ -356,36 +335,44 @@ async function processPersonalizedEvent(database, env, config, actorId, entityTy
   const suppressionReason=!rule?.enabled?'automation_rule_disabled':recipients.length?null:revokedCount?'revoked_recipient':'no_verified_recipient';
   const eventInsert=await database.prepare('INSERT OR IGNORE INTO notification_personalized_events(id,entity_type,entity_ref,event_type,source_revision,status,dedupe_key,recipient_count,job_count,failure_reason,created_at,resolved_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
     .bind(eventId,entityType,entityRef,eventType,authoritative.sourceRevision,initialStatus,dedupeKey,recipients.length,0,suppressionReason,createdAt,initialStatus==='processing'?null:createdAt).run();
-  if(!eventInsert.meta?.changes){const duplicate=await database.prepare('SELECT status,recipient_count,job_count FROM notification_personalized_events WHERE dedupe_key=? LIMIT 1').bind(dedupeKey).first();return {ok:true,deduped:true,status:duplicate?.status||'processing',recipientCount:duplicate?.recipient_count||0,jobCount:duplicate?.job_count||0};}
+
   if(!rule?.enabled||!recipients.length){
     await audit(database,'personalized_notification_suppressed',{audience:'public',actorId,outcome:suppressionReason,metadata:{eventType,recipientCount:recipients.length}});
     return {ok:true,status:initialStatus,recipientCount:recipients.length,jobCount:0};
   }
-  const eventRecord={id:eventId,entity_ref:entityRef,source_revision:authoritative.sourceRevision,dedupe_key:dedupeKey};
+  const eventRecord={id:eventId,entity_ref:entityRef,entity_id:entityId,event_type:eventType,source_revision:authoritative.sourceRevision,dedupe_key:dedupeKey};
   let jobs=0,immediateFailures=0,scheduledFailures=0;
   for(const ownership of recipients){const delivered=await insertPersonalizedJob(database,env,eventRecord,ownership,eventConfig);jobs+=delivered.deduped?0:1;if(delivered.error)immediateFailures+=1;}
-  const activityAvailable=!authoritative.fixedExcursion||(authoritative.fixedExcursion.active!==0&&authoritative.fixedExcursion.active!==false&&String(authoritative.fixedExcursion.status||'').toLowerCase()!=='cancelled');
-  if(['booking_confirmed','booking_rescheduled','operational_change'].includes(eventType)&&activityAvailable){
+  if(['booking_confirmed','booking_rescheduled','operational_change'].includes(eventType)){
     const reminderRule=await database.prepare("SELECT enabled,offset_minutes FROM notification_automation_rules WHERE rule_key='customer_upcoming_reminder' LIMIT 1").first();
-    const scheduledFor=upcomingSchedule(authoritative.activityDate,authoritative.activityStartTime,authoritative.activityTimezone,reminderRule?.offset_minutes);
-    if(scheduledFor&&reminderRule?.enabled){
+    const reminderState=await upcomingReminderState(authoritative,reminderRule?.offset_minutes);
+    const scheduledFor=reminderState.scheduledFor;
+    if(scheduledFor&&Date.parse(scheduledFor)>Date.now()&&reminderRule?.enabled){
       const reminderConfig=preparationReminder(authoritative.preparationExperienceId);
-      for(const ownership of recipients){if(!ownership.reminders_enabled)continue;const scheduledJob=await insertPersonalizedJob(database,env,eventRecord,ownership,reminderConfig,scheduledFor);jobs+=scheduledJob.deduped?0:1;if(scheduledJob.error)scheduledFailures+=1;}
+      const reminderRecord={...eventRecord,event_type:'upcoming_reminder',source_revision:reminderState.sourceRevision};
+      for(const ownership of recipients){if(!ownership.reminders_enabled)continue;const scheduledJob=await insertPersonalizedJob(database,env,reminderRecord,ownership,reminderConfig,scheduledFor);jobs+=scheduledJob.deduped?0:1;if(scheduledJob.error)scheduledFailures+=1;}
     }
   }
-  const resolvedAt=nowIso(),finalStatus=immediateFailures===recipients.length?'failed':'sent';
+  const resolvedAt=nowIso(),finalStatus=immediateFailures||scheduledFailures?'failed':'scheduled';
   const failureReason=[immediateFailures?`${immediateFailures}_delivery_failures`:'',scheduledFailures?`${scheduledFailures}_schedule_failures`:''].filter(Boolean).join(',')||null;
   await database.prepare('UPDATE notification_personalized_events SET status=?,job_count=?,failure_reason=?,resolved_at=? WHERE id=?').bind(finalStatus,jobs,failureReason,resolvedAt,eventId).run();
   await audit(database,'personalized_notification_resolved',{audience:'public',actorId,outcome:finalStatus,metadata:{eventType,recipientCount:recipients.length,jobCount:jobs}});
   return {ok:true,status:finalStatus,recipientCount:recipients.length,jobCount:jobs};
 }
 
+export { authoritativeCustomerEvent, upcomingReminderState, processPersonalizedEvent };
 export async function onRequest(context) {
-  const { request, env } = context; if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(request, env) });
+  const { request } = context; const env = {...context.env,NOTIFICATION_INVOCATION_BUDGET:invocationBudget(),NOTIFICATION_RUNTIME_BUDGET:runtimeBudget()}; if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(request, env) });
   const url = new URL(request.url); const path = url.pathname.replace(/^\/api\/notifications\/?/, '').split('/').filter(Boolean); const route = path[0] || 'status';
-  let database; try { database = db(env); } catch { return json(request, env, 503, { ok: false, error: 'notifications_not_configured' }); }
+  let database; try { database = notificationDatabase(db(env),env.NOTIFICATION_RUNTIME_BUDGET); } catch { return json(request, env, 503, { ok: false, error: 'notifications_not_configured' }); }
   const audience = requestAudience(url);
   try {
+    if(route==='sources'&&request.method==='GET'&&/^[a-f0-9]{64}$/.test(path[1]||'')){
+      const source=await database.prepare("SELECT source_url,official_timestamp,classification FROM notification_source_dedupe WHERE source='INGV_OE_ETNA' AND source_identifier=? LIMIT 1").bind(path[1]).first();
+      if(!source)return json(request,env,404,{ok:false,error:'source_not_found'});
+      try{const link=new URL(source.source_url);if(link.protocol!=='https:'||link.hostname!=='www.ct.ingv.it')throw new Error();}catch{return json(request,env,404,{ok:false,error:'source_not_found'});}
+      return json(request,env,200,{ok:true,source});
+    }
     if (route === 'status' && request.method === 'GET') {
       const b = await budget(database, env); return json(request, env, 200, { ok: true, configured: Boolean(env.VAPID_PUBLIC_KEY), vapidPublicKey: env.VAPID_PUBLIC_KEY || '', audience, budgetMode: b.mode });
     }
@@ -422,6 +409,7 @@ export async function onRequest(context) {
         };
         if(!next.push_enabled&&!next.inapp_enabled)return json(request,env,400,{ok:false,error:'ownership_delivery_channel_required'});
         await database.prepare('UPDATE notification_subscription_ownership SET status_updates_enabled=?,operational_updates_enabled=?,reminders_enabled=?,review_reminders_enabled=?,push_enabled=?,inapp_enabled=? WHERE id=? AND subscription_id=? AND revoked_at IS NULL').bind(next.status_updates_enabled,next.operational_updates_enabled,next.reminders_enabled,next.review_reminders_enabled,next.push_enabled,next.inapp_enabled,path[1],sub.id).run();
+        for (const category of CUSTOMER_CATEGORIES) { const column=ownedPreferenceColumn(category); if(next[column]===0)await database.prepare("UPDATE notification_jobs SET status='cancelled',cancelled_at=?,terminal_reason='consent_disabled' WHERE ownership_id=? AND category=? AND status IN ('scheduled','processing') AND push_started_at IS NULL").bind(nowIso(),path[1],category).run(); }
         await audit(database,'notification_ownership_preferences_updated',{audience:'public',subscriptionId:sub.id,metadata:{journeyType:'booking'}});
         return json(request,env,200,{ok:true,id:path[1],...next});
       }
@@ -445,52 +433,11 @@ export async function onRequest(context) {
       const parsed=await body(request,4096);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});
       const config=supabaseConfig(env);if(!config)return json(request,env,503,{ok:false,error:'personalized_source_not_configured'});
       if(path[1]==='reconcile'){
-        if(!['owner','manager','finance'].includes(auth.profile.role))return json(request,env,403,{ok:false,error:'personalized_event_permission_required'});
-        const requestedId=text(parsed.value.outboxId,80);
-        if(requestedId&&!/^[-0-9a-f]{36}$/i.test(requestedId))return json(request,env,400,{ok:false,error:'invalid_outbox_id'});
-        const staleBefore=new Date(Date.now()-15*60*1000).toISOString();
-        await backendUpdate(config,'customer_notification_outbox',new URLSearchParams({status:'eq.processing',last_attempt_at:`lt.${staleBefore}`}),{
-          status:'failed',
-          next_attempt_at:nowIso(),
-          last_error_code:'stale_processing_recovered',
-          updated_at:nowIso()
-        });
-        const params=new URLSearchParams({
-          select:'id,entity_type,entity_id,event_type,status,attempt_count,next_attempt_at,created_at',
-          status:'in.(pending,failed)',
-          order:'created_at.asc',
-          limit:requestedId?'1':'25'
-        });
-        if(requestedId)params.set('id',`eq.${requestedId}`);else params.set('next_attempt_at',`lte.${nowIso()}`);
-        let rows=await backendRows(config,'customer_notification_outbox',params);
-        if(auth.profile.role==='finance')rows=rows.filter((row)=>row.event_type==='payment_received');
-        const results=[];
-        for(const row of rows){
-          const attempt=Number(row.attempt_count||0)+1;
-          await backendUpdate(config,'customer_notification_outbox',new URLSearchParams({id:`eq.${row.id}`,status:`in.(pending,failed)`}),{status:'processing',attempt_count:attempt,last_attempt_at:nowIso(),updated_at:nowIso(),last_error_code:null});
-          try{
-            const result=await processPersonalizedEvent(database,env,config,auth.user.id,row.entity_type,row.entity_id,row.event_type);
-            const invalidBusinessState=result.error==='personalized_invalid_business_state';
-            const finalStatus=invalidBusinessState||['no_verified_recipient','cancelled','invalid_business_state'].includes(result.status)
-              ?'suppressed'
-              :result.ok&&result.status!=='failed'?'delivered':'failed';
-            const retryDelay=Math.min(3600,60*(2**Math.min(attempt-1,6)));
-            await backendUpdate(config,'customer_notification_outbox',new URLSearchParams({id:`eq.${row.id}`}),{
-              status:finalStatus,
-              processed_at:finalStatus==='failed'?null:nowIso(),
-              next_attempt_at:finalStatus==='failed'?new Date(Date.now()+retryDelay*1000).toISOString():nowIso(),
-              last_error_code:finalStatus==='failed'?String(result.error||'notification_processing_failed').slice(0,120):null,
-              updated_at:nowIso()
-            });
-            results.push({outboxId:row.id,status:finalStatus,eventType:row.event_type,deduped:Boolean(result.deduped)});
-          }catch(error){
-            const retryDelay=Math.min(3600,60*(2**Math.min(attempt-1,6)));
-            const code=String(error?.message||'notification_processing_failed').replace(/[^a-zA-Z0-9:_-]/g,'_').slice(0,120);
-            await backendUpdate(config,'customer_notification_outbox',new URLSearchParams({id:`eq.${row.id}`}),{status:'failed',next_attempt_at:new Date(Date.now()+retryDelay*1000).toISOString(),last_error_code:code,updated_at:nowIso()});
-            results.push({outboxId:row.id,status:'failed',eventType:row.event_type,error:code});
-          }
-        }
-        return json(request,env,202,{ok:true,processed:results.length,items:results});
+        if(!['owner','manager','finance'].includes(auth.profile.role))return json(request,env,403,{ok:false,error:'personalized_permission_required'});
+        const requestedId=parsed.value.outboxId||null;
+        if(requestedId&&!/^[0-9a-f-]{36}$/i.test(requestedId))return json(request,env,400,{ok:false,error:'invalid_outbox_id'});
+        const result=await reconcileOutbox(database,env,processPersonalizedEvent,{id:requestedId,paymentOnly:auth.profile.role==='finance'});
+        return json(request,env,202,{ok:true,...result});
       }
       const eventType=text(parsed.value.eventType,60),entityType=text(parsed.value.entityType,60),entityId=text(parsed.value.entityId,80);
       if(entityType!=='booking_request'||!CUSTOMER_EVENT_TYPES.has(eventType)||!/^[-0-9a-f]{36}$/i.test(entityId))return json(request,env,400,{ok:false,error:'invalid_personalized_event'});
@@ -503,17 +450,19 @@ export async function onRequest(context) {
       const parsed = await body(request); if (parsed.error) return json(request, env, parsed.status, { ok:false,error:parsed.error });
       const requestedAudience = parsed.value.audience === 'admin' ? 'admin' : 'public';
       const ctx = await ownerContext(request, env, requestedAudience); if (ctx.response) return ctx.response;
-      if (!(await rateLimit(database, `device:${ctx.tokenHash}`, 12, 3600))) return json(request, env, 429, { ok:false,error:'rate_limited' });
-      const categories = cleanCategories(requestedAudience, parsed.value.categories?.length ? parsed.value.categories : requestedAudience === 'admin' ? DEFAULT_ADMIN_CATEGORIES : DEFAULT_PUBLIC_CATEGORIES);
+      const existing = await database.prepare('SELECT device_token_hash,admin_user_id FROM notification_subscriptions WHERE audience=? AND device_id=?').bind(requestedAudience,ctx.deviceId).first();
+      if (existing && (existing.device_token_hash !== ctx.tokenHash || (requestedAudience === 'admin' && existing.admin_user_id !== ctx.user.id))) return json(request,env,409,{ok:false,error:'device_identity_conflict'});
+      const limited = await enrollmentBudget(request,env,database,'enroll',ctx.tokenHash); if(limited) return json(request,env,limited.status,{ok:false,...limited});
+      const categories = cleanCategories(requestedAudience, Array.isArray(parsed.value.categories) ? parsed.value.categories : requestedAudience === 'admin' ? DEFAULT_ADMIN_CATEGORIES : DEFAULT_PUBLIC_CATEGORIES);
       if (requestedAudience === 'public' && Array.isArray(parsed.value.categories) && parsed.value.categories.some((c) => ADMIN_CATEGORIES.has(c))) return json(request, env, 403, { ok:false,error:'admin_category_forbidden' });
       const id = uuid(), now = nowIso(), inAppEndpoint = `inapp://${requestedAudience}/${(await hash(ctx.deviceId)).slice(0,32)}`;
-      await database.prepare(`INSERT INTO notification_subscriptions(id,audience,app_variant,admin_user_id,device_id,device_token_hash,endpoint,p256dh,auth,enabled,platform,user_agent,created_at,updated_at,last_seen_at) VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?,?) ON CONFLICT(audience,device_id) DO UPDATE SET admin_user_id=excluded.admin_user_id,device_token_hash=excluded.device_token_hash,enabled=1,platform=excluded.platform,user_agent=excluded.user_agent,updated_at=excluded.updated_at,last_seen_at=excluded.last_seen_at`)
+      await database.prepare(`INSERT INTO notification_subscriptions(id,audience,app_variant,admin_user_id,device_id,device_token_hash,endpoint,p256dh,auth,enabled,platform,user_agent,created_at,updated_at,last_seen_at) VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?,?) ON CONFLICT(audience,device_id) DO UPDATE SET enabled=1,platform=excluded.platform,user_agent=excluded.user_agent,updated_at=excluded.updated_at,last_seen_at=excluded.last_seen_at WHERE notification_subscriptions.device_token_hash=excluded.device_token_hash AND notification_subscriptions.admin_user_id IS excluded.admin_user_id`)
         .bind(id,requestedAudience,requestedAudience,requestedAudience==='admin'?ctx.user.id:null,ctx.deviceId,ctx.tokenHash,inAppEndpoint,null,null,text(parsed.value.platform,80),text(request.headers.get('User-Agent'),400),now,now,now).run();
       const row = await resolveSubscription(database, ctx, requestedAudience);
-      if (!row) return json(request, env, 500, { ok:false,error:'subscription_create_failed' });
+      if (!row) return json(request, env, 409, { ok:false,error:'device_identity_conflict' });
       const existingPref = await database.prepare('SELECT subscription_id FROM notification_preferences WHERE subscription_id=?').bind(row.id).first();
       if (!existingPref) {
-        await database.prepare('INSERT INTO notification_preferences(subscription_id,language_preference,resolved_locale,categories_json,quiet_hours_enabled,quiet_start,quiet_end,timezone,updated_at) VALUES(?,?,?,?,0,NULL,NULL,?,?)')
+        await database.prepare('INSERT OR IGNORE INTO notification_preferences(subscription_id,language_preference,resolved_locale,categories_json,quiet_hours_enabled,quiet_start,quiet_end,timezone,updated_at) VALUES(?,?,?,?,0,NULL,NULL,?,?)')
           .bind(row.id,cleanLanguage(parsed.value.languagePreference),cleanLocale(parsed.value.resolvedLocale),JSON.stringify(categories),text(parsed.value.timezone,100)||'Europe/Rome',now).run();
       }
       await audit(database,'notification_device_registered',{audience:requestedAudience,actorId:requestedAudience==='admin'?ctx.user.id:ctx.deviceId,subscriptionId:row.id});
@@ -525,31 +474,43 @@ export async function onRequest(context) {
       const requestedAudience = parsed.value.audience === 'admin' ? 'admin' : 'public';
       if (parsed.value.audience && parsed.value.audience !== requestedAudience) return json(request, env, 400, { ok:false,error:'invalid_audience' });
       const ctx = await ownerContext(request, env, requestedAudience); if (ctx.response) return ctx.response;
-      if (!(await rateLimit(database, `subscribe:${ctx.tokenHash}`, 8, 3600))) return json(request, env, 429, { ok:false,error:'rate_limited' });
-      const sub = parsed.value.subscription || {}; const endpoint = text(sub.endpoint, 2000); if (!endpointValid(endpoint)) return json(request, env, 400, { ok:false,error:'invalid_push_subscription' });
-      const categories = cleanCategories(requestedAudience, parsed.value.categories?.length ? parsed.value.categories : requestedAudience === 'admin' ? DEFAULT_ADMIN_CATEGORIES : DEFAULT_PUBLIC_CATEGORIES);
+      const existing = await database.prepare('SELECT device_token_hash,admin_user_id FROM notification_subscriptions WHERE audience=? AND device_id=?').bind(requestedAudience,ctx.deviceId).first();
+      if (existing && (existing.device_token_hash !== ctx.tokenHash || (requestedAudience === 'admin' && existing.admin_user_id !== ctx.user.id))) return json(request,env,409,{ok:false,error:'device_identity_conflict'});
+      const limited = await enrollmentBudget(request,env,database,'enroll',ctx.tokenHash); if(limited) return json(request,env,limited.status,{ok:false,...limited});
+      const sub = parsed.value.subscription || {}; const endpoint = sub.endpoint; if (!await validatePushSubscription({endpoint,p256dh:sub.keys?.p256dh,auth:sub.keys?.auth})) return json(request, env, 400, { ok:false,error:'invalid_push_subscription' });
+      const categories = cleanCategories(requestedAudience, Array.isArray(parsed.value.categories) ? parsed.value.categories : requestedAudience === 'admin' ? DEFAULT_ADMIN_CATEGORIES : DEFAULT_PUBLIC_CATEGORIES);
       if (requestedAudience === 'public' && Array.isArray(parsed.value.categories) && parsed.value.categories.some((c) => ADMIN_CATEGORIES.has(c))) return json(request, env, 403, { ok:false,error:'admin_category_forbidden' });
       const id = uuid(), now = nowIso();
-      await database.prepare(`INSERT INTO notification_subscriptions(id,audience,app_variant,admin_user_id,device_id,device_token_hash,endpoint,p256dh,auth,enabled,platform,user_agent,created_at,updated_at,last_seen_at) VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?,?) ON CONFLICT(audience,device_id) DO UPDATE SET admin_user_id=excluded.admin_user_id,device_token_hash=excluded.device_token_hash,endpoint=excluded.endpoint,p256dh=excluded.p256dh,auth=excluded.auth,enabled=1,platform=excluded.platform,user_agent=excluded.user_agent,updated_at=excluded.updated_at,last_seen_at=excluded.last_seen_at`)
+      await database.prepare(`INSERT INTO notification_subscriptions(id,audience,app_variant,admin_user_id,device_id,device_token_hash,endpoint,p256dh,auth,enabled,platform,user_agent,created_at,updated_at,last_seen_at) VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?,?) ON CONFLICT(audience,device_id) DO UPDATE SET endpoint=excluded.endpoint,p256dh=excluded.p256dh,auth=excluded.auth,enabled=1,platform=excluded.platform,user_agent=excluded.user_agent,updated_at=excluded.updated_at,last_seen_at=excluded.last_seen_at WHERE notification_subscriptions.device_token_hash=excluded.device_token_hash AND notification_subscriptions.admin_user_id IS excluded.admin_user_id`)
         .bind(id,requestedAudience,requestedAudience,requestedAudience==='admin'?ctx.user.id:null,ctx.deviceId,ctx.tokenHash,endpoint,text(sub.keys?.p256dh,300),text(sub.keys?.auth,300),text(parsed.value.platform,80),text(request.headers.get('User-Agent'),400),now,now,now).run();
-      const row = await resolveSubscription(database, ctx, requestedAudience); const prefLang = cleanLanguage(parsed.value.languagePreference); const locale = cleanLocale(parsed.value.resolvedLocale);
+      const row = await resolveSubscription(database, ctx, requestedAudience); if(!row)return json(request,env,409,{ok:false,error:'device_identity_conflict'}); const prefLang = cleanLanguage(parsed.value.languagePreference); const locale = cleanLocale(parsed.value.resolvedLocale);
       await database.prepare('INSERT INTO notification_preferences(subscription_id,language_preference,resolved_locale,categories_json,quiet_hours_enabled,quiet_start,quiet_end,timezone,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(subscription_id) DO UPDATE SET language_preference=excluded.language_preference,resolved_locale=excluded.resolved_locale,categories_json=excluded.categories_json,quiet_hours_enabled=excluded.quiet_hours_enabled,quiet_start=excluded.quiet_start,quiet_end=excluded.quiet_end,timezone=excluded.timezone,updated_at=excluded.updated_at')
         .bind(row.id,prefLang,locale,JSON.stringify(categories),parsed.value.quietHoursEnabled?1:0,validTime(parsed.value.quietStart)?text(parsed.value.quietStart,5):null,validTime(parsed.value.quietEnd)?text(parsed.value.quietEnd,5):null,text(parsed.value.timezone,100)||'Europe/Rome',now).run();
       await audit(database,'notifications_enabled',{audience:requestedAudience,actorId:requestedAudience==='admin'?ctx.user.id:ctx.deviceId,subscriptionId:row.id}); return json(request, env, 201, { ok:true, subscriptionId:row.id, audience:requestedAudience });
     }
 
-    if (['unsubscribe','preferences','inbox','test'].includes(route)) {
+    if (['unsubscribe','forget-device','preferences','inbox','test'].includes(route)) {
       const ctx = await ownerContext(request, env, audience); if (ctx.response) return ctx.response; const sub = await resolveSubscription(database,ctx,audience); if (!sub) return json(request,env,404,{ok:false,error:'subscription_not_found'});
+      if(route==='forget-device'&&request.method==='POST'){
+        await database.batch([
+          database.prepare("UPDATE notification_ownership_claims SET status='revoked',revoked_at=? WHERE claimed_subscription_id=?").bind(nowIso(),sub.id),
+          database.prepare('DELETE FROM notification_subscriptions WHERE id=? AND device_token_hash=?').bind(sub.id,ctx.tokenHash)
+        ]);return json(request,env,200,{ok:true});
+      }
       if (route === 'unsubscribe' && request.method === 'POST') { if (!(await rateLimit(database,`unsubscribe:${ctx.tokenHash}`,12,3600))) return json(request,env,429,{ok:false,error:'rate_limited'}); await database.prepare('UPDATE notification_subscriptions SET endpoint=?,p256dh=NULL,auth=NULL,enabled=1,updated_at=? WHERE id=?').bind(`inapp://${audience}/${(await hash(ctx.deviceId)).slice(0,32)}`,nowIso(),sub.id).run(); await audit(database,'notifications_disabled',{audience,actorId:audience==='admin'?ctx.user.id:ctx.deviceId,subscriptionId:sub.id}); return json(request,env,200,{ok:true}); }
-      if (route === 'preferences' && request.method === 'GET') { const pref=await database.prepare('SELECT * FROM notification_preferences WHERE subscription_id=?').bind(sub.id).first(); return json(request,env,200,{ok:true,pushEnabled:endpointValid(sub.endpoint),preferences:{languagePreference:pref?.language_preference||'auto',resolvedLocale:pref?.resolved_locale||'it',categories:parseJson(pref?.categories_json,'[]'),quietHoursEnabled:Boolean(pref?.quiet_hours_enabled),quietStart:pref?.quiet_start||'',quietEnd:pref?.quiet_end||'',timezone:pref?.timezone||'Europe/Rome'}}); }
+      if (route === 'preferences' && request.method === 'GET') { const pref=await database.prepare('SELECT * FROM notification_preferences WHERE subscription_id=?').bind(sub.id).first(); return json(request,env,200,{ok:true,pushEnabled:endpointValid(sub.endpoint),endpointFingerprint:await hash(sub.endpoint),preferences:{languagePreference:pref?.language_preference||'auto',resolvedLocale:pref?.resolved_locale||'it',categories:parseJson(pref?.categories_json,'[]'),quietHoursEnabled:Boolean(pref?.quiet_hours_enabled),quietStart:pref?.quiet_start||'',quietEnd:pref?.quiet_end||'',timezone:pref?.timezone||'Europe/Rome'}}); }
       if (route === 'preferences' && request.method === 'PATCH') {
-        const parsed=await body(request); if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error}); const current=await database.prepare('SELECT * FROM notification_preferences WHERE subscription_id=?').bind(sub.id).first(); const categories=parsed.value.categories?cleanCategories(audience,parsed.value.categories):parseJson(current?.categories_json,'[]'); if(audience==='public'&&Array.isArray(parsed.value.categories)&&parsed.value.categories.some((c)=>ADMIN_CATEGORIES.has(c)))return json(request,env,403,{ok:false,error:'admin_category_forbidden'});
-        const lang=parsed.value.languagePreference?cleanLanguage(parsed.value.languagePreference):current?.language_preference||'auto'; const locale=parsed.value.resolvedLocale?cleanLocale(parsed.value.resolvedLocale):current?.resolved_locale||'it'; const qs=parsed.value.quietStart!==undefined?text(parsed.value.quietStart,5):current?.quiet_start; const qe=parsed.value.quietEnd!==undefined?text(parsed.value.quietEnd,5):current?.quiet_end; if(!validTime(qs)||!validTime(qe))return json(request,env,400,{ok:false,error:'invalid_quiet_hours'});
+        const parsed=await body(request); if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});
+        if(Object.keys(parsed.value).length===1&&parsed.value.resolvedLocale){
+          await database.prepare("UPDATE notification_preferences SET resolved_locale=?,updated_at=? WHERE subscription_id=? AND language_preference='auto'").bind(cleanLocale(parsed.value.resolvedLocale),nowIso(),sub.id).run();return json(request,env,200,{ok:true});
+        }
+        const current=await database.prepare('SELECT * FROM notification_preferences WHERE subscription_id=?').bind(sub.id).first(); const categories=parsed.value.categories?cleanCategories(audience,parsed.value.categories):parseJson(current?.categories_json,'[]'); if(audience==='public'&&Array.isArray(parsed.value.categories)&&parsed.value.categories.some((c)=>ADMIN_CATEGORIES.has(c)))return json(request,env,403,{ok:false,error:'admin_category_forbidden'});
+        const lang=parsed.value.languagePreference?cleanLanguage(parsed.value.languagePreference):current?.language_preference||'auto'; const locale=lang==='auto'&&parsed.value.resolvedLocale?cleanLocale(parsed.value.resolvedLocale):lang!=='auto'?lang:current?.resolved_locale||'it'; const qs=parsed.value.quietStart!==undefined?text(parsed.value.quietStart,5):current?.quiet_start; const qe=parsed.value.quietEnd!==undefined?text(parsed.value.quietEnd,5):current?.quiet_end; if(!validTime(qs)||!validTime(qe))return json(request,env,400,{ok:false,error:'invalid_quiet_hours'});
         await database.prepare('UPDATE notification_preferences SET language_preference=?,resolved_locale=?,categories_json=?,quiet_hours_enabled=?,quiet_start=?,quiet_end=?,timezone=?,updated_at=? WHERE subscription_id=?').bind(lang,locale,JSON.stringify(categories),parsed.value.quietHoursEnabled===undefined?(current?.quiet_hours_enabled||0):(parsed.value.quietHoursEnabled?1:0),qs||null,qe||null,text(parsed.value.timezone,100)||current?.timezone||'Europe/Rome',nowIso(),sub.id).run(); await audit(database,'preferences_updated',{audience,actorId:audience==='admin'?ctx.user.id:ctx.deviceId,subscriptionId:sub.id}); return json(request,env,200,{ok:true});
       }
       if (route === 'inbox' && request.method === 'GET') { const rows=await database.prepare('SELECT id,audience,category,title,body,destination_url,created_at,read_at,dismissed_at FROM notification_inbox WHERE subscription_id=? AND dismissed_at IS NULL ORDER BY created_at DESC LIMIT 100').bind(sub.id).all(); return json(request,env,200,{ok:true,items:rows.results||[]}); }
       if (route === 'test' && request.method === 'POST') {
-        if (!(await rateLimit(database, `test:${sub.id}`, 1, 60))) return json(request, env, 429, { ok: false, error: 'rate_limited' });
+        const limited = await enrollmentBudget(request,env,database,'test',ctx.tokenHash); if(limited)return json(request,env,limited.status,{ok:false,...limited});
         const locale = (await database.prepare('SELECT resolved_locale FROM notification_preferences WHERE subscription_id=?').bind(sub.id).first())?.resolved_locale === 'en' ? 'en' : 'it';
         const event = {
           id: uuid(), audience, category: audience === 'admin' ? 'operational_failures' : 'news', origin: 'test',
@@ -568,7 +529,7 @@ export async function onRequest(context) {
           await audit(database, 'test_notification_sent', { audience, actorId: audience === 'admin' ? ctx.user.id : ctx.deviceId, subscriptionId: sub.id, outcome: 'in_app_only' });
           return json(request, env, 200, { ok: true, pushSkipped: true });
         }
-        await increment(database, 'push_attempts');
+        if(!await reservePush(database,env,event))return json(request,env,429,{ok:false,error:'daily_budget_exhausted',retryAfter:3600});
         const notification = audience === 'public' ? { category: event.category, title, body: bodyText, url: event.destination_url } : undefined;
         const push = await sendWebPush(sub, env, { notification });
         if (push.dead) await database.prepare('UPDATE notification_subscriptions SET endpoint=?,p256dh=NULL,auth=NULL,enabled=1,updated_at=? WHERE id=?')
@@ -602,19 +563,26 @@ export async function onRequest(context) {
       };
       const t = templates[category]; const dedupeKey = text(parsed.value.dedupeKey, 180); if (!dedupeKey) return json(request, env, 400, { ok: false, error: 'dedupe_key_required' });
       const eventDedupe = `ingest:${dedupeKey}`;
-      const existing = await database.prepare('SELECT id FROM notification_events WHERE dedupe_key=?').bind(eventDedupe).first(); if (existing) return json(request, env, 200, { ok: true, deduped: true });
+      const existing = await database.prepare('SELECT id,status FROM notification_events WHERE dedupe_key=?').bind(eventDedupe).first(); if (existing) return json(request, env, 200, { ok: true, deduped: true, status:existing.status });
       const ruleKey = ADMIN_AUTOMATION_RULES[category] || null;
       const rule = ruleKey ? await database.prepare('SELECT * FROM notification_automation_rules WHERE rule_key=? AND audience=\'admin\' LIMIT 1').bind(ruleKey).first() : null;
       if (rule && !rule.enabled) { await audit(database, 'automation_job_suppressed', { audience: 'admin', outcome: 'rule_disabled', metadata: { ruleKey, sourceType: 'trusted_ingest' } }); return json(request, env, 202, { ok: true, suppressed: true, reason: 'automation_rule_disabled' }); }
-      const event = { id: uuid(), audience: 'admin', category, origin: 'trusted_ingest', title_it: t[0], body_it: t[1], title_en: t[2], body_en: t[3], destination_url: text(parsed.value.destinationUrl, 500) || t[4], dedupe_key: eventDedupe, priority: category === 'security_alerts' ? 'critical' : category === 'operational_failures' ? 'high' : 'normal' };
+      const event = { id: uuid(), audience: 'admin', category, rule_key:ruleKey, origin: 'trusted_ingest', title_it: t[0], body_it: t[1], title_en: t[2], body_en: t[3], destination_url: t[4], dedupe_key: eventDedupe, priority: category === 'security_alerts' ? 'critical' : category === 'operational_failures' ? 'high' : 'normal' };
       const jobId = uuid(); const jobDedupe = `job:${eventDedupe}`; const createdAt = nowIso();
-      await database.prepare('INSERT INTO notification_jobs(id,rule_key,source_type,source_id,source_revision,audience,category,title_it,body_it,title_en,body_en,destination_url,priority,scheduled_for,status,dedupe_key,created_at,processing_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(jobId,ruleKey,'trusted_ingest',dedupeKey,'1','admin',category,event.title_it,event.body_it,event.title_en,event.body_en,event.destination_url,event.priority,createdAt,'processing',jobDedupe,createdAt,createdAt).run();
+      // Persist the event and continuation together before any provider work.
+      await database.batch([
+        database.prepare('INSERT OR IGNORE INTO notification_events(id,audience,category,origin,title_it,body_it,title_en,body_en,destination_url,dedupe_key,priority,created_at,status,rule_key) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(event.id,event.audience,event.category,event.origin,event.title_it,event.body_it,event.title_en,event.body_en,event.destination_url,event.dedupe_key,event.priority,createdAt,'sending',ruleKey),
+        database.prepare('INSERT OR IGNORE INTO notification_jobs(id,rule_key,source_type,source_id,source_revision,audience,category,title_it,body_it,title_en,body_en,destination_url,priority,scheduled_for,status,dedupe_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(jobId,ruleKey,'trusted_ingest',dedupeKey,'1','admin',category,event.title_it,event.body_it,event.title_en,event.body_en,event.destination_url,event.priority,createdAt,'scheduled',jobDedupe,createdAt)
+      ]);
+      const token=uuid(),expires=new Date(Date.now()+30000).toISOString();
+      const claim=await database.prepare("UPDATE notification_jobs SET status='processing',processing_at=?,lease_token=?,lease_expires_at=? WHERE id=? AND status='scheduled' RETURNING id").bind(createdAt,token,expires,jobId).first();
+      if(!claim)return json(request,env,202,{ok:true,deduped:true,status:'queued'});
+      event.job_id=jobId;event.job_lease_token=token;
       await audit(database, 'automation_job_created', { audience: 'admin', metadata: { jobId, ruleKey, sourceType: 'trusted_ingest' } });
       try {
-        await database.prepare('INSERT INTO notification_events(id,audience,category,origin,title_it,body_it,title_en,body_en,destination_url,dedupe_key,priority,created_at,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(event.id,event.audience,event.category,event.origin,event.title_it,event.body_it,event.title_en,event.body_en,event.destination_url,event.dedupe_key,event.priority,nowIso(),'sending').run();
-        const result = await fanout(database, env, event); const sentAt = nowIso(); await database.prepare("UPDATE notification_events SET status='sent',sent_at=? WHERE id=?").bind(sentAt,event.id).run(); await database.prepare("UPDATE notification_jobs SET status='sent',sent_at=?,failure_reason=NULL WHERE id=? AND status='processing'").bind(sentAt,jobId).run(); await audit(database, 'automation_job_sent', { audience: 'admin', metadata: { jobId, ruleKey, attempted: result.attempted, sent: result.sent, failed: result.failed } }); return json(request, env, 202, { ok: true, jobId, delivery: result });
+        const result = await fanout(database, env, event); const sentAt = nowIso(); await database.prepare("UPDATE notification_jobs SET status=?,sent_at=?,failure_reason=NULL WHERE id=? AND status='processing' AND lease_token=? AND lease_expires_at>?").bind(result.complete?(result.counts?.unknown||result.counts?.failed?'failed':'sent'):'scheduled',result.complete?sentAt:null,jobId,token,nowIso()).run(); await audit(database, 'automation_job_sent', { audience: 'admin', metadata: { jobId, ruleKey, attempted: result.attempted, sent: result.sent, failed: result.failed } }); return json(request, env, 202, { ok: true, jobId, delivery: result });
       } catch (error) {
-        const reason = String(error?.message || error).slice(0, 240); await database.prepare("UPDATE notification_jobs SET status='failed',failure_reason=? WHERE id=? AND status='processing'").bind(reason,jobId).run(); await audit(database,'automation_job_failed',{audience:'admin',outcome:'failed',metadata:{jobId,ruleKey,error:reason.slice(0,120)}}); throw error;
+        const reason = String(error?.message || error).slice(0, 240); await database.prepare("UPDATE notification_jobs SET status='scheduled',failure_reason=? WHERE id=? AND status='processing' AND lease_token=? AND lease_expires_at>?").bind(reason,jobId,token,nowIso()).run(); await audit(database,'automation_job_failed',{audience:'admin',outcome:'failed',metadata:{jobId,ruleKey,error:reason.slice(0,120)}}); throw error;
       }
     }
 
@@ -631,10 +599,23 @@ export async function onRequest(context) {
 
     if (route === 'campaigns') {
       const auth=await requireAdmin(request,env); if(auth.response)return auth.response; if(!['owner','manager'].includes(auth.profile.role))return json(request,env,403,{ok:false,error:'campaign_permission_required'});
-      if(request.method==='GET'){const rows=await database.prepare('SELECT id,category,title_it,title_en,destination_url,language_target,scheduled_for,status,created_at,sent_at,cancelled_at,failure_reason FROM notification_campaigns ORDER BY created_at DESC LIMIT 100').all();return json(request,env,200,{ok:true,items:rows.results||[]});}
+      if(request.method==='GET'){const rows=await database.prepare('SELECT id,category,title_it,body_it,title_en,body_en,destination_url,language_target,scheduled_for,status,created_at,updated_at,sent_at,cancelled_at,failure_reason FROM notification_campaigns ORDER BY created_at DESC LIMIT 100').all();return json(request,env,200,{ok:true,items:rows.results||[]});}
       if(path[1]&&path[2]==='cancel'&&request.method==='PATCH'){const now=nowIso();const result=await database.prepare("UPDATE notification_campaigns SET status='cancelled',cancelled_at=?,updated_at=? WHERE id=? AND status IN ('draft','scheduled')").bind(now,now,path[1]).run();if(!result.meta?.changes)return json(request,env,409,{ok:false,error:'campaign_not_cancellable'});await audit(database,'campaign_cancelled',{audience:'public',actorId:auth.user.id,campaignId:path[1]});return json(request,env,200,{ok:true,id:path[1],status:'cancelled'});}
+      if(path[1]&&request.method==='PATCH'){
+        const parsed=await body(request);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error});const input=parsed.value;
+        if(!CAMPAIGN_CATEGORIES.has(input.category)||!['it','en','all'].includes(input.languageTarget)||!input.updatedAt)return json(request,env,400,{ok:false,error:'invalid_campaign'});
+        for(const [key,max] of [['titleIt',120],['titleEn',120],['bodyIt',280],['bodyEn',280]])if(typeof input[key]!=='string'||input[key].length>max)return json(request,env,400,{ok:false,error:'invalid_campaign_length'});
+        if((input.languageTarget!=='en'&&(!input.titleIt.trim()||!input.bodyIt.trim()))||(input.languageTarget!=='it'&&(!input.titleEn.trim()||!input.bodyEn.trim())))return json(request,env,400,{ok:false,error:'campaign_language_fields_required'});
+        if(input.scheduledFor&&Number.isNaN(Date.parse(input.scheduledFor)))return json(request,env,400,{ok:false,error:'invalid_schedule'});
+        if(input.destinationUrl&&cleanDestination(input.destinationUrl,'')!==input.destinationUrl)return json(request,env,400,{ok:false,error:'internal_destination_required'});
+        const status=input.saveDraft?'draft':input.scheduledFor&&Date.parse(input.scheduledFor)>Date.now()?'scheduled':'queued';
+        const updated=await database.prepare("UPDATE notification_campaigns SET category=?,title_it=?,body_it=?,title_en=?,body_en=?,destination_url=?,language_target=?,scheduled_for=?,status=?,updated_at=? WHERE id=? AND status='draft' AND updated_at=? RETURNING id")
+          .bind(input.category,text(input.titleIt,120),text(input.bodyIt,280),text(input.titleEn,120),text(input.bodyEn,280),input.destinationUrl||'/',input.languageTarget,input.scheduledFor||null,status,nowIso(),path[1],input.updatedAt).first();
+        if(!updated)return json(request,env,409,{ok:false,error:'campaign_changed_or_not_draft'});
+        return json(request,env,200,{ok:true,id:updated.id,status});
+      }
       if(request.method==='POST'){
-        const parsed=await body(request);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error}); if(!(await rateLimit(database,`campaign:${auth.user.id}`,5,60)))return json(request,env,429,{ok:false,error:'rate_limited'}); const category=text(parsed.value.category,60);if(!CAMPAIGN_CATEGORIES.has(category))return json(request,env,400,{ok:false,error:'invalid_campaign_category'}); const languageTarget=['it','en'].includes(parsed.value.languageTarget)?parsed.value.languageTarget:'all'; const ti=text(parsed.value.titleIt,120),bi=text(parsed.value.bodyIt,280),te=text(parsed.value.titleEn,120),be=text(parsed.value.bodyEn,280);if((languageTarget!=='en'&&(!ti||!bi))||(languageTarget!=='it'&&(!te||!be)))return json(request,env,400,{ok:false,error:'campaign_language_fields_required'}); const scheduled=text(parsed.value.scheduledFor,40); if(scheduled&&Number.isNaN(Date.parse(scheduled)))return json(request,env,400,{ok:false,error:'invalid_schedule'}); const saveDraft=parsed.value.saveDraft===true; const id=uuid(),dedupe=`campaign:${id}`,status=saveDraft?'draft':scheduled&&Date.parse(scheduled)>Date.now()?'scheduled':'queued'; const destination=cleanDestination(parsed.value.destinationUrl,'/'); await database.prepare('INSERT INTO notification_campaigns(id,created_by,category,title_it,body_it,title_en,body_en,destination_url,language_target,scheduled_for,status,dedupe_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,auth.user.id,category,ti||null,bi||null,te||null,be||null,destination,languageTarget,scheduled||null,status,dedupe,nowIso(),nowIso()).run(); await audit(database,status==='scheduled'?'campaign_scheduled':status==='draft'?'campaign_draft_saved':'campaign_created',{audience:'public',actorId:auth.user.id,campaignId:id}); if(status==='queued'){const event={id:uuid(),audience:'public',category,origin:'admin_campaign',title_it:ti||te,body_it:bi||be,title_en:te||ti,body_en:be||bi,destination_url:destination,dedupe_key:dedupe,priority:'normal',language_target:languageTarget};await database.prepare('INSERT INTO notification_events(id,audience,category,origin,title_it,body_it,title_en,body_en,destination_url,dedupe_key,priority,created_at,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(event.id,event.audience,event.category,event.origin,event.title_it,event.body_it,event.title_en,event.body_en,event.destination_url,event.dedupe_key,event.priority,nowIso(),'sending').run();const sent=await fanout(database,env,event);await database.prepare("UPDATE notification_events SET status='sent',sent_at=? WHERE id=?").bind(nowIso(),event.id).run();await database.prepare("UPDATE notification_campaigns SET status='sent',sent_at=?,updated_at=? WHERE id=?").bind(nowIso(),nowIso(),id).run();await audit(database,'campaign_sent',{audience:'public',actorId:auth.user.id,campaignId:id,metadata:{attempted:sent.attempted,sent:sent.sent,failed:sent.failed}});return json(request,env,201,{ok:true,id,status:'sent',delivery:sent});} return json(request,env,201,{ok:true,id,status});
+const parsed=await body(request);if(parsed.error)return json(request,env,parsed.status,{ok:false,error:parsed.error}); for(const [key,max] of [['titleIt',120],['titleEn',120],['bodyIt',280],['bodyEn',280]])if(String(parsed.value[key]||'').length>max)return json(request,env,400,{ok:false,error:'invalid_campaign_length'}); if(parsed.value.destinationUrl&&cleanDestination(parsed.value.destinationUrl,'')!==parsed.value.destinationUrl)return json(request,env,400,{ok:false,error:'internal_destination_required'}); if(!(await rateLimit(database,`campaign:${auth.user.id}`,5,60)))return json(request,env,429,{ok:false,error:'rate_limited'}); const category=text(parsed.value.category,60);if(!CAMPAIGN_CATEGORIES.has(category))return json(request,env,400,{ok:false,error:'invalid_campaign_category'}); const languageTarget=['it','en'].includes(parsed.value.languageTarget)?parsed.value.languageTarget:'all'; const ti=text(parsed.value.titleIt,120),bi=text(parsed.value.bodyIt,280),te=text(parsed.value.titleEn,120),be=text(parsed.value.bodyEn,280);if((languageTarget!=='en'&&(!ti||!bi))||(languageTarget!=='it'&&(!te||!be)))return json(request,env,400,{ok:false,error:'campaign_language_fields_required'}); const scheduled=text(parsed.value.scheduledFor,40); if(scheduled&&Number.isNaN(Date.parse(scheduled)))return json(request,env,400,{ok:false,error:'invalid_schedule'}); const saveDraft=parsed.value.saveDraft===true; const id=uuid(),dedupe=`campaign:${id}`,status=saveDraft?'draft':scheduled&&Date.parse(scheduled)>Date.now()?'scheduled':'queued'; const destination=cleanDestination(parsed.value.destinationUrl,'/'); await database.prepare('INSERT INTO notification_campaigns(id,created_by,category,title_it,body_it,title_en,body_en,destination_url,language_target,scheduled_for,status,dedupe_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,auth.user.id,category,ti||null,bi||null,te||null,be||null,destination,languageTarget,scheduled||null,status,dedupe,nowIso(),nowIso()).run(); await audit(database,status==='scheduled'?'campaign_scheduled':status==='draft'?'campaign_draft_saved':'campaign_created',{audience:'public',actorId:auth.user.id,campaignId:id}); if(status==='queued'){const token=uuid(),expires=new Date(Date.now()+30000).toISOString();const claim=await database.prepare("UPDATE notification_campaigns SET status='processing',processing_at=?,lease_token=?,lease_expires_at=? WHERE id=? AND status='queued' RETURNING id").bind(nowIso(),token,expires,id).first();if(!claim)return json(request,env,201,{ok:true,id,status:'queued'});const event={id:uuid(),audience:'public',category,origin:'admin_campaign',title_it:ti||te,body_it:bi||be,title_en:te||ti,body_en:be||bi,destination_url:destination,dedupe_key:dedupe,priority:'normal',language_target:languageTarget,campaign_id:id,campaign_lease_token:token};await database.prepare('INSERT INTO notification_events(id,audience,category,origin,title_it,body_it,title_en,body_en,destination_url,dedupe_key,priority,created_at,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(event.id,event.audience,event.category,event.origin,event.title_it,event.body_it,event.title_en,event.body_en,event.destination_url,event.dedupe_key,event.priority,nowIso(),'sending').run();const sent=await fanout(database,env,event);const finalStatus=sent.complete?(sent.counts?.failed||sent.counts?.unknown?'failed':'sent'):'queued';await database.prepare("UPDATE notification_campaigns SET status=?,sent_at=?,updated_at=? WHERE id=? AND lease_token=? AND lease_expires_at>?").bind(finalStatus,finalStatus==='sent'?nowIso():null,nowIso(),id,token,nowIso()).run();await audit(database,'campaign_sent',{audience:'public',actorId:auth.user.id,campaignId:id,metadata:{attempted:sent.attempted,sent:sent.sent,failed:sent.failed}});return json(request,env,201,{ok:true,id,status:finalStatus,delivery:sent});} return json(request,env,201,{ok:true,id,status});
       }
     }
 

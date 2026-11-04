@@ -41,9 +41,9 @@ export async function issueNotificationOwnershipClaim(database, { entityType, en
   const expiresAt = new Date(now.getTime() + Math.max(60_000, Math.min(CLAIM_TTL_MS, Number(expiresInMs) || CLAIM_TTL_MS))).toISOString();
   const id = uuid();
   await database.prepare(`INSERT INTO notification_ownership_claims
-    (id,token_hash,entity_type,entity_ref,journey_type,status,expires_at,created_at)
-    VALUES(?,?,?,?,?,'pending',?,?)`)
-    .bind(id, tokenHash, entityType, entityRef, journeyType, expiresAt, now.toISOString()).run();
+    (id,token_hash,entity_type,entity_ref,journey_type,status,expires_at,created_at,entity_id)
+    VALUES(?,?,?,?,?,'pending',?,?,?)`)
+    .bind(id, tokenHash, entityType, entityRef, journeyType, expiresAt, now.toISOString(), entityId.trim()).run();
   return { token, expiresAt, entityType, journeyType };
 }
 

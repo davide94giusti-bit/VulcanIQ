@@ -1,7 +1,5 @@
+import { collectKeysetRows } from './keysetRows.js';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
-import { createAvailabilityBlock } from './availabilityService.js';
-import { cancelUnpaidPartnerCommissionsForSource, upsertPartnerCommissionForSource } from './partnerCommissions.js';
-import { createFinanceEntry, updateFinanceEntry } from './financeService.js';
 import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
 import { publishCustomerNotificationEvent } from './notificationService.js';
 
@@ -29,13 +27,13 @@ const requestFields = `
   notification_email_status, notification_email_sent_at, notification_email_error, notification_email_attempts,
   created_by_admin, availability_block_id
 `;
+const requestVersions = new Map();
 
 function textOrNull(value) {
   const clean = typeof value === 'string' ? value.trim() : value;
   return clean === '' || clean === undefined ? null : clean;
 }
 
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 const HEARD_ABOUT_US_VALUES = new Set([
   'instagram',
@@ -58,47 +56,6 @@ function normalizeHeardAboutUsValue(value, { allowAdmin = false } = {}) {
   return clean;
 }
 
-function compactDateForCode(value) {
-  const clean = String(value || '').trim();
-  const match = clean.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return '';
-  return `${match[1]}${match[2]}${match[3]}`;
-}
-
-function randomCodeSuffix() {
-  let suffix = '';
-  for (let index = 0; index < 4; index += 1) {
-    suffix += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
-  }
-  return suffix;
-}
-
-function stableCodeSuffix(value) {
-  const clean = String(value || '').trim();
-  if (!clean) return '';
-  let hash = 0;
-  for (let index = 0; index < clean.length; index += 1) {
-    hash = ((hash << 5) - hash + clean.charCodeAt(index)) >>> 0;
-  }
-  let suffix = '';
-  for (let index = 0; index < 4; index += 1) {
-    suffix += CODE_ALPHABET[hash % CODE_ALPHABET.length];
-    hash = Math.floor(hash / CODE_ALPHABET.length) || (hash + index + 17);
-  }
-  return suffix;
-}
-
-function makeBookingCode(date) {
-  const datePart = compactDateForCode(date) || compactDateForCode(new Date().toISOString());
-  return `VUL-${datePart}-${randomCodeSuffix()}`;
-}
-
-function stableBookingCodeForRequest(request) {
-  if (request?.booking_code) return request.booking_code;
-  const datePart = compactDateForCode(request?.requested_date) || compactDateForCode(request?.created_at) || compactDateForCode(new Date().toISOString());
-  const suffix = stableCodeSuffix(`${request?.id || ''}|${datePart}|${request?.customer_email || ''}|${request?.customer_phone || ''}`);
-  return suffix ? `VUL-${datePart}-${suffix}` : makeBookingCode(datePart);
-}
 
 function intOrNull(value) {
   if (value === '' || value === null || value === undefined) return null;
@@ -106,33 +63,8 @@ function intOrNull(value) {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-async function reverseOrVoidFinanceForRequest(request, userId = null, reason = '') {
-  if (!request?.id || !isSupabaseConfigured) return;
-  const now = new Date().toISOString();
-  const { data: entries, error } = await supabase
-    .from('finance_entries')
-    .select('id, status, active, reversal_of')
-    .eq('booking_request_id', request.id);
-  if (error) throw error;
-
-  // Reservation cancellation/decline is not evidence that a refund was actually paid.
-  // Preserve recognized money and only void outstanding expectations. Actual refunds are
-  // explicit Finance reversals that capture amount, date, method, and audit metadata.
-  for (const entry of entries || []) {
-    const status = String(entry.status || '').toLowerCase();
-    if (entry.reversal_of || entry.active === false || ['cancelled', 'void', 'voided', 'reversal'].includes(status)) continue;
-    if (!['pending', 'expected'].includes(status)) continue;
-    const { error: updateError } = await supabase
-      .from('finance_entries')
-      .update({ status: 'cancelled', active: false, cancelled_at: now, updated_by: userId || null, archive_reason: reason || 'Booking request cancelled' })
-      .eq('id', entry.id);
-    if (updateError) throw updateError;
-  }
-}
-
 const CONFIRMED_INCOME_REQUEST_STATUSES = new Set(['accepted', 'confirmed', 'completed']);
 const CONFIRMED_INCOME_LEAD_STATUSES = new Set(['deposit_paid', 'confirmed', 'completed', 'review_requested', 'review_received']);
-const NON_CURRENT_FINANCE_STATUSES = new Set(['cancelled', 'void', 'voided', 'reversed', 'reversal']);
 
 function financeIncomeStatus(value) {
   return String(value || 'confirmed').trim().toLowerCase() || 'confirmed';
@@ -148,14 +80,12 @@ export function bookingRequestCanConfirmIncome(request = {}) {
 export async function getBookingRequestIncomeState(requestId) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
   if (!requestId) throw new Error('Booking request is required.');
-  const { data, error } = await supabase
+  const data = await collectKeysetRows(() => supabase
     .from('finance_entries')
     .select('id, created_at, updated_at, entry_date, type, amount, currency, title, description, category, payment_method, status, source_type, source_id, booking_request_id, booking_code_id, fixed_excursion_id, leaflet_id, idempotency_key, recognized_at, cancelled_at, reversed_at, reversal_of, admin_confirmed_by, admin_confirmed_at, active')
     .eq('booking_request_id', requestId)
     .eq('type', 'income')
-    .eq('active', true)
-    .order('created_at', { ascending: true });
-  if (error) throw error;
+    .eq('active', true));
 
   const entries = (data || []).filter((entry) => entry.active !== false && !['cancelled', 'void', 'voided'].includes(financeIncomeStatus(entry.status)));
   const confirmed = entries.filter((entry) => ['confirmed', 'reversed', 'reversal'].includes(financeIncomeStatus(entry.status)));
@@ -163,133 +93,16 @@ export async function getBookingRequestIncomeState(requestId) {
   return { entries, confirmed, pending };
 }
 
-function bookingIncomeTitle(request = {}) {
-  const identity = request.booking_code || request.customer_name || 'booking request';
-  return `Booking payment - ${identity}`;
-}
 
-function bookingIncomeDescription(request = {}) {
-  return [request.customer_name, request.experience_id, request.requested_date, request.booking_code].filter(Boolean).join(' · ') || 'Booking payment';
-}
-
-export async function confirmBookingRequestIncome({ request, amount, currency = 'EUR', entryDate, paymentMethod = '', idempotencyKey = '', userId = null } = {}) {
-  if (!bookingRequestCanConfirmIncome(request)) {
-    const error = new Error('Only confirmed non-booking-code requests can confirm income.');
-    error.code = 'BOOKING_INCOME_NOT_ELIGIBLE';
-    throw error;
-  }
-  const normalizedAmount = parseMoneyAmount(amount);
-  if (!(normalizedAmount > 0)) {
-    const error = new Error('A positive income amount is required.');
-    error.code = 'BOOKING_INCOME_AMOUNT_REQUIRED';
-    throw error;
-  }
-  const normalizedDate = String(entryDate || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
-    const error = new Error('A valid income date is required.');
-    error.code = 'BOOKING_INCOME_DATE_REQUIRED';
-    throw error;
-  }
-  const normalizedPaymentMethod = String(paymentMethod || '').trim();
-  if (!normalizedPaymentMethod) {
-    const error = new Error('Payment method is required.');
-    error.code = 'BOOKING_INCOME_PAYMENT_METHOD_REQUIRED';
-    throw error;
-  }
-
-  const state = await getBookingRequestIncomeState(request.id);
-  const cleanIdempotencyKey = String(idempotencyKey || '').trim();
-  if (cleanIdempotencyKey) {
-    const existing = state.entries.find((entry) => entry.idempotency_key === cleanIdempotencyKey);
-    if (existing) return { status: 'already_recorded', entry: existing, entries: state.confirmed };
-  }
-  if (state.pending.length > 1) {
-    const error = new Error('Multiple pending income entries are linked to this booking. Reconcile them in Finance before confirming income.');
-    error.code = 'BOOKING_INCOME_MULTIPLE_PENDING';
-    throw error;
-  }
-
-  const now = new Date().toISOString();
-  const shared = {
-    entry_date: normalizedDate,
-    type: 'income',
-    amount: normalizedAmount,
-    currency: normalizeCurrency(currency),
-    payment_method: normalizedPaymentMethod,
-    booking_request_id: request.id,
-    fixed_excursion_id: request.fixed_excursion_id || null,
-    status: 'confirmed',
-    recognized_at: now,
-    admin_confirmed_by: userId || null,
-    admin_confirmed_at: now
-  };
-
-  let entry;
-  let status;
-  if (state.pending.length === 1) {
-    const pending = state.pending[0];
-    const pendingAmount = parseMoneyAmount(pending.amount);
-    if (pendingAmount > normalizedAmount) {
-      await updateFinanceEntry(pending.id, {
-        amount: Number((pendingAmount - normalizedAmount).toFixed(2)),
-        status: 'expected',
-        updated_at: now
-      }, userId);
-      entry = await createFinanceEntry({
-        ...shared,
-        title: bookingIncomeTitle(request),
-        description: bookingIncomeDescription(request),
-        category: 'booking_payment',
-        source_type: 'booking_request',
-        source_id: request.id,
-        idempotency_key: cleanIdempotencyKey || null,
-        active: true
-      }, userId);
-      status = 'created_partial_payment';
-    } else {
-      entry = await updateFinanceEntry(pending.id, {
-        ...shared,
-        title: pending.title || bookingIncomeTitle(request),
-        description: pending.description || bookingIncomeDescription(request),
-        category: pending.category || 'booking_payment',
-        source_type: pending.source_type || 'booking_request',
-        source_id: pending.source_id || request.id,
-        idempotency_key: cleanIdempotencyKey || pending.idempotency_key || null
-      }, userId);
-      status = 'confirmed_existing';
-    }
-  } else {
-    entry = await createFinanceEntry({
-      ...shared,
-      title: bookingIncomeTitle(request),
-      description: bookingIncomeDescription(request),
-      category: 'booking_payment',
-      source_type: 'booking_request',
-      source_id: request.id,
-      idempotency_key: cleanIdempotencyKey || null,
-      active: true
-    }, userId);
-    status = 'created_confirmed';
-  }
-
-  let commissionWarning = '';
-  try {
-    await upsertPartnerCommissionForSource({
-      sourceType: 'booking_request',
-      source: request,
-      partnerId: request.partner_id || null,
-      grossAmount: state.confirmed.reduce((sum, item) => sum + parseMoneyAmount(item.amount), 0) + normalizedAmount,
-      financeEntryId: entry.id,
-      userId,
-      statusNotes: 'Recorded payments synchronized from booking request'
-    });
-  } catch (error) {
-    commissionWarning = error?.message || 'Partner commission sync failed.';
-  }
-
-  await reconcileOwnedBookingEvents(request.id);
-
-  return { status, entry, commissionWarning };
+export async function confirmBookingRequestIncome({ request, amount, currency = 'EUR', entryDate, paymentMethod = '', idempotencyKey = '' } = {}) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const { data, error } = await supabase.rpc('admin_record_booking_payment', {
+    p_source_type: 'booking_request', p_source_id: request?.id,
+    p_amount: parseMoneyAmount(amount), p_currency: normalizeCurrency(currency),
+    p_entry_date: entryDate, p_payment_method: paymentMethod, p_idempotency_key: idempotencyKey
+  });
+  if (error) throw error;
+  return data;
 }
 
 
@@ -314,7 +127,7 @@ export function normalizeRequestInput(input, defaults = {}) {
     party_type: textOrNull(input.party_type),
     request_type: requestType,
     fixed_excursion_id: textOrNull(input.fixed_excursion_id),
-    booking_code: textOrNull(input.booking_code) || makeBookingCode(requestedDate || new Date().toISOString()),
+    booking_code: textOrNull(input.booking_code),
     adults: intOrNull(input.adults),
     children: intOrNull(input.children),
     children_under_3: Boolean(input.children_under_3),
@@ -426,11 +239,11 @@ export async function createManualBookingRequest(input, userId) {
 export async function listBookingRequests(filters = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
+  const data = await collectKeysetRows(() => {
   let query = supabase
     .from('booking_requests')
     .select(requestFields)
-    .order('created_at', { ascending: false })
-    .limit(filters.limit || 250);
+        ;
 
   if (filters.status && filters.status !== 'all') query = query.eq('status', filters.status);
   if (filters.experience_id && filters.experience_id !== 'all') query = query.eq('experience_id', filters.experience_id);
@@ -445,27 +258,30 @@ export async function listBookingRequests(filters = {}) {
     }
   }
 
-  const { data, error } = await query;
-  if (error) throw error;
-  const requests = data || [];
+  return query;
+  });
+  const requests = (data || []).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  for (const row of requests) requestVersions.set(row.id, row.updated_at);
   if (!requests.length) return [];
 
   const requestIds = requests.map((request) => request.id).filter(Boolean);
   const fixedIds = [...new Set(requests.map((request) => request.fixed_excursion_id).filter(Boolean))];
-  const [fixedResult, financeResult] = await Promise.all([
-    fixedIds.length
-      ? supabase.from('fixed_excursions').select('id, date, start_time, end_time, experience_id, title_it, title_en').in('id', fixedIds)
-      : Promise.resolve({ data: [], error: null }),
-    requestIds.length
-      ? supabase.from('finance_entries')
-          .select('id, created_at, entry_date, type, amount, currency, payment_method, status, reversal_of, booking_request_id, booking_code_id, source_type, source_id, active')
-          .in('booking_request_id', requestIds)
-          .eq('type', 'income')
-          .order('created_at', { ascending: true })
-      : Promise.resolve({ data: [], error: null })
-  ]);
-  if (fixedResult.error) throw fixedResult.error;
-  if (financeResult.error) throw financeResult.error;
+  const { data: canReadFinance, error: roleError } = await supabase.rpc('can_manage_finance');
+  if (roleError) throw roleError;
+  const fixedRows = [];
+  const financeRows = [];
+  for (let offset = 0; offset < fixedIds.length; offset += 100) {
+    const chunk = fixedIds.slice(offset, offset + 100);
+    fixedRows.push(...await collectKeysetRows(() => supabase.from('fixed_excursions').select('id, date, start_time, end_time, experience_id, title_it, title_en').in('id', chunk)));
+  }
+  if (canReadFinance) for (let offset = 0; offset < requestIds.length; offset += 100) {
+    const chunk = requestIds.slice(offset, offset + 100);
+    financeRows.push(...await collectKeysetRows(() => supabase.from('finance_entries')
+      .select('id, created_at, entry_date, type, amount, currency, payment_method, status, reversal_of, booking_request_id, booking_code_id, source_type, source_id, active')
+      .in('booking_request_id', chunk).eq('type', 'income')));
+  }
+  const fixedResult = { data: fixedRows };
+  const financeResult = { data: financeRows };
 
   const fixedById = (fixedResult.data || []).reduce((acc, row) => ({ ...acc, [row.id]: row }), {});
   const financeByRequest = (financeResult.data || []).reduce((acc, row) => {
@@ -479,88 +295,47 @@ export async function listBookingRequests(filters = {}) {
     ...request,
     fixed_excursion: fixedById[request.fixed_excursion_id] || null,
     finance_entries: financeByRequest[request.id] || []
+    , finance_access: Boolean(canReadFinance)
   }));
+}
+
+export async function getBookingRequestCounts(filters = {}, today = null) {
+  if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const args = { p_filters: filters };
+  if (today) args.p_today = today;
+  const { data, error } = await supabase.rpc('get_admin_booking_counts', args);
+  if (error) throw error;
+  return data;
 }
 
 export async function updateBookingRequest(id, payload) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
+  const expectedVersion = payload.expected_updated_at || requestVersions.get(id);
   const update = { ...payload, updated_at: new Date().toISOString() };
+  delete update.expected_updated_at;
   Object.keys(update).forEach((key) => update[key] === undefined && delete update[key]);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('booking_requests')
     .update(update)
-    .eq('id', id)
-    .select(requestFields)
-    .single();
+    .eq('id', id);
+  if (expectedVersion) query = query.eq('updated_at', expectedVersion);
+  const { data, error } = await query.select(requestFields).maybeSingle();
 
   if (error) throw error;
+  if (!data) throw new Error('EDIT_CONFLICT');
+  requestVersions.set(id, data.updated_at);
   return data;
 }
 
-export async function approveBookingRequest({ request, userId, mode = 'accept-only', decisionNote = '', limitedScope = 'experience' }) {
-  const accepted = await updateBookingRequest(request.id, {
-    status: 'accepted',
-    booking_code: request.booking_code || stableBookingCodeForRequest(request),
-    decision_note: decisionNote || null,
-    decided_at: new Date().toISOString(),
-    decided_by: userId
+export async function approveBookingRequest({ request, mode = 'accept-only', decisionNote = '', limitedScope = 'experience' }) {
+  const { data, error } = await supabase.rpc('admin_accept_booking', {
+    p_id: request.id, p_mode: mode, p_note: decisionNote, p_scope: limitedScope,
+    p_expected_updated_at: request.updated_at || null
   });
-  await reconcileOwnedBookingEvents(request.id);
-
-  if (mode === 'accept-only') return { request: accepted, block: null, availabilityError: null };
-
-  const requestedDate = request.requested_date;
-  if (!requestedDate) {
-    return { request: accepted, block: null, availabilityError: new Error('Request has no requested date.') };
-  }
-
-  let blockInput = null;
-  if (mode === 'close-experience') {
-    blockInput = {
-      date: requestedDate,
-      experience_id: request.experience_id && request.experience_id !== 'unsure' ? request.experience_id : null,
-      status: 'closed',
-      reason_it: 'Esperienza non disponibile',
-      reason_en: 'Experience unavailable'
-    };
-  }
-
-  if (mode === 'close-global') {
-    blockInput = {
-      date: requestedDate,
-      experience_id: null,
-      status: 'closed',
-      reason_it: 'Data non disponibile',
-      reason_en: 'Date unavailable'
-    };
-  }
-
-  if (mode === 'limited') {
-    blockInput = {
-      date: requestedDate,
-      experience_id: limitedScope === 'global' ? null : (request.experience_id && request.experience_id !== 'unsure' ? request.experience_id : null),
-      status: 'limited',
-      reason_it: 'Disponibilità limitata',
-      reason_en: 'Limited availability'
-    };
-  }
-
-  try {
-    const block = await createAvailabilityBlock({
-      ...blockInput,
-      internal_note: decisionNote || null,
-      created_by: userId,
-      updated_by: userId,
-      booking_request_id: request.id
-    });
-
-    const updated = await updateBookingRequest(request.id, { availability_block_id: block.id });
-    return { request: updated, block, availabilityError: null };
-  } catch (error) {
-    return { request: accepted, block: null, availabilityError: error };
-  }
+  if (error) throw error;
+  return data;
 }
 
 export async function declineBookingRequest({ request, userId, decisionNote = '', reasonCategory = '' }) {
@@ -571,8 +346,7 @@ export async function declineBookingRequest({ request, userId, decisionNote = ''
     decided_at: new Date().toISOString(),
     decided_by: userId
   });
-  await reverseOrVoidFinanceForRequest(updated, userId, note || 'Booking request declined');
-  await cancelUnpaidPartnerCommissionsForSource({ sourceType: 'booking_request', sourceId: updated.id, userId, reason: note || 'Booking request declined' });
+  // Expected-ledger, unpaid-commission and linked-block cleanup committed in the DB transaction.
   await reconcileOwnedBookingEvents(updated.id);
   return updated;
 }
@@ -588,8 +362,7 @@ export async function cancelBookingRequest({ request, userId, decisionNote = '' 
     removed_at: new Date().toISOString(),
     removed_by: userId
   });
-  await reverseOrVoidFinanceForRequest(updated, userId, note || 'Booking request cancelled');
-  await cancelUnpaidPartnerCommissionsForSource({ sourceType: 'booking_request', sourceId: updated.id, userId, reason: note || 'Booking request cancelled' });
+  // Cancellation is not a refund; the database preserves recognized money atomically.
   await reconcileOwnedBookingEvents(updated.id);
   return updated;
 }

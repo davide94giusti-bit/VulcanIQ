@@ -1,4 +1,6 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
+import { canTrack } from '../analytics.js';
+import { PRIVACY_PREFERENCES_EVENT } from './privacyPreferences.js';
 
 const REFERRAL_FIELDS = `
   id, code, customer_name, customer_email, customer_phone,
@@ -10,6 +12,19 @@ const REFERRAL_FIELDS = `
 const REFERRAL_STORAGE_KEY = 'vulcaniq_customer_referral';
 const REFERRAL_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+let currentReferral = null;
+
+export function clearStoredReferralAttribution() {
+  try { window.localStorage.removeItem(REFERRAL_STORAGE_KEY); } catch { /* Storage may be blocked. */ }
+}
+
+if (typeof window !== 'undefined') {
+  const clearIfExcluded = () => { if (!canTrack()) clearStoredReferralAttribution(); };
+  clearIfExcluded();
+  window.addEventListener(PRIVACY_PREFERENCES_EVENT, clearIfExcluded);
+  window.addEventListener('storage', clearIfExcluded);
+  window.addEventListener('focus', clearIfExcluded);
+}
 
 function cleanText(value) {
   if (value === undefined || value === null) return null;
@@ -52,6 +67,7 @@ export function referralLink(code, lang = '') {
 }
 
 export function readStoredReferral() {
+  if (!canTrack()) { clearStoredReferralAttribution(); return currentReferral; }
   try {
     if (typeof window === 'undefined') return null;
     const parsed = JSON.parse(window.localStorage.getItem(REFERRAL_STORAGE_KEY) || '{}');
@@ -70,6 +86,9 @@ export function storeReferralJourney(code, metadata = {}) {
     if (typeof window === 'undefined') return null;
     const clean = normalizeReferralCode(code);
     if (!clean) return null;
+    // Explicit current-journey referral remains a business field in memory only.
+    currentReferral = { code: clean, source: 'customer_referral' };
+    if (!canTrack()) { clearStoredReferralAttribution(); return currentReferral; }
     const payload = {
       code: clean,
       source: 'customer_referral',
@@ -90,6 +109,7 @@ export function storeReferralJourney(code, metadata = {}) {
 export function referralAttributionPayload() {
   const stored = readStoredReferral();
   if (!stored?.code) return {};
+  if (!canTrack()) return { referral_code: stored.code, referral_source: 'customer_referral' };
   return {
     referral_code: stored.code,
     referral_source: stored.source || 'customer_referral',
@@ -164,24 +184,29 @@ export async function disableCustomerReferralCode(id, userId = null) {
   return data;
 }
 
-export async function validateAndRecordReferralClick(code) {
+export async function validateAndRecordReferralClick(code, { turnstile_token = '' } = {}) {
   if (!isSupabaseConfigured) return { valid: false, code: normalizeReferralCode(code), configured: false };
   const clean = normalizeReferralCode(code);
   if (!clean) return { valid: false, code: '' };
-  const rpc = await supabase.rpc('register_referral_click', { p_code: clean });
-  if (!rpc.error && rpc.data) {
-    const payload = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
-    return { valid: Boolean(payload?.valid), code: normalizeReferralCode(payload?.code || clean) };
+  let response;
+  let payload;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    response = await fetch('/api/public/referral-click', { method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ referral_code: clean, turnstile_token }) });
+    payload = await response.json().catch(() => null);
+  } catch {
+    throw Object.assign(new Error('REFERRAL_UNAVAILABLE'), { code: 'REFERRAL_UNAVAILABLE', status: 0, retryable: true, retryAfter: null });
+  } finally { clearTimeout(timer); }
+  if (!response.ok || typeof payload?.valid !== 'boolean') {
+    // An unavailable dependency or consumed challenge must not invalidate a genuine invitation.
+    const error = new Error('REFERRAL_UNAVAILABLE');
+    error.code = response.status === 429 ? 'REFERRAL_RATE_LIMITED' : response.status === 403 ? 'REFERRAL_CHALLENGE_REQUIRED' : 'REFERRAL_UNAVAILABLE';
+    error.status = response.status;
+    error.retryable = true;
+    const retryAfter = Number(response.headers.get('Retry-After'));
+    error.retryAfter = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(86400, retryAfter) : null;
+    throw error;
   }
-  const { data, error } = await supabase
-    .from('customer_referral_codes')
-    .select('id, code, active, used_count')
-    .eq('code', clean)
-    .maybeSingle();
-  if (error || !data || data.active === false) return { valid: false, code: clean };
-  await supabase
-    .from('customer_referral_codes')
-    .update({ used_count: Number(data.used_count || 0) + 1, last_used_at: new Date().toISOString() })
-    .eq('id', data.id);
-  return { valid: true, code: data.code };
+  return { valid: payload.valid, code: normalizeReferralCode(payload.code || clean) };
 }

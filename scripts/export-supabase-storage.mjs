@@ -117,7 +117,8 @@ async function listAllObjects(storageBucket, prefix = '') {
       throw new Error(`Failed to list ${prefix || '/'}: ${error.message}`);
     }
 
-    const items = Array.isArray(data) ? data : [];
+    if (!Array.isArray(data)) throw new Error('storage_list_malformed');
+    const items = data;
     for (const item of items) {
       const name = String(item?.name || '').trim();
       if (!name || name === '.' || name === '..') continue;
@@ -180,9 +181,11 @@ async function main() {
 
   const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
   if (bucketError) manifest.failures.push({ bucket: null, name: null, step: 'list_buckets', errorCode: sanitizeFailureText(bucketError.message), referenceDiagnostic: { checked: false, listedAtExport: null } });
+  else if (!Array.isArray(buckets)) manifest.failures.push({ bucket: null, name: null, step: 'list_buckets', errorCode: 'storage_list_malformed' });
 
   const bucketList = Array.isArray(buckets) ? buckets : [];
   manifest.bucketCount = bucketList.length;
+  const exportedPaths = new Set();
 
   for (const bucket of bucketList) {
     const bucketName = String(bucket?.name || bucket?.id || '').trim();
@@ -215,6 +218,9 @@ async function main() {
         const arrayBuffer = await blob.arrayBuffer();
         const bytes = Buffer.from(arrayBuffer);
         const filePath = localObjectPath(bucketName, objectName);
+        const collisionKey = filePath.toLowerCase();
+        if (exportedPaths.has(collisionKey)) throw new Error('storage_export_path_collision');
+        exportedPaths.add(collisionKey);
         await mkdir(path.dirname(filePath), { recursive: true });
         await writeFile(filePath, bytes);
 

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { filterAndSortReviews, reviewSource, reviewDate, reviewGuide, reviewRating, reviewBookedBy, reviewSourceLabel } from '../src/features/reviews/reviewModel.js';
 import { normalizePublicGoogleReview } from '../src/features/reviews/googleReviewModel.js';
@@ -57,6 +58,14 @@ test('review model normalizes provider and first-party sources', () => {
   assert.equal(reviewDate(fixtures[0], 'en'), '08/08/2026');
 });
 
+test('review calendar dates remain stable across visitor timezones while timestamps stay local', () => {
+  for (const [zone, timestampDay] of [['America/Los_Angeles', '07/08/2026'], ['UTC', '08/08/2026'], ['Europe/Rome', '08/08/2026']]) {
+    const program = `import { reviewDate } from './src/features/reviews/reviewModel.js'; console.log(JSON.stringify([reviewDate({review_date:'2026-08-08'},'en'),reviewDate({published_at:'2026-08-08T00:00:00Z'},'en')]));`;
+    const result = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', program], { encoding: 'utf8', env: { ...process.env, TZ: zone } }));
+    assert.deepEqual(result, ['08/08/2026', timestampDay], zone);
+  }
+});
+
 test('Google identity and malformed rating fallbacks never fabricate reviewer or five stars', () => {
   assert.equal(reviewBookedBy({ source: 'google', reviewer_name: null }, 'en'), 'Google guest');
   assert.equal(reviewBookedBy({ source: 'google', reviewer_name: null }, 'it'), 'Ospite Google');
@@ -105,7 +114,8 @@ test('full review detail renders body, replies, Google source link and dialog se
   assert.match(detail, /onError=\{\(event\).*\.hidden = true/);
   assert.match(dialogTrap, /event\.key === 'Escape'/);
   assert.match(dialogTrap, /event\.key !== 'Tab'/);
-  assert.match(dialogTrap, /openerRef\.current\?\.focus/);
+  assert.match(dialogTrap, /const opener = openerRef\.current/);
+  assert.match(dialogTrap, /opener\.focus\(/);
 });
 
 
@@ -121,8 +131,8 @@ test('review detail translation is on-demand, browser-local, and preserves the o
   assert.match(detail, /review-translation-toolbar/);
   assert.match(detail, /translateReviewText/);
   assert.match(detail, /browserReviewTranslationSupported/);
-  assert.match(detail, /sourceLanguage:\s*safeReview\.language/);
-  assert.match(detail, /showTranslated/);
+  assert.match(detail, /sourceLanguage:\s*detectedSourceLanguage/);
+  assert.match(detail, /displayedReviewTranslationText/);
   assert.match(detail, /displayedReviewText/);
   assert.match(detail, /showOriginal/);
   assert.match(translationClient, /globalThis\.Translator/);
@@ -139,7 +149,7 @@ test('review translation is desktop-only and hidden on mobile or unsupported bro
   assert.match(detail, /translationEnabled\s*=\s*translationApiSupported && desktopTranslationViewport/);
   assert.match(detail, /\{translationEnabled && \(\s*<div className="review-translation-toolbar"/);
   assert.match(detail, /if \(!isOpen \|\| !translationEnabled\) return undefined/);
-  assert.match(detail, /displayedReviewText = translationEnabled && showTranslated/);
+  assert.match(detail, /displayedReviewText = translationEnabled \? displayedReviewTranslationText/);
   assert.doesNotMatch(detail, /!translationSupported && <span className="review-translation-error"/);
 });
 

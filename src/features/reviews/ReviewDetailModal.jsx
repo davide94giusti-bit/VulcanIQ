@@ -5,10 +5,23 @@ import useDialogFocusTrap from '../../hooks/useDialogFocusTrap.js';
 import { normalizeReviewText, reviewBookedBy, reviewCopy, reviewDate, reviewGuide, reviewRating, reviewSource, reviewSourceLabel } from './reviewModel.js';
 import {
   browserReviewTranslationSupported,
+  detectReviewSourceLanguage,
   loadReviewTranslationLanguages,
   reviewTranslationFallbackLanguages,
-  translateReviewText
+  translateReviewText,
+  withReviewTranslationTimeout
 } from './reviewTranslation.js';
+import {
+  beginReviewTranslation,
+  changeReviewTranslationTarget,
+  completeReviewTranslation,
+  displayedReviewTranslationText,
+  failReviewTranslation,
+  initialReviewTranslationState,
+  reviewTranslationCacheKey,
+  toggleReviewTranslationDisplay,
+  updateReviewTranslationProgress
+} from './reviewTranslationState.js';
 
 function translationErrorCopy(copy, error) {
   switch (error?.code) {
@@ -19,12 +32,16 @@ function translationErrorCopy(copy, error) {
     case 'translation_model_download_failed': return copy.translationModelDownloadFailed;
     case 'translation_not_allowed': return copy.translationTryAgain;
     case 'translation_input_too_large': return copy.translationInputTooLarge;
+    case 'translation_empty_result': return copy.translationEmptyResult;
+    case 'translation_unchanged_result': return copy.translationUnchangedResult;
+    case 'translation_stale_result': return copy.translationStaleResult;
+    case 'translation_timeout': return copy.translationTimeout;
     default: return copy.translationFailed;
   }
 }
 
 function translationProgressCopy(copy, state) {
-  if (!state.loading) return '';
+  if (state.status !== 'detecting' && state.status !== 'translating') return '';
   if (state.phase === 'detecting') return copy.detectingLanguage;
   if (state.phase === 'downloading_detector' || state.phase === 'downloading_translator') {
     return state.progress == null ? copy.downloadingTranslationModel : `${copy.downloadingTranslationModel} ${state.progress}%`;
@@ -52,10 +69,10 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
   ));
   const translationEnabled = translationApiSupported && desktopTranslationViewport;
   const [translationLanguages, setTranslationLanguages] = useState(() => reviewTranslationFallbackLanguages(lang));
-  const [translationTarget, setTranslationTarget] = useState(defaultTargetLanguage);
-  const [translationState, setTranslationState] = useState({ loading: false, error: '', text: '', detectedSourceLanguage: '', phase: '', progress: null });
-  const [showTranslated, setShowTranslated] = useState(false);
+  const [translationState, setTranslationState] = useState(() => initialReviewTranslationState({ reviewId: safeReview.id, originalText: safeReview.review_text, targetLanguage: defaultTargetLanguage }));
   const translationCacheRef = useRef(new Map());
+  const translationRequestRef = useRef(0);
+  const translationAbortRef = useRef(null);
   useBodyScrollLock(isOpen);
 
   useDialogFocusTrap(isOpen, panelRef, onClose);
@@ -78,21 +95,21 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
 
   useEffect(() => {
     setTranslationLanguages(reviewTranslationFallbackLanguages(lang));
-    setTranslationTarget(defaultTargetLanguage);
-    setTranslationState({ loading: false, error: '', text: '', detectedSourceLanguage: '', phase: '', progress: null });
-    setShowTranslated(false);
-    translationCacheRef.current = new Map();
+    translationRequestRef.current += 1;
+    translationAbortRef.current?.abort();
+    setTranslationState(initialReviewTranslationState({ reviewId: safeReview.id, originalText: safeReview.review_text, targetLanguage: defaultTargetLanguage }));
     if (!isOpen || !translationEnabled) return undefined;
     let alive = true;
     loadReviewTranslationLanguages(lang).then((languages) => {
       if (alive && Array.isArray(languages) && languages.length) setTranslationLanguages(languages);
     });
-    return () => { alive = false; };
+    return () => { alive = false; translationRequestRef.current += 1; translationAbortRef.current?.abort(); };
   }, [defaultTargetLanguage, isOpen, lang, safeReview.id, safeReview.review_text, translationEnabled]);
 
   async function handleTranslate() {
     const sourceText = String(safeReview.review_text || '').trim();
-    if (!sourceText || !translationTarget) {
+    const targetLanguage = translationState.targetLanguage;
+    if (!sourceText || !targetLanguage) {
       setTranslationState((current) => ({ ...current, error: copy.translationTargetRequired }));
       return;
     }
@@ -100,36 +117,49 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
       setTranslationState((current) => ({ ...current, error: copy.translationBrowserUnsupported }));
       return;
     }
-    const cacheKey = `${translationTarget}:${sourceText}`;
-    const cached = translationCacheRef.current.get(cacheKey);
-    if (cached) {
-      setTranslationState({ loading: false, error: '', text: cached.translatedText, detectedSourceLanguage: cached.detectedSourceLanguage || '', phase: 'complete', progress: 100 });
-      setShowTranslated(true);
-      return;
-    }
-    setTranslationState((current) => ({ ...current, loading: true, error: '', phase: 'preparing', progress: null }));
+    const requestId = ++translationRequestRef.current;
+    translationAbortRef.current?.abort();
+    const controller = new AbortController();
+    translationAbortRef.current = controller;
+    const reviewId = String(safeReview.id || '');
+    const requestIsCurrent = () => translationRequestRef.current === requestId;
+    const reportProgress = ({ phase, progress }) => {
+      if (requestIsCurrent()) setTranslationState((current) => updateReviewTranslationProgress(current, { phase, progress }));
+    };
+    setTranslationState((current) => beginReviewTranslation(current));
     try {
-      const result = await translateReviewText({
+      const detectedSourceLanguage = await withReviewTranslationTimeout(detectReviewSourceLanguage(sourceText, { onProgress: reportProgress, signal: controller.signal }), 60000, () => controller.abort());
+      if (!requestIsCurrent()) return;
+      const cacheKey = reviewTranslationCacheKey({ reviewId, originalText: sourceText, sourceLanguage: detectedSourceLanguage, targetLanguage });
+      const cached = translationCacheRef.current.get(cacheKey);
+      if (cached) {
+        setTranslationState((current) => completeReviewTranslation(current, cached));
+        return;
+      }
+      const result = await withReviewTranslationTimeout(translateReviewText({
         text: sourceText,
-        targetLanguage: translationTarget,
-        sourceLanguage: safeReview.language,
-        onProgress: ({ phase, progress }) => {
-          setTranslationState((current) => ({ ...current, loading: true, error: '', phase, progress: progress ?? null }));
-        }
-      });
+        targetLanguage,
+        sourceLanguage: detectedSourceLanguage,
+        sourceLanguageSource: 'detected',
+        onProgress: reportProgress,
+        signal: controller.signal
+      }), 60000, () => controller.abort());
+      if (!requestIsCurrent()) return;
       const translatedText = String(result?.translated_text || '').trim();
-      const detectedSourceLanguage = String(result?.detected_source_language || '').trim();
-      if (!translatedText) throw new Error('translation_failed');
-      translationCacheRef.current.set(cacheKey, { translatedText, detectedSourceLanguage });
-      setTranslationState({ loading: false, error: '', text: translatedText, detectedSourceLanguage, phase: 'complete', progress: 100 });
-      setShowTranslated(true);
+      const resolvedSourceLanguage = String(result?.detected_source_language || detectedSourceLanguage).trim();
+      const completed = { reviewId, translatedText, sourceLanguage: resolvedSourceLanguage, targetLanguage };
+      setTranslationState((current) => completeReviewTranslation(current, completed));
+      translationCacheRef.current.set(cacheKey, completed);
     } catch (error) {
-      setTranslationState({ loading: false, error: translationErrorCopy(copy, error), text: '', detectedSourceLanguage: '', phase: '', progress: null });
-      setShowTranslated(false);
+      if (!requestIsCurrent()) return;
+      translationRequestRef.current += 1;
+      controller.abort();
+      const unavailable = error?.code === 'translation_browser_unsupported' || error?.code === 'translation_pair_unsupported';
+      setTranslationState((current) => failReviewTranslation(current, translationErrorCopy(copy, error), { unavailable }));
     }
   }
 
-  const displayedReviewText = translationEnabled && showTranslated && translationState.text ? translationState.text : safeReview.review_text;
+  const displayedReviewText = translationEnabled ? displayedReviewTranslationText(translationState) : safeReview.review_text;
   const progressText = translationProgressCopy(copy, translationState);
 
   if (!isOpen || typeof document === 'undefined') return null;
@@ -168,22 +198,22 @@ export default function ReviewDetailModal({ review, lang = 'it', onClose, onGoog
         )}
 
         {translationEnabled && (
-          <div className="review-translation-toolbar" aria-label={copy.translateReview}>
+          <div className="review-translation-toolbar" aria-label={copy.translateReview} aria-live="polite" aria-busy={translationState.status === 'detecting' || translationState.status === 'translating'}>
             <label className="review-translation-target">
               <span>{copy.translateTo}</span>
-              <select value={translationTarget} disabled={translationState.loading} onChange={(event) => { setTranslationTarget(event.target.value); setTranslationState((current) => ({ ...current, error: '', phase: '', progress: null })); setShowTranslated(false); }}>
+              <select value={translationState.targetLanguage} disabled={translationState.status === 'detecting' || translationState.status === 'translating'} onChange={(event) => { translationRequestRef.current += 1; setTranslationState((current) => changeReviewTranslationTarget(current, event.target.value)); }}>
                 {translationLanguages.map((item) => <option key={item.language} value={item.language}>{item.name}</option>)}
               </select>
             </label>
-            <button className="button secondary review-translate-button" type="button" onClick={handleTranslate} disabled={translationState.loading}>
+            <button className="button secondary review-translate-button" type="button" onClick={handleTranslate} disabled={translationState.status === 'detecting' || translationState.status === 'translating'}>
               {progressText || copy.translateReview}
             </button>
-            {translationState.text && (
-              <button className="review-original-toggle" type="button" onClick={() => setShowTranslated((current) => !current)}>
-                {showTranslated ? copy.showOriginal : copy.showTranslation}
+            {translationState.status === 'translated' && translationState.translatedText && (
+              <button className="review-original-toggle" type="button" onClick={() => setTranslationState((current) => toggleReviewTranslationDisplay(current))}>
+                {translationState.displayMode === 'translation' ? copy.showOriginal : copy.showTranslation}
               </button>
             )}
-            {(showTranslated && translationState.text) && <span className="review-translation-note">{copy.onDeviceTranslation}{translationState.detectedSourceLanguage ? ` · ${translationState.detectedSourceLanguage.toUpperCase()} → ${translationTarget.toUpperCase()}` : ''}</span>}
+            {translationState.status === 'translated' && translationState.displayMode === 'translation' && <span className="review-translation-note">{copy.onDeviceTranslation} · {translationState.sourceLanguage.toUpperCase()} → {translationState.targetLanguage.toUpperCase()}</span>}
             {translationState.error && <span className="review-translation-error" role="status">{translationState.error}</span>}
           </div>
         )}

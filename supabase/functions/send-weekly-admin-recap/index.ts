@@ -1,5 +1,7 @@
 import { corsPreflight, claimAdminAction, clean, dbJson, env, json, readJson, recipients, requireAdmin, resendEmail } from '../_shared/vulcaniq.ts';
 import { buildWeeklyRecapEmail } from '../_shared/weeklyRecapEmail.ts';
+import { deliverOperationalEmail } from '../_shared/emailDelivery.js';
+import { completeRows } from '../_shared/completeRows.js';
 
 type Row = Record<string, unknown>;
 
@@ -45,9 +47,8 @@ function previousWeekRome(now = new Date()): { start: string; end: string; label
 }
 
 async function list(table: string, select: string, start: string, end: string, dateColumn = 'created_at'): Promise<Row[]> {
-  const query = new URLSearchParams({ select, [dateColumn]: `gte.${start}`, and: `(${dateColumn}.lt.${end})`, limit: '5000' });
-  const rows = await dbJson(`${table}?${query.toString()}`, { method: 'GET' });
-  return Array.isArray(rows) ? rows as Row[] : [];
+  const query = new URLSearchParams({ select, [dateColumn]: `gte.${start}`, and: `(${dateColumn}.lt.${end})` });
+  return completeRows(dbJson, table, query) as Promise<Row[]>;
 }
 
 function countBy(rows: Row[], field: string): Record<string, number> {
@@ -101,11 +102,11 @@ async function metrics(period: { start: string; end: string }) {
   const [bookings, gifts, finance, reviews, notificationFailures, currentPending, currentGiftCodes] = await Promise.all([
     list('booking_requests', 'id,status,request_type,experience_id,requested_date,adults,children,source,created_by_admin,detected_source,declared_source,expected_value,created_at,notification_email_status', reportingStart, period.end),
     list('gift_card_requests', 'id,status,budget,currency,booking_code,booking_code_id,preferred_delivery_date,created_at,notification_email_status', reportingStart, period.end),
-    list('finance_entries', 'id,type,amount,currency,status,category,reversal_of,created_at', reportingStart, period.end),
-    list('reviews', 'id,rating,approved,active,admin_reply,created_at', reportingStart, period.end).catch(() => []),
-    dbJson(`request_notification_log?select=id,status&status=eq.failed&created_at=gte.${encodeURIComponent(reportingStart)}&created_at=lt.${encodeURIComponent(period.end)}&limit=5000`, { method: 'GET' }).catch(() => []),
-    dbJson('booking_requests?select=id,created_at,requested_date,status,customer_email,customer_phone&status=eq.pending&limit=5000', { method: 'GET' }).catch(() => []),
-    dbJson('gift_card_requests?select=id,status,booking_code,booking_code_id,preferred_delivery_date&status=in.(paid,issued)&limit=5000', { method: 'GET' }).catch(() => [])
+    dbJson('rpc/get_admin_finance_totals', { method: 'POST', body: JSON.stringify({ p_from: new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date(reportingStart)), p_to: new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date(new Date(period.end).getTime() - 1)) }) }),
+    list('reviews', 'id,rating,approved,active,admin_reply,created_at', reportingStart, period.end),
+    completeRows(dbJson, 'request_notification_log', { select: 'id,status', status: 'eq.failed', created_at: `gte.${reportingStart}`, and: `(created_at.lt.${period.end})` }),
+    completeRows(dbJson, 'booking_requests', { select: 'id,created_at,requested_date,status,customer_email,customer_phone', status: 'eq.pending' }),
+    completeRows(dbJson, 'gift_card_requests', { select: 'id,status,booking_code,booking_code_id,preferred_delivery_date', status: 'in.(paid,issued)' })
   ]);
 
   const summary = (analyticsSummary.summary && typeof analyticsSummary.summary === 'object' ? analyticsSummary.summary : {}) as Row;
@@ -123,8 +124,8 @@ async function metrics(period: { start: string; end: string }) {
 
   const websiteBookings = bookings.filter((row) => ['website', 'public_website', ''].includes(clean(row.source, 40)));
   const bookingCodeBookings = bookings.filter((row) => clean(row.source, 40) === 'booking_code');
-  const recordedRevenue = money(finance, (row) => ['confirmed', 'paid', 'collected'].includes(clean(row.status).toLowerCase()) && Number(row.amount || 0) > 0);
-  const reversals = Math.abs(money(finance, (row) => Boolean(row.reversal_of) || Number(row.amount || 0) < 0));
+  const financeResult = finance as { complete?: boolean; byCurrency?: Array<{ currency: string; record_count: number; income: number; expense: number; expected: number }> };
+  if (financeResult.complete !== true || !Array.isArray(financeResult.byCurrency)) throw new Error('finance_summary_unavailable');
   const now = Date.now();
   const pendingRows = currentPending as Row[];
   const pendingOver12h = pendingRows.filter((row) => now - new Date(String(row.created_at || '')).getTime() > 12 * 3600000).length;
@@ -177,7 +178,7 @@ async function metrics(period: { start: string; end: string }) {
       byStatus: countBy(gifts, 'status'),
       missingCode: gifts.filter((row) => ['paid', 'issued'].includes(clean(row.status)) && !row.booking_code_id && !clean(row.booking_code)).length
     },
-    finance: { recordedRevenue, reversals, netRecorded: recordedRevenue - reversals, entries: finance.length },
+    finance: { byCurrency: financeResult.byCurrency, entries: financeResult.byCurrency.reduce((sum, row) => sum + Number(row.record_count), 0) },
     analytics: {
       events: Number(meta.analytics_event_count || 0),
       sessions: Number(meta.analytics_session_count || 0),
@@ -266,7 +267,7 @@ Deno.serve(async (req) => {
     for (const recipient of targets) {
       const existingQuery = new URLSearchParams({ select: 'id,status', period_start: `eq.${period.start}`, period_end: `eq.${period.end}`, recipient: `eq.${recipient}`, report_type: `eq.${testMode ? 'weekly_management_recap_test' : 'weekly_management_recap'}`, limit: '1' });
       const existing = await dbJson(`admin_weekly_reports?${existingQuery.toString()}`, { method: 'GET' }) as Row[];
-      if (existing?.length && !force) { skipped += 1; continue; }
+      if (existing?.length && ['sent', 'test'].includes(String(existing[0].status))) { skipped += 1; continue; }
       let reportId = clean(existing?.[0]?.id, 80);
       if (!reportId) {
         const inserted = await dbJson('admin_weekly_reports', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ period_start: period.start, period_end: period.end, recipient, report_type: testMode ? 'weekly_management_recap_test' : 'weekly_management_recap', status: 'pending', metrics: data }) }) as Row[];
@@ -275,11 +276,17 @@ Deno.serve(async (req) => {
         await dbJson(`admin_weekly_reports?id=eq.${reportId}`, { method: 'PATCH', body: JSON.stringify({ status: 'pending', error_message: null, metrics: data, generated_at: new Date().toISOString(), updated_at: new Date().toISOString() }) });
       }
       try {
-        const providerId = await resendEmail({ to: recipient, from, subject: `${testMode ? '[TEST] ' : ''}vulcanIQ weekly recap — ${period.label}`, html: buildWeeklyRecapEmail(period.label, data, testMode) });
-        await dbJson(`admin_weekly_reports?id=eq.${reportId}`, { method: 'PATCH', body: JSON.stringify({ status: testMode ? 'test' : 'sent', provider_message_id: providerId, sent_at: new Date().toISOString(), updated_at: new Date().toISOString() }) });
+        const delivery = await deliverOperationalEmail({ dbJson, send: resendEmail, key: `recap:${reportId}`, input: { to: recipient, from, subject: `${testMode ? '[TEST] ' : ''}vulcanIQ weekly recap — ${period.label}`, html: buildWeeklyRecapEmail(period.label, data, testMode) } });
+        if (delivery.skipped && delivery.status !== 'accepted') { failed += 1; continue; }
+        if (delivery.status !== 'accepted') {
+          await dbJson(`admin_weekly_reports?id=eq.${reportId}`, { method: 'PATCH', body: JSON.stringify({ status: delivery.status === 'rejected' ? 'failed' : 'pending', error_message: delivery.status === 'unknown' ? 'Delivery outcome unknown; reconcile before retry.' : 'Provider rejected delivery.' }) });
+          failed += 1; continue;
+        }
+        await dbJson(`admin_weekly_reports?id=eq.${reportId}`, { method: 'PATCH', body: JSON.stringify({ status: testMode ? 'test' : 'sent', provider_message_id: delivery.providerId, sent_at: new Date().toISOString(), updated_at: new Date().toISOString() }) });
         sent += 1;
       } catch {
-        await dbJson(`admin_weekly_reports?id=eq.${reportId}`, { method: 'PATCH', body: JSON.stringify({ status: 'failed', error_message: 'Email provider rejected the weekly recap.', updated_at: new Date().toISOString() }) });
+        // The durable delivery fence retains accepted/unknown state even if this projection fails.
+        console.error('weekly_recap_projection_failed', { code: 'delivery_reconciliation_required' });
         failed += 1;
       }
     }

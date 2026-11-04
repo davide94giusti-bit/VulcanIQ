@@ -22,6 +22,18 @@ export function financeEntryIsRecognized(entry = {}) {
   return status === 'confirmed' || status === 'reversed' || REVERSAL_STATUSES.has(status);
 }
 
+// UI capabilities mirror the direct-update boundary, not whether a row has a business link.
+// Recognition evidence on a legacy/inconsistent draft is treated conservatively as read-only.
+export function financeEntryActions(entry = {}) {
+  const status = normalizedFinanceStatus(entry.status);
+  const editable = EXPECTED_STATUSES.has(status) && !entry.reversal_of && !entry.recognized_at && !entry.admin_confirmed_at && !entry.reversed_at;
+  return {
+    edit: editable,
+    archive: editable && entry.active !== false,
+    refund: entry.active !== false && entry.type === 'income' && status === 'confirmed' && !entry.reversal_of && parseMoneyAmount(entry.amount) > 0
+  };
+}
+
 export function financeEntryHasBusinessSource(entry = {}) {
   return Boolean(
     entry.source_id
@@ -90,6 +102,17 @@ export function ledgerTotalsByCurrency(entries = []) {
     if (entry.type === 'expense' && financeEntryIsRecognized(entry)) target.expenses += amount;
   });
   return [...rows.values()].map((item) => ({ ...item, net: item.income - item.expenses })).sort((a, b) => a.currency.localeCompare(b.currency));
+}
+
+// Detail dialogs summarize their own complete rows, not a global multi-currency placeholder.
+export function financeDetailMoney(entries = [], key = 'net') {
+  const currencies = ledgerTotalsByCurrency(entries);
+  if (currencies.length !== 1) return null;
+  const row = currencies[0];
+  const metric = key === 'expected-income' ? 'expectedIncome'
+    : key === 'income' || key.startsWith('income-') ? 'income'
+      : key === 'expenses' || key.startsWith('expense-') ? 'expenses' : 'net';
+  return { currency: row.currency, amount: row[metric] };
 }
 
 function sourceEntries(entries, sourceType, sourceId) {

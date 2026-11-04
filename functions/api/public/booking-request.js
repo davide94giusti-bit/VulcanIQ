@@ -95,7 +95,7 @@ export async function onRequestPost(context) {
   if (!antiAbuse.ok) return respond(antiAbuse.status, { ok: false, code: antiAbuse.error, message: publicErrorMessage(antiAbuse.error) });
 
   const turnstile = await verifyTurnstile(context.request, context.env, input.turnstile_token);
-  if (!turnstile.ok) return respond(403, { ok: false, code: turnstile.error, message: publicErrorMessage(turnstile.error) });
+  if (!turnstile.ok) return respond(turnstile.status || 403, { ok: false, code: turnstile.error, message: publicErrorMessage(turnstile.error) });
 
   const key = idempotencyKey(context.request, input, 'booking');
   if (!key) return respond(400, { ok: false, code: 'invalid_idempotency_key', message: publicErrorMessage('invalid_idempotency_key') });

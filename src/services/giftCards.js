@@ -1,3 +1,6 @@
+import { collectKeysetRows } from './keysetRows.js';
+import { canTrack } from '../analytics.js';
+import { withoutOptionalAnalytics } from '../domain/analyticsPrivacy.js';
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 import { normalizeCurrency, parseMoneyAmount } from '../utils/money.js';
 
@@ -24,8 +27,10 @@ function cleanBudget(value) {
   return Number.isFinite(parsed) && parsed > 0 ? Number(parsed.toFixed(2)) : null;
 }
 
+const giftVersions = new Map();
 function normalize(row) {
   if (!row) return null;
+  giftVersions.set(row.id, row.updated_at);
   return {
     ...row,
     buyer_preferred_language: row.buyer_preferred_language === 'en' ? 'en' : 'it',
@@ -79,7 +84,7 @@ export async function createGiftCardRequest(input = {}) {
       'Content-Type': 'application/json',
       'Idempotency-Key': payload.submission_idempotency_key
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(withoutOptionalAnalytics(payload, canTrack()))
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok || !result?.ok) {
@@ -93,18 +98,18 @@ export async function createGiftCardRequest(input = {}) {
 
 export async function listGiftCardRequests(filters = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const data = await collectKeysetRows(() => {
   let query = supabase
     .from('gift_card_requests')
     .select(GIFT_CARD_FIELDS)
-    .order('created_at', { ascending: false })
-    .limit(Number(filters.limit || 250));
+        ;
   if (filters.status && filters.status !== 'all') query = query.eq('status', normalizeGiftCardStatus(filters.status));
   const search = cleanText(filters.search)?.replaceAll(',', ' ');
   if (search) {
     query = query.or(`buyer_name.ilike.%${search}%,buyer_email.ilike.%${search}%,buyer_phone.ilike.%${search}%,recipient_name.ilike.%${search}%,claimed_recipient_name.ilike.%${search}%,recipient_email.ilike.%${search}%,recipient_phone.ilike.%${search}%,experience_type.ilike.%${search}%`);
   }
-  const { data, error } = await query;
-  if (error) throw error;
+    return query;
+  });
   return (data || []).map(normalize);
 }
 
@@ -121,6 +126,8 @@ export async function updateGiftCardRequest(id, input = {}, userId = null) {
   if (input.payment_date !== undefined) patch.payment_date = cleanText(input.payment_date);
   if (input.payment_method !== undefined) patch.payment_method = cleanText(input.payment_method);
   if (input.payment_idempotency_key !== undefined) patch.payment_idempotency_key = cleanText(input.payment_idempotency_key);
+  patch.expected_updated_at = input.expected_updated_at || giftVersions.get(id) || null;
+  if (input.issuance_waiver_reason !== undefined) patch.issuance_waiver_reason = cleanText(input.issuance_waiver_reason);
   const { data, error } = await supabase.rpc('admin_update_gift_card_request', { p_id: id, p_patch: patch });
   if (error) throw error;
   return normalize(data);

@@ -1,9 +1,9 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js';
 import { normalizePublicGoogleReview } from '../features/reviews/googleReviewModel.js';
+import { isMissingFunction } from './schemaCompatibility.js';
 
 function isMissingGoogleReviewContract(error) {
-  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
-  return message.includes('get_public_google_reviews') || message.includes('get_google_reviews_sync_status') || message.includes('schema cache') || message.includes('does not exist');
+  return isMissingFunction(error, ['get_public_google_reviews', 'get_public_google_reviews_summary', 'get_google_reviews_sync_status']);
 }
 
 export async function loadPublicGoogleReviews() {

@@ -1,5 +1,6 @@
 import { createPublicBookingRequest } from './bookingRequests.js';
-import { trackBookingSubmitAttempt, trackBookingSubmitSuccess, trackBookingSubmitError } from '../analytics.js';
+import { trackBookingSubmitAttempt, trackBookingSubmitSuccess, trackBookingSubmitError, canTrack } from '../analytics.js';
+import { withoutOptionalAnalytics } from '../domain/analyticsPrivacy.js';
 
 function safeErrorMetadata(error) {
   return {
@@ -14,7 +15,7 @@ async function safeTrack(run, label) {
     await run();
   } catch (error) {
     // Analytics is diagnostic-only and must never block request creation.
-    console.warn(`[analytics] ${label} failed`, error);
+    console.warn(`[analytics] ${label} failed`, { code: 'analytics_nonblocking_failure' });
   }
 }
 
@@ -30,7 +31,7 @@ export async function submitPublicBookingRequestWithTracking({ payload, experien
   }
 
   try {
-    const createdRequest = await createPublicBookingRequest(payload);
+    const createdRequest = await createPublicBookingRequest(withoutOptionalAnalytics(payload, canTrack()));
     const bookingRequestId = createdRequest?.id || createdRequest?.booking_request_id || '';
     const successMetadata = {
       ...baseMetadata,

@@ -55,7 +55,7 @@ jobs:
       - name: Install Node dependencies
         run: |
           set -euo pipefail
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
 
       - name: Validate required secrets
         run: |
@@ -162,6 +162,9 @@ jobs:
 
       - name: Prepare backup files
         if: ${{ env.SHOULD_RUN == 'true' }}
+        env:
+          BACKUP_REQUESTED_BY: ${{ github.event.inputs.requested_by || github.actor_id }}
+          BACKUP_EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           BACKUP_CREATED_AT_UTC="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -173,33 +176,10 @@ jobs:
           rm -rf backup
           mkdir -p backup/storage-assets
           cp scripts/restore-storage.js backup/restore-storage.js
+          cp scripts/validate-backup.mjs backup/validate-backup.mjs
 
-          cat > backup/00_project_info.json <<INFO
-          {
-            "app": "vulcanIQ",
-            "backup_created_at_utc": "${BACKUP_CREATED_AT_UTC}",
-            "supabase_project_ref": "${SUPABASE_PROJECT_REF}",
-            "requested_by": "${{ github.event.inputs.requested_by || github.actor }}",
-            "trigger": "${{ github.event_name }}",
-            "backup_trigger": "${BACKUP_TRIGGER}",
-            "scheduled_backup_due_at_utc": "${SCHEDULED_BACKUP_DUE_AT:-}",
-            "includes_roles": true,
-            "includes_schema": true,
-            "includes_data": true,
-            "includes_auth_schema": false,
-            "includes_auth_data": false,
-            "auth_restore_mode": "manual_reprovision",
-            "includes_storage_metadata": false,
-            "includes_storage_files": false,
-            "storage_export_status": "none",
-            "storage_bucket_count": null,
-            "storage_object_count": null,
-            "storage_total_bytes": null,
-            "storage_failure_count": null,
-            "includes_sha256_checksums": true,
-            "data_classification": "confidential_restricted"
-          }
-          INFO
+          export BACKUP_CREATED_AT_UTC
+          node scripts/backup-metadata.mjs
 
           cat > backup/cloudflare-env-template.txt <<'ENVFILE'
           # Cloudflare Pages variables for the restored vulcanIQ project.
@@ -215,7 +195,7 @@ jobs:
           GITHUB_BACKUP_WORKFLOW_ID=vulcaniq-db-backup.yml
           GITHUB_BACKUP_REF=main
           GITHUB_BACKUP_TOKEN=YOUR-GITHUB-PAT-WITH-ACTIONS-WORKFLOW-PERMISSION
-          NODE_VERSION=20
+          NODE_VERSION=22
           ENVFILE
 
           cat > backup/restore-supabase.sh <<'RESTORESH'
@@ -229,9 +209,7 @@ jobs:
             exit 1
           fi
 
-          psql --set ON_ERROR_STOP=on --file "./01_roles.sql" "$NEW_DB_URL"
-          psql --set ON_ERROR_STOP=on --file "./02_schema.sql" "$NEW_DB_URL"
-          psql --set ON_ERROR_STOP=on --file "./03_data.sql" "$NEW_DB_URL"
+          RESTORE_DATABASE_URL="$NEW_DB_URL" RESTORE_ISOLATED=true node validate-backup.mjs . --restore-local
           RESTORESH
           chmod +x backup/restore-supabase.sh
 
@@ -243,9 +221,10 @@ jobs:
 
           $ErrorActionPreference = "Stop"
 
-          psql --set ON_ERROR_STOP=on --file ".\01_roles.sql" "$NewDbUrl"
-          psql --set ON_ERROR_STOP=on --file ".\02_schema.sql" "$NewDbUrl"
-          psql --set ON_ERROR_STOP=on --file ".\03_data.sql" "$NewDbUrl"
+          $env:RESTORE_DATABASE_URL = $NewDbUrl
+          $env:RESTORE_ISOLATED = 'true'
+          node validate-backup.mjs . --restore-local
+          if ($LASTEXITCODE -ne 0) { throw 'Restore validation or execution failed.' }
           RESTOREPS1
 
           cat > backup/storage-assets/README_STORAGE.md <<'STORAGEREADME'
@@ -281,16 +260,16 @@ jobs:
 
           1. Download latest backup from admin page.
           2. Extract ZIP locally.
-          3. Verify required files exist.
-          4. Create or prepare target Supabase project.
+          3. Run `node validate-backup.mjs .`; fail closed on missing or altered bytes.
+          4. Create a named disposable local database and isolated local Supabase Storage; disable all providers/senders.
           5. Restore roles with `01_roles.sql` if applicable.
           6. Restore schema with `02_schema.sql`.
-          7. Restore data with `03_data.sql`.
-          8. Recreate/reconnect Supabase Auth users manually if needed.
-          9. Set owner/admin rows correctly in `public.admin_profiles`.
+          7. Restore separately protected Auth UUIDs using the approved Auth recovery source before dependent public data. Email-only recreation is not UUID preservation.
+          8. Restore data with `03_data.sql`; verify FKs and immutable financial/audit relationships.
+          9. Verify existing owner/admin mappings; do not rewrite actors to an arbitrary replacement identity.
           10. Restore Storage with `restore-storage.js`.
           11. Update Cloudflare variables and secrets.
-          12. Redeploy Cloudflare Pages.
+          12. Perform isolated application recovery QA. Any real redeployment requires separate authorization.
           13. Verify public website.
           14. Verify admin login.
           15. Verify backup page.
@@ -300,13 +279,13 @@ jobs:
           ## Database restore - Bash
 
           ```bash
-          ./restore-supabase.sh 'postgresql://postgres:[PASSWORD]@db.YOUR-REF.supabase.co:5432/postgres'
+          ./restore-supabase.sh 'postgresql://postgres:[LOCAL-PASSWORD]@127.0.0.1:54322/vulcaniq_restore_drill'
           ```
 
           ## Database restore - PowerShell
 
           ```powershell
-          .\restore-supabase.ps1 -NewDbUrl 'postgresql://postgres:[PASSWORD]@db.YOUR-REF.supabase.co:5432/postgres'
+          .\restore-supabase.ps1 -NewDbUrl 'postgresql://postgres:[LOCAL-PASSWORD]@127.0.0.1:54322/vulcaniq_restore_drill'
           ```
 
           ## Check and restore Supabase Storage
@@ -318,14 +297,15 @@ jobs:
           Run this from the extracted backup folder:
 
           ```bash
-          SUPABASE_URL="https://target-project.supabase.co" SUPABASE_SECRET_KEY="..." node restore-storage.js
+          RESTORE_ISOLATED=true SUPABASE_URL="http://127.0.0.1:54321" SUPABASE_SECRET_KEY="[LOCAL-SECRET]" node restore-storage.js
           ```
 
           Windows PowerShell:
 
           ```powershell
-          $env:SUPABASE_URL="https://target-project.supabase.co"
-          $env:SUPABASE_SECRET_KEY="..."
+          $env:RESTORE_ISOLATED="true"
+          $env:SUPABASE_URL="http://127.0.0.1:54321"
+          $env:SUPABASE_SECRET_KEY="[LOCAL-SECRET]"
           node restore-storage.js
           ```
 
@@ -354,7 +334,7 @@ jobs:
 
           The workflow runs hourly and checks `public.system_backup_settings`. If no backup is due, it exits successfully without creating an artifact. The vulcanIQ owner can edit the active schedule from the Backup page in the admin area.
 
-          After a successful upload, the workflow keeps only the newest 3 artifacts whose name starts with `vulcaniq-supabase-backup-` and deletes older matching artifacts. Unrelated artifacts are not deleted.
+          Retention keeps three database/Storage-complete and three partial artifacts independently. Unknown legacy completeness is preserved. GitHub automatic expiry is 30 days; this is not indefinite recovery protection. Auth, D1 and secret recovery remain separate required scopes.
           RESTOREREADME
 
       - name: Dump database roles
@@ -399,6 +379,7 @@ jobs:
           test -s backup/restore-storage.js
           test -s backup/storage-assets/README_STORAGE.md
           test -s backup/storage-assets/manifest.json
+          node scripts/backup-metadata.mjs --finalize
 
       - name: Create SHA-256 checksum manifest
         if: ${{ env.SHOULD_RUN == 'true' }}
@@ -419,7 +400,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Keep only newest 3 backup artifacts
+      - name: Preserve complete recovery points and bound partial artifacts
         if: ${{ env.SHOULD_RUN == 'true' }}
         uses: actions/github-script@v7
         with:
@@ -430,11 +411,10 @@ jobs:
               repo: context.repo.repo,
               per_page: 100
             });
-            const backups = artifacts
-              .filter((artifact) => artifact && typeof artifact.name === 'string' && artifact.name.startsWith(prefix))
-              .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-            const keep = backups.slice(0, 3);
-            const remove = backups.slice(3);
+            const { planRetention } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/backup-retention.mjs`);
+            const { remove, completeAvailable, lastCompleteExpiresAt } = planRetention(artifacts);
+            if (!completeAvailable) core.setFailed('No unexpired database/Storage-complete recovery point is available.');
+            core.info(`Latest complete recovery point expiry: ${lastCompleteExpiresAt || 'unavailable'}`);
             for (const artifact of remove) {
               await github.rest.actions.deleteArtifact({
                 owner: context.repo.owner,
@@ -444,11 +424,14 @@ jobs:
               core.info(`Deleted old backup artifact: ${artifact.name}`);
             }
             core.info('Backup artifact cleanup:');
-            core.info(`Kept ${keep.length} newest backup artifacts.`);
             core.info(`Deleted ${remove.length} old backup artifacts.`);
 
+      - name: Fail degraded backup after retaining diagnostic artifact
+        if: ${{ env.SHOULD_RUN == 'true' && env.BACKUP_COMPLETE != 'true' }}
+        run: exit 1
+
       - name: Mark scheduled backup completed
-        if: ${{ github.event_name == 'schedule' && env.SHOULD_RUN == 'true' }}
+        if: ${{ github.event_name == 'schedule' && env.SHOULD_RUN == 'true' && env.BACKUP_COMPLETE == 'true' }}
         run: |
           set -euo pipefail
           TABLE_EXISTS="$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atc "select to_regclass('public.system_backup_settings') is not null")"

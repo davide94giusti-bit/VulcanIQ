@@ -15326,6 +15326,14 @@ section#reviews.compact-section,
 .hero-cms-loading-title { width: min(620px, 88vw); height: clamp(2.75rem, 7vw, 5.5rem); }
 .hero-cms-loading-lead { width: min(520px, 76vw); height: 1.35rem; }
 .hero-cms-loading-action { width: 12rem; height: 3rem; margin-top: .5rem; }
+.privacy-settings-link { display: flex; justify-content: center; padding: 1rem; background: var(--paper); }
+.privacy-preferences-backdrop { position: fixed; inset: 0; z-index: 1800; display: grid; place-items: center; padding: max(1rem, env(safe-area-inset-top)); background: rgba(5,10,20,.74); }
+.privacy-preferences-dialog { width: min(100%, 34rem); max-height: calc(100dvh - 2rem); overflow-y: auto; padding: clamp(1rem, 4vw, 2rem); border-radius: 24px; background: var(--paper); box-shadow: var(--shadow); }
+.privacy-preferences-actions { display: grid; grid-template-columns: 1fr; gap: .75rem; }
+.privacy-preferences-actions .button { width: 100%; min-height: 48px; }
+.fast-request-modal .admin-modal-header > div { min-width: 0; }
+.fast-request-modal .admin-modal-header h2 { overflow-wrap: normal; word-break: normal; font-size: clamp(1.25rem, 5vw, 2rem); }
+.fast-request-modal .modal-close-button { flex: 0 0 auto; }
 @media (prefers-reduced-motion: reduce) {
   .hero-cms-loading-line { transition: none; animation: none; }
 }

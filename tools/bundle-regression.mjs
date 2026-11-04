@@ -1,0 +1,23 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import { gzipSync } from 'node:zlib';
+const manifest = JSON.parse(fs.readFileSync('dist/.vite/manifest.json','utf8'));
+const entry = Object.values(manifest).find(item => item.isEntry);
+assert.ok(entry,'built entry required');
+const admin = Object.values(manifest).find(item => item.src === 'src/features/admin/AdminApp.jsx');
+assert.ok(admin?.isDynamicEntry,'Admin must be a real dynamic build boundary');
+const eager = new Set();
+function visit(item) { if(eager.has(item.file))return; eager.add(item.file); for(const key of item.imports || [])visit(manifest[key]); }
+visit(entry);
+assert.equal(eager.has(admin.file),false,'public entry must not eagerly request Admin');
+console.log('PASS production public dependency graph excludes Admin chunk');
+const bytes=[...eager].reduce((total,file)=>total+fs.statSync(path.join('dist',file)).size,0);
+const gzip=[...eager].reduce((total,file)=>total+gzipSync(fs.readFileSync(path.join('dist',file))).length,0);
+assert.ok(bytes<950000,`public eager JavaScript budget exceeded: ${bytes}`);
+assert.ok(gzip<270000,`public gzip budget exceeded: ${gzip}`);
+console.log(`PASS public JS budget (${bytes} bytes / ${gzip} gzip, ceilings950000/270000)`);
+assert.ok(fs.readFileSync('src/app/PublicApp.jsx','utf8').includes('React.Suspense'));
+assert.ok(fs.readFileSync('src/app/PublicApp.jsx','utf8').includes('DomainErrorBoundary'));
+console.log('PASS lazy route has pending and error boundaries');
+console.log('3 passed, 0 failed.');

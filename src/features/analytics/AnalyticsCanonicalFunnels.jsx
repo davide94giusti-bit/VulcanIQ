@@ -39,10 +39,14 @@ export default function AnalyticsCanonicalFunnels({ lang = 'en', payload = {} })
           [t(lang, 'Invii riusciti', 'Submit successes'), w.submit_successes],
           [t(lang, 'Richieste tracciate compatibili', 'Compatible tracked requests'), w.database_requests]
         ]} />
-        <Funnel title="Fast Request / WhatsApp" rows={[
+        <Funnel title="Fast Request / WhatsApp" helper={f.contract_version === '20261027-authoritative-website'
+          ? t(lang, 'Le richieste salvate usano il nuovo contratto server. Lo storico precedente è misto; un’apertura WhatsApp non prova invio o prenotazione.', 'Saved requests use the new server contract. Earlier history is mixed; opening WhatsApp does not prove a sent message or booking.')
+          : t(lang, 'Storico precedente: i vecchi completamenti possono includere passaggi a WhatsApp, non richieste salvate.', 'Legacy history: old completions may include WhatsApp handoffs, not saved requests.')} rows={[
           [t(lang, 'Avvii', 'Starts'), f.starts],
-          [t(lang, 'Completamenti', 'Submit successes'), f.submit_successes],
-          [t(lang, 'Esiti WhatsApp', 'WhatsApp outcomes'), f.whatsapp_outcomes]
+          [f.contract_version === '20261027-authoritative-website'
+            ? t(lang, 'Richieste salvate (contratto corrente)', 'Saved requests (current contract)')
+            : t(lang, 'Completamenti storici (misti)', 'Legacy completions (mixed)'), f.submit_successes],
+          [t(lang, 'Aperture WhatsApp', 'WhatsApp handoffs'), f.whatsapp_outcomes]
         ]} />
         <Funnel title="Gift Card" helper={t(lang, 'Richieste compatibili dal contratto di tracking corrente.', 'Compatible requests since the current tracking contract.')} rows={[
           [t(lang, 'Viste', 'Views'), g.views],

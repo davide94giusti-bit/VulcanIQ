@@ -1,3 +1,4 @@
+import { readApplicationSource } from './application-source.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,7 +28,7 @@ const adminCatchallRoute = read('functions/admin/[[path]].js');
 const headers = read('public/_headers');
 const index = read('index.html');
 const notFound = read('public/404.html');
-const mainSource = read('src/main.jsx');
+const mainSource = readApplicationSource();
 const stylesSource = read('src/styles.css');
 const allSeoFiles = `${seo}\n${site}\n${sitemap}\n${robots}\n${index}`;
 

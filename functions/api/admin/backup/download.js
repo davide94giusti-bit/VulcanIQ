@@ -1,4 +1,5 @@
 import { artifactFilename, backupErrorMessage, findLatestBackupArtifact, githubErrorCode, githubFetch, json, requestLanguage, requireActiveOwner } from './_shared.js';
+import { artifactStream, trustedArtifactRedirect } from './_stream.js';
 
 export async function onRequestOptions() {
   return json(204, {});
@@ -19,6 +20,8 @@ export async function onRequestGet(context) {
   }
 
   const artifact = latest.artifact;
+  const controller = new AbortController();
+  const signal = AbortSignal.any([context.request.signal, controller.signal, AbortSignal.timeout(120000)]);
   if (!String(artifact?.name || '').startsWith('vulcaniq-supabase-backup-')) {
     return json(404, { ok: false, message: backupErrorMessage(language, 'no_backup_artifacts') });
   }
@@ -26,12 +29,13 @@ export async function onRequestGet(context) {
   let response = await githubFetch(
     latest.config,
     `/repos/${encodeURIComponent(latest.config.owner)}/${encodeURIComponent(latest.config.repo)}/actions/artifacts/${encodeURIComponent(artifact.id)}/zip`,
-    { redirect: 'manual' }
+    { redirect: 'manual', signal }
   );
 
   if (response.status >= 300 && response.status < 400 && response.headers.get('Location')) {
-    response = await fetch(response.headers.get('Location'), {
+    response = await fetch(trustedArtifactRedirect(response.headers.get('Location')), {
       method: 'GET',
+      redirect: 'error', signal,
       headers: { Accept: 'application/zip' }
     });
   }
@@ -42,8 +46,9 @@ export async function onRequestGet(context) {
     return json(response.status || 502, { ok: false, message: backupErrorMessage(language, code) });
   }
 
-  const zip = await response.arrayBuffer();
-  if (!zip || zip.byteLength === 0) {
+  let zip;
+  try { zip = await artifactStream(response, () => controller.abort()); }
+  catch {
     return json(502, { ok: false, message: backupErrorMessage(language, 'artifact_download_failed') });
   }
 
@@ -53,6 +58,7 @@ export async function onRequestGet(context) {
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${artifactFilename(artifact)}"`,
       'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff'
     }
   });

@@ -110,8 +110,6 @@ const EN_MONTHS = [
   'December'
 ];
 
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-
 function cleanText(value) {
   if (value === null || value === undefined) return '';
   const text = String(value).trim();
@@ -196,27 +194,6 @@ export function formatReplyDate(date, lang = 'it') {
   return `${parts.day} ${months[parts.month - 1]} ${parts.year}`;
 }
 
-function compactDateForCode(value) {
-  const parts = parseDateParts(value);
-  if (!parts) return '';
-  return `${parts.year}${String(parts.month).padStart(2, '0')}${String(parts.day).padStart(2, '0')}`;
-}
-
-function stableSuffix(value) {
-  const clean = cleanText(value);
-  if (!clean) return '';
-  let hash = 0;
-  for (let index = 0; index < clean.length; index += 1) {
-    hash = ((hash << 5) - hash + clean.charCodeAt(index)) >>> 0;
-  }
-  let suffix = '';
-  for (let index = 0; index < 4; index += 1) {
-    suffix += CODE_ALPHABET[hash % CODE_ALPHABET.length];
-    hash = Math.floor(hash / CODE_ALPHABET.length) || (hash + index + 17);
-  }
-  return suffix;
-}
-
 function getFixedExcursionTitle(request, lang) {
   const fixed = request?.fixed_excursion || request?.fixedExcursion || request?.fixed_excursion_data || null;
   if (!fixed) return '';
@@ -260,13 +237,8 @@ function requestDate(request, lang) {
 
 export function resolveBookingReference(request) {
   const existing = firstValue(request, BOOKING_REFERENCE_FIELDS);
-  if (existing) return existing;
-
-  const id = firstValue(request, ['id', 'requestId', 'request_id']);
-  const datePart = compactDateForCode(firstValue(request, DATE_FIELDS)) || compactDateForCode(request?.created_at);
-  const suffix = stableSuffix(`${id}|${datePart}`);
-  if (!datePart || !suffix) return '';
-  return `VUL-${datePart}-${suffix}`;
+  // Never invent an unissued bearer credential in a customer-facing reply.
+  return existing || '';
 }
 
 export function buildApprovalReply(request, uiLang = 'it') {
