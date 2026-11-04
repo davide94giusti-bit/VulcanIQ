@@ -5524,6 +5524,16 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
   }
 
   const latestBackup = statusState.latestBackup;
+  const authDataSummary = latestBackup?.auth?.dataIncluded === true
+    ? adminCopy(lang, 'La scansione del dump ha rilevato dati Auth. Ripristina le identità con gli UUID originali usando uno schema Supabase Auth compatibile.', 'The dump scan detected Auth data. Restore identities with their original UUIDs using a compatible Supabase Auth schema.')
+    : latestBackup?.auth?.dataIncluded === false
+      ? adminCopy(lang, 'La scansione del dump non ha rilevato righe Auth. È necessaria una procedura di recupero Auth separata.', 'The dump scan found no Auth rows. A separate Auth recovery procedure is required.')
+      : adminCopy(lang, 'La copertura dei dati Auth è sconosciuta: verifica il dump prima di scegliere la procedura di recupero.', 'Auth data coverage is unknown; inspect the dump before choosing a recovery procedure.');
+  const authSchemaSummary = latestBackup?.auth?.schemaIncluded === true
+    ? adminCopy(lang, 'Sono state rilevate definizioni di tabelle Auth; questo non dimostra un ripristino completo del servizio Auth.', 'Auth table definitions were detected; this does not establish complete managed Auth recovery.')
+    : latestBackup?.auth?.schemaIncluded === false
+      ? adminCopy(lang, 'Non sono state rilevate definizioni di tabelle Auth.', 'Auth table definitions were not detected.')
+      : adminCopy(lang, 'La copertura dello schema Auth è sconosciuta.', 'Auth schema coverage is unknown.');
   const workflowRun = statusState.workflowRun;
   const workflowIsActive = workflowRun && ['queued', 'in_progress'].includes(workflowRun.status);
   const workflowCompleted = workflowRun?.status === 'completed';
@@ -5594,7 +5604,7 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
       {actionState.message && <div className="admin-alert success" role="status">{actionState.message}{actionState.createLoading || actionState.downloadLoading ? null : <><br />{adminCopy(lang, 'Il backup sarà scaricabile direttamente da questa pagina appena pronto.', 'The backup will be downloadable directly from this page as soon as it is ready.')}</>}</div>}
       {actionState.error && <div className="admin-alert error" role="alert">{actionState.error}</div>}
       {statusState.error && <div className="admin-alert warning" role="status">{statusState.error}</div>}
-      <div className="admin-alert warning backup-lifecycle-banner" role="note">{adminCopy(lang, 'Backup riservato: include dati applicativi, file Storage esportati e checksum SHA-256. Gli account Supabase Auth sono gestiti separatamente da Supabase e non fanno parte di questo backup applicativo; in caso di ripristino richiedono la relativa procedura Auth.', 'Restricted backup: it includes application data, exported Storage files and SHA-256 checksums. Supabase manages Auth accounts separately, so they are outside this application backup and require the corresponding Auth recovery procedure.')}</div>
+      <div className="admin-alert warning backup-lifecycle-banner" role="note">{adminCopy(lang, 'Backup riservato: dati applicativi, file Storage esportati e checksum SHA-256 richiedono una gestione riservata.', 'Restricted backup: application data, exported Storage files and SHA-256 checksums require confidential handling.')} {authDataSummary} {authSchemaSummary} {adminCopy(lang, 'La configurazione del servizio Auth, D1 e i segreti richiedono un recupero separato. Questo non è un backup completo del sistema.', 'Managed Auth configuration, D1 and secrets require separate recovery. This is not a complete system backup.')}</div>
       {backupProgress.active && (
         <div className={`backup-progress-panel ${backupProgress.failed ? 'failed' : ''}`} role="status" aria-live="polite">
           <div className="backup-progress-head">
@@ -5725,11 +5735,11 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
         <summary>
           <span>
             <strong>{adminCopy(lang, 'Come ripristinare', 'How to restore')}</strong>
-            <small>{adminCopy(lang, 'Apri la guida completa per ripristinare database, Storage e configurazione Cloudflare.', 'Open the complete guide to restore database, Storage, and Cloudflare configuration.')}</small>
+            <small>{adminCopy(lang, 'Verifica il recupero in un ambiente locale isolato; il ripristino live richiede un piano separato.', 'Validate recovery in an isolated local environment; a live restore requires a separate plan.')}</small>
           </span>
         </summary>
         <div className="backup-restore-content">
-          <p>{adminCopy(lang, 'Usa questa procedura solo in caso di ripristino reale o migrazione controllata. Il backup contiene dati riservati: trattalo come materiale confidenziale.', 'Use this procedure only for a real restore or controlled migration. The backup contains confidential data: treat it as confidential material.')}</p>
+          <p>{adminCopy(lang, 'I comandi seguenti consentono solo una verifica su una destinazione locale isolata e identificata con certezza. Il backup contiene dati riservati. Un ripristino live o una modifica Cloudflare richiedono autorizzazione e piano separati.', 'The commands below support validation only on a positively identified, isolated local target. The backup contains confidential data. A live restore or Cloudflare change requires separate authorization and planning.')}</p>
 
           <h3>{adminCopy(lang, '1. Verifica lo ZIP estratto', '1. Verify the extracted ZIP')}</h3>
           <p>{adminCopy(lang, 'Scarica il backup da questa pagina, estrailo in una cartella locale e verifica che i file principali siano al livello superiore dello ZIP.', 'Download the backup from this page, extract it into a local folder, and verify the main files are at the top level of the ZIP.')}</p>
@@ -5743,36 +5753,37 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
             <li><code>restore-storage.js</code></li>
             <li><code>cloudflare-env-template.txt</code></li>
             <li><code>storage-assets/manifest.json</code></li>
+            <li><code>checksums.sha256</code> / <code>validate-backup.mjs</code></li>
           </ul>
-          <p className="small-note">{adminCopy(lang, 'Se restore-storage.js o storage-assets/manifest.json mancano, il backup è database-only: scaricalo comunque per il database e controlla Storage manualmente.', 'If restore-storage.js or storage-assets/manifest.json is missing, the backup is database-only: still use it for the database and check Storage manually.')}</p>
+          <p className="small-note">{adminCopy(lang, 'Esegui node validate-backup.mjs . prima del ripristino. Se mancano file, checksum o metadati, interrompi la procedura e riconcilia la copertura del backup.', 'Run node validate-backup.mjs . before restoring. If files, checksums or metadata are missing, stop and reconcile backup coverage.')}</p>
 
-          <h3>{adminCopy(lang, '2. Prepara il progetto Supabase di destinazione', '2. Prepare the target Supabase project')}</h3>
+          <h3>{adminCopy(lang, '2. Prepara la destinazione locale isolata', '2. Prepare the isolated local target')}</h3>
           <ol className="backup-restore-list">
-            <li>{adminCopy(lang, 'Crea o prepara il progetto Supabase di destinazione.', 'Create or prepare the target Supabase project.')}</li>
-            <li>{adminCopy(lang, 'Apri Project Settings > Database e copia la connection string PostgreSQL diretta.', 'Open Project Settings > Database and copy the direct PostgreSQL connection string.')}</li>
-            <li>{adminCopy(lang, 'Sostituisci la password nella connection string.', 'Replace the password in the connection string.')}</li>
-            <li>{adminCopy(lang, 'In API Settings abilita la Data API, esponi public e usa public, extensions come extra search path.', 'In API Settings enable Data API, expose public, and use public, extensions as extra search path.')}</li>
+            <li>{adminCopy(lang, 'Identifica una destinazione locale dedicata e sacrificabile, senza collegamenti a Production o ad altri ambienti condivisi.', 'Positively identify a dedicated disposable local target with no connection to Production or other shared environments.')}</li>
+            <li>{adminCopy(lang, 'Il validatore accetta solo localhost, 127.0.0.1 o ::1 e un database con prefisso vulcaniq_restore_. Verifica porta, credenziali e nome del database locale.', 'The validator accepts only localhost, 127.0.0.1 or ::1 and a database prefixed vulcaniq_restore_. Verify the local port, credentials and database name.')}</li>
+            <li>{adminCopy(lang, 'Prima di importare lo schema applicativo o i dati, prepara uno schema gestito Supabase Auth e Storage compatibile con il dump e verifica estensioni e ruoli richiesti.', 'Before importing application schema or data, prepare managed Supabase Auth and Storage schemas compatible with the dump and verify required extensions and roles.')}</li>
+            <li>{adminCopy(lang, 'Il dump non è un sistema Supabase autonomo. Verifica la copertura Auth e conserva gli UUID originali prima di ripristinare le righe collegate.', 'The dump is not a standalone Supabase system. Verify Auth coverage and preserve original UUIDs before restoring linked rows.')}</li>
           </ol>
 
           <h3>{adminCopy(lang, '3. Ripristina ruoli, schema e dati', '3. Restore roles, schema, and data')}</h3>
-          <p>{adminCopy(lang, 'Apri un terminale nella cartella estratta e lancia uno dei comandi sotto. Serve psql installato sul computer.', 'Open a terminal in the extracted folder and run one of the commands below. psql must be installed on the computer.')}</p>
+          <p>{adminCopy(lang, 'Solo dopo le verifiche precedenti, apri un terminale nella cartella estratta. Servono Node.js e psql; sostituisci i segnaposto esclusivamente con i dati della destinazione locale verificata.', 'After the prerequisites pass, open a terminal in the extracted folder. Node.js and psql are required; replace placeholders only with the verified local target settings.')}</p>
           <div className="backup-code-grid">
             <div>
               <strong>PowerShell</strong>
-              <code>{`.\\restore-supabase.ps1 -NewDbUrl "postgresql://postgres:[PASSWORD]@db.YOUR-REF.supabase.co:5432/postgres"`}</code>
+              <code>{`.\\restore-supabase.ps1 -NewDbUrl "postgresql://postgres:[LOCAL-PASSWORD]@127.0.0.1:54322/vulcaniq_restore_drill"`}</code>
             </div>
             <div>
               <strong>Bash/macOS/Linux</strong>
-              <code>{`./restore-supabase.sh 'postgresql://postgres:[PASSWORD]@db.YOUR-REF.supabase.co:5432/postgres'`}</code>
+              <code>{`./restore-supabase.sh 'postgresql://postgres:[LOCAL-PASSWORD]@127.0.0.1:54322/vulcaniq_restore_drill'`}</code>
             </div>
           </div>
           <p>{adminCopy(lang, 'Ordine di ripristino: 01_roles.sql se applicabile, poi 02_schema.sql, poi 03_data.sql. Non invertire schema e dati.', 'Restore order: 01_roles.sql if applicable, then 02_schema.sql, then 03_data.sql. Do not invert schema and data.')}</p>
 
-          <h3>{adminCopy(lang, '4. Ricrea Auth, admin e owner', '4. Recreate Auth, admins, and owners')}</h3>
+          <h3>{adminCopy(lang, '4. Verifica Auth, admin e owner', '4. Verify Auth, admins, and owners')}</h3>
           <ol className="backup-restore-list">
-            <li>{adminCopy(lang, 'Supabase Auth non viene clonato completamente dal dump SQL: crea o verifica gli utenti in Authentication > Users.', 'Supabase Auth is not fully cloned by the SQL dump: create or verify users in Authentication > Users.')}</li>
+            <li>{adminCopy(lang, 'Verifica la copertura Auth del dump e usa una procedura di recupero Supabase Auth compatibile. Conserva gli UUID originali per mantenere i collegamenti ai dati applicativi; non ricreare automaticamente gli utenti con nuovi UUID.', 'Verify the dump’s Auth coverage and use a compatible Supabase Auth recovery procedure. Preserve original UUIDs to retain application data links; do not automatically recreate users with new UUIDs.')}</li>
             <li>{adminCopy(lang, 'Verifica le righe in public.admin_profiles, soprattutto gli owner attivi che possono accedere ai backup.', 'Verify rows in public.admin_profiles, especially active owners who can access backups.')}</li>
-            <li>{adminCopy(lang, 'Esegui la migrazione system_backup_settings se la tabella della programmazione non esiste.', 'Run the system_backup_settings migration if the schedule table does not exist.')}</li>
+            <li>{adminCopy(lang, 'Se manca una tabella attesa, interrompi la verifica e riconcilia schema e migrazioni prima di proseguire.', 'If an expected table is missing, stop validation and reconcile the schema and migrations before proceeding.')}</li>
           </ol>
 
           <h3>{adminCopy(lang, '5. Verifica e ripristino Supabase Storage', '5. Check and restore Supabase Storage')}</h3>
@@ -5781,13 +5792,14 @@ function AdminBackupPage({ lang, globalBackupProgress = inactiveBackupProgress()
           <div className="backup-code-grid">
             <div>
               <strong>PowerShell</strong>
-              <code>{`$env:SUPABASE_URL="https://target-project.supabase.co"`}</code>
-              <code>{`$env:${envVarName(['SUPABASE', 'SERVICE', 'ROLE', 'KEY'])}="..."`}</code>
+              <code>{`$env:RESTORE_ISOLATED="true"`}</code>
+              <code>{`$env:SUPABASE_URL="http://127.0.0.1:54321"`}</code>
+              <code>{`$env:${envVarName(['SUPABASE', 'SECRET', 'KEY'])}="[LOCAL-SECRET]"`}</code>
               <code>{`node restore-storage.js`}</code>
             </div>
             <div>
               <strong>Bash/macOS/Linux</strong>
-              <code>{`SUPABASE_URL="https://target-project.supabase.co" ${envVarName(['SUPABASE', 'SERVICE', 'ROLE', 'KEY'])}="..." node restore-storage.js`}</code>
+              <code>{`RESTORE_ISOLATED=true SUPABASE_URL="http://127.0.0.1:54321" ${envVarName(['SUPABASE', 'SECRET', 'KEY'])}="[LOCAL-SECRET]" node restore-storage.js`}</code>
             </div>
           </div>
 

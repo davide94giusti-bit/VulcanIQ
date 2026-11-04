@@ -620,6 +620,20 @@ function parseJsonText(text) {
   }
 }
 
+export function backupMetadataToAuthSummary(projectInfo) {
+  // Older manifests hardcoded Auth exclusion even when the SQL contained Auth
+  // rows. Only a measured dump scan can support an included/excluded claim.
+  const coverage = projectInfo?.dump_coverage?.method === 'pg_dump_sql_v1' ? projectInfo.dump_coverage.auth : null;
+  const dataIncluded = coverage?.data_status === 'measured' && Number.isSafeInteger(coverage.row_count) && coverage.row_count >= 0 ? coverage.row_count > 0 : null;
+  const schemaIncluded = coverage?.schema_status === 'measured' && Number.isSafeInteger(coverage.schema_table_count) && coverage.schema_table_count >= 0 ? coverage.schema_table_count > 0 : null;
+  return {
+    schemaIncluded,
+    dataIncluded,
+    restoreMode: dataIncluded === true ? 'preserve_uuid_with_compatible_managed_schema' : dataIncluded === false ? 'separate_auth_recovery_required' : 'verify_dump_coverage',
+    restoreComplete: false
+  };
+}
+
 function backupMetadataToStorageSummary(projectInfo, storageManifest) {
   if (!projectInfo && !storageManifest) {
     return {
@@ -700,11 +714,7 @@ export async function readBackupArtifactMetadata(config, artifact) {
       storageManifest,
       backupCreatedAtUtc: validIsoString(projectInfo?.backup_created_at_utc || projectInfo?.backupCreatedAtUtc || projectInfo?.backup_created_at),
       storage: backupMetadataToStorageSummary(projectInfo, storageManifest),
-      auth: {
-        schemaIncluded: projectInfo?.includes_auth_schema === true,
-        dataIncluded: projectInfo?.includes_auth_data === true,
-        restoreMode: cleanText(projectInfo?.auth_restore_mode, 80) || 'manual_reprovision'
-      },
+      auth: backupMetadataToAuthSummary(projectInfo),
       integrity: {
         sha256ManifestIncluded: projectInfo?.includes_sha256_checksums === true,
         dataClassification: cleanText(projectInfo?.data_classification, 80) || 'confidential_restricted'

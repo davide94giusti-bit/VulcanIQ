@@ -254,7 +254,11 @@ jobs:
           - `storage-assets/<bucket-name>/<object-path>` - downloaded Storage binary files when buckets/files exist.
           - `checksums.sha256` - SHA-256 hashes of the actual artifact files.
 
-          Treat the complete artifact as confidential/restricted data. `includes_storage_files` only means at least one binary file is present. Read `storage_export_status` (`none`, `complete`, `partial`, or `failed`) and the sanitized Storage failure manifest before restore. Supabase Auth schema/data are not included; Auth users require a separate approved recovery process.
+          Treat the complete artifact as confidential/restricted data: SQL can contain Auth identities, password hashes, sessions and refresh tokens. `dump_coverage` in `00_project_info.json` measures actual Auth/Storage COPY or INSERT rows and managed table definitions after the dump completes. Unknown coverage is not exclusion; older metadata may incorrectly say Auth data is absent. Never print row contents when inspecting coverage.
+
+          Auth rows can be included while compatible managed Auth/Storage schemas, migration histories, runtime configuration and secrets remain outside this artifact. Preserve original UUIDs and verify all dependent admin/ownership references. `database_complete` means the three SQL files are present and nonempty, not that a restore or login has passed. `system_complete` remains false; D1, secrets and managed Auth runtime recovery need separate evidence.
+
+          `includes_storage_sql_metadata` reports measured Storage SQL rows. `includes_storage_files` only means at least one binary file is present. Read `storage_export_status` (`none`, `complete`, `partial`, or `failed`) and the sanitized Storage failure manifest before restore; SQL metadata does not prove Storage bytes or policies are recovered.
 
           ## Restore steps
 
@@ -263,8 +267,8 @@ jobs:
           3. Run `node validate-backup.mjs .`; fail closed on missing or altered bytes.
           4. Create a named disposable local database and isolated local Supabase Storage; disable all providers/senders.
           5. Restore roles with `01_roles.sql` if applicable.
-          6. Restore schema with `02_schema.sql`.
-          7. Restore separately protected Auth UUIDs using the approved Auth recovery source before dependent public data. Email-only recreation is not UUID preservation.
+          6. Verify compatible managed Auth/Storage schema and platform prerequisites, then restore schema with `02_schema.sql`. Stop on missing definitions; do not invent tables or skip failed sections.
+          7. Inspect measured Auth coverage. When Auth rows are included, restore their original UUIDs from `03_data.sql` with the approved dependency order; do not replace them with newly created identities. For absent/unknown coverage, obtain a separately approved Auth recovery source first.
           8. Restore data with `03_data.sql`; verify FKs and immutable financial/audit relationships.
           9. Verify existing owner/admin mappings; do not rewrite actors to an arbitrary replacement identity.
           10. Restore Storage with `restore-storage.js`.
@@ -334,7 +338,7 @@ jobs:
 
           The workflow runs hourly and checks `public.system_backup_settings`. If no backup is due, it exits successfully without creating an artifact. The vulcanIQ owner can edit the active schedule from the Backup page in the admin area.
 
-          Retention keeps three database/Storage-complete and three partial artifacts independently. Unknown legacy completeness is preserved. GitHub automatic expiry is 30 days; this is not indefinite recovery protection. Auth, D1 and secret recovery remain separate required scopes.
+          Retention keeps three database/Storage-complete and three partial artifacts independently. Unknown legacy completeness is preserved. GitHub automatic expiry is 30 days; this is not indefinite recovery protection. Managed Auth runtime/configuration, D1 and secret recovery remain separate required scopes even when Auth data is included.
           RESTOREREADME
 
       - name: Dump database roles

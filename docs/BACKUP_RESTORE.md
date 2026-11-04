@@ -62,7 +62,13 @@ Every new artifact is classified `confidential_restricted`. Store and transfer i
 
 ### Supabase Auth scope
 
-The logical database dump deliberately reports `includes_auth_schema: false` and `includes_auth_data: false`. Supabase-managed Auth users and credentials are not an import-ready part of this artifact. A disaster recovery procedure must recreate/reconnect Auth users through a separately approved Supabase Auth process, then verify `public.admin_profiles` links. Do not interpret rows that reference Auth UUIDs as an Auth-user backup.
+The data dump can include actual Auth users, password hashes, identities, sessions and refresh tokens even when the schema dump omits managed Auth definitions. Treat every artifact as `confidential_restricted`; do not print SQL rows when checking coverage. Historical artifacts were found to contain Auth data despite their hardcoded `includes_auth_data: false` metadata. Preserve those original artifacts and checksums; their legacy false flag is not reliable evidence of exclusion.
+
+After the SQL files are finalized, `dump_coverage.method = pg_dump_sql_v1` measures schema-qualified COPY and INSERT VALUES statements without retaining row values. Each `auth`/`storage` scope has `data_status`, `row_count`, `table_count`, `schema_status` and `schema_table_count`. Empty tables count as sections with zero rows. SQL-looking content inside data, comments, strings or function bodies is not treated as another section. Missing, truncated, malformed or unsupported dump formats produce `unknown` status and null counts; a valid completed empty dump produces measured zero. Inspection is limited to 64 MiB per SQL file; larger files remain in the backup but are not read into memory for coverage scanning. This is a coverage scan, not a general SQL validator or proof that every live row was captured.
+
+`includes_auth_data` is true only for measured Auth rows, false for measured zero and null for unknown coverage. `includes_auth_schema` similarly describes observed managed table definitions; it does not prove complete platform schema coverage. `includes_storage_sql_metadata` measures Storage SQL rows separately from the Storage object manifest and binary export. Existing `includes_storage_metadata` also covers that export manifest.
+
+`auth_restore_mode` is `preserve_uuid_with_compatible_managed_schema` when Auth rows are present, `separate_auth_recovery_required` for measured zero, and `verify_dump_coverage` when unknown. `auth_restore_complete` remains false. Compatible managed schemas/migration versions, Auth configuration, secrets, login and Storage authorization require separate verification even when data is included. Preserve original UUIDs and validate `public.admin_profiles`, ownership, actor and other foreign-key references; email-only recreation is not equivalent. Never blindly replace existing identities or rewrite historical actor IDs.
 
 ## GitHub repository secrets
 
@@ -128,7 +134,7 @@ After upload, the workflow retains the newest three `-complete` database/Storage
 
 Automatic GitHub expiry still applies: this workflow requests 30 days, subject to repository/organization limits and quota. No indefinite retention is promised. The workflow fails when no unexpired complete artifact remains and reports the newest complete expiry. A monthly schedule is insufficient to guarantee a recovery point inside a 30-day expiry: owners must approve a shorter successful-backup cadence and observe failure alerts before relying on it. No schedule was enabled or changed by this repair.
 
-`database_complete` and `storage_complete` are distinct from `system_complete`, which remains false: Supabase Auth identity recovery, D1 and secret recovery are separate scopes. Never label a database/Storage-only artifact as a full-system backup.
+For compatibility, `database_complete` keeps its existing meaning: the roles, schema and data SQL files exist and are nonempty (`database_completeness_scope: roles_schema_data_files_present`). It is not a successful restore, full managed-schema coverage or Auth-login guarantee. `storage_complete` separately measures the object export. `system_complete` remains false; `excluded_recovery_scopes` lists `managed_auth_runtime`, `d1` and `secrets`, not an unsupported blanket claim that Auth identities are absent. Never label a database/Storage artifact as a full-system backup.
 
 ## Restore checklist
 
@@ -136,15 +142,15 @@ Automatic GitHub expiry still applies: this workflow requests 30 days, subject t
 2. Extract ZIP locally.
 3. Verify required files exist.
 4. Verify `checksums.sha256` before opening or restoring the data.
-5. Create or prepare target Supabase project.
+5. Create a positively identified isolated target, with providers and senders disabled; verify compatible managed Auth/Storage schemas and platform prerequisites before importing data.
 6. Restore roles with `01_roles.sql` if applicable.
 7. Restore schema with `02_schema.sql`.
-8. Restore data with `03_data.sql`.
-9. Recreate/reconnect Supabase Auth users manually using the separately approved Auth process.
-10. Set owner/admin rows correctly in `public.admin_profiles`.
+8. Resolve Auth coverage before importing dependent data. Preserve included identities and their original UUIDs; absent/unknown coverage needs a separately approved Auth recovery source first. Then restore `03_data.sql` in the reviewed dependency order.
+9. Verify restored Auth identities and original UUIDs. Do not blindly recreate users.
+10. Verify existing owner/admin and historical actor mappings in `public.admin_profiles` and dependent tables without rewriting them.
 11. Restore Storage with `restore-storage.js`; for `partial` or `failed`, reconcile every failure against live Storage first.
 12. Update Cloudflare variables and secrets.
-13. Redeploy Cloudflare Pages.
+13. Perform isolated application QA; any real redeployment requires separate authorization.
 14. Verify public website.
 15. Verify admin login.
 16. Verify backup page.
@@ -192,7 +198,7 @@ Restore helpers now require an isolated local target, `RESTORE_ISOLATED=true`, a
 
 1. Record application/Worker commit and all Supabase/D1 migration versions. Retain compatible source/build separately from confidential business data.
 2. Verify hashes and database/Storage completeness locally. Recreate a disposable Supabase stack and restore roles/schema/data with providers disabled; restore fails on missing required Auth UUIDs rather than silently dropping foreign keys.
-3. Recover Auth identities through the separately approved Supabase Auth process. Preserve original UUIDs where supported; otherwise review an explicit old→new UUID map for every FK, admin role and ownership record. Do not bulk substitute IDs or enable a frontend recovery bypass. Prove isolated owner login before release.
+3. Recover included Auth identities from the protected dump with their original UUIDs and a compatible managed schema. If coverage is absent or unknown, obtain a separately approved Auth recovery source; stop rather than blindly recreate identities. Verify every FK, admin role and ownership record. Do not bulk substitute IDs or enable a frontend recovery bypass. Auth data restoration alone does not prove managed runtime/configuration or login; prove isolated owner login before release.
 4. Restore Storage bytes and verify manifest object count/bytes/hash and public/private bucket authorization. Failed leaflets must keep their previous valid bytes.
 5. Export/import D1 only against a positively identified isolated binding. Notification credentials must be treated as confidential. Restore consent/ownership semantics; keep jobs and delivery processing disabled and reconcile accepted/unknown attempts before any replay. Device re-enrollment is the safe fallback when credentials cannot be recovered.
 6. Restore secrets separately from the owner-controlled secret inventory (names only in artifacts). No secret values are included in source or metadata. Verify bindings target the isolated Supabase/D1 projects before starting compatible Pages/Worker builds.

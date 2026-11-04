@@ -1,4 +1,4 @@
-import { backupErrorMessage, findLatestBackupArtifact, findLatestBackupWorkflowRun, json, readBackupArtifactMetadata, requestLanguage, requireActiveOwner } from './_shared.js';
+import { backupErrorMessage, backupMetadataToAuthSummary, findLatestBackupArtifact, findLatestBackupWorkflowRun, json, readBackupArtifactMetadata, requestLanguage, requireActiveOwner } from './_shared.js';
 
 function wantsMetadata(request) {
   try {
@@ -40,7 +40,8 @@ function attachMetadata(latestBackup, metadata) {
       : latestBackup.backupCreatedAtSource || (latestBackup.parsedBackupCreatedAt ? 'artifact_name' : 'github_artifact_created_at'),
     artifactCreatedAt: latestBackup.artifactCreatedAt || latestBackup.uploadedAt || latestBackup.createdAt,
     storage,
-    auth: metadata?.auth || { schemaIncluded: false, dataIncluded: false, restoreMode: 'manual_reprovision' },
+    auth: metadata?.auth || backupMetadataToAuthSummary(null),
+    systemComplete: false,
     integrity: metadata?.integrity || { sha256ManifestIncluded: false, dataClassification: 'confidential_restricted' },
     metadataAvailable: Boolean(metadata?.projectInfo || metadata?.storageManifest)
   };

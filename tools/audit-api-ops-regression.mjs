@@ -10,6 +10,7 @@ import { verifyTurnstile, clientActorHash } from '../functions/api/public/_share
 import { onRequestPost as redeem } from '../functions/api/public/booking-code-redeem.js';
 import { onRequestPost as ingest } from '../functions/api/analytics/event.js';
 import { artifactStream } from '../functions/api/admin/backup/_stream.js';
+import { onRequestGet as backupStatus } from '../functions/api/admin/backup/status.js';
 import { planRetention } from '../scripts/backup-retention.mjs';
 import { completeness, projectInfo } from '../scripts/backup-metadata.mjs';
 import { verifyBackup, isolatedRestoreTarget } from '../scripts/validate-backup.mjs';
@@ -28,6 +29,19 @@ async function test(name, action) { await action(); passed++; console.log(`PASS 
 const originalFetch = globalThis.fetch;
 const req = (body, url = 'https://vulcaniq.it/api/test') => new Request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const env = { SUPABASE_URL: 'https://fixture.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_fixture', SUBMISSION_HASH_SALT: 'synthetic-hmac-salt-at-least-32-characters' };
+
+function metadataZip(info) {
+  const name = Buffer.from('00_project_info.json'), data = Buffer.from(JSON.stringify(info));
+  let crc = 0xffffffff;
+  for (const byte of data) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1)); }
+  crc = (crc ^ 0xffffffff) >>> 0;
+  const local = Buffer.alloc(30), central = Buffer.alloc(46), end = Buffer.alloc(22);
+  local.writeUInt32LE(0x04034b50); local.writeUInt16LE(20, 4); local.writeUInt32LE(crc, 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(name.length, 26);
+  central.writeUInt32LE(0x02014b50); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt32LE(crc, 16); central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(name.length, 28);
+  end.writeUInt32LE(0x06054b50); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(central.length + name.length, 12); end.writeUInt32LE(local.length + name.length + data.length, 16);
+  return Buffer.concat([local, name, data, central, name, end]);
+}
+
 try {
   await test('Chunked body stops at limit without reading entire stream', async () => {
     let reads = 0;
@@ -183,6 +197,52 @@ try {
     assert.equal((await verifyBackup(dir)).checkedFiles, 5);
     await writeFile(path.join(dir, '03_data.sql'), '-- corrupted');
     await assert.rejects(verifyBackup(dir), /checksum_mismatch/);
+  });
+  for (const [name, coverage, expectedData, expectedSchema, includeMetadata] of [
+    ['metadata not requested', null, null, null, false],
+    ['legacy hardcoded exclusion is unknown', null, null, null, true],
+    ['measured Auth rows preserve UUID recovery', { data_status: 'measured', row_count: 2, schema_status: 'measured', schema_table_count: 0 }, true, false, true],
+    ['measured zero rows require separate Auth recovery', { data_status: 'measured', row_count: 0, schema_status: 'measured', schema_table_count: 0 }, false, false, true],
+    ['Auth definitions do not prove complete managed recovery', { data_status: 'measured', row_count: 2, schema_status: 'measured', schema_table_count: 2 }, true, true, true],
+    ['malformed coverage remains unknown', { data_status: 'measured', row_count: '2', schema_status: 'measured', schema_table_count: -1 }, null, null, true]
+  ]) await test(`Backup coverage API and validator: ${name}`, async () => {
+    const info = { database_complete: true, storage_complete: true, system_complete: true,
+      includes_auth_schema: false, includes_auth_data: false, auth_restore_mode: 'manual_reprovision',
+      private_payload: 'synthetic-sensitive-metadata-do-not-expose',
+      ...(name.startsWith('legacy') ? { excluded_recovery_scopes: ['auth_identities', 'd1', 'secrets'] } : {}),
+      ...(coverage ? { dump_coverage: { method: 'pg_dump_sql_v1', auth: coverage } } : {}) };
+    const zip = metadataZip(info);
+    let zipReads = 0;
+    globalThis.fetch = async url => {
+      const pathname = new URL(url).pathname;
+      if (pathname === '/auth/v1/user') return Response.json({ id: '22222222-2222-4222-8222-222222222222' });
+      if (pathname === '/rest/v1/admin_profiles') return Response.json([{ active: true, role: 'owner' }]);
+      if (pathname.endsWith('/zip')) { zipReads++; return new Response(zip); }
+      if (pathname.endsWith('/artifacts')) return Response.json({ artifacts: [{ id: 42, name: 'vulcaniq-supabase-backup-2026-11-04_10-00-UTC', size_in_bytes: zip.length, expired: false, created_at: '2026-11-04T10:00:00Z' }] });
+      if (pathname.endsWith('/runs')) return Response.json({ workflow_runs: [{ id: 7, status: 'completed', conclusion: 'success' }] });
+      throw new Error(`Unexpected synthetic request: ${pathname}`);
+    };
+    const response = await backupStatus({ request: new Request(`https://fixture.invalid/api/admin/backup/status${includeMetadata ? '?metadata=1' : ''}`, { headers: { Authorization: 'Bearer synthetic-user' } }),
+      env: { ...env, SUPABASE_ANON_KEY: 'synthetic-public-key', GITHUB_OWNER: 'synthetic', GITHUB_REPO: 'fixture', GITHUB_BACKUP_TOKEN: 'synthetic-github-token' } });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    const expectedAuth = { schemaIncluded: expectedSchema, dataIncluded: expectedData,
+      restoreMode: expectedData === true ? 'preserve_uuid_with_compatible_managed_schema' : expectedData === false ? 'separate_auth_recovery_required' : 'verify_dump_coverage', restoreComplete: false };
+    assert.deepEqual(body.latestBackup.auth, expectedAuth);
+    assert.equal(body.latestBackup.systemComplete, false);
+    assert.equal(zipReads, includeMetadata ? 1 : 0);
+    assert.equal(JSON.stringify(body).includes(info.private_payload), false);
+    assert.equal(body.latestBackup.projectInfo, undefined);
+    if (!includeMetadata) return;
+    const directory = await mkdtemp(path.join(tmpdir(), 'vulcaniq-auth-coverage-fixture-'));
+    await mkdir(path.join(directory, 'storage-assets'));
+    const files = { '00_project_info.json': JSON.stringify(info), 'storage-assets/manifest.json': JSON.stringify({ exportStatus: 'complete', failureCount: 0, buckets: [] }), '01_roles.sql': '-- synthetic', '02_schema.sql': '-- synthetic', '03_data.sql': '-- synthetic' };
+    for (const [file, data] of Object.entries(files)) await writeFile(path.join(directory, file), data);
+    await writeFile(path.join(directory, 'checksums.sha256'), Object.entries(files).map(([file, data]) => `${createHash('sha256').update(data).digest('hex')}  ${file}`).join('\n'));
+    const report = await verifyBackup(directory);
+    assert.deepEqual(report.auth, expectedAuth);
+    assert.equal(report.systemComplete, false);
+    assert.deepEqual(report.excludedScopes, ['managed_auth_runtime', 'd1', 'secrets']);
   });
   await test('Admin handoff stores retry after provider failure and accepts only explicit receipt', async () => {
     const finishes = [];

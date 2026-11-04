@@ -26,7 +26,15 @@ export async function verifyBackup(directory) {
   const storage = JSON.parse(await readFile(path.join(root, 'storage-assets/manifest.json'), 'utf8'));
   for (const bucket of storage.buckets || []) for (const object of bucket.objects || []) if (!checked.has(object.path)) throw new Error('unverified_storage_object');
   if (info.database_complete !== true || info.storage_complete !== true || storage.exportStatus !== 'complete' || storage.failureCount !== 0) throw new Error('partial_backup_requires_reconciliation');
-  return { checkedFiles: checked.size, databaseComplete: true, storageComplete: true, systemComplete: info.system_complete === true, excludedScopes: info.excluded_recovery_scopes || ['auth_identities', 'd1', 'secrets'] };
+  // Legacy exclusion flags were not measured; do not infer missing identities
+  // from them. Auth rows and table definitions are separate recovery evidence.
+  const coverage = info.dump_coverage?.method === 'pg_dump_sql_v1' ? info.dump_coverage.auth : null;
+  const dataIncluded = coverage?.data_status === 'measured' && Number.isSafeInteger(coverage.row_count) && coverage.row_count >= 0 ? coverage.row_count > 0 : null;
+  const schemaIncluded = coverage?.schema_status === 'measured' && Number.isSafeInteger(coverage.schema_table_count) && coverage.schema_table_count >= 0 ? coverage.schema_table_count > 0 : null;
+  const auth = { schemaIncluded, dataIncluded,
+    restoreMode: dataIncluded === true ? 'preserve_uuid_with_compatible_managed_schema' : dataIncluded === false ? 'separate_auth_recovery_required' : 'verify_dump_coverage', restoreComplete: false };
+  const excludedScopes = [...new Set(['managed_auth_runtime', 'd1', 'secrets', ...(Array.isArray(info.excluded_recovery_scopes) ? info.excluded_recovery_scopes.filter(scope => typeof scope === 'string' && scope !== 'auth_identities') : [])])];
+  return { checkedFiles: checked.size, databaseComplete: true, storageComplete: true, systemComplete: false, auth, excludedScopes };
 }
 
 export function isolatedRestoreTarget(value) {
